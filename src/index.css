@@ -1,0 +1,228 @@
+/* Google Fonts — Nunito (títulos) + Nunito Sans (corpo) */
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=Nunito+Sans:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────────
+   BASE
+───────────────────────────────────────────── */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    background-color: #F8FAFC;
+    color: #1E293B;
+    font-family: 'Nunito Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Nunito', sans-serif;
+  }
+
+  /* Scrollbar customizada */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+  }
+}
+
+/* ─────────────────────────────────────────────
+   COMPONENTES REUTILIZÁVEIS
+───────────────────────────────────────────── */
+@layer components {
+
+  /* ── Botões ── */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-rose-400 hover:bg-rose-500 active:scale-[0.98]
+           text-white font-display font-semibold text-sm
+           px-4 py-2.5 rounded-xl
+           transition-all duration-150
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-white border border-slate-200
+           hover:bg-slate-50 active:scale-[0.98]
+           text-slate-700 font-display font-semibold text-sm
+           px-4 py-2.5 rounded-xl
+           transition-all duration-150;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2
+           bg-rose-50 hover:bg-rose-100 active:scale-[0.98]
+           text-rose-600 font-display font-semibold text-sm
+           px-4 py-2.5 rounded-xl
+           transition-all duration-150;
+  }
+
+  /* ── Cards ── */
+  .card {
+    @apply bg-white rounded-2xl border border-slate-100 p-5;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  }
+
+  /* ── Inputs ── */
+  .input {
+    @apply w-full bg-white
+           border border-slate-200 rounded-xl
+           px-3 py-2.5 text-sm text-slate-800
+           placeholder:text-slate-400
+           outline-none
+           transition-all duration-150
+           focus:border-rose-400;
+    /* Ring de foco suave no rosa */
+    --tw-ring-color: rgba(244, 63, 94, 0.12);
+  }
+
+  .input:focus {
+    box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.12);
+  }
+
+  /* Select (herda o mesmo estilo do input) */
+  .select {
+    @apply input appearance-none cursor-pointer;
+  }
+
+  /* Textarea */
+  .textarea {
+    @apply input resize-none;
+  }
+
+  /* ── Label de formulário ── */
+  .form-label {
+    @apply block text-xs font-bold text-slate-600 mb-1.5;
+  }
+
+  /* ── Badges de status ── */
+  .badge-ok {
+    @apply inline-flex items-center
+           bg-emerald-50 text-emerald-700
+           text-xs font-semibold
+           px-2.5 py-0.5 rounded-full;
+  }
+
+  .badge-warn {
+    @apply inline-flex items-center
+           bg-amber-50 text-amber-700
+           text-xs font-semibold
+           px-2.5 py-0.5 rounded-full;
+  }
+
+  .badge-danger {
+    @apply inline-flex items-center
+           bg-rose-50 text-rose-700
+           text-xs font-semibold
+           px-2.5 py-0.5 rounded-full;
+  }
+
+  .badge-info {
+    @apply inline-flex items-center
+           bg-sky-50 text-sky-700
+           text-xs font-semibold
+           px-2.5 py-0.5 rounded-full;
+  }
+
+  .badge-neutral {
+    @apply inline-flex items-center
+           bg-slate-100 text-slate-600
+           text-xs font-semibold
+           px-2.5 py-0.5 rounded-full;
+  }
+
+  /* ── Divisor ── */
+  .divider {
+    @apply border-t border-slate-100 my-4;
+  }
+
+  /* ── Page header padrão ── */
+  .page-header {
+    @apply flex items-start justify-between mb-6;
+  }
+
+  .page-title {
+    @apply font-display font-bold text-2xl text-slate-800 leading-tight;
+  }
+
+  .page-subtitle {
+    @apply text-sm text-slate-400 mt-0.5;
+  }
+
+  /* ── Tabela padrão ── */
+  .table-wrapper {
+    @apply bg-white rounded-2xl border border-slate-100;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table {
+    @apply text-sm;
+    width: 100%;
+    min-width: 600px;
+  }
+
+  .table thead tr {
+    @apply border-b border-slate-100;
+  }
+
+  .table thead th {
+    @apply px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wide;
+    white-space: nowrap;
+  }
+
+  .table tbody tr {
+    @apply border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors;
+  }
+
+  .table tbody td {
+    @apply px-4 py-3 text-slate-700;
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    @apply flex flex-col items-center justify-center py-16 text-center;
+  }
+}
+
+/* ─────────────────────────────────────────────
+   UTILITÁRIOS EXTRAS
+───────────────────────────────────────────── */
+@layer utilities {
+  .font-display {
+    font-family: 'Nunito', sans-serif;
+  }
+
+  /* Animação de spin para loading */
+  .animate-spin-slow {
+    animation: spin 1.5s linear infinite;
+  }
+
+  /* Fade in suave */
+  .animate-fade-in {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0);   }
+  }
+}

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="description" content="Todos os links da CoisaPet — lojas, redes sociais e contato."/>
+<title>CoisaPet — Links</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+<!-- Google tag -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-N51GM1SKH1"></script>
+<script>
+  window.dataLayer=window.dataLayer||[];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js',new Date());gtag('config','G-N51GM1SKH1');
+</script>
+
+<style>
+:root{
+  --bg:    #1a0f07;
+  --card:  rgba(255,255,255,0.05);
+  --card-h:rgba(255,255,255,0.09);
+  --bdr:   rgba(255,255,255,0.08);
+  --txt:   #f5ead7;
+  --muted: rgba(245,234,215,0.5);
+  --gold:  #C5904A;
+  --brown: #6E3F25;
+  --font:  'Nunito', sans-serif;
+  --r:     16px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font);
+  background:var(--bg);
+  color:var(--txt);
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+
+/* ── Background ─────────────────────────────────────────────── */
+.bg{
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse 80% 60% at 50% -10%, rgba(197,144,74,0.18) 0%, transparent 70%),
+             radial-gradient(ellipse 50% 40% at 80% 90%, rgba(110,63,37,0.25) 0%, transparent 60%),
+             #1a0f07;
+}
+
+/* ── Layout ──────────────────────────────────────────────────── */
+.page{
+  position:relative;z-index:1;
+  max-width:480px;margin:0 auto;
+  padding:48px 20px 64px;
+  display:flex;flex-direction:column;align-items:center;gap:0;
+}
+
+/* ── Avatar / Logo ───────────────────────────────────────────── */
+.avatar{
+  width:88px;height:88px;border-radius:50%;
+  background:linear-gradient(135deg,var(--brown),var(--gold));
+  display:flex;align-items:center;justify-content:center;
+  font-size:38px;margin-bottom:16px;
+  box-shadow:0 0 0 3px rgba(197,144,74,0.25),0 8px 32px rgba(0,0,0,0.4);
+}
+.brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin-bottom:4px}
+.brand span{color:var(--gold)}
+.tagline{font-size:13px;color:var(--muted);margin-bottom:36px;text-align:center}
+
+/* ── Categoria label ─────────────────────────────────────────── */
+.cat-label{
+  width:100%;font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:1.5px;
+  color:var(--muted);margin:20px 0 10px;
+  display:flex;align-items:center;gap:8px;
+}
+.cat-label::after{content:'';flex:1;height:1px;background:var(--bdr)}
+
+/* ── Link card ───────────────────────────────────────────────── */
+.link-card{
+  width:100%;display:flex;align-items:center;gap:14px;
+  background:var(--card);border:1px solid var(--bdr);
+  border-radius:var(--r);padding:14px 16px;
+  text-decoration:none;color:var(--txt);
+  transition:background .18s,border-color .18s,transform .15s;
+  margin-bottom:8px;cursor:pointer;
+}
+.link-card:hover{
+  background:var(--card-h);
+  border-color:rgba(197,144,74,0.3);
+  transform:translateY(-1px);
+}
+.link-card:active{transform:scale(.98)}
+
+.link-icon{
+  width:40px;height:40px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;overflow:hidden;
+  background:rgba(255,255,255,0.06);
+}
+.link-icon img{width:22px;height:22px;object-fit:contain}
+
+.link-body{flex:1;min-width:0}
+.link-title{font-size:14px;font-weight:700;line-height:1.2}
+.link-sub{font-size:11px;color:var(--muted);margin-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.link-arrow{
+  font-size:16px;color:var(--muted);flex-shrink:0;
+  transition:transform .18s,color .18s;
+}
+.link-card:hover .link-arrow{transform:translateX(3px);color:var(--gold)}
+
+/* ── Skeleton loading ────────────────────────────────────────── */
+.skel{
+  width:100%;height:68px;border-radius:var(--r);
+  background:linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.08) 50%,rgba(255,255,255,0.04) 75%);
+  background-size:200% 100%;
+  animation:shimmer 1.4s infinite;
+  margin-bottom:8px;
+}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* ── Footer ──────────────────────────────────────────────────── */
+.footer{
+  margin-top:36px;text-align:center;
+  font-size:11px;color:rgba(245,234,215,0.25);
+  line-height:1.8;
+}
+.footer a{color:rgba(197,144,74,0.5);text-decoration:none}
+.footer a:hover{color:var(--gold)}
+
+/* ── Paw particles ───────────────────────────────────────────── */
+.paw-particle{
+  position:fixed;pointer-events:none;z-index:9999;font-size:16px;
+  transition:all .6s ease-out;
+}
+
+/* ── Animation ───────────────────────────────────────────────── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.link-card,.cat-label{animation:fadeUp .4s ease both}
+</style>
+</head>
+<body>
+
+<div class="bg"></div>
+
+<div class="page">
+
+  <img src="https://coisapet.com.br/assets/img/logo-coisapet.webp" alt="CoisaPet" style="width:140px;margin-bottom:12px;"/>
+  <div class="brand"><span>Coisa</span>Pet</div>
+  <div class="tagline">Todo tipo de coisa para todo tipo de pet 🌿</div>
+
+  <!-- Links carregados dinamicamente -->
+  <div id="links-container" style="width:100%">
+    <div class="skel"></div>
+    <div class="skel" style="animation-delay:.1s"></div>
+    <div class="skel" style="animation-delay:.2s"></div>
+    <div class="skel" style="animation-delay:.3s"></div>
+  </div>
+
+  <div class="footer">
+    <p>© 2026 CoisaPet® · Feito com ♥ para os pets</p>
+  </div>
+
+</div>
+
+<script>
+const SUPABASE_URL = 'https://lcybmdiqxmbqeuyeuhdj.supabase.co'
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxjeWJtZGlxeG1icWV1eWV1aGRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MjYyMjMsImV4cCI6MjA4OTAwMjIyM30.gAFVxdM6TMuse27UiASfFiw0NwfdcGhvck7AUv9EXPM'
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+
+// Rótulos de categoria
+const CAT_LABELS = {
+  lojas:   'Lojas oficiais',
+  contato: 'Fale conosco',
+  redes:   'Redes sociais',
+  geral:   'Links',
+}
+
+async function loadLinks() {
+  const { data, error } = await db
+    .from('bio_links')
+    .select('*')
+    .eq('active', true)
+    .order('sort_order')
+
+  const container = document.getElementById('links-container')
+
+  if (error || !data || data.length === 0) {
+    container.innerHTML = '<p style="color:rgba(255,255,255,.3);text-align:center;font-size:13px;padding:20px 0">Nenhum link disponível.</p>'
+    return
+  }
+
+  // Agrupa por categoria mantendo a ordem
+  const groups = []
+  const seen   = new Set()
+  data.forEach(link => {
+    if (!seen.has(link.category)) {
+      seen.add(link.category)
+      groups.push({ cat: link.category, items: [] })
+    }
+    groups.find(g => g.cat === link.category).items.push(link)
+  })
+
+  container.innerHTML = groups.map((group, gi) => `
+    <div class="cat-label" style="animation-delay:${gi * 0.08}s">
+      ${CAT_LABELS[group.cat] || group.cat}
+    </div>
+    ${group.items.map((link, li) => `
+      <a
+        href="${link.url}"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="link-card"
+        style="animation-delay:${(gi * 0.08) + (li * 0.06) + 0.05}s"
+        onclick="trackClick('${link.id}', '${link.title}')"
+      >
+        <div class="link-icon" style="background:${link.icon_color ? link.icon_color + '18' : 'rgba(255,255,255,0.06)'}">
+          ${link.icon_slug
+            ? `<img src="https://cdn.simpleicons.org/${link.icon_slug}/${(link.icon_color||'ffffff').replace('#','')}" alt="${link.title}" loading="lazy"/>`
+            : `<span style="font-size:20px">🔗</span>`
+          }
+        </div>
+        <div class="link-body">
+          <div class="link-title">${link.title}</div>
+          ${link.subtitle ? `<div class="link-sub">${link.subtitle}</div>` : ''}
+        </div>
+        <span class="link-arrow">→</span>
+      </a>
+    `).join('')}
+  `).join('')
+
+  // Pata particles ao clicar
+  document.querySelectorAll('.link-card').forEach(card => {
+    card.addEventListener('click', e => {
+      for (let i = 0; i < 5; i++) {
+        const p = document.createElement('span')
+        p.className = 'paw-particle'
+        p.textContent = '🐾'
+        p.style.left  = e.clientX + 'px'
+        p.style.top   = e.clientY + 'px'
+        document.body.appendChild(p)
+        requestAnimationFrame(() => {
+          p.style.transform   = `translate(${(Math.random()-.5)*80}px,${-30-Math.random()*60}px) rotate(${Math.random()*360}deg)`
+          p.style.opacity     = '0'
+          p.style.fontSize    = (10 + Math.random()*10) + 'px'
+        })
+        setTimeout(() => p.remove(), 700)
+      }
+    })
+  })
+}
+
+async function trackClick(id, title) {
+  try {
+    await db.from('bio_link_clicks').insert({ link_id: id, link_title: title })
+  } catch(e) { console.warn('Track error:', e) }
+}
+
+loadLinks()
+</script>
+</body>
+</html>

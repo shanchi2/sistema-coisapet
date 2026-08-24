@@ -1,0 +1,27 @@
+{
+  "name": "CoisaPet Equipe",
+  "short_name": "CoisaPet",
+  "description": "App da equipe CoisaPet — ponto, horas, férias e mais",
+  "start_url": "/equipe/",
+  "scope": "/equipe/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#3d2214",
+  "theme_color": "#6E3F25",
+  "lang": "pt-BR",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/equipe/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/equipe/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

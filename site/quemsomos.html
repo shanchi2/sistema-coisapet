@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="description" content="A história, os valores e as pessoas por trás da Coisa Pet. Produtos projetados com engenharia e cuidado para o bem-estar de mini pets."/>
+<title>CoisaPet — Quem Somos | Todo tipo de coisa para todo tipo de pet.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+/* ── RESET & VARS (mesmo DNA da Coisa Pet) ──────────────────────── */
+:root{
+  --bg:      #3D1F0D;
+  --bg2:     #2e1609;
+  --bg3:     #4a2714;
+  --mid:     #6B3A1F;
+  --copper:  #C4956A;
+  --copper-d:#a87a52;
+  --cream:   #F5ECD7;
+  --cream2:  #ede0c4;
+  --cream3:  rgba(245,236,215,.08);
+  --txt:     #F5ECD7;
+  --txt2:    rgba(245,236,215,.7);
+  --txt3:    rgba(245,236,215,.45);
+  --serif:   'Playfair Display', Georgia, serif;
+  --sans:    'DM Sans', sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;overflow-x:hidden}
+body{
+  font-family:var(--sans);
+  background:var(--bg);
+  color:var(--txt);
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+
+/* scrollbar */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--copper);border-radius:3px}
+
+/* cursor personalizado */
+.cursor{
+  position:fixed;width:10px;height:10px;border-radius:50%;
+  background:var(--copper);pointer-events:none;z-index:9999;
+  transform:translate(-50%,-50%);transition:transform .15s ease,opacity .3s;
+  mix-blend-mode:difference;
+}
+.cursor-ring{
+  position:fixed;width:36px;height:36px;border-radius:50%;
+  border:1.5px solid var(--copper);pointer-events:none;z-index:9998;
+  transform:translate(-50%,-50%);opacity:.5;
+  transition:transform .35s cubic-bezier(.25,.46,.45,.94),width .2s,height .2s,opacity .3s;
+}
+.cursor-ring.hovered{width:52px;height:52px;opacity:.8}
+
+/* nav (igual ao original) */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 108px;
+  transition:background .4s,backdrop-filter .4s,padding .3s;
+}
+nav.scrolled{
+  background:rgba(46,22,9,.92);backdrop-filter:blur(24px);
+  padding:14px 48px;
+  border-bottom:1px solid rgba(196,149,106,.12);
+}
+.nav-logo{display:flex;align-items:center;gap:10px}
+.nav-logo img{height:68px;}
+.nav-logo span{font-family:var(--serif);font-size:18px;font-weight:700;letter-spacing:-.3px}
+.nav-links{display:flex;align-items:center;gap:36px;list-style:none}
+.nav-links a{font-size:13px;font-weight:500;color:var(--txt2);letter-spacing:.3px;transition:color .2s;position:relative}
+.nav-links a::after{content:'';position:absolute;bottom:-4px;left:0;width:0;height:1px;background:var(--copper);transition:width .3s}
+.nav-links a:hover{color:var(--cream)}
+.nav-links a:hover::after{width:100%}
+.nav-links a.nav-active{color:var(--cream)}
+.nav-links a.nav-active::after{width:100%;background:var(--copper)}
+.nav-cta{
+  padding:10px 22px;background:var(--copper);color:var(--bg2);
+  border:none;border-radius:100px;font-family:var(--sans);font-size:13px;font-weight:600;
+  cursor:pointer;transition:all .22s;letter-spacing:.2px;
+}
+.nav-cta:hover{background:var(--cream);transform:translateY(-1px)}
+.nav-burger{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:4px}
+.nav-burger span{display:block;width:24px;height:2px;background:var(--cream);border-radius:2px;transition:all .3s}
+
+/* reveal animations */
+.reveal{opacity:0;transform:translateY(36px);transition:opacity .7s ease,transform .7s ease}
+.reveal.up{opacity:1;transform:none}
+.reveal-l{opacity:0;transform:translateX(-36px);transition:opacity .7s ease,transform .7s ease}
+.reveal-l.up{opacity:1;transform:none}
+.reveal-r{opacity:0;transform:translateX(36px);transition:opacity .7s ease,transform .7s ease}
+.reveal-r.up{opacity:1;transform:none}
+.stagger>*{opacity:0;transform:translateY(24px);transition:opacity .5s ease,transform .5s ease}
+.stagger.up>*:nth-child(1){opacity:1;transform:none;transition-delay:.05s}
+.stagger.up>*:nth-child(2){opacity:1;transform:none;transition-delay:.15s}
+.stagger.up>*:nth-child(3){opacity:1;transform:none;transition-delay:.25s}
+.stagger.up>*:nth-child(4){opacity:1;transform:none;transition-delay:.35s}
+.stagger.up>*:nth-child(5){opacity:1;transform:none;transition-delay:.45s}
+.stagger.up>*:nth-child(6){opacity:1;transform:none;transition-delay:.55s}
+
+/* secoes comuns */
+section{padding:100px 48px}
+.sec-inner{max-width:1200px;margin:0 auto}
+.sec-tag{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:11px;font-weight:600;letter-spacing:2px;
+  text-transform:uppercase;color:var(--copper);margin-bottom:20px;
+}
+.sec-tag::before{content:'';width:24px;height:1px;background:var(--copper)}
+.sec-headline{
+  font-family:var(--serif);
+  font-size:clamp(32px,4vw,54px);
+  font-weight:900;line-height:1.1;
+  letter-spacing:-1px;color:var(--cream);
+  margin-bottom:16px;
+}
+.sec-headline em{font-style:italic;color:var(--copper)}
+.sec-sub{font-size:16px;font-weight:300;color:var(--txt2);line-height:1.7;max-width:540px}
+
+/* hero especifico para pagina quem somos */
+#hero-quem{
+  min-height:85vh;
+  position:relative;
+  display:flex;align-items:center;
+  background:radial-gradient(ellipse at 30% 40%, #5a2d14 0%, var(--bg) 70%);
+  overflow:hidden;
+}
+.hero-quem-inner{
+  max-width:1200px;margin:0 auto;padding:0 48px;
+  position:relative;z-index:2;
+}
+.hero-grain{
+  position:absolute;inset:0;opacity:.04;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:200px;
+}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:6px 16px;
+  border:1px solid rgba(196,149,106,.3);border-radius:100px;
+  font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;
+  color:var(--copper);margin-bottom:28px;
+  opacity:0;animation:fadeUp .6s .2s ease forwards;
+}
+.hero-badge::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--copper)}
+.hero-headline-quem{
+  font-family:var(--serif);
+  font-size:clamp(48px,7vw,84px);
+  font-weight:900;line-height:1.05;
+  letter-spacing:-1.5px;color:var(--cream);
+  margin-bottom:24px;
+  max-width:800px;
+}
+.hero-headline-quem em{font-style:italic;color:var(--copper);}
+.hero-desc{
+  font-size:18px;font-weight:300;color:var(--txt2);line-height:1.65;
+  max-width:580px;margin-bottom:40px;
+  opacity:0;animation:fadeUp .6s .7s ease forwards;
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+/* historia detalhada (conteudo do pdf) */
+.historia-detalhe{
+  background:var(--bg2);
+}
+.hist-container{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:60px;
+  align-items:start;
+  margin-top:48px;
+}
+.hist-texto p{
+  font-size:16px;
+  font-weight:300;
+  color:var(--txt2);
+  line-height:1.85;
+  margin-bottom:24px;
+}
+.hist-texto strong{
+  color:var(--cream);
+  font-weight:500;
+}
+.hist-imagem{
+  border-radius:24px;
+  overflow:hidden;
+  background:var(--bg3);
+  border:1px solid rgba(196,149,106,.2);
+  aspect-ratio:4/3;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.hist-imagem svg{
+  width:70%;
+  height:auto;
+  opacity:.6;
+}
+.pilares-expandidos{
+  margin-top:56px;
+  background:rgba(196,149,106,.04);
+  border-radius:32px;
+  padding:48px 40px;
+  border:1px solid rgba(196,149,106,.1);
+}
+.pilares-grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:40px;
+  margin-top:32px;
+}
+.pilar-card{
+  display:flex;
+  gap:20px;
+  align-items:flex-start;
+}
+.pilar-icon{
+  width:48px;
+  height:48px;
+  background:rgba(196,149,106,.12);
+  border-radius:24px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--copper);
+  font-size:28px;
+  font-weight:600;
+  flex-shrink:0;
+}
+.pilar-content h4{
+  font-size:18px;
+  font-weight:700;
+  color:var(--cream);
+  margin-bottom:8px;
+  font-family:var(--serif);
+}
+.pilar-content p{
+  font-size:14px;
+  font-weight:300;
+  color:var(--txt2);
+  line-height:1.65;
+}
+.equipe-section{
+  background:var(--bg);
+  padding:100px 48px;
+}
+.equipe-grid{
+  display:flex;
+  justify-content:center;
+  gap:48px;
+  flex-wrap:wrap;
+  margin-top:56px;
+}
+.membro-card{
+  background:var(--bg3);
+  border:1px solid rgba(196,149,106,.15);
+  border-radius:28px;
+  padding:32px 32px;
+  width:280px;
+  text-align:center;
+  transition:transform .25s, border-color .2s;
+}
+.membro-card:hover{transform:translateY(-8px);border-color:rgba(196,149,106,.4);}
+.membro-avatar{
+  width:160px;
+  height:160px;
+  background:var(--mid);
+  border-radius:50%;
+  margin:0 auto 20px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  position:relative;
+}
+.membro-avatar img {
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  position:absolute;
+  top:0;
+  left:0;
+}
+.membro-avatar span {
+  font-size:44px;
+  font-weight:600;
+  color:var(--copper);
+  font-family:var(--serif);
+  display:none;
+}
+.membro-card h3{
+  font-size:20px;
+  font-weight:700;
+  color:var(--cream);
+  margin-bottom:6px;
+}
+.membro-cargo{
+  font-size:12px;
+  font-weight:600;
+  letter-spacing:1px;
+  color:var(--copper);
+  margin-bottom:12px;
+}
+.membro-bio{
+  font-size:13px;
+  color:var(--txt2);
+  line-height:1.6;
+}
+
+/* cta final */
+.cta-quem{
+  background:linear-gradient(135deg,var(--mid) 0%, var(--bg2) 100%);
+  text-align:center;
+  padding:80px 48px;
+}
+.cta-quem h2{
+  font-size:clamp(28px,4vw,48px);
+  font-family:var(--serif);
+  margin-bottom:24px;
+}
+.btn-pri{
+  padding:14px 32px;background:var(--copper);color:var(--bg2);
+  border:none;border-radius:100px;font-family:var(--sans);
+  font-size:14px;font-weight:600;cursor:pointer;
+  transition:all .22s;letter-spacing:.2px;
+  box-shadow:0 8px 32px rgba(196,149,106,.3);
+}
+.btn-pri:hover{background:var(--cream);transform:translateY(-2px);box-shadow:0 12px 40px rgba(196,149,106,.4)}
+.btn-sec{
+  background:transparent;
+  border:1px solid rgba(245,236,215,.3);
+  padding:14px 32px;
+  border-radius:100px;
+  color:var(--cream);
+  font-family:var(--sans);
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all .22s;
+  margin-left:16px;
+}
+.btn-sec:hover{
+  background:rgba(245,236,215,.1);
+  border-color:var(--copper);
+}
+
+/* footer (identico ao original) */
+footer{
+  background:var(--bg2);
+  border-top:1px solid rgba(196,149,106,.1);
+  padding:72px 48px 40px;
+}
+.footer-top{
+  max-width:1200px;margin:0 auto;
+  display:grid;grid-template-columns:1.8fr 1fr 1fr 1fr;gap:48px;
+  padding-bottom:48px;
+  border-bottom:1px solid rgba(196,149,106,.1);
+}
+.footer-brand img{height:44px;margin-bottom:16px}
+.footer-tagline{
+  font-family:var(--serif);font-style:italic;
+  font-size:17px;color:var(--copper);line-height:1.4;margin-bottom:12px;
+}
+.footer-about{font-size:13px;font-weight:300;color:var(--txt3);line-height:1.7}
+.footer-col h4{font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--copper);margin-bottom:16px}
+.footer-col ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+.footer-col ul a{font-size:13px;font-weight:300;color:var(--txt2);transition:color .2s}
+.footer-col ul a:hover{color:var(--cream)}
+.footer-bottom{
+  max-width:1200px;margin:24px auto 0;
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+}
+.footer-copy{font-size:12px;color:var(--txt3)}
+.footer-site{font-size:12px;color:var(--copper)}
+
+/* mobile */
+@media(max-width:900px){
+  nav{padding:16px 24px}
+  nav.scrolled{padding:12px 24px}
+  .nav-links,.nav-cta{display:none}
+  .nav-burger{display:flex}
+  section{padding:72px 24px}
+  .hist-container{grid-template-columns:1fr;gap:32px}
+  .pilares-grid{grid-template-columns:1fr;gap:28px}
+  .hero-quem-inner{padding:0 24px}
+  .hero-headline-quem{font-size:clamp(36px,8vw,56px);}
+  .footer-top{grid-template-columns:1fr 1fr;gap:32px}
+  .equipe-section{padding:72px 24px}
+  .cta-quem{padding:60px 24px}
+  .btn-sec{margin-left:0;margin-top:16px}
+}
+@media(max-width:540px){
+  .footer-top{grid-template-columns:1fr}
+  .pilares-expandidos{padding:32px 20px}
+  .membro-card{width:100%}
+}
+.mob-menu{
+  position:fixed;inset:0;z-index:99;
+  background:rgba(30,10,3,.98);backdrop-filter:blur(24px);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;
+  opacity:0;pointer-events:none;transition:opacity .3s;
+}
+.mob-menu.open{opacity:1;pointer-events:all}
+.mob-menu a{font-family:var(--serif);font-size:28px;font-weight:700;color:var(--cream);transition:color .2s}
+.mob-menu a:hover{color:var(--copper)}
+.mob-close{position:absolute;top:24px;right:24px;font-size:28px;color:var(--txt2);cursor:pointer}
+
+.hist-imagem img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+</style>
+</head>
+<body>
+
+<div class="cursor" id="cur"></div>
+<div class="cursor-ring" id="curR"></div>
+
+<nav id="nav">
+  <div class="nav-logo">
+    <img src="logo-coisapet.webp" alt="CoisaPet" onerror="this.src='https://placehold.co/38x38?text=CP'"/>
+  </div>
+  <ul class="nav-links">
+    <li><a href="index.html#historia" class="nav-active">Quem Somos</a></li>
+    <li><a href="index.html#produtos">Produtos</a></li>
+    <li><a href="index.html#diferenciais">Diferenciais</a></li>
+    <li><a href="index.html#comunidade">Comunidade</a></li>
+  </ul>
+  <button class="nav-cta" onclick="window.location.href='index.html#produtos'">Ver Produtos</button>
+  <div class="nav-burger" id="burger" onclick="toggleMob()">
+    <span></span><span></span><span></span>
+  </div>
+</nav>
+
+<div class="mob-menu" id="mobMenu">
+  <div class="mob-close" onclick="toggleMob()">✕</div>
+  <a href="index.html#historia" onclick="toggleMob()">Quem Somos</a>
+  <a href="index.html#produtos" onclick="toggleMob()">Produtos</a>
+  <a href="index.html#diferenciais" onclick="toggleMob()">Diferenciais</a>
+  <a href="index.html#comunidade" onclick="toggleMob()">Comunidade</a>
+  <button class="btn-pri" onclick="toggleMob();window.location.href='index.html#produtos'">Ver Produtos</button>
+</div>
+
+<!-- HERO DA PÁGINA QUEM SOMOS -->
+<section id="hero-quem">
+  <div class="hero-grain"></div>
+  <div class="hero-quem-inner">
+    <div class="hero-badge">Nossa essência</div>
+    <h1 class="hero-headline-quem">Seu mini pet tem mais personalidade <em>do que o mercado imagina.</em></h1>
+    <p class="hero-desc">A Coisa Pet foi construída pra estar à altura disso. Produto com origem, propósito e engenharia a serviço do bem‑estar animal.</p>
+  </div>
+</section>
+
+<!-- SESSÃO HISTÓRIA COMPLETA (PDF) -->
+<section class="historia-detalhe">
+  <div class="sec-inner">
+    <div class="reveal">
+      <div class="sec-tag">De uma pesquisa a uma referência</div>
+      <h2 class="sec-headline">A história que transformou <em>cuidado em produto.</em></h2>
+    </div>
+    <div class="hist-container">
+      <div class="hist-texto reveal-l">
+        <p>Em 2021, <strong>Gabriel Sanches Spagnuolo</strong>, engenheiro civil de formação, se deparou com algo que transformou seu olhar: mini pets criados em espaços inadequados, sem estímulo, sem bem‑estar. Hamsters estressados. Tutores sem opções. Um mercado que ainda precisava olhar para esses animais com a seriedade que eles merecem.</p>
+        <p>Ele enxergou esse espaço e decidiu preenchê‑lo. Foram meses de pesquisa, desenvolvimento de desenhos, testes de material e ajustes até chegar ao primeiro produto: um <strong>terrário pensado do zero</strong> para atender as necessidades do animal. Depois vieram a rodinha, os acessórios, e o que começou como um projeto se tornou uma missão.</p>
+        <p>Em janeiro de 2023 veio a primeira venda e, desde então, a marca se consolidou como referência nacional em produtos para mini pets. <strong>Engenharia a serviço do bem‑estar</strong>: cada produto é desenvolvido com a precisão de quem entende de estrutura e com a sensibilidade de quem ama animais.</p>
+      </div>
+<div class="hist-imagem reveal-r">
+  <img src="quemsomos-img.webp" 
+       alt="Processo de criação e desenvolvimento CoisaPet" 
+       style="width:100%; height:100%; object-fit:cover; display:block;"
+       onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"/>
+  <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
+    <circle cx="100" cy="100" r="70" stroke="#C4956A" stroke-width="1.2" stroke-dasharray="6 6"/>
+    <path d="M70 100 L130 100 M100 70 L100 130" stroke="#C4956A" stroke-width="1.5" stroke-linecap="round"/>
+    <circle cx="80" cy="80" r="4" fill="#C4956A" fill-opacity="0.6"/>
+    <circle cx="120" cy="80" r="4" fill="#C4956A" fill-opacity="0.6"/>
+    <path d="M85 120 Q100 130 115 120" stroke="#C4956A" stroke-width="1.2" fill="none"/>
+  </svg>
+</div>
+    </div>
+
+    <!-- materiais e processo -->
+    <div class="reveal" style="margin-top:56px; background:rgba(196,149,106,.05); border-radius:28px; padding:36px 32px;">
+      <div class="sec-tag">Engenharia + sensibilidade</div>
+      <h3 class="sec-headline" style="font-size:28px; margin-bottom:20px;">MDF laminado, corte a laser e curadoria veterinária</h3>
+      <p style="font-size:15px; line-height:1.75; color:var(--txt2);">Nossos produtos são fabricados em <strong>MDF laminado de alta qualidade</strong>, cortados a laser para garantir encaixes perfeitos, acabamento impecável e aproveitamento máximo do material. Para os itens de enriquecimento ambiental, fazemos uma curadoria criteriosa, selecionando apenas produtos certificados. Contamos com <strong>parceiros veterinários</strong> que participam ativamente do desenvolvimento, validando soluções e garantindo mais saúde e qualidade de vida para os mini pets.</p>
+    </div>
+  </div>
+</section>
+
+<!-- PILARES (4 valores do PDF) -->
+<section style="background:var(--bg); padding:60px 48px 100px;">
+  <div class="sec-inner">
+    <div class="reveal" style="text-align:center; margin-bottom:48px;">
+      <div class="sec-tag">O que nos move</div>
+      <h2 class="sec-headline">Propósito com escolha, <em>produto com origem.</em></h2>
+    </div>
+    <div class="pilares-expandidos">
+      <div class="pilares-grid">
+        <div class="pilar-card"><div class="pilar-icon">1</div><div class="pilar-content"><h4>Propósito com escolha</h4><p>Por muito tempo, mini pets ocuparam lugar secundário. A Coisa Pet existe para mudar esse cenário: hamsters, porquinhos‑da‑índia, répteis merecem o mesmo nível de cuidado e qualidade.</p></div></div>
+        <div class="pilar-card"><div class="pilar-icon">2</div><div class="pilar-content"><h4>Produto com origem</h4><p>Cada produto nasce de uma necessidade real, identificada por tutores ou veterinários. Do desenho ao encaixe, nada é genérico. Cada peça tem uma razão de existir.</p></div></div>
+        <div class="pilar-card"><div class="pilar-icon">3</div><div class="pilar-content"><h4>Comunidade que constrói junto</h4><p>A Coisa Pet existe porque tutores nos procuraram e compartilharam desafios. Escutamos com atenção e evoluímos juntos — a comunidade é parte ativa do que construímos.</p></div></div>
+        <div class="pilar-card"><div class="pilar-icon">4</div><div class="pilar-content"><h4>Crescimento com responsabilidade</h4><p>Crescer preservando a essência, produzir aproveitando cada recurso, inovar mantendo a qualidade. Esses são os valores que guiam cada decisão.</p></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- QUEM ESTÁ POR TRÁS (EQUIPE) -->
+<section class="equipe-section">
+  <div class="sec-inner">
+    <div class="reveal" style="text-align:center;">
+      <div class="sec-tag">Humanidade e técnica</div>
+      <h2 class="sec-headline">Quem está <em>por trás</em> da Coisa Pet</h2>
+      <p class="sec-sub" style="margin:0 auto 20px;">Cada produto carrega o olhar de quem realmente se importa.</p>
+    </div>
+    <div class="equipe-grid stagger">
+      <div class="membro-card">
+        <div class="membro-avatar">
+          <img src="gabriel-coisapet.jpg" alt="Gabriel Sanches Spagnuolo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"/>
+          <span>GS</span>
+        </div>
+        <h3>Gabriel Sanches Spagnuolo</h3>
+        <div class="membro-cargo">CEO & Desenvolvimento de Produto</div>
+        <p class="membro-bio">Engenheiro civil, fundador. O olhar técnico aliado à paixão pelos animais deu origem à Coisa Pet. Responsável por cada detalhe estrutural dos produtos.</p>
+      </div>
+      <div class="membro-card">
+        <div class="membro-avatar">
+          <img src="clara-coisapet.jpg" alt="Clara Alves Alvarenga" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"/>
+          <span>CA</span>
+        </div>
+        <h3>Clara Alves Alvarenga</h3>
+        <div class="membro-cargo">CMO & Brand Strategy</div>
+        <p class="membro-bio">Responsável pelo marketing e construção da marca desde o início. Garante que a história da Coisa Pet chegue às pessoas certas, do jeito certo.</p>
+      </div>
+      <!--<div class="membro-card">
+        <div class="membro-avatar">
+          <span>VP</span>
+        </div>
+        <h3>Veterinários Parceiros</h3>
+        <div class="membro-cargo">Validação Técnica</div>
+        <p class="membro-bio">Um time de profissionais que valida cada produto, assegurando que enriqueça o ambiente e promova bem-estar real para os mini pets.</p>
+      </div>
+    </div>-->
+  </div>
+</section>
+
+<!-- CTA DE COMUNIDADE -->
+<section class="cta-quem">
+  <div class="sec-inner">
+    <h2 class="reveal">Você também faz parte <em>disso.</em></h2>
+    <p class="reveal" style="font-size:16px; color:var(--txt2); max-width:500px; margin:0 auto 32px;">Se você cria mini pets com amor e quer o melhor para eles, você já é parte da nossa comunidade.</p>
+    <div class="reveal">
+      <button class="btn-pri" onclick="window.location.href='index.html#produtos'">Conheça nossos produtos</button>
+      <button class="btn-sec" onclick="window.open('https://instagram.com/coisapet','_blank')">Siga no Instagram →</button>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-top">
+    <div class="footer-brand">
+      <img src="logo-coisapet.webp" alt="CoisaPet" onerror="this.src='https://placehold.co/44x44?text=CP'"/>
+      <div class="footer-tagline">"Todo tipo de coisa<br/>para todo tipo de pet."</div>
+      <p class="footer-about">A Coisa Pet é uma marca especializada em produtos próprios para mini pets, desenvolvidos com cuidado e conhecimento em Cafelândia, São Paulo.</p>
+    </div>
+    <div class="footer-col"><h4>Loja</h4><ul><li><a href="index.html">Início</a></li><li><a href="#">Quem Somos</a></li><li><a href="index.html#produtos">Produtos</a></li><li><a href="index.html#diferenciais">Diferenciais</a></li><li><a href="index.html#comunidade">Comunidade</a></li></ul></div>
+    <div class="footer-col"><h4>Produtos</h4><ul><li><a href="index.html#produtos">Terrários</a></li><li><a href="index.html#produtos">Tocas</a></li><li><a href="index.html#produtos">Acessórios</a></li><li><a href="index.html#produtos">Insumos Naturais</a></li></ul></div>
+    <div class="footer-col"><h4>Social</h4><ul><li><a href="https://instagram.com/coisapet" target="_blank">Instagram</a></li><li><a href="https://tiktok.com/@coisapet" target="_blank">TikTok</a></li><li><a href="https://youtube.com/@coisapet" target="_blank">YouTube</a></li><li><a href="https://wa.me/5514999081057" target="_blank">WhatsApp</a></li></ul></div>
+  </div>
+  <div class="footer-bottom"><span class="footer-copy">© 2026 CoisaPet. Todos os direitos reservados.</span><span class="footer-site">coisapet.com.br</span></div>
+      <span class="footer-site"><a href="politica-privacidade.html">Política de Privacidade</a> | coisapet.com.br</span>  </div>
+
+</footer>
+
+<script>
+  // cursor e nav
+  const cur = document.getElementById('cur');
+  const curR = document.getElementById('curR');
+  let mx=0,my=0,rx=0,ry=0;
+  document.addEventListener('mousemove', e=>{ mx=e.clientX; my=e.clientY; });
+  function animCursor(){
+    cur.style.left = mx+'px'; cur.style.top = my+'px';
+    rx += (mx-rx)*0.12; ry += (my-ry)*0.12;
+    curR.style.left = rx+'px'; curR.style.top = ry+'px';
+    requestAnimationFrame(animCursor);
+  }
+  animCursor();
+  document.querySelectorAll('a,button,.pilar-card,.membro-card,.social-btn,.btn-pri,.btn-sec').forEach(el=>{
+    el.addEventListener('mouseenter',()=>curR.classList.add('hovered'));
+    el.addEventListener('mouseleave',()=>curR.classList.remove('hovered'));
+  });
+  window.addEventListener('scroll',()=>{
+    document.getElementById('nav').classList.toggle('scrolled',window.scrollY>60);
+  });
+  function toggleMob(){
+    document.getElementById('mobMenu').classList.toggle('open');
+  }
+  const observer = new IntersectionObserver(entries=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){ e.target.classList.add('up'); observer.unobserve(e.target); }
+    });
+  },{threshold:0.15});
+  document.querySelectorAll('.reveal,.reveal-l,.reveal-r,.stagger').forEach(el=>observer.observe(el));
+</script>
+
+
+<!-- Cookie Consent Banner - LGPD/GDPR (ez-consent) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ez-consent@1/dist/themes/subtle-bottom-right.min.css" />
+<script
+  type="text/javascript"
+  src="https://cdn.jsdelivr.net/npm/ez-consent@^1/dist/ez-consent.min.js"
+  defer
+  async
+  onload="ez_consent.init({
+    privacy_url: '/politica-privacidade.html',
+    texts: {
+      main: '🍪 Este site utiliza cookies para garantir a melhor experiência, analisar tráfego e personalizar conteúdo. Você pode aceitar ou personalizar suas preferências.',
+      ok: 'Aceitar todos',
+      more: 'Personalizar / Saiba mais'
+    },
+    theme: 'subtle-bottom-right',
+    position: 'bottom-right'
+  });"
+></script>
+
+<script>
+  // Função para revogar o consentimento (pode ser chamada por um botão)
+  function revogarConsentimentoCookies() {
+    localStorage.removeItem('ez_consent');
+    localStorage.removeItem('ez_consent_preferences');
+    location.reload();
+  }
+
+  // Adiciona um link de revogação no footer
+  window.addEventListener('load', function() {
+    setTimeout(function() {
+      var footerBottom = document.querySelector('.footer-bottom');
+      if (footerBottom && !document.querySelector('.cookie-revoke-link')) {
+        var revokeLink = document.createElement('span');
+        revokeLink.className = 'cookie-revoke-link';
+        revokeLink.style.marginLeft = '16px';
+        revokeLink.innerHTML = ' | <a href="javascript:void(0)" onclick="revogarConsentimentoCookies()" style="color: var(--copper); text-decoration: underline; cursor: pointer;">Revogar consentimento de cookies</a>';
+        footerBottom.appendChild(revokeLink);
+      }
+    }, 1000);
+  });
+</script>
+
+
+
+</body>
+</html>

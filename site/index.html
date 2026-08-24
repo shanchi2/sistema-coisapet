@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="description" content="Terrários e acessórios para mini pets. Produtos próprios, fabricação artesanal e bem-estar animal em cada detalhe."/>
+<title>Coisa Pet — Todo tipo de coisa para todo tipo de pet.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+/* ── RESET & VARS ────────────────────────────────────────────── */
+:root{
+  --bg:      #3D1F0D;
+  --bg2:     #2e1609;
+  --bg3:     #4a2714;
+  --mid:     #6B3A1F;
+  --copper:  #C4956A;
+  --copper-d:#a87a52;
+  --cream:   #F5ECD7;
+  --cream2:  #ede0c4;
+  --cream3:  rgba(245,236,215,.08);
+  --txt:     #F5ECD7;
+  --txt2:    rgba(245,236,215,.7);
+  --txt3:    rgba(245,236,215,.45);
+  --serif:   'Playfair Display', Georgia, serif;
+  --sans:    'DM Sans', sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;overflow-x:hidden}
+body{
+  font-family:var(--sans);
+  background:var(--bg);
+  color:var(--txt);
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+
+/* ── SCROLLBAR ───────────────────────────────────────────────── */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--copper);border-radius:3px}
+
+/* ── CURSOR ─────────────────────────────────────────────────── */
+.cursor{
+  position:fixed;width:10px;height:10px;border-radius:50%;
+  background:var(--copper);pointer-events:none;z-index:9999;
+  transform:translate(-50%,-50%);transition:transform .15s ease,opacity .3s;
+  mix-blend-mode:difference;
+}
+.cursor-ring{
+  position:fixed;width:36px;height:36px;border-radius:50%;
+  border:1.5px solid var(--copper);pointer-events:none;z-index:9998;
+  transform:translate(-50%,-50%);opacity:.5;
+  transition:transform .35s cubic-bezier(.25,.46,.45,.94),width .2s,height .2s,opacity .3s;
+}
+.cursor-ring.hovered{width:52px;height:52px;opacity:.8}
+
+/* ── NAV ─────────────────────────────────────────────────────── */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 108px;
+  transition:background .4s,backdrop-filter .4s,padding .3s;
+}
+nav.scrolled{
+  background:rgba(46,22,9,.92);backdrop-filter:blur(24px);
+  padding:14px 48px;
+  border-bottom:1px solid rgba(196,149,106,.12);
+}
+.nav-logo{display:flex;align-items:center;gap:10px}
+.nav-logo img{height:68px;}
+.nav-logo span{font-family:var(--serif);font-size:18px;font-weight:700;letter-spacing:-.3px}
+.nav-links{display:flex;align-items:center;gap:36px;list-style:none}
+.nav-links a{font-size:13px;font-weight:500;color:var(--txt2);letter-spacing:.3px;transition:color .2s;position:relative}
+.nav-links a::after{content:'';position:absolute;bottom:-4px;left:0;width:0;height:1px;background:var(--copper);transition:width .3s}
+.nav-links a:hover{color:var(--cream)}
+.nav-links a:hover::after{width:100%}
+.nav-cta{
+  padding:10px 22px;background:var(--copper);color:var(--bg2);
+  border:none;border-radius:100px;font-family:var(--sans);font-size:13px;font-weight:600;
+  cursor:pointer;transition:all .22s;letter-spacing:.2px;
+}
+.nav-cta:hover{background:var(--cream);transform:translateY(-1px)}
+.nav-burger{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:4px}
+.nav-burger span{display:block;width:24px;height:2px;background:var(--cream);border-radius:2px;transition:all .3s}
+
+/* ── HERO COM BACKGROUND IMAGE ────────────────────────────────── */
+#hero{
+  position:relative;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+}
+/* Imagem de fundo do hero */
+.hero-bg-image{
+  position:absolute;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center;
+  pointer-events:none;
+  z-index:0;
+}
+/* Overlay escuro para manter legibilidade do texto */
+.hero-overlay{
+  position:absolute;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  background: radial-gradient(ellipse at 20% 50%, rgba(90,45,20,0.4) 0%, rgba(61,31,13,0.5) 55%),
+              radial-gradient(ellipse at 80% 20%, rgba(74,32,16,0.3) 0%, transparent 50%);
+  pointer-events:none;
+  z-index:1;
+}
+.hero-grain{
+  position:absolute;
+  inset:0;
+  opacity:.04;
+  pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:200px;
+  z-index:2;
+}
+.hero-lines{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  overflow:hidden;
+  z-index:2;
+}
+.hero-lines::before{
+  content:'';
+  position:absolute;
+  width:600px;
+  height:600px;
+  border-radius:50%;
+  border:1px solid rgba(196,149,106,.08);
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+}
+.hero-lines::after{
+  content:'';
+  position:absolute;
+  width:900px;
+  height:900px;
+  border-radius:50%;
+  border:1px solid rgba(196,149,106,.05);
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+}
+.hero-inner{
+  position:relative;
+  z-index:3;
+  display:grid;
+  grid-template-columns:1fr;max-width:800px;
+  align-items:center;
+  gap:60px;
+  max-width:1200px;
+  width:100%;
+  padding:0 48px;
+  padding-top:80px;
+}
+.hero-left{}
+.hero-tag{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:6px 16px;
+  border:1px solid rgba(196,149,106,.3);border-radius:100px;
+  font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;
+  color:var(--copper);margin-bottom:28px;
+  opacity:0;animation:fadeUp .6s .2s ease forwards;
+}
+.hero-tag::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--copper)}
+.hero-headline{
+  font-family:var(--serif);
+  font-size:clamp(42px,5.5vw,80px);
+  font-weight:900;line-height:1.05;
+  letter-spacing:-1.5px;color:var(--cream);
+  margin-bottom:24px;
+}
+.hero-headline .word{
+  display:inline-block;
+  opacity:0;transform:translateY(32px);
+  animation:wordIn .5s ease forwards;
+}
+.hero-headline em{
+  font-style:italic;color:var(--copper);
+}
+.hero-sub{
+  font-size:16px;font-weight:300;color:var(--txt2);line-height:1.75;
+  max-width:420px;margin-bottom:40px;
+  opacity:0;animation:fadeUp .6s .9s ease forwards;
+}
+.hero-ctas{
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  opacity:0;animation:fadeUp .6s 1.1s ease forwards;
+}
+.btn-pri{
+  padding:14px 32px;background:var(--copper);color:var(--bg2);
+  border:none;border-radius:100px;font-family:var(--sans);
+  font-size:14px;font-weight:600;cursor:pointer;
+  transition:all .22s;letter-spacing:.2px;
+  box-shadow:0 8px 32px rgba(196,149,106,.3);
+}
+.btn-pri:hover{background:var(--cream);transform:translateY(-2px);box-shadow:0 12px 40px rgba(196,149,106,.4)}
+.btn-sec{
+  padding:14px 32px;background:transparent;
+  color:var(--cream);border:1px solid rgba(245,236,215,.2);
+  border-radius:100px;font-family:var(--sans);font-size:14px;font-weight:500;
+  cursor:pointer;transition:all .22s;letter-spacing:.2px;
+}
+.btn-sec:hover{border-color:var(--copper);color:var(--copper)}
+.hero-right{
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;animation:fadeIn .8s 1.3s ease forwards;
+}
+.hero-orb{
+  position:relative;width:420px;height:420px;
+  display:flex;align-items:center;justify-content:center;
+}
+.hero-orb-ring{
+  position:absolute;border-radius:50%;
+  border:1px solid rgba(196,149,106,.15);
+  animation:rotate 20s linear infinite;
+}
+.hero-orb-ring:nth-child(1){width:100%;height:100%}
+.hero-orb-ring:nth-child(2){width:80%;height:80%;animation-direction:reverse;animation-duration:15s}
+.hero-orb-ring:nth-child(3){width:60%;height:60%;animation-duration:25s}
+@keyframes rotate{to{transform:rotate(360deg)}}
+.hero-orb-center{
+  width:240px;height:240px;border-radius:50%;
+  background:radial-gradient(circle, #5a2d14 0%, var(--bg2) 70%);
+  border:2px solid rgba(196,149,106,.2);
+  display:flex;align-items:center;justify-content:center;
+  position:relative;z-index:2;overflow:hidden;
+  box-shadow:0 0 80px rgba(196,149,106,.15),inset 0 0 40px rgba(0,0,0,.3);
+}
+.hero-orb-center img{
+  width:72%;height:72%;object-fit:contain;
+  filter:brightness(0) invert(1);opacity:.9;
+}
+.hero-scroll{
+  position:absolute;bottom:36px;left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--txt3);
+  opacity:0;animation:fadeIn .6s 1.8s ease forwards;
+  cursor:pointer;
+  z-index:3;
+}
+.hero-scroll-line{
+  width:1px;height:40px;background:linear-gradient(var(--copper),transparent);
+  animation:scrollPulse 2s ease infinite;
+}
+@keyframes scrollPulse{0%,100%{opacity:.3;transform:scaleY(.6)}50%{opacity:1;transform:scaleY(1)}}
+
+/* ── KEYFRAMES ───────────────────────────────────────────────── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes wordIn{to{opacity:1;transform:translateY(0)}}
+
+/* ── REVEAL ──────────────────────────────────────────────────── */
+.reveal{opacity:0;transform:translateY(36px);transition:opacity .7s ease,transform .7s ease}
+.reveal.up{opacity:1;transform:none}
+.reveal-l{opacity:0;transform:translateX(-36px);transition:opacity .7s ease,transform .7s ease}
+.reveal-l.up{opacity:1;transform:none}
+.reveal-r{opacity:0;transform:translateX(36px);transition:opacity .7s ease,transform .7s ease}
+.reveal-r.up{opacity:1;transform:none}
+.stagger>*{opacity:0;transform:translateY(24px);transition:opacity .5s ease,transform .5s ease}
+.stagger.up>*:nth-child(1){opacity:1;transform:none;transition-delay:.05s}
+.stagger.up>*:nth-child(2){opacity:1;transform:none;transition-delay:.15s}
+.stagger.up>*:nth-child(3){opacity:1;transform:none;transition-delay:.25s}
+.stagger.up>*:nth-child(4){opacity:1;transform:none;transition-delay:.35s}
+.stagger.up>*:nth-child(5){opacity:1;transform:none;transition-delay:.45s}
+.stagger.up>*:nth-child(6){opacity:1;transform:none;transition-delay:.55s}
+
+/* ── SECTION COMMON ──────────────────────────────────────────── */
+section{padding:100px 48px}
+.sec-inner{max-width:1200px;margin:0 auto}
+.sec-tag{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:11px;font-weight:600;letter-spacing:2px;
+  text-transform:uppercase;color:var(--copper);margin-bottom:20px;
+}
+.sec-tag::before{content:'';width:24px;height:1px;background:var(--copper)}
+.sec-headline{
+  font-family:var(--serif);
+  font-size:clamp(32px,4vw,54px);
+  font-weight:900;line-height:1.1;
+  letter-spacing:-1px;color:var(--cream);
+  margin-bottom:16px;
+}
+.sec-headline em{font-style:italic;color:var(--copper)}
+.sec-sub{font-size:16px;font-weight:300;color:var(--txt2);line-height:1.7;max-width:540px}
+
+/* ── S2 CREDIBILIDADE ────────────────────────────────────────── */
+#credibilidade{
+  padding:0;
+  background:var(--mid);
+  border-top:1px solid rgba(196,149,106,.15);
+  border-bottom:1px solid rgba(196,149,106,.15);
+}
+.cred-inner{
+  max-width:1200px;margin:0 auto;padding:0 48px;
+  display:grid;grid-template-columns:repeat(4,1fr);
+}
+.cred-item{
+  padding:48px 32px;
+  border-right:1px solid rgba(245,236,215,.1);
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+}
+.cred-item:last-child{border:none}
+.cred-num{
+  font-family:var(--serif);font-size:clamp(36px,4vw,56px);font-weight:900;
+  color:var(--cream);letter-spacing:-2px;line-height:1;
+}
+.cred-label{font-size:12px;font-weight:500;color:rgba(245,236,215,.6);text-align:center;letter-spacing:.5px}
+
+/* ── S3 HISTÓRIA ─────────────────────────────────────────────── */
+#historia{background:var(--bg)}
+.hist-grid{
+  display:grid;grid-template-columns:1fr;max-width:800px;gap:80px;align-items:start;
+  margin-top:56px;
+}
+.hist-text p{
+  font-size:16px;font-weight:300;color:var(--txt2);line-height:1.85;margin-bottom:20px;
+}
+.hist-text p strong{color:var(--cream);font-weight:500}
+.pilares{display:flex;flex-direction:column;gap:20px}
+.pilar{
+  padding:20px 24px;
+  background:rgba(196,149,106,.06);
+  border:1px solid rgba(196,149,106,.15);
+  border-radius:16px;
+  display:flex;gap:16px;align-items:flex-start;
+  transition:border-color .25s,background .25s;
+}
+.pilar:hover{border-color:rgba(196,149,106,.4);background:rgba(196,149,106,.1)}
+.pilar-num{
+  width:36px;height:36px;border-radius:50%;
+  background:var(--copper);color:var(--bg2);
+  display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:13px;flex-shrink:0;
+}
+.pilar-title{font-size:14px;font-weight:600;color:var(--cream);margin-bottom:4px}
+.pilar-txt{font-size:13px;font-weight:300;color:var(--txt2);line-height:1.6}
+
+/* ── S4 PRODUTOS (SHUFFLE) ───────────────────────────────────── */
+#produtos{background:var(--bg2);padding-bottom:120px}
+.prod-header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:52px;flex-wrap:wrap;gap:20px}
+.prod-link-all{
+  font-size:13px;font-weight:500;color:var(--copper);
+  display:flex;align-items:center;gap:6px;
+  border-bottom:1px solid rgba(196,149,106,.3);padding-bottom:2px;
+  transition:all .2s;
+}
+.prod-link-all:hover{color:var(--cream);border-color:var(--cream)}
+.prod-link-all svg{transition:transform .2s}
+.prod-link-all:hover svg{transform:translateX(4px)}
+
+/* Shuffle grid: 9 items, alternating sizes */
+.shuffle-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.prod-card{background:var(--txt);border:1px solid rgba(196,149,106,.12);border-radius:20px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer;transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease}
+.prod-card:hover{transform:translateY(-4px);box-shadow:0 20px 48px rgba(0,0,0,.4);border-color:rgba(196,149,106,.35)}
+.prod-card-img{width:100%;aspect-ratio:1/1;overflow:hidden;flex-shrink:0;background:var(--txt);position:relative}
+.prod-card-img img{width:100%;height:100%;object-fit:contain;padding:12px;transition:transform .35s ease}
+.prod-card:hover .prod-card-img img{transform:scale(1.06)}
+.prod-card-overlay{display:none}
+.prod-card-body{padding:14px 16px 6px;flex:1}
+.prod-card-cat{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--copper);margin-bottom:5px}
+.prod-card-name{font-size:16px;font-weight:600;color:var(--bg);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.prod-card-badge{display:none}
+.prod-card-placeholder{width:100%;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--bg2),var(--bg3))}
+.prod-card-placeholder svg{opacity:.15;width:56px;height:56px}
+/* Loading skeleton */
+.prod-skeleton{
+  background:linear-gradient(90deg,var(--bg3) 25%,rgba(196,149,106,.06) 50%,var(--bg3) 75%);
+  background-size:400px 100%;
+  animation:shimmer 1.5s infinite;
+  min-height:320px;
+  border-radius:20px;
+}
+@keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
+
+/* ── S5 DIFERENCIAIS ─────────────────────────────────────────── */
+#diferenciais{background:var(--cream);padding:100px 48px}
+#diferenciais .sec-tag{color:var(--mid)}
+#diferenciais .sec-tag::before{background:var(--mid)}
+#diferenciais .sec-headline{color:var(--bg2)}
+#diferenciais .sec-headline em{color:var(--mid)}
+#diferenciais .sec-sub{color:rgba(46,22,9,.65)}
+.dif-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:2px;
+  margin-top:56px;
+  border:1px solid rgba(107,58,31,.12);border-radius:24px;overflow:hidden;
+}
+.dif-item{
+  padding:36px 28px;
+  background:var(--cream2);
+  border-right:1px solid rgba(107,58,31,.1);
+  border-bottom:1px solid rgba(107,58,31,.1);
+  transition:background .25s;
+}
+.dif-item:hover{background:#fff}
+.dif-icon{
+  width:44px;height:44px;border-radius:12px;
+  background:rgba(107,58,31,.08);display:flex;align-items:center;justify-content:center;
+  margin-bottom:16px;color:var(--mid);
+}
+.dif-title{font-size:15px;font-weight:600;color:var(--bg2);margin-bottom:8px}
+.dif-txt{font-size:13px;font-weight:300;color:rgba(46,22,9,.6);line-height:1.65}
+
+/* ── S6 PROVA SOCIAL ─────────────────────────────────────────── */
+#prova{background:var(--bg);overflow:hidden}
+.reviews-track-wrap{margin-top:52px;overflow:hidden;position:relative}
+.reviews-track-wrap::before{content:'';position:absolute;left:0;top:0;bottom:0;width:120px;background:linear-gradient(to right,var(--bg),transparent);z-index:2}
+.reviews-track-wrap::after{content:'';position:absolute;right:0;top:0;bottom:0;width:120px;background:linear-gradient(to left,var(--bg),transparent);z-index:2}
+.reviews-track{
+  display:flex;gap:20px;
+  animation:scroll-reviews 30s linear infinite;
+  width:max-content;
+}
+.reviews-track:hover{animation-play-state:paused}
+@keyframes scroll-reviews{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.review-card{
+  flex-shrink:0;width:320px;
+  padding:28px;
+  background:var(--bg3);border:1px solid rgba(196,149,106,.12);
+  border-radius:20px;
+}
+.stars{color:var(--copper);font-size:13px;letter-spacing:2px;margin-bottom:12px}
+.review-text{font-size:14px;font-weight:300;color:var(--txt2);line-height:1.7;margin-bottom:16px}
+.review-author{font-size:12px;font-weight:600;color:var(--copper)}
+
+/* ── S7 COMUNIDADE ───────────────────────────────────────────── */
+#comunidade{
+  background:radial-gradient(ellipse at 50% 0%, var(--mid) 0%, var(--bg) 70%);
+  text-align:center;padding:120px 48px;
+}
+#comunidade .sec-tag{justify-content:center}
+#comunidade .sec-headline{margin:0 auto 16px}
+#comunidade .sec-sub{margin:0 auto 48px;max-width:480px}
+.social-grid{
+  display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;
+  margin-bottom:48px;
+}
+.social-btn{
+  display:flex;align-items:center;gap:10px;
+  padding:14px 24px;
+  background:rgba(245,236,215,.06);border:1px solid rgba(245,236,215,.12);
+  border-radius:100px;font-size:14px;font-weight:500;color:var(--txt2);
+  cursor:pointer;transition:all .22s;
+}
+.social-btn:hover{background:rgba(196,149,106,.15);border-color:rgba(196,149,106,.4);color:var(--cream)}
+.contato-btn{
+  padding:16px 40px;background:var(--copper);color:var(--bg2);
+  border:none;border-radius:100px;font-family:var(--sans);
+  font-size:15px;font-weight:600;cursor:pointer;
+  transition:all .22s;
+  box-shadow:0 8px 32px rgba(196,149,106,.3);
+}
+.contato-btn:hover{background:var(--cream);transform:translateY(-2px)}
+
+/* ── FOOTER ──────────────────────────────────────────────────── */
+footer{
+  background:var(--bg2);
+  border-top:1px solid rgba(196,149,106,.1);
+  padding:72px 48px 40px;
+}
+.footer-top{
+  max-width:1200px;margin:0 auto;
+  display:grid;grid-template-columns:1.8fr 1fr 1fr 1fr;gap:48px;
+  padding-bottom:48px;
+  border-bottom:1px solid rgba(196,149,106,.1);
+}
+.footer-brand img{height:44px;}
+.footer-tagline{
+  font-family:var(--serif);font-style:italic;
+  font-size:17px;color:var(--copper);line-height:1.4;margin-bottom:12px;
+}
+.footer-about{font-size:13px;font-weight:300;color:var(--txt3);line-height:1.7}
+.footer-col h4{font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--copper);margin-bottom:16px}
+.footer-col ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+.footer-col ul a{font-size:13px;font-weight:300;color:var(--txt2);transition:color .2s}
+.footer-col ul a:hover{color:var(--cream)}
+.footer-bottom{
+  max-width:1200px;margin:24px auto 0;
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+}
+.footer-copy{font-size:12px;color:var(--txt3)}
+.footer-site{font-size:12px;color:var(--copper)}
+
+/* ── MOBILE ──────────────────────────────────────────────────── */
+.mob-menu{
+  position:fixed;inset:0;z-index:99;
+  background:rgba(30,10,3,.98);backdrop-filter:blur(24px);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;
+  opacity:0;pointer-events:none;transition:opacity .3s;
+}
+.mob-menu.open{opacity:1;pointer-events:all}
+.mob-menu a{font-family:var(--serif);font-size:28px;font-weight:700;color:var(--cream);transition:color .2s}
+.mob-menu a:hover{color:var(--copper)}
+.mob-close{position:absolute;top:24px;right:24px;font-size:28px;color:var(--txt2);cursor:pointer}
+
+@media(max-width:900px){
+  nav{padding:16px 24px}
+  nav.scrolled{padding:12px 24px}
+  .nav-links,.nav-cta{display:none}
+  .nav-burger{display:flex}
+  .hero-inner{grid-template-columns:1fr;gap:32px;padding:0 24px;text-align:center}
+  .hero-left{order:2}
+  .hero-right{order:1}
+  .hero-sub{margin:0 auto 32px}
+  .hero-ctas{justify-content:center}
+  .hero-orb{width:220px;height:220px}
+  .hero-orb-center{width:140px;height:140px}
+  .cred-inner{grid-template-columns:repeat(2,1fr);padding:0 24px}
+  .cred-item{border-bottom:1px solid rgba(245,236,215,.1)}
+  .hist-grid{grid-template-columns:1fr;gap:40px}
+  section{padding:72px 24px}
+  .shuffle-grid{grid-template-columns:repeat(2,1fr);gap:12px}
+
+  .dif-grid{grid-template-columns:repeat(2,1fr)}
+  .footer-top{grid-template-columns:1fr;max-width:800px;gap:32px}
+  footer{padding:56px 24px 32px}
+  .prod-header{flex-direction:column;align-items:flex-start}
+}
+@media(max-width:540px){
+  .shuffle-grid{grid-template-columns:1fr;gap:10px}
+
+  .dif-grid{grid-template-columns:1fr}
+  .footer-top{grid-template-columns:1fr}
+  .social-grid{gap:10px}
+}
+
+/* ── Botões Marketplace ─────────────────────────────────────── */
+.prod-mkt{padding:10px 14px 14px;display:flex;flex-direction:column;gap:7px}
+.mkt-btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:11px 0;border-radius:10px;font-size:11px;font-weight:700;letter-spacing:.2px;border:none;cursor:pointer;transition:all .2s;text-decoration:none;width:100%}
+.mkt-btn:hover{transform:scale(1.04)}
+.mkt-shopee{background:rgba(238,77,45,.88);color:#fff}
+.mkt-shopee:hover{background:#ee4d2d}
+.mkt-ml{background:rgba(255,230,0,.92);color:#222}
+.mkt-ml:hover{background:#ffe600}
+
+  /* Personalização do banner de cookies para combinar com Coisa Pet */
+  .ez-consent-cookie-box {
+    background: #2e1609 !important;
+    border: 1px solid rgba(196,149,106,0.2) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3) !important;
+  }
+  .ez-consent-cookie-box p, 
+  .ez-consent-cookie-box div {
+    color: #F5ECD7 !important;
+    font-family: 'DM Sans', sans-serif !important;
+  }
+  .ez-consent-btn-ok {
+    background: #C4956A !important;
+    color: #2e1609 !important;
+    border-radius: 100px !important;
+    font-weight: 600 !important;
+  }
+  .ez-consent-btn-ok:hover {
+    background: #F5ECD7 !important;
+    transform: translateY(-1px);
+  }
+  .ez-consent-btn-more {
+    color: #C4956A !important;
+    text-decoration: underline !important;
+  }
+  .ez-consent-btn-more:hover {
+    color: #F5ECD7 !important;
+  }
+
+
+</style>
+</head>
+<body>
+
+<div class="cursor" id="cur"></div>
+<div class="cursor-ring" id="curR"></div>
+
+<!-- NAV -->
+<nav id="nav">
+  <div class="nav-logo">
+    <img src="logo-coisapet.webp" alt="Coisa Pet"/>
+  </div>
+  <ul class="nav-links">
+    <li><a href="quemsomos.html">Quem Somos</a></li>
+    <li><a href="#produtos">Produtos</a></li>
+    <li><a href="#diferenciais">Diferenciais</a></li>
+    <li><a href="#comunidade">Comunidade</a></li>
+  </ul>
+  <button class="nav-cta" onclick="document.getElementById('produtos').scrollIntoView({behavior:'smooth'})">Ver Produtos</button>
+  <div class="nav-burger" id="burger" onclick="toggleMob()">
+    <span></span><span></span><span></span>
+  </div>
+</nav>
+
+<!-- MOB MENU -->
+<div class="mob-menu" id="mobMenu">
+  <div class="mob-close" onclick="toggleMob()">✕</div>
+  <a href="quemsomos.html" onclick="toggleMob()">Quem Somos</a>
+  <a href="#produtos" onclick="toggleMob()">Produtos</a>
+  <a href="#diferenciais" onclick="toggleMob()">Diferenciais</a>
+  <a href="#comunidade" onclick="toggleMob()">Comunidade</a>
+  <button class="btn-pri" onclick="toggleMob();document.getElementById('produtos').scrollIntoView({behavior:'smooth'})">Ver Produtos</button>
+</div>
+
+<!-- S1 HERO COM IMAGEM DE FUNDO -->
+<section id="hero">
+  <!-- Imagem de fundo -->
+  <img class="hero-bg-image" src="bg-coisapet.png" alt="Coisa Pet background">
+  <!-- Overlay escuro para legibilidade -->
+  <div class="hero-overlay"></div>
+  
+  <div class="hero-grain"></div>
+  <div class="hero-lines"></div>
+  <div class="hero-inner">
+    <div class="hero-left">
+      <div class="hero-tag">Terrários e Acessórios para Mini Pets</div>
+      <h1 class="hero-headline">
+        <span class="word" style="animation-delay:.3s">Produtos</span>
+        <span class="word" style="animation-delay:.42s"> </span>
+        <span class="word" style="animation-delay:.42s">pensados</span><br/>
+        <span class="word" style="animation-delay:.54s"> para</span>
+        <span class="word" style="animation-delay:.66s"> quem</span>
+        <span class="word" style="animation-delay:.78s"> cuida</span><br/>
+        <span class="word" style="animation-delay:.9s"> de</span>
+        <span class="word" style="animation-delay:.9s"> <em>verdade.</em></span>
+      </h1>
+      <p class="hero-sub">A Coisa Pet é especialista em produtos para pequenos animais. Do terrário ao acessório, tudo desenvolvido com atenção ao bem-estar do seu mini pet.</p>
+      <div class="hero-ctas">
+        <button class="btn-pri" onclick="document.getElementById('produtos').scrollIntoView({behavior:'smooth'})">Ver Produtos</button>
+        <button class="btn-sec" onclick="document.getElementById('historia').scrollIntoView({behavior:'smooth'})">Nossa História</button>
+      </div>
+    </div>
+    </div>
+  </div>
+  <div class="hero-scroll" onclick="document.getElementById('credibilidade').scrollIntoView({behavior:'smooth'})">
+    <div class="hero-scroll-line"></div>
+    scroll
+  </div>
+</section>
+
+<!-- S2 CREDIBILIDADE -->
+<div id="credibilidade">
+  <div class="cred-inner stagger">
+    <div class="cred-item">
+      <div class="cred-num" data-count="137" data-suffix="">0</div>
+      <div class="cred-label">produtos próprios</div>
+    </div>
+    <div class="cred-item">
+      <div class="cred-num" data-count="9500" data-suffix="+">0</div>
+      <div class="cred-label">avaliações</div>
+    </div>
+    <div class="cred-item">
+      <div class="cred-num" data-count="4.9" data-suffix="" data-decimal="true">0</div>
+      <div class="cred-label">de nota média</div>
+    </div>
+    <div class="cred-item">
+      <div class="cred-num" data-count="4" data-suffix="">0</div>
+      <div class="cred-label">anos cuidando de mini pets</div>
+    </div>
+  </div>
+</div>
+
+<!-- S3 HISTÓRIA -->
+<section id="historia">
+  <div class="sec-inner">
+    <div class="reveal">
+      <div class="sec-tag">Nossa História</div>
+      <h2 class="sec-headline">A marca que nasceu para quem<br/>leva o cuidado <em>a sério.</em></h2>
+    </div>
+    <div class="hist-grid">
+      <div class="hist-text reveal-l">
+        <p>A <strong>Coisa Pet</strong> nasceu em 2022 em Cafelândia, São Paulo, com um propósito claro: criar produtos que não existiam no mercado convencional para pequenos animais.</p>
+        <p>Terrários, tocas, acessórios e insumos pensados do zero, com <strong>controle total de produção do início ao fim</strong>.</p>
+        <p>Quatro anos depois, somos referência em produtos para mini pets no Brasil, com mais de 9.500 avaliações e nota 4,9 em uma das maiores plataformas de e-commerce do país.</p>
+      </div>
+      <div class="pilares stagger reveal-r">
+        <div class="pilar">
+          <div class="pilar-num">1</div>
+          <div><div class="pilar-title">Produto Próprio</div><div class="pilar-txt">Desenvolvemos e controlamos tudo que vendemos.</div></div>
+        </div>
+        <div class="pilar">
+          <div class="pilar-num">2</div>
+          <div><div class="pilar-title">Fabricação Artesanal</div><div class="pilar-txt">Cada peça é produzida com cuidado e precisão no material.</div></div>
+        </div>
+        <div class="pilar">
+          <div class="pilar-num">3</div>
+          <div><div class="pilar-title">Bem-estar Animal</div><div class="pilar-txt">Tudo que criamos parte do comportamento natural do seu mini pet.</div></div>
+        </div>
+        <div class="pilar">
+          <div class="pilar-num">4</div>
+          <div><div class="pilar-title">Atendimento Humanizado</div><div class="pilar-txt">Você fala com quem também ama mini pets.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- S4 PRODUTOS -->
+<section id="produtos">
+  <div class="sec-inner">
+    <div class="prod-header reveal">
+      <div>
+        <div class="sec-tag">Catálogo</div>
+        <h2 class="sec-headline" style="margin-bottom:0">Conheça os produtos<br/>da <em>Coisa Pet.</em></h2>
+      </div>
+      <a href="#produtos" class="prod-link-all">
+        Ver todos os produtos
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </a>
+    </div>
+    <div class="shuffle-grid" id="prodGrid">
+      <!-- Filled by JS -->
+      <div class="prod-card prod-skeleton"></div>
+      <div class="prod-card prod-skeleton"></div>
+      <div class="prod-card prod-skeleton"></div>
+      <div class="prod-card prod-skeleton"></div>
+      <div class="prod-card prod-skeleton"></div>
+      <div class="prod-card prod-skeleton"></div>
+      <div class="prod-card prod-skeleton"></div>
+      <div class="prod-card prod-skeleton"></div>
+      <div class="prod-card prod-skeleton"></div>
+    </div>
+  </div>
+</section>
+
+<!-- S5 DIFERENCIAIS -->
+<section id="diferenciais">
+  <div class="sec-inner">
+    <div class="reveal" style="text-align:center;max-width:600px;margin:0 auto">
+      <div class="sec-tag">Por que a Coisa Pet?</div>
+      <h2 class="sec-headline">O que faz a Coisa Pet ser<br/>a escolha <em>certa.</em></h2>
+      <p class="sec-sub" style="margin:0 auto">Cuidado, conhecimento e produção própria em cada produto que chega até você.</p>
+    </div>
+    <div class="dif-grid stagger">
+      <div class="dif-item">
+        <div class="dif-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </div>
+        <div class="dif-title">Pré-Corte Customizável</div>
+        <div class="dif-txt">Peças cortadas com precisão para montagem fácil e encaixe perfeito.</div>
+      </div>
+      <div class="dif-item">
+        <div class="dif-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        </div>
+        <div class="dif-title">Baseado em Comportamento Animal</div>
+        <div class="dif-txt">Cada produto nasce do estudo dos instintos e necessidades naturais do seu pet.</div>
+      </div>
+      <div class="dif-item">
+        <div class="dif-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+        </div>
+        <div class="dif-title">Personalização</div>
+        <div class="dif-txt">Produtos adaptados para atender as necessidades específicas de cada animal.</div>
+      </div>
+      <div class="dif-item">
+        <div class="dif-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </div>
+        <div class="dif-title">Portfólio Completo</div>
+        <div class="dif-txt">Do terrário ao insumo natural, tudo que o seu mini pet precisa em um só lugar.</div>
+      </div>
+      <div class="dif-item">
+        <div class="dif-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <div class="dif-title">Nicho Especializado</div>
+        <div class="dif-txt">Conhecimento profundo de um universo que pet shops generalistas ignoram.</div>
+      </div>
+      <div class="dif-item">
+        <div class="dif-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12H3l9-9 9 9h-2"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
+        </div>
+        <div class="dif-title">Entrega para Todo o Brasil</div>
+        <div class="dif-txt">Do Norte ao Sul, levamos os produtos da Coisa Pet até o seu mini pet com agilidade.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- S6 PROVA SOCIAL -->
+<section id="prova">
+  <div class="sec-inner">
+    <div class="reveal" style="text-align:center">
+      <div class="sec-tag">O que dizem os tutores</div>
+      <h2 class="sec-headline">Quem compra, <em>volta.</em> E indica.</h2>
+    </div>
+  </div>
+  <div class="reviews-track-wrap" style="margin-top:52px">
+    <div class="reviews-track" id="reviewsTrack">
+      <!-- duplicated for infinite scroll -->
+    </div>
+  </div>
+</section>
+
+<!-- S7 COMUNIDADE -->
+<section id="comunidade">
+  <div class="sec-inner">
+    <div class="sec-tag">Comunidade</div>
+    <h2 class="sec-headline reveal">Siga a Coisa Pet<br/>e <em>faça parte.</em></h2>
+    <p class="sec-sub reveal">Dicas de cuidados, bastidores, novidades e muito mais. Acompanhe a Coisa Pet nas redes e entre para a comunidade de tutores que levam o bem-estar do mini pet a sério.</p>
+    <div class="social-grid reveal">
+      <a class="social-btn" href="https://instagram.com/coisapet" target="_blank">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
+        Instagram
+      </a>
+      <a class="social-btn" href="https://tiktok.com/@coisapet" target="_blank">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.32 6.32 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34v-7.1a8.16 8.16 0 0 0 4.77 1.52V6.29a4.85 4.85 0 0 1-1-.6z"/></svg>
+        TikTok
+      </a>
+      <a class="social-btn" href="https://youtube.com/@coisapet" target="_blank">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.95 1.96C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" fill="currentColor" stroke="none"/></svg>
+        YouTube
+      </a>
+      <a class="social-btn" href="https://wa.me/5514999081057" target="_blank">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        WhatsApp
+      </a>
+    </div>
+    <button class="contato-btn reveal" onclick="window.open('https://wa.me/5514999081057','_blank')">Entre em Contato</button>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-top">
+    <div class="footer-brand">
+      <img src="logo-coisapet.png" alt="Coisa Pet"/>
+      <div class="footer-tagline">"Todo tipo de coisa<br/>para todo tipo de pet."</div>
+      <p class="footer-about">A Coisa Pet é uma marca especializada em produtos próprios para mini pets, desenvolvidos com cuidado e conhecimento em Cafelândia, São Paulo.</p>
+    </div>
+    <div class="footer-col">
+      <h4>Loja</h4>
+      <ul>
+        <li><a href="#">Início</a></li>
+        <li><a href="quemsomos.html">Quem Somos</a></li>
+        <li><a href="#produtos">Produtos</a></li>
+        <li><a href="#diferenciais">Diferenciais</a></li>
+        <li><a href="#comunidade">Comunidade</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Produtos</h4>
+      <ul>
+        <li><a href="#produtos">Terrários</a></li>
+        <li><a href="#produtos">Tocas</a></li>
+        <li><a href="#produtos">Acessórios</a></li>
+        <li><a href="#produtos">Insumos Naturais</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Social</h4>
+      <ul>
+        <li><a href="https://instagram.com/coisapet" target="_blank">Instagram</a></li>
+        <li><a href="https://tiktok.com/@coisapet" target="_blank">TikTok</a></li>
+        <li><a href="https://youtube.com/@coisapet" target="_blank">YouTube</a></li>
+        <li><a href="https://wa.me/5514999081057" target="_blank">WhatsApp</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span class="footer-site"><a href="politica-privacidade.html">Política de Privacidade</a> | coisapet.com.br</span>  </div>
+    <span class="footer-copy">© 2026 Coisa Pet. Todos os direitos reservados.</span>
+    <span class="footer-site">coisapet.com.br</span>
+  </div>
+</footer>
+
+<script>
+// ── Config Supabase ──────────────────────────────────────────────
+const SUPA_URL = 'https://lcybmdiqxmbqeuyeuhdj.supabase.co'
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxjeWJtZGlxeG1icWV1eWV1aGRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MjYyMjMsImV4cCI6MjA4OTAwMjIyM30.gAFVxdM6TMuse27UiASfFiw0NwfdcGhvck7AUv9EXPM'
+const db = supabase.createClient(SUPA_URL, SUPA_KEY)
+
+// ── CURSOR ───────────────────────────────────────────────────────
+const cur  = document.getElementById('cur')
+const curR = document.getElementById('curR')
+let mx=0,my=0,rx=0,ry=0
+document.addEventListener('mousemove', e => { mx=e.clientX; my=e.clientY })
+function animCursor(){
+  cur.style.left  = mx+'px'; cur.style.top  = my+'px'
+  rx += (mx-rx)*.12;  ry += (my-ry)*.12
+  curR.style.left = rx+'px'; curR.style.top = ry+'px'
+  requestAnimationFrame(animCursor)
+}
+animCursor()
+document.querySelectorAll('a,button,.pilar,.dif-item,.prod-card,.social-btn').forEach(el=>{
+  el.addEventListener('mouseenter',()=>curR.classList.add('hovered'))
+  el.addEventListener('mouseleave',()=>curR.classList.remove('hovered'))
+})
+
+// ── NAV SCROLL ───────────────────────────────────────────────────
+window.addEventListener('scroll',()=>{
+  document.getElementById('nav').classList.toggle('scrolled',window.scrollY>60)
+})
+
+// ── MOB MENU ─────────────────────────────────────────────────────
+function toggleMob(){
+  document.getElementById('mobMenu').classList.toggle('open')
+}
+
+// ── INTERSECTION OBSERVER ────────────────────────────────────────
+const obs = new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      e.target.classList.add('up')
+      // count-up for cred numbers
+      if(e.target.classList.contains('stagger') && e.target.closest('#credibilidade')){
+        animCounts()
+      }
+      obs.unobserve(e.target)
+    }
+  })
+},{threshold:.15})
+
+document.querySelectorAll('.reveal,.reveal-l,.reveal-r,.stagger').forEach(el=>obs.observe(el))
+
+// ── COUNT-UP ─────────────────────────────────────────────────────
+let counted = false
+function animCounts(){
+  if(counted) return; counted=true
+  document.querySelectorAll('[data-count]').forEach(el=>{
+    const target  = parseFloat(el.dataset.count)
+    const suffix  = el.dataset.suffix||''
+    const decimal = el.dataset.decimal==='true'
+    const dur     = 1800
+    const start   = Date.now()
+    function step(){
+      const p = Math.min(1,(Date.now()-start)/dur)
+      const ease = 1-Math.pow(1-p,3)
+      const val = target*ease
+      el.textContent = (decimal ? val.toFixed(1) : Math.floor(val).toLocaleString('pt-BR'))+suffix
+      if(p<1) requestAnimationFrame(step)
+      else el.textContent=(decimal?target:target.toLocaleString('pt-BR'))+suffix
+    }
+    step()
+  })
+}
+
+// ── REVIEWS ──────────────────────────────────────────────────────
+const REVIEWS = [
+  {txt:'Meu hamster amou o terrário! Qualidade incrível, montagem super fácil e o atendimento foi maravilhoso. Com certeza voltarei a comprar!', author:'Ana Paula R.'},
+  {txt:'Produto de altíssima qualidade. Chegou bem embalado e meu porquinho ficou muito confortável. Recomendo demais!', author:'Carlos M.'},
+  {txt:'Já comprei várias tocas e acessórios. A Coisa Pet entende muito do que os mini pets precisam. Produto sensacional!', author:'Fernanda L.'},
+  {txt:'A rodinha silenciosa é incrível! Finalmente uma que não faz barulho à noite. Qualidade artesanal top!', author:'Rodrigo S.'},
+  {txt:'Comprei o terrário completo e fiquei surpresa com a qualidade. Encaixe perfeito, material resistente. Adorei!', author:'Juliana K.'},
+  {txt:'Minha chinchila ficou muito feliz com a toca nova. Produto super bem feito, vale cada centavo!', author:'Marcos T.'},
+]
+function renderReviews(){
+  const track = document.getElementById('reviewsTrack')
+  const all = [...REVIEWS,...REVIEWS] // duplicate for loop
+  track.innerHTML = all.map(r=>`
+    <div class="review-card">
+      <div class="stars">★★★★★</div>
+      <p class="review-text">"${r.txt}"</p>
+      <div class="review-author">${r.author}</div>
+    </div>
+  `).join('')
+}
+renderReviews()
+
+// ── PRODUTOS (SUPABASE) ──────────────────────────────────────────
+// Embaralha array — produtos mudam a cada F5
+function shuffle(arr){ return [...arr].sort(()=>Math.random()-.5) }
+
+async function loadProducts(){
+  const grid = document.getElementById('prodGrid')
+  try{
+    // Tenta buscar da tabela de produtos do sistema
+    // Busca produtos ativos, filtra por link no JS
+    const {data,error} = await db
+      .from('products')
+      .select('id,name,photo_url,url_shopee,url_ml,category:product_categories(name)')
+      .eq('active',true)
+      .limit(200)
+
+    if(error) throw new Error(error.message)
+
+    // Pool base: tem foto + link
+    const withBoth  = (data||[]).filter(p=>p.photo_url && (p.url_shopee||p.url_ml))
+    const pool = withBoth.length>=9 ? withBoth : (data||[]).filter(p=>p.url_shopee||p.url_ml)
+
+    // Função: escolhe 1 produto do pool que match um termo, sem repetir id nem prefixo de nome
+    function pickOne(pool, term, usedIds, usedPrefixes){
+      return shuffle(pool).find(p=>{
+        if(usedIds.has(p.id)) return false
+        const nameKey = p.name.trim().split(' ').slice(0,4).join(' ').toLowerCase()
+        if(usedPrefixes.has(nameKey)) return false
+        const haystack = (p.name+' '+(p.category?.name||'')+(p.description||'')).toLowerCase()
+        return haystack.includes(term.toLowerCase())
+      })
+    }
+
+    const usedIds      = new Set()
+    const usedPrefixes = new Set()
+
+    // Garante unicidade em TODO o grid
+    function pickRest(pool, count){
+      const result = []
+      for(const p of shuffle(pool)){
+        if(result.length>=count) break
+        if(usedIds.has(p.id)) continue
+        const nameKey = p.name.trim().split(' ').slice(0,4).join(' ').toLowerCase()
+        if(usedPrefixes.has(nameKey)) continue
+        result.push(p)
+        usedIds.add(p.id)
+        usedPrefixes.add(nameKey)
+      }
+      return result
+    }
+
+    // Pinados: 1 Alojamento + 1 Rodinha Silenciosa
+    const pinned = []
+    ;[['Alojamento',''], ['','Silenciosa']].forEach(([cat, nameTerm])=>{
+      const match = pickOne(pool, cat||nameTerm, usedIds, usedPrefixes)
+      if(match){
+        pinned.push(match)
+        usedIds.add(match.id)
+        usedPrefixes.add(match.name.trim().split(' ').slice(0,4).join(' ').toLowerCase())
+      }
+    })
+
+    // Resto: únicos, sem repetição de nome
+    const rest = pickRest(pool, 9 - pinned.length)
+
+    // Posiciona pinados entre os 6 primeiros
+    const combined = [...rest.slice(0,4), ...pinned, ...rest.slice(4)]
+    const nine = combined.slice(0,9)
+    if(!nine.length) throw new Error('no products')
+    if(!nine.length) throw new Error('no products')
+    renderProductCards(nine, grid)
+  } catch(e){
+    console.warn('[CoisaPet] Produtos não carregados:', e.message)
+    grid.innerHTML = '<p style="color:rgba(245,236,215,.4);grid-column:span 3;text-align:center;padding:48px 0;font-size:14px">Carregando produtos...</p>'
+  }
+}
+
+function renderProductCards(items, grid){
+  // Generate signed URLs for Supabase storage photos
+  Promise.all(items.slice(0,9).map(async (p,i)=>{
+    let imgUrl = null
+    if(p.photo_url){
+      const{data:s}=await db.storage.from('product-photos').createSignedUrl(p.photo_url,3600)
+      if(s) imgUrl=s.signedUrl
+    }
+    return{...p,_imgUrl:imgUrl}
+  })).then(signedItems=>{
+    grid.innerHTML = signedItems.map((p,i)=>{
+      const catName = p.category?.name || p.category || 'Produto'
+      return `
+        <div class="prod-card">
+          <div class="prod-card-img">
+            ${p._imgUrl
+              ? `<img src="${p._imgUrl}" alt="${p.name}" loading="lazy"/>`
+              : `<div class="prod-card-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="#C4956A" stroke-width="1"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></div>`
+            }
+          </div>
+          <div class="prod-card-overlay"></div>
+          <div class="prod-card-body">
+            <div class="prod-card-cat">${catName}</div>
+            <div class="prod-card-name">${p.name}</div>
+          </div>
+          ${(p.url_shopee||p.url_ml)?`<div class="prod-mkt">
+            ${p.url_shopee?`<a href="${p.url_shopee}" target="_blank" rel="noopener" class="mkt-btn mkt-shopee" onclick="event.stopPropagation()">
+              <svg width="10" height="10" viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" fill="white"/><circle cx="10" cy="10" r="5" fill="#EE4D2D"/></svg>Ver Produto na Shopee</a>`:''}
+            ${p.url_ml?`<a href="${p.url_ml}" target="_blank" rel="noopener" class="mkt-btn mkt-ml" onclick="event.stopPropagation()">
+              <svg width="10" height="10" viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" fill="#2d3277"/><circle cx="10" cy="10" r="5" fill="#FFE600"/></svg>Ver Produto no Mercado Livre</a>`:''}
+          </div>`:''}
+        </div>
+      `
+    }).join('')
+    // Animate cards in
+    setTimeout(()=>{
+      document.querySelectorAll('.prod-card').forEach((card,i)=>{
+        setTimeout(()=>{
+          card.style.opacity='0'; card.style.transform='translateY(20px) scale(.97)'
+          card.style.transition='opacity .5s ease, transform .5s ease'
+          setTimeout(()=>{ card.style.opacity='1'; card.style.transform='none' },20)
+        },i*60)
+      })
+    },100)
+  })
+}
+
+function openProduct(id,urlShopee,urlMl){
+  const dest = urlShopee || urlMl
+  if(dest) window.open(dest,'_blank')
+}
+
+loadProducts()
+</script>
+
+<!-- Cookie Consent Banner - LGPD/GDPR (ez-consent) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ez-consent@1/dist/themes/subtle-bottom-right.min.css" />
+<script
+  type="text/javascript"
+  src="https://cdn.jsdelivr.net/npm/ez-consent@^1/dist/ez-consent.min.js"
+  defer
+  async
+  onload="ez_consent.init({
+    privacy_url: '/politica-privacidade.html',
+    texts: {
+      main: '🍪 Este site utiliza cookies para garantir a melhor experiência, analisar tráfego e personalizar conteúdo. Você pode aceitar ou personalizar suas preferências.',
+      ok: 'Aceitar todos',
+      more: 'Personalizar / Saiba mais'
+    },
+    theme: 'subtle-bottom-right',
+    position: 'bottom-right'
+  });"
+></script>
+
+<!-- Cookie Consent Banner - LGPD/GDPR (ez-consent) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ez-consent@1/dist/themes/subtle-bottom-right.min.css" />
+<script
+  type="text/javascript"
+  src="https://cdn.jsdelivr.net/npm/ez-consent@^1/dist/ez-consent.min.js"
+  defer
+  async
+  onload="ez_consent.init({
+    privacy_url: '/politica-privacidade.html',
+    texts: {
+      main: '🍪 Este site utiliza cookies para garantir a melhor experiência, analisar tráfego e personalizar conteúdo. Você pode aceitar ou personalizar suas preferências.',
+      ok: 'Aceitar todos',
+      more: 'Personalizar / Saiba mais'
+    },
+    theme: 'subtle-bottom-right',
+    position: 'bottom-right'
+  });"
+></script>
+
+<script>
+  // Função para revogar o consentimento (pode ser chamada por um botão)
+  function revogarConsentimentoCookies() {
+    localStorage.removeItem('ez_consent');
+    localStorage.removeItem('ez_consent_preferences');
+    location.reload();
+  }
+
+  // Adiciona um link de revogação no footer
+  window.addEventListener('load', function() {
+    setTimeout(function() {
+      var footerBottom = document.querySelector('.footer-bottom');
+      if (footerBottom && !document.querySelector('.cookie-revoke-link')) {
+        var revokeLink = document.createElement('span');
+        revokeLink.className = 'cookie-revoke-link';
+        revokeLink.style.marginLeft = '16px';
+        revokeLink.innerHTML = ' | <a href="javascript:void(0)" onclick="revogarConsentimentoCookies()" style="color: var(--copper); text-decoration: underline; cursor: pointer;">Revogar consentimento de cookies</a>';
+        footerBottom.appendChild(revokeLink);
+      }
+    }, 1000);
+  });
+</script>
+
+
+</body>
+</html>
