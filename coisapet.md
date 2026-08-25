@@ -43,6 +43,92 @@ reconstruir o raciocínio do zero.
 
 ## Log
 
+### 2026-08-25 — Acesso ao Supabase liberado + causa raiz #2 (janela sem limite superior) + consolidação manual de hoje/ontem
+
+**Mudança de ferramental importante:** o Raphael rodou `supabase link
+--project-ref lcybmdiqxmbqeuyeuhdj` na máquina dele, e a partir daí o
+Claude Code (rodando na mesma máquina) passou a ter acesso de leitura/
+escrita ao banco de produção via `supabase db query --linked "<sql>"`
+(usa a API de gerenciamento, não precisa de Docker nem senha direta).
+Isso permitiu investigar e corrigir tudo abaixo direto no banco, em vez
+de pedir pro Raphael rodar SQL manualmente. **Atenção**: ações
+destrutivas (`DELETE`) são bloqueadas automaticamente pelo classificador
+de segurança do Claude Code — precisa ser rodado manualmente pelo
+usuário nesse caso (não é uma limitação do acesso em si, é uma trava de
+segurança). `UPDATE` passou sem bloqueio.
+
+**Descoberta — auditoria dos itens duplicados confirmou a causa:** rodei
+a query de auditoria do `fase19` — só existiam 7 pares de item duplicado
+em todo o banco, todos com exatamente 2 cópias. Raphael confirmou:
+são bug de importação mesmo (ML nunca manda o mesmo item 2x quando o
+cliente compra 2 unidades — manda com `qty=2`, nunca 2 linhas de
+`qty=1`). Bate exatamente com a condição de corrida que a correção de
+hoje (RPC atômica `upsert_orders_safe`) já elimina daqui pra frente.
+**Ainda não apaguei os 7 duplicados** — o `DELETE` foi bloqueado pelo
+classificador; o Raphael precisa rodar manualmente a query 2 do
+`supabase/fase19-cleanup-duplicate-items.sql`.
+
+**Causa raiz #2 encontrada (bug novo, introduzido pela minha própria
+correção de hoje mais cedo — não existia antes):** a busca por "lote já
+existe pra esse dia" (`useOrders.js` e `ml-process-webhook/index.ts`)
+filtrava só `imported_at >= início_da_janela`, **sem limite superior**.
+Isso significa que um lote criado há pouco pra hoje era encontrado e
+reaproveitado por engano por um pedido de DIAS atrás (qualquer
+`imported_at` recente sempre bate num filtro só de "maior ou igual").
+Corrigido adicionando `.lt('imported_at', fim_da_janela)` nos dois
+lugares. Já buildado, commitado, e a function `ml-process-webhook` já
+foi reimplantada com a correção.
+
+**Consolidação manual do estrago já feito (achado ao vivo, direto no
+banco):** o picklist de HOJE estava espalhado em 3 `batch_id` diferentes
+(um deles — `67a1b8b3` — um "lote-caixote" que vinha acumulando pedidos
+desde **11 de agosto**; outro — `a83c4f6b` — desde **3 de maio**!). Por
+isso os pedidos que a Carol já tinha separado sumiam do link de
+Expedição de hoje: eles estavam num `batch_id` diferente do que o link
+abria. O mesmo aconteceu com ONTEM (pedidos espalhados em 2 lotes).
+Movi manualmente (via `UPDATE orders SET batch_id=...` direto no banco,
+só os pedidos cuja `data_venda` realmente cai na janela de cada dia) e
+recalculei os totais dos lotes afetados:
+- **Hoje** (`data_venda` entre 24/08 11h e 25/08 11h UTC): consolidado
+  em `d4dcb6b1-da10-4fdf-90cb-1f144707197a` — 19 pedidos, 12/21 itens já
+  separados (preservado).
+- **Ontem** (23/08 11h a 24/08 11h UTC): consolidado em
+  `67a1b8b3-69d0-4bbb-8b42-023b6cae3814` — 30 pedidos, 25/37 itens já
+  separados (preservado).
+
+**Bug relacionado também corrigido:** os botões "Gerar Picklist"/
+"Expedição"/"Ver pedidos" em `OrdersPage.jsx` escolhiam o lote do
+**evento de importação cronologicamente mais antigo do dia**
+(`sorted[0].batch_id`), não o lote que de fato tinha os pedidos —
+então mesmo depois de eu consolidar tudo, o botão podia continuar
+apontando pro lote errado (agora vazio). Corrigido pra escolher, entre
+os lotes candidatos do dia, o que tem mais `total_orders` de verdade.
+
+**Pendências conhecidas:**
+- Rodar o `DELETE` do `fase19` manualmente (7 itens duplicados, já
+  auditados e confirmados como bug).
+- **Contaminação histórica mais antiga NÃO foi limpa** (fora do escopo
+  de hoje/ontem): `67a1b8b3` ainda tem pedidos de 11/08 a 22/08
+  misturados; a antiga `a83c4f6b` e a `d37d300c` também têm pedidos
+  avulsos de datas variadas (maio, início de agosto). Não deve afetar a
+  operação do dia a dia (pedidos antigos presumivelmente já
+  resolvidos/enviados), mas fica sujo pra quem for auditar. Um
+  faxina completa exigiria reprocessar TODOS os pedidos ML antigos,
+  recalculando o `batch_id` correto de cada um pela própria
+  `data_venda` — não fiz isso hoje por ser um volume grande de dado de
+  produção pra mexer de uma vez sem necessidade operacional imediata.
+- **Ainda falta rodar `npm run build` + subir `dist/` pra Hostinger**
+  com a correção do botão de Gerar Picklist/Expedição (a consolidação
+  no banco já vale independente disso, mas o botão só escolhe o lote
+  certo sozinho depois do novo build estar no ar — até lá, usar os
+  links diretos acima).
+- Segue pendente a Fase 0 do pedido em pacote ML (Design A/B) e a
+  constraint `UNIQUE(source,num_venda)` já **confirmada existente**
+  em produção (`orders_source_num_venda_key`) — isso já não é mais
+  incerteza, só falta decidir o caso do pacote.
+
+---
+
 ### 2026-08-25 — Histórico de importações agrupava pela hora do upload (bug separado, corrigido) + itens duplicados dentro do pedido (residual, aguardando limpeza)
 
 **O que aconteceu:** depois da correção de causa raiz (entrada abaixo),
