@@ -32,6 +32,12 @@ Detalhes de stack, como rodar localmente e estrutura de pastas: ver `README.md`.
   de propósito (segredos e config local por máquina).
 - A pasta `jogar fora/` (backups/descartes) também está fora do git.
 
+## Log detalhado de trabalho
+
+Ver `coisapet.md` — log por data do que foi feito em cada sessão/módulo
+(motivação, decisões, pendências). Esse é o arquivo pra "onde paramos";
+este `CLAUDE.md` é mais sobre a estrutura do projeto e o versionamento.
+
 ## Como usar este arquivo entre máquinas
 
 Para decisões e contexto que não ficam óbvios só de olhar o código/diff
