@@ -906,7 +906,15 @@ export function OrdersPage() {
                     {Object.entries(bySource).map(([source, events]) => {
                       // Ordena do mais antigo pro mais novo (linha do tempo)
                       const sorted = [...events].sort((a, b) => new Date(a.imported_at) - new Date(b.imported_at))
-                      const b = batches.find(bt => bt.id === sorted[0].batch_id)
+                      // Um mesmo dia pode ter eventos apontando pra lotes DIFERENTES
+                      // (ex: um lote antigo "grudou" pedidos de hoje antes da correção
+                      // do corte de dia) — em vez de assumir que o primeiro evento
+                      // cronológico é o lote certo, escolhe o que de fato tem os
+                      // pedidos hoje (maior total_orders atual).
+                      const candidateBatchIds = [...new Set(sorted.map(e => e.batch_id))]
+                      const b = batches
+                        .filter(bt => candidateBatchIds.includes(bt.id))
+                        .sort((x, y) => (y.total_orders || 0) - (x.total_orders || 0))[0]
                       const totalNovos = sorted.reduce((s, e) => s + (e.new_orders_count || 0), 0)
                       const ps = platformStyle(source)
 
