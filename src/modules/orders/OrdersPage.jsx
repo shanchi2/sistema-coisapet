@@ -944,10 +944,6 @@ export function OrdersPage() {
                                       className="btn-primary text-xs py-1.5">
                                       🖨️ Gerar Picklist
                                     </button>
-                                    <button onClick={() => navigate(`/pick-list/virtual?batch=${b.id}`)}
-                                      className="text-xs py-1.5 px-3 rounded-xl font-semibold text-violet-600 bg-violet-50 hover:bg-violet-100 transition-colors">
-                                      📱 Picklist Virtual
-                                    </button>
                                     <button onClick={() => window.open(`${import.meta.env.PROD ? '/sistema' : ''}/expedicao?batch=${b.id}`, '_blank')}
                                       className="text-xs py-1.5 px-3 rounded-xl font-semibold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition-colors">
                                       📦 Expedição

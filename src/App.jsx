@@ -24,7 +24,6 @@ import { AuditPage }             from './modules/audit/AuditPage'
 import { ProductionPage }        from './modules/production/ProductionPage'
 import { OrdersPage }            from './modules/orders/OrdersPage'
 import PickListShopee            from './modules/orders/PickListShopee'
-import { PicklistVirtualPage }   from './modules/orders/PicklistVirtualPage'
 import { ExpedicaoPage }         from './modules/shipping/ExpedicaoPage'
 import { OrcamentosPage }        from './modules/orders/OrcamentosPage'
 import { KanbanPage }            from './modules/kanban/KanbanPage'
@@ -138,7 +137,6 @@ export default function App() {
                 <Route path="/relatorios"           element={<GuardedRoute moduleKey="relatorios"><ReportsPage /></GuardedRoute>} />
                 <Route path="/pedidos"              element={<GuardedRoute moduleKey="pedidos"><OrdersPage /></GuardedRoute>} />
                 <Route path="/pick-list"            element={<GuardedRoute moduleKey="pedidos"><PickListShopee /></GuardedRoute>} />
-                <Route path="/pick-list/virtual"     element={<GuardedRoute moduleKey="pedidos"><PicklistVirtualPage /></GuardedRoute>} />
                 <Route path="/orcamentos"            element={<GuardedRoute moduleKey="orcamentos"><OrcamentosPage /></GuardedRoute>} />
                 <Route path="/reunioes"             element={<GuardedRoute moduleKey="reunioes"><MeetingsPage /></GuardedRoute>} />
                 <Route path="/kanban"               element={<GuardedRoute moduleKey="kanban"><KanbanPage /></GuardedRoute>} />
