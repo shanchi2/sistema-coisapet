@@ -30,6 +30,42 @@ reconstruir o raciocínio do zero.
 
 ## Log
 
+### 2026-08-25 — Projeto entrou pro git, repositório no GitHub, chave vazada removida
+
+**O que foi feito:**
+- Repositório git inicializado localmente (não existia versionamento antes
+  disso). `.env.local`, `.claude/` (config/estado local do Claude Code) e a
+  pasta `jogar fora/` (backups) ficam fora do versionamento.
+- Criado `CLAUDE.md` na raiz — lido automaticamente por qualquer sessão do
+  Claude Code aberta nesta pasta, com contexto de stack/estrutura e um
+  aviso apontando pra este arquivo (`coisapet.md`) como o log de "onde
+  paramos".
+- Repositório remoto criado no GitHub: `shanchi2/sistema-coisapet` (privado).
+  Push feito com sucesso via HTTPS (autenticação pelo Credential Manager do
+  Windows) — branch `main` já rastreando `origin/main`.
+- **Bloqueio de segurança do GitHub (push protection)** no primeiro push:
+  o commit inicial tinha uma **chave da API da Resend** e o anon key do
+  Supabase hardcoded em `supabase/functions/send-notification-email/index.ts`.
+  Corrigido trocando os dois por `Deno.env.get(...)` (mesmo padrão já usado
+  em `_shared/mercadolivre.ts`), e o **histórico local foi reescrito**
+  (`git filter-branch`) pra remover a chave de todos os commits antes do
+  push — nada disso chegou a ir pro GitHub (o push protection barrou antes).
+
+**Pendências conhecidas:**
+- A função `send-notification-email` vai quebrar no próximo deploy até
+  rodar `supabase secrets set RESEND_KEY=<chave>` (a chave antiga continua
+  funcionando, só precisa virar secret em vez de hardcoded).
+- Recomendado rotacionar a chave da Resend no painel deles, já que ficou em
+  texto puro no histórico local por um tempo (risco baixo — nunca foi
+  pro GitHub — mas é boa prática).
+- Ainda falta configurar SSH ou credencial fixa nas outras 2 máquinas (casa
+  e notebook) pra `git push`/`git pull` funcionarem sem fricção — só o PC
+  do escritório foi autenticado até agora.
+- Fluxo combinado com o Raphael: no início de uma sessão, ler este arquivo
+  e o `CLAUDE.md`; no fim, atualizar este log antes de fechar o terminal.
+
+---
+
 ### 2026-08-25 — Corte de dia (11h), Histórico de pedidos redesenhado, pedidos Full
 
 **O que foi feito:**
