@@ -1301,20 +1301,20 @@ function sortTasks(tasks, colId) {
 
 export function KanbanOperacionalPage() {
   const { user } = useAuth()
-  // producao só vê tasks de setor 'producao' ou 'geral'
   const canSeeAtendimento  = ['admin','administrativo','atendimento'].includes(user?.role ?? '')
-  const canSeeMarketplaces = ['admin','administrativo','atendimento','marketplace'].includes(user?.role ?? '')
   const isEscritorioRole   = user?.role === 'escritorio'
+  const isDiretoria        = user?.role === 'admin' // só a diretoria vê o filtro por setor
 
   const [tasks,     setTasks]     = useState([])
-  const [escritorioSector, setEscritorioSector] = useState(null) // setor que o escritório logado pode ver
+  const [escritorioSector, setEscritorioSector] = useState(null) // setor do escritório logado — só pra permissão de edição
   const [showDone,  setShowDone]  = useState(false)
   const [users,     setUsers]     = useState([])
   const [loading,   setLoading]   = useState(true)
   const [selTask,   setSelTask]   = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [delTask,   setDelTask]   = useState(null)
-  const [filter,    setFilter]    = useState({priority:'',assigned:'',search:'',color:'',sector:''})
+  // Filtro por responsável começa em "eu mesmo" — vê tudo/outra pessoa só se trocar manualmente
+  const [filter,    setFilter]    = useState({priority:'',assigned:user?.id ?? '',search:'',color:'',sector:''})
   const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(()=>{ load() },[])
@@ -1331,7 +1331,7 @@ export function KanbanOperacionalPage() {
   async function load(){
     setLoading(true)
     const [taskR,userR]=await Promise.all([
-      supabase.from('tasks').select('*, task_code, task_sector, comments:task_comments(count), attachments:task_attachments(count), subtasks:task_subtasks(count)').eq('kanban_type','operacional').order('position',{ascending:true}).order('created_at',{ascending:false}),
+      supabase.from('tasks').select('*, task_code, task_sector, comments:task_comments(count), attachments:task_attachments(count), subtasks:task_subtasks(count), assignees:task_assignees(user_id)').eq('kanban_type','operacional').order('position',{ascending:true}).order('created_at',{ascending:false}),
       supabase.from('system_users').select('id,name,role,escritorio_sector').eq('active',true).order('name'),
     ])
     const mapped = (taskR.data??[]).map(t=>({
@@ -1340,30 +1340,22 @@ export function KanbanOperacionalPage() {
       _attachments:    t.attachments?.[0]?.count ?? 0,
       _subtasks_total: t.subtasks?.[0]?.count    ?? 0,
       _subtasks_done:  0,
+      _assigneeIds:    (t.assignees??[]).map(a=>a.user_id),
     }))
-    const isMarketplaceRole = user?.role === 'marketplace'
 
     // Setor do escritório logado (Advocacia, Marcas e Patentes, etc.) — vem
-    // do próprio registro dele em system_users, buscado junto com a lista de usuários
+    // do próprio registro dele em system_users. Usado só pra permissão de
+    // edição/criação (canEdit, assignableUsers) — todo mundo vê a task de
+    // todo mundo no Kanban Operacional, isso aqui não filtra a lista.
     const mySector = isEscritorioRole
       ? (userR.data ?? []).find(u => u.id === user?.id)?.escritorio_sector ?? null
       : null
     setEscritorioSector(mySector)
 
-    const sectorFiltered = isEscritorioRole
-      ? mapped.filter(t => t.task_sector === mySector) // escritório só vê o próprio setor, nada de 'geral'
-      : isMarketplaceRole
-        ? mapped.filter(t => t.task_sector === 'marketplaces' || t.task_sector === 'geral')
-        : canSeeAtendimento
-          ? mapped
-          : mapped.filter(t => t.task_sector !== 'atendimento' && t.task_sector !== 'marketplaces')
-    setTasks(sectorFiltered)
-    // Escritório não pode ser responsável/co-responsável de tarefas, então some da lista
-    // Escritório fica na lista — só não pode ser co-responsável de tarefas fora
-    // do próprio setor (isso é resolvido em assignableUsers, não aqui)
+    setTasks(mapped)
     setUsers((userR.data??[]).filter(u => !['equipe','horista'].includes(u.role)))
     setLoading(false)
-    loadSubtasksDone(sectorFiltered)
+    loadSubtasksDone(mapped)
   }
 
   async function loadSubtasksDone(taskList) {
@@ -1450,7 +1442,7 @@ export function KanbanOperacionalPage() {
 
   const filtered = tasks.filter(t=>{
     if(filter.priority&&t.priority!==filter.priority) return false
-    if(filter.assigned&&t.assigned_to!==filter.assigned) return false
+    if(filter.assigned&&t.assigned_to!==filter.assigned&&!(t._assigneeIds||[]).includes(filter.assigned)) return false
     if(filter.search){
       const q = filter.search.toLowerCase().replace(/^#/,'')
       const matchTitle = t.title.toLowerCase().includes(q)
@@ -1486,14 +1478,14 @@ export function KanbanOperacionalPage() {
       </div>
 
       <div className="flex flex-wrap gap-3">
-        {/* Botões de grupo/setor */}
-        {canSeeAtendimento && (
+        {/* Botões de grupo/setor — só a diretoria filtra por setor */}
+        {isDiretoria && (
           <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
             {[
               { key: '',             label: 'Todos'        },
               { key: 'producao',     label: 'Produção'     },
               { key: 'atendimento',  label: 'Atendimento'  },
-              ...(canSeeMarketplaces ? [{ key: 'marketplaces', label: 'Marketplaces' }] : []),
+              { key: 'marketplaces', label: 'Marketplaces' },
               { key: 'administrativo', label: 'Administrativo' },
               { key: 'advocacia',       label: 'Advocacia' },
               { key: 'marcas_patentes', label: 'Marcas e Patentes' },
