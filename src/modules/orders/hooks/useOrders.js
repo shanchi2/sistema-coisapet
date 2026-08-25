@@ -246,6 +246,24 @@ function mlBatchDayStart(now = new Date()) {
   return d
 }
 
+// Meia-noite local — usado pra Shopee/manual, que não têm corte às 11h
+// (Shopee já tem shipping_deadline próprio vindo do relatório).
+function plainDayStart(now = new Date()) {
+  const d = new Date(now)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+// A que "dia de lote" um pedido pertence — calculado a partir da DATA
+// REAL DA VENDA do próprio pedido (o.data), nunca da hora em que o
+// upload está acontecendo. Passar a hora de "agora" aqui foi o bug: um
+// upload feito às 15h jogava pedidos comprados às 9h (antes das 11h)
+// pro lote de amanhã, porque só a hora do upload era olhada.
+function dayStartForOrder(o, source) {
+  const base = o.data ? new Date(o.data) : new Date()
+  return source === 'ml' ? mlBatchDayStart(base) : plainDayStart(base)
+}
+
 // ─── Hash do conteúdo do arquivo (SHA-256) ─────────────────────────
 // Usado para detectar reimportação do mesmo arquivo, mesmo que o
 // nome tenha mudado (ou vice-versa).
@@ -373,57 +391,63 @@ export function useOrders() {
       })
     })
 
-    // 1. Reaproveita o lote de HOJE dessa plataforma, se já existir —
-    //    assim reimportar no mesmo dia continua na MESMA sessão de
-    //    picking (mesmo link de Expedição), em vez de fragmentar em
-    //    lotes separados a cada importação.
-    const todayStart = source === 'ml' ? mlBatchDayStart() : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d })()
-    const { data: existingBatch } = await supabase
-      .from('import_batches')
-      .select('id, total_orders, total_items')
-      .eq('source', source)
-      .gte('imported_at', todayStart.toISOString())
-      .order('imported_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    // 1. Resolve o LOTE de cada pedido pelo dia da PRÓPRIA VENDA (não pela
+    //    hora do upload) — um arquivo pode misturar pedidos de dias
+    //    diferentes (ex: reimportação trazendo pedido de ontem ainda não
+    //    separado). Reaproveita o lote do dia se já existir, assim
+    //    reimportar no mesmo dia continua na MESMA sessão de picking
+    //    (mesmo link de Expedição) em vez de fragmentar a cada upload.
+    const groups = new Map() // dayStart ISO -> { dayStart, orders }
+    parsed.forEach(o => {
+      const dayStart = dayStartForOrder(o, source)
+      const key = dayStart.toISOString()
+      if (!groups.has(key)) groups.set(key, { dayStart, orders: [] })
+      groups.get(key).orders.push(o)
+    })
 
-    let batch
-    if (existingBatch) {
-      const { data: updatedBatch, error: updErr } = await supabase
+    const batchIdByDayKey = new Map()
+    for (const [key, group] of groups) {
+      const { data: existingBatch } = await supabase
         .from('import_batches')
-        .update({ filename, file_hash: fileHash })
-        .eq('id', existingBatch.id)
         .select('id')
-        .single()
-      if (updErr) throw updErr
-      batch = updatedBatch
-    } else {
-      const { data: newBatch, error: batchErr } = await supabase
-        .from('import_batches')
-        .insert({
-          source, filename, file_hash: fileHash, imported_by: session.id || null,
-          total_orders: parsed.length,
-          total_items:  parsed.reduce((a, o) => a + o.items.reduce((s, it) => s + (it.qty || 0), 0), 0),
-        })
-        .select('id')
-        .single()
-      if (batchErr) throw batchErr
-      batch = newBatch
+        .eq('source', source)
+        .gte('imported_at', group.dayStart.toISOString())
+        .order('imported_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (existingBatch) {
+        await supabase.from('import_batches').update({ filename, file_hash: fileHash }).eq('id', existingBatch.id)
+        batchIdByDayKey.set(key, existingBatch.id)
+      } else {
+        const { data: newBatch, error: batchErr } = await supabase
+          .from('import_batches')
+          .insert({
+            source, filename, file_hash: fileHash, imported_by: session.id || null,
+            total_orders: group.orders.length,
+            total_items:  group.orders.reduce((a, o) => a + o.items.reduce((s, it) => s + (it.qty || 0), 0), 0),
+          })
+          .select('id')
+          .single()
+        if (batchErr) throw batchErr
+        batchIdByDayKey.set(key, newBatch.id)
+      }
     }
 
-    // 2. Descobre quais num_venda JÁ existiam antes dessa importação —
-    //    são os que NÃO podem ter os itens mexidos (preserva 'picked').
-    const incomingNums = parsed.map(o => o.num).filter(Boolean)
-    const { data: alreadyExisting } = incomingNums.length
-      ? await supabase.from('orders').select('num_venda').eq('source', source).in('num_venda', incomingNums)
-      : { data: [] }
-    const existingNumSet = new Set((alreadyExisting || []).map(o => o.num_venda))
+    // Lote "principal" — usado pra recarregar a tela no final. Prioriza o
+    // grupo de hoje; cai pro primeiro grupo no caso raro de reimportar um
+    // arquivo só com pedidos de outro dia.
+    const todayKey = (source === 'ml' ? mlBatchDayStart() : plainDayStart()).toISOString()
+    const mainBatchId = batchIdByDayKey.get(todayKey) || batchIdByDayKey.values().next().value
 
-    // 3. Upsert dos pedidos — chave (source, num_venda) evita duplicar.
-    //    Atualiza dados cadastrais (status, endereço, etc.) mesmo em
-    //    pedidos que já existiam — só os ITENS deles ficam intocados.
+    // 2. Upsert dos pedidos via upsert_orders_safe — chave (source,
+    //    num_venda) evita duplicar, e PROTEGE batch_id/data_venda de
+    //    pedido que já existia (nunca reatribui o dia/lote dele numa
+    //    reimportação ou re-sync). Atualiza dados cadastrais (status,
+    //    endereço, etc.) normalmente — só o dia/lote e os itens de quem
+    //    já existia ficam intocados.
     const ordersToUpsert = parsed.map(o => ({
-      batch_id:    batch.id,
+      batch_id:    batchIdByDayKey.get(dayStartForOrder(o, source).toISOString()),
       source,
       num_venda:   o.num    || null,
       data_venda:  o.data,
@@ -440,24 +464,26 @@ export function useOrders() {
     }))
 
     const { data: savedOrders, error: ordersErr } = await supabase
-      .from('orders')
-      .upsert(ordersToUpsert, { onConflict: 'source,num_venda' })
-      .select('id, num_venda')
+      .rpc('upsert_orders_safe', { p_orders: ordersToUpsert })
 
     if (ordersErr) throw ordersErr
 
     const orderIdByNum = new Map(savedOrders.map(o => [o.num_venda, o.id]))
+    // was_inserted vem direto do banco (via xmax=0), sem precisar de uma
+    // SELECT de pré-checagem à parte — elimina a corrida entre uma
+    // reimportação e um webhook tocando o mesmo pedido quase ao mesmo tempo.
+    const wasInsertedByNum = new Map(savedOrders.map(o => [o.num_venda, o.was_inserted]))
 
-    // 4. Junta todos os SKUs do arquivo e verifica quais existem no sistema
+    // 3. Junta todos os SKUs do arquivo e verifica quais existem no sistema
     const allSkus = parsed.flatMap(o => o.items.map(it => it.sku))
     const skuMap  = await matchSkusToProducts(allSkus)
 
-    // 5. Monta os itens SÓ dos pedidos genuinamente NOVOS — pedido que já
+    // 4. Monta os itens SÓ dos pedidos genuinamente NOVOS — pedido que já
     //    existia antes dessa importação mantém os itens como estavam
     //    (preserva 'picked' e qualquer embalagem já registrada).
     const itemsToInsert = []
     parsed.forEach(o => {
-      if (existingNumSet.has(o.num)) return // já existia — não mexe nos itens
+      if (!wasInsertedByNum.get(o.num || null)) return // já existia — não mexe nos itens
       const orderId = orderIdByNum.get(o.num || null)
       if (!orderId) return
       const cancelado = isCancelledStatus(o.estado)
@@ -486,44 +512,53 @@ export function useOrders() {
       if (itemsErr) throw itemsErr
     }
 
-    // Recalcula os totais REAIS do lote (soma tudo que já foi importado nele,
-    // não só o que veio nesse arquivo) — mantém o cabeçalho sempre correto
-    // mesmo depois de várias reimportações no mesmo dia.
+    // Recalcula os totais REAIS de CADA lote tocado nessa importação (soma
+    // tudo que já foi importado nele, não só o que veio nesse arquivo) —
+    // mantém o cabeçalho sempre correto mesmo depois de várias reimportações
+    // no mesmo dia. Pode ser mais de um lote se o arquivo misturou pedidos
+    // de dias diferentes.
     // IMPORTANTE: total_items soma a QUANTIDADE de cada item (qty), não a
     // quantidade de LINHAS — bate com o que Expedição/Feira Combinada usam
     // de verdade pra separar, evitando o resumo parecer "menor" que a
     // realidade quando algum item tem 2+ unidades no mesmo pedido.
-    const { data: batchOrderIds, error: boiErr } = await supabase.from('orders').select('id').eq('batch_id', batch.id)
-    if (boiErr) console.error('[import] Erro ao recontar pedidos do lote:', boiErr)
-    const allIds = (batchOrderIds || []).map(o => o.id)
-    let realItemCount = 0
-    if (allIds.length) {
-      const { data: itemQtys, error: ricErr } = await supabase.from('order_items').select('qty').in('order_id', allIds)
-      if (ricErr) console.error('[import] Erro ao recontar itens do lote:', ricErr)
-      realItemCount = (itemQtys || []).reduce((sum, it) => sum + (it.qty || 0), 0)
+    const touchedBatchIds = [...new Set(batchIdByDayKey.values())]
+    for (const bId of touchedBatchIds) {
+      const { data: batchOrderIds, error: boiErr } = await supabase.from('orders').select('id').eq('batch_id', bId)
+      if (boiErr) { console.error('[import] Erro ao recontar pedidos do lote:', boiErr); continue }
+      const allIds = (batchOrderIds || []).map(o => o.id)
+      let realItemCount = 0
+      if (allIds.length) {
+        const { data: itemQtys, error: ricErr } = await supabase.from('order_items').select('qty').in('order_id', allIds)
+        if (ricErr) console.error('[import] Erro ao recontar itens do lote:', ricErr)
+        realItemCount = (itemQtys || []).reduce((sum, it) => sum + (it.qty || 0), 0)
+      }
+      const { error: totalsErr } = await supabase.from('import_batches').update({
+        total_orders: allIds.length,
+        total_items:  realItemCount,
+      }).eq('id', bId)
+      if (totalsErr) console.error('[import] Erro ao atualizar totais do lote:', totalsErr)
     }
-    const { error: totalsErr } = await supabase.from('import_batches').update({
-      total_orders: allIds.length,
-      total_items:  realItemCount,
-    }).eq('id', batch.id)
-    if (totalsErr) console.error('[import] Erro ao atualizar totais do lote:', totalsErr)
 
-    const newCount = parsed.length - existingNumSet.size
+    const newCount = parsed.filter(o => wasInsertedByNum.get(o.num || null)).length
+    const existingCount = parsed.length - newCount
     const semSkuCount = itemsToInsert.filter(it => !it.sku_encontrado).length
 
-    // Registra ESTE upload no histórico — mesmo reaproveitando o lote do dia,
-    // cada importação individual fica rastreada (data/hora, quantos pedidos,
-    // quantos eram novos, quantos itens)
-    const { error: eventErr } = await supabase.from('import_events').insert({
-      batch_id:          batch.id,
-      source,
-      filename,
-      imported_by:       session.id || null,
-      total_orders_file: parsed.length,
-      new_orders_count:  newCount,
-      total_items_file:  parsed.reduce((a, o) => a + o.items.reduce((s, it) => s + (it.qty || 0), 0), 0),
-    })
-    if (eventErr) console.error('[import] Erro ao registrar evento de importação:', eventErr)
+    // Registra ESTE upload no histórico, um evento por lote/dia tocado —
+    // mesmo reaproveitando o lote do dia, cada importação individual fica
+    // rastreada (data/hora, quantos pedidos, quantos eram novos, quantos itens)
+    for (const [key, group] of groups) {
+      const groupNewCount = group.orders.filter(o => wasInsertedByNum.get(o.num || null)).length
+      const { error: eventErr } = await supabase.from('import_events').insert({
+        batch_id:          batchIdByDayKey.get(key),
+        source,
+        filename,
+        imported_by:       session.id || null,
+        total_orders_file: group.orders.length,
+        new_orders_count:  groupNewCount,
+        total_items_file:  group.orders.reduce((a, o) => a + o.items.reduce((s, it) => s + (it.qty || 0), 0), 0),
+      })
+      if (eventErr) console.error('[import] Erro ao registrar evento de importação:', eventErr)
+    }
 
     // ── A partir daqui é só produção — isolado, pra um erro aqui NUNCA
     //    mais impedir os passos essenciais acima (totais + histórico) ──
@@ -557,7 +592,7 @@ export function useOrders() {
           .insert({
             source,
             date:            today,
-            import_batch_id: batch.id,
+            import_batch_id: mainBatchId,
             created_by:      session.id || null,
             notes:           `Importado de: ${filename}`,
           })
@@ -579,14 +614,14 @@ export function useOrders() {
 
     toast.success(
       `✅ ${newCount} pedido(s) novo(s) importado(s)!` +
-      (existingNumSet.size > 0 ? ` (${existingNumSet.size} já existia(m) e não foram alterados)` : '') +
+      (existingCount > 0 ? ` (${existingCount} já existia(m) e não foram alterados)` : '') +
       (semSkuCount > 0 ? ` ⚠ ${semSkuCount} item(ns) sem SKU no sistema.` : '')
     )
 
-    await fetchOrders({ batchId: batch.id })
+    await fetchOrders({ batchId: mainBatchId })
     await fetchBatches()
 
-    return { batchId: batch.id, orders: parsed }
+    return { batchId: mainBatchId, orders: parsed }
   }
 
   // ── Checa se este arquivo já foi importado antes (mesmo conteúdo) ─

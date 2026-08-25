@@ -21,7 +21,7 @@ function isCancelledStatus(estado) {
 export async function fetchShippingOrders(batchId, targetDate = null) {
   const { data, error } = await supabase
     .from('orders')
-    .select('id, num_venda, comprador, cidade, estado_uf, status_ml, notes, source, shipping_deadline, is_full, items:order_items(id, titulo, sku, variacao, qty, obs_item, picked, picked_at)')
+    .select('id, num_venda, comprador, cidade, estado_uf, status_ml, notes, source, shipping_deadline, is_full, needs_attention, items:order_items(id, titulo, sku, variacao, qty, obs_item, picked, picked_at)')
     .eq('batch_id', batchId)
 
   if (error) throw error
@@ -32,7 +32,11 @@ export async function fetchShippingOrders(batchId, targetDate = null) {
   const isToday = filterDate === today
 
   const orders = (data || [])
-    .filter(o => !isCancelledStatus(o.status_ml))
+    // Cancelado normalmente some da Expedição — MAS se já tinha item
+    // separado quando cancelou (needs_attention), continua aparecendo
+    // com aviso em vez de sumir sem rastro (era exatamente isso que
+    // causava pedido já pronto desaparecer da tela).
+    .filter(o => !isCancelledStatus(o.status_ml) || o.needs_attention)
     // Full = o ML separa e despacha sozinho, nunca entra em expedição
     // (ver fase17-pedidos-full.sql)
     .filter(o => !o.is_full)
@@ -64,6 +68,57 @@ export async function toggleItemPicked(itemId, picked) {
     picked_by: picked ? (uid || null) : null,
   }).eq('id', itemId)
   if (error) throw error
+}
+
+// Staff confirmou que já olhou o aviso de "cancelado após separado" —
+// tira o aviso da tela. Se um novo webhook tocar esse pedido de novo
+// enquanto ele continuar cancelado E com item separado, o aviso volta
+// (é um estado real que ainda não foi resolvido, não só um alerta pontual).
+export async function clearNeedsAttention(orderId) {
+  const { error } = await supabase.from('orders').update({ needs_attention: false }).eq('id', orderId)
+  if (error) throw error
+}
+
+// Grava o fechamento do dia — histórico permanente de quantos pedidos
+// fecharam/ficaram incompletos e quais itens faltaram em cada um.
+// Fechar de novo (depois de mais pedidos serem separados) cria uma NOVA
+// versão no banco, nunca sobrescreve o fechamento anterior.
+export async function closeShippingDay(batchId, targetDate, orders) {
+  const { id: uid } = getSession()
+  const payload = orders.map(o => {
+    const missing = (o.items || []).filter(it => !it.picked)
+    return {
+      order_id: o.id,
+      num_venda: o.num_venda || null,
+      source: o.source || null,
+      comprador: o.comprador || null,
+      status: missing.length === 0 ? 'closed' : 'incomplete',
+      missing_items: missing.length > 0
+        ? missing.map(it => ({ titulo: it.titulo, sku: it.sku, variacao: it.variacao, missing_qty: it.qty }))
+        : null,
+    }
+  })
+  const { data, error } = await supabase.rpc('close_shipping_day', {
+    p_batch_id: batchId,
+    p_target_date: targetDate,
+    p_closed_by: uid || null,
+    p_orders: payload,
+  })
+  if (error) throw error
+  return data
+}
+
+// Histórico de fechamentos de um lote — mais recente primeiro, incluindo
+// versões supersedidas (pra transparência total: nada some do histórico).
+export async function fetchShippingClosures(batchId) {
+  const { data, error } = await supabase
+    .from('shipping_day_closures')
+    .select('*, closer:system_users!closed_by(name), orders:shipping_order_closures(*)')
+    .eq('batch_id', batchId)
+    .order('target_date', { ascending: false })
+    .order('version', { ascending: false })
+  if (error) throw error
+  return data || []
 }
 
 // Conta quantos pedidos existem por dia (hoje + próximos), só pra avisar

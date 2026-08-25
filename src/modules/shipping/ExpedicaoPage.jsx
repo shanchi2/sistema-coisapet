@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Check, Package, PartyPopper, RefreshCw, ShoppingCart, ShoppingBag, PenLine, Minus, Plus, ClipboardList, ChevronLeft, ChevronRight, Calendar, Target } from 'lucide-react'
+import { ArrowLeft, Check, Package, PartyPopper, RefreshCw, ShoppingCart, ShoppingBag, PenLine, Minus, Plus, ClipboardList, ChevronLeft, ChevronRight, Calendar, Target, AlertTriangle, History, Lock } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useSignedUrl } from '../../lib/signedUrlCache'
-import { fetchShippingOrders, toggleItemPicked, fetchShippingDayCounts, fetchSaturdayTarget, activateSaturdayTarget } from './hooks/useShipping'
+import { fetchShippingOrders, toggleItemPicked, fetchShippingDayCounts, fetchSaturdayTarget, activateSaturdayTarget, clearNeedsAttention, closeShippingDay, fetchShippingClosures } from './hooks/useShipping'
 import { fetchGathering, saveGatheringItem, sendShortageReport } from './hooks/usePicklistGathering'
-import { fetchPackagingBoxes, fetchOrderPackaging, confirmOrderPackaging } from '../orders/hooks/usePicklistVirtual'
+import { fetchPackagingBoxes, fetchOrderPackaging, confirmOrderPackaging } from './hooks/usePackaging'
 import toast from 'react-hot-toast'
 
 // ─── Thumbnail com signed URL ────────────────────────────────────
@@ -93,6 +93,10 @@ export function ExpedicaoPage() {
   const [dayCounts, setDayCounts] = useState({}) // { 'AAAA-MM-DD': quantidade } — só pra avisar visualmente
   const [satTarget, setSatTarget] = useState(null) // meta de sábado ativada pra essa segunda-feira (ou null)
   const [activatingTarget, setActivatingTarget] = useState(false)
+  const [closingDay, setClosingDay] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [closures, setClosures] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   const isMonday = new Date(viewDate + 'T12:00:00').getDay() === 1
 
@@ -185,6 +189,45 @@ export function ExpedicaoPage() {
     })
   }, [openId])
 
+  // Marca como revisado — some o aviso até (se ainda estiver cancelado E
+  // com item separado) um novo sync do ML trazer o aviso de volta.
+  async function handleClearAttention(orderId) {
+    try {
+      await clearNeedsAttention(orderId)
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, needs_attention: false } : o))
+      toast.success('Marcado como revisado.')
+    } catch (err) {
+      toast.error('Erro ao marcar como revisado: ' + err.message)
+    }
+  }
+
+  // Fechamento do dia — histórico permanente (nunca sobrescreve, sempre
+  // cria uma nova versão) de quantos pedidos fecharam/ficaram incompletos
+  // e exatamente quais itens faltaram em cada um.
+  async function handleCloseDay() {
+    setClosingDay(true)
+    try {
+      await closeShippingDay(batchId, viewDate, orders)
+      toast.success(`Dia fechado! ${doneCount}/${orders.length} pedido(s) completos.`)
+    } catch (err) {
+      toast.error('Erro ao fechar o dia: ' + err.message)
+    } finally {
+      setClosingDay(false)
+    }
+  }
+
+  async function openHistory() {
+    setShowHistory(true)
+    setLoadingHistory(true)
+    try {
+      setClosures(await fetchShippingClosures(batchId))
+    } catch (err) {
+      toast.error('Erro ao carregar histórico: ' + err.message)
+    } finally {
+      setLoadingHistory(false)
+    }
+  }
+
   async function handleToggleItem(item) {
     const newVal = !item.picked
     // Otimista: atualiza a tela na hora, sem esperar o banco
@@ -260,6 +303,53 @@ export function ExpedicaoPage() {
   }
 
   const doneCount = orders.filter(isOrderComplete).length
+
+  // ══════════════════════ HISTÓRICO DE FECHAMENTOS ══════════════════════
+  if (showHistory) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col">
+        <div className="bg-white border-b border-slate-100 px-4 py-4 sticky top-0 z-10 flex items-center gap-3">
+          <button onClick={() => setShowHistory(false)} className="p-3 -ml-1 rounded-xl text-slate-500 bg-slate-100 shrink-0">
+            <ArrowLeft size={24} />
+          </button>
+          <p className="text-xl font-black text-slate-800">Histórico de fechamentos</p>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 max-w-2xl mx-auto w-full">
+          {loadingHistory ? (
+            <div className="flex justify-center py-16"><div className="w-8 h-8 rounded-full border-4 border-rose-100 border-t-rose-400 animate-spin" /></div>
+          ) : closures.length === 0 ? (
+            <p className="text-center text-slate-400 py-16">Nenhum fechamento registrado ainda pra esse lote.</p>
+          ) : closures.map(c => (
+            <div key={c.id} className={`rounded-2xl border-2 p-4 ${c.superseded ? 'bg-slate-100 border-slate-200 opacity-60' : 'bg-white border-slate-200'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-black text-slate-700">
+                  {fmtDayLong(c.target_date)} <span className="text-slate-400 font-bold">· v{c.version}</span>
+                  {c.superseded && <span className="ml-2 text-[10px] font-bold text-slate-400 uppercase">substituído</span>}
+                </p>
+                <p className="text-xs text-slate-400">{new Date(c.closed_at).toLocaleString('pt-BR')}</p>
+              </div>
+              <p className="text-xs text-slate-500 mb-2">
+                Fechado por {c.closer?.name || '—'} · {c.closed_orders_count}/{c.total_orders} completo(s)
+                {c.incomplete_orders_count > 0 && <span className="text-rose-500 font-bold"> · {c.incomplete_orders_count} incompleto(s)</span>}
+              </p>
+              {c.orders.filter(o => o.status === 'incomplete').length > 0 && (
+                <div className="flex flex-col gap-1.5 mt-2">
+                  {c.orders.filter(o => o.status === 'incomplete').map(o => (
+                    <div key={o.id} className="text-xs bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-2">
+                      <p className="font-bold text-rose-700">#{o.num_venda || '—'} — {o.comprador || 'Não identificado'}</p>
+                      <p className="text-rose-500 mt-0.5">
+                        Faltou: {(o.missing_items || []).map(it => `${it.titulo}${it.variacao ? ` (${it.variacao})` : ''} ×${it.missing_qty}`).join(', ')}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   // ══════════════════════ CHECKLIST DE ITENS (agregado) ══════════════════════
   if (showChecklist) {
@@ -363,6 +453,16 @@ export function ExpedicaoPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 max-w-2xl mx-auto w-full">
+          {openOrder.needs_attention && (
+            <div className="rounded-xl bg-rose-600 text-white px-4 py-3">
+              <p className="text-sm font-black flex items-center gap-1.5"><AlertTriangle size={16} strokeWidth={3} /> Cancelado após já ter item separado</p>
+              <p className="text-xs text-white/80 mt-1">O status mudou pra "cancelado" depois que algum item daqui já tinha sido separado. Confira com o Atendimento antes de prosseguir.</p>
+              <button onClick={() => handleClearAttention(openOrder.id)}
+                className="mt-2 text-xs font-bold bg-white text-rose-700 px-3 py-1.5 rounded-lg">
+                Marcar como revisado
+              </button>
+            </div>
+          )}
           {openOrder.notes && <p className="text-base text-amber-700 bg-amber-50 rounded-xl px-4 py-3 font-semibold">⚠ {openOrder.notes}</p>}
 
           <div className="flex flex-col gap-3">
@@ -490,6 +590,14 @@ export function ExpedicaoPage() {
               className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-violet-100 text-violet-700 font-bold text-sm">
               <ClipboardList size={16} strokeWidth={2.5} /> Lista de Itens
             </button>
+            <button onClick={openHistory}
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm">
+              <History size={16} strokeWidth={2.5} /> Histórico
+            </button>
+            <button onClick={handleCloseDay} disabled={closingDay || orders.length === 0}
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-100 text-rose-700 font-bold text-sm disabled:opacity-50">
+              <Lock size={16} strokeWidth={2.5} /> {closingDay ? 'Fechando...' : 'Fechar o Dia'}
+            </button>
             <button onClick={() => { load(); fetchShippingDayCounts(batchId).then(setDayCounts).catch(() => {}) }} className="p-2.5 rounded-xl bg-slate-100 text-slate-500"><RefreshCw size={18} /></button>
           </div>
         </div>
@@ -592,6 +700,11 @@ export function ExpedicaoPage() {
                   </span>
                   {o.num_venda && <p className="text-2xl font-black text-slate-800 font-mono tracking-tight">#{o.num_venda}</p>}
                   <p className={`text-sm font-semibold truncate mt-0.5 ${complete ? 'text-emerald-700' : 'text-amber-800'}`}>{o.comprador || 'Não identificado'}</p>
+                  {o.needs_attention && (
+                    <span className="flex items-center gap-1 text-[11px] font-black px-2 py-1 rounded-full bg-rose-600 text-white w-fit mt-1.5">
+                      <AlertTriangle size={12} strokeWidth={3} /> CANCELADO APÓS SEPARADO — VERIFICAR
+                    </span>
+                  )}
                   {orderHasPlaquinhaAlert(o) && (
                     <span className="flex items-center gap-1 text-[11px] font-black px-2 py-1 rounded-full bg-rose-500 text-white w-fit mt-1.5 animate-pulse">
                       ⚠️ SEM NOME — avisar Atendimento

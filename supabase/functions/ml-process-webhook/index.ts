@@ -113,7 +113,12 @@ async function notifyNewOrder(db: ReturnType<typeof adminClient>, parsed: Return
 }
 
 async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<typeof mapOrderToCommon>) {
-  const batchDayStart = mlBatchDayStart()
+  // Corte de dia calculado a partir da DATA REAL DA VENDA (parsed.data),
+  // nunca da hora em que este webhook está rodando — passar "agora" aqui
+  // era o bug: um pedido comprado às 9h podia ser jogado pro lote de
+  // amanhã se um webhook de status (ex: "pronto pra envio") chegasse à
+  // tarde, porque só a hora de processamento era olhada.
+  const batchDayStart = mlBatchDayStart(parsed.data ? new Date(parsed.data) : new Date())
   const { data: existingBatch } = await db.from('import_batches')
     .select('id').eq('source', 'ml').gte('imported_at', batchDayStart.toISOString())
     .order('imported_at', { ascending: false }).limit(1).maybeSingle()
@@ -129,11 +134,12 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
     batchId = newBatch.id
   }
 
-  const { data: already } = await db.from('orders').select('id').eq('source', 'ml').eq('num_venda', parsed.num).maybeSingle()
-  const isNew = !already
-
-  const { data: savedOrder, error: ordErr } = await db.from('orders')
-    .upsert({
+  // upsert_orders_safe PROTEGE batch_id/data_venda de um pedido que já
+  // existe (nunca reatribui o dia/lote dele numa nova chamada de
+  // webhook) e devolve was_inserted (via xmax=0), eliminando a corrida
+  // entre um SELECT de pré-checagem e o upsert em si.
+  const { data: savedRows, error: ordErr } = await db.rpc('upsert_orders_safe', {
+    p_orders: [{
       batch_id:    batchId,
       source:      'ml',
       num_venda:   parsed.num,
@@ -149,9 +155,11 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
       is_pacote:   parsed.is_pacote,
       is_full:     parsed.is_full,
       notes:       parsed.notes,
-    }, { onConflict: 'source,num_venda' })
-    .select('id').single()
+    }],
+  })
   if (ordErr) throw ordErr
+  const savedOrder = savedRows[0]
+  const isNew = savedOrder.was_inserted
 
   if (isNew && parsed.items.length > 0) {
     const skus = [...new Set(parsed.items.map(it => it.sku).filter(Boolean))]
