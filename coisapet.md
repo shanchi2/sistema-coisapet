@@ -29,15 +29,34 @@ reconstruir o raciocínio do zero.
   do Raphael + sócio) — inclusive tasks com os diretores. Filtro por setor
   (barra de botões lá em cima) só aparece pra `admin` (diretoria); os
   demais só têm o filtro por responsável, que já abre em "eu mesmo".
-- **Pedidos/Picklist/Expedição**: reformulado em 2026-08-25 — ver entrada
-  detalhada no Log. **Picklist Virtual foi descontinuado** (removido do
-  sistema); só existem mais "Gerar Picklist" e "Expedição". `batch_id` de
-  um pedido agora é definido uma vez (pela data real da venda) e nunca
-  mais reatribuído — corrige o corte de 11h e o sumiço de pedidos já
-  separados na Expedição. **Pendência real**: ainda falta rodar a
-  verificação no banco ao vivo (Fase 0 do plano) pra decidir a correção
-  do caso "pedido em pacote do ML" (possível duplicata genuína) — não foi
-  mexido ainda, ver pendência no Log.
+- **Pedidos/Picklist/Expedição**: reformulado em 2026-08-25 — ver as 3
+  entradas detalhadas no Log (mais recente primeiro). **Picklist Virtual
+  foi descontinuado**; só existem mais "Gerar Picklist" e "Expedição".
+  `batch_id` de um pedido agora é definido uma vez (pela data real da
+  venda) e nunca mais reatribuído. Constraint `UNIQUE(source,num_venda)`
+  **confirmada existente** em produção. Hoje e ontem já foram consolidados
+  manualmente no banco (ver Log) — dados mais antigos (maio/início de
+  agosto) ainda têm resíduo do bug antigo, não é urgente.
+
+## ⏭️ Próximos passos imediatos (pra continuar de onde parou)
+
+1. **`npm run build` + subir `dist/` pra Hostinger** — última mudança de
+   código (correção do botão Gerar Picklist/Expedição) ainda não foi pro
+   ar. Sem isso, usar os links diretos de hoje/ontem que estão na entrada
+   de log mais recente.
+2. **Rodar o `DELETE` do `supabase/fase19-cleanup-duplicate-items.sql`**
+   (query 2, comentada de propósito) — 7 itens duplicados já auditados e
+   confirmados como bug pelo Raphael, só falta apagar. Bloqueado pro
+   Claude Code rodar sozinho (ação destrutiva), precisa ser manual (SQL
+   Editor do Supabase) ou aprovado explicitamente na hora, se pedido de novo.
+3. **Decidir o caso do pedido em pacote do ML** (Design A vs B — ver
+   entrada "causa raiz do sumiço/duplicação" no Log) — ainda não mexido.
+4. **Acesso ao Supabase é por máquina**: nesta máquina (escritório), o
+   Claude Code ganhou acesso de leitura/escrita ao banco via
+   `supabase link --project-ref lcybmdiqxmbqeuyeuhdj` (rodado pelo
+   Raphael) + `supabase db query --linked "<sql>"`. Numa máquina nova
+   (casa, notebook), isso provavelmente NÃO está disponível de cara —
+   se precisar, rodar `supabase link` de novo lá (mesmo processo).
 
 ---
 
