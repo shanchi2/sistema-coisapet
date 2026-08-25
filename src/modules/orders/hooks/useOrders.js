@@ -229,6 +229,23 @@ export function isCancelledStatus(estado) {
   return !!estado && estado.toLowerCase().includes('cancelad')
 }
 
+// ─── Início do "dia de picklist" do ML ───────────────────────────────
+// O corte real do ML não é meia-noite — é 11h da manhã (horário de
+// Brasília). Pedido que chega às 23h de hoje já conta pro picklist de
+// amanhã. Só se aplica ao ML (Shopee já tem shipping_deadline próprio
+// vindo do relatório; manual é ad-hoc) — mesma regra usada no
+// ml-process-webhook (Edge Function), pra ficar consistente entre o
+// caminho automático e o manual enquanto os dois rodam em paralelo.
+// Roda no navegador do usuário (já em horário de Brasília), então não
+// precisa da conversão UTC que a Edge Function precisa.
+function mlBatchDayStart(now = new Date()) {
+  const CUTOFF_HOUR = 11
+  const d = new Date(now)
+  if (d.getHours() < CUTOFF_HOUR) d.setDate(d.getDate() - 1)
+  d.setHours(CUTOFF_HOUR, 0, 0, 0)
+  return d
+}
+
 // ─── Hash do conteúdo do arquivo (SHA-256) ─────────────────────────
 // Usado para detectar reimportação do mesmo arquivo, mesmo que o
 // nome tenha mudado (ou vice-versa).
@@ -360,7 +377,7 @@ export function useOrders() {
     //    assim reimportar no mesmo dia continua na MESMA sessão de
     //    picking (mesmo link de Expedição), em vez de fragmentar em
     //    lotes separados a cada importação.
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+    const todayStart = source === 'ml' ? mlBatchDayStart() : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d })()
     const { data: existingBatch } = await supabase
       .from('import_batches')
       .select('id, total_orders, total_items')

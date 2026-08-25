@@ -21,7 +21,7 @@ function isCancelledStatus(estado) {
 export async function fetchShippingOrders(batchId, targetDate = null) {
   const { data, error } = await supabase
     .from('orders')
-    .select('id, num_venda, comprador, cidade, estado_uf, status_ml, notes, source, shipping_deadline, items:order_items(id, titulo, sku, variacao, qty, obs_item, picked, picked_at)')
+    .select('id, num_venda, comprador, cidade, estado_uf, status_ml, notes, source, shipping_deadline, is_full, items:order_items(id, titulo, sku, variacao, qty, obs_item, picked, picked_at)')
     .eq('batch_id', batchId)
 
   if (error) throw error
@@ -33,6 +33,9 @@ export async function fetchShippingOrders(batchId, targetDate = null) {
 
   const orders = (data || [])
     .filter(o => !isCancelledStatus(o.status_ml))
+    // Full = o ML separa e despacha sozinho, nunca entra em expedição
+    // (ver fase17-pedidos-full.sql)
+    .filter(o => !o.is_full)
     .filter(o => (o.items || []).length > 0)
     .filter(o => {
       if (o.shipping_deadline) return o.shipping_deadline === filterDate
@@ -70,7 +73,7 @@ export async function toggleItemPicked(itemId, picked) {
 export async function fetchShippingDayCounts(batchId) {
   const { data, error } = await supabase
     .from('orders')
-    .select('shipping_deadline, status_ml, order_items(id)')
+    .select('shipping_deadline, status_ml, is_full, order_items(id)')
     .eq('batch_id', batchId)
     .not('shipping_deadline', 'is', null)
 
@@ -79,6 +82,7 @@ export async function fetchShippingDayCounts(batchId) {
   const counts = {}
   ;(data || []).forEach(o => {
     if (isCancelledStatus(o.status_ml)) return
+    if (o.is_full) return
     if (!o.order_items || o.order_items.length === 0) return
     counts[o.shipping_deadline] = (counts[o.shipping_deadline] || 0) + 1
   })

@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronUp, ChevronRight, Search, X, Check,
   Truck, CheckCircle2, Clock, AlertCircle, FileText,
   RefreshCw, ExternalLink, History, Filter, Pencil, Trash2, XCircle,
-  Radio, PackageX, PackageSearch,
+  Radio, PackageX, PackageSearch, PackageCheck,
 } from 'lucide-react'
 import { useOrders, fetchImportEvents, checkBatchBeforeDelete, deleteBatchOrders } from './hooks/useOrders'
 import { FeiraCombinadaModal } from './FeiraCombinadaModal'
@@ -30,6 +30,16 @@ function fmtDateTime(d) {
 function fmtTimeOnly(d) {
   if (!d) return '—'
   return new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+}
+
+// Chave de dia pro Histórico — respeita o corte real do ML (11h de
+// Brasília, não meia-noite): pedido sincronizado às 23h já conta pro
+// "dia" seguinte, mesma regra usada pra decidir o lote (useOrders.js /
+// ml-process-webhook). Shopee e manual continuam pelo dia de calendário puro.
+function pickDayKey(dateStr, source) {
+  const d = new Date(dateStr)
+  if (source === 'ml' && d.getHours() >= 11) d.setDate(d.getDate() + 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function dayGroupLabel(dateStr) {
@@ -275,14 +285,20 @@ function OrderCard({ order, idx, onEdit, canSeeValues, isNew }) {
   const ps          = platformStyle(order.source)
   const isManual    = order.source === 'manual'
   const isCancelled = (order.status_ml || '').toLowerCase().includes('cancelad')
+  const isFull      = !!order.is_full
 
   return (
-    <div className={`card overflow-hidden transition-all hover:shadow-md ${isCancelled ? 'border-l-4 border-l-red-500 bg-red-50/30' : `${ps.border} ${ps.wash}`} ${isNew ? 'ring-2 ring-emerald-300 ring-offset-2' : ''}`}
+    <div className={`card overflow-hidden transition-all hover:shadow-md ${isCancelled ? 'border-l-4 border-l-red-500 bg-red-50/30' : isFull ? 'border-l-4 border-l-indigo-400 bg-indigo-50/30' : `${ps.border} ${ps.wash}`} ${isNew ? 'ring-2 ring-emerald-300 ring-offset-2' : ''}`}
       style={isNew ? { animation: 'order-pop .5s ease' } : undefined}>
       <style>{`@keyframes order-pop { 0% { transform: scale(.98); } 40% { transform: scale(1.008); } 100% { transform: scale(1); } }`}</style>
+      {!isCancelled && isFull && (
+        <div className="-mt-5 -mx-5 mb-3 flex items-center gap-2 bg-indigo-100 text-indigo-800 text-xs font-bold px-5 py-2" title="Estoque e despacho ficam com o Mercado Livre — não entra em nenhum picklist">
+          📫 Pedido Full — o Mercado Livre separa e despacha sozinho, não entra em nenhum picklist
+        </div>
+      )}
       <div className="flex items-center gap-4 cursor-pointer" onClick={() => setOpen(o => !o)}>
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-base ${isCancelled ? 'bg-red-100 text-red-600' : ps.icon}`}>
-          {isCancelled ? <XCircle size={16}/> : ps.emoji}
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-base ${isCancelled ? 'bg-red-100 text-red-600' : isFull ? 'bg-indigo-100 text-indigo-600' : ps.icon}`}>
+          {isCancelled ? <XCircle size={16}/> : isFull ? '📫' : ps.emoji}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -501,13 +517,17 @@ export function OrdersPage() {
   }
 
   const isCancelledOrder = o => (o.status_ml || '').toLowerCase().includes('cancelad')
+  const isFullOrder      = o => !!o.is_full
   const isSemSkuOrder    = o => (o.items || []).some(it => it.sku_encontrado === false)
-  const isPendenteOrder  = o => !isCancelledOrder(o) && (o.items || []).length > 0 && (o.items || []).some(it => !it.picked)
+  // Full nunca é "pendente de separar" — a CoisaPet não separa esse pedido,
+  // o ML despacha sozinho (ver supabase/fase17-pedidos-full.sql)
+  const isPendenteOrder  = o => !isCancelledOrder(o) && !isFullOrder(o) && (o.items || []).length > 0 && (o.items || []).some(it => !it.picked)
 
   const filtered = useMemo(() => {
     return orders.filter(o => {
       if (filterSrc && o.source !== filterSrc) return false
       if (filterAtt === 'cancelado' && !isCancelledOrder(o)) return false
+      if (filterAtt === 'full'      && !isFullOrder(o))      return false
       if (filterAtt === 'sem_sku'   && !isSemSkuOrder(o))    return false
       if (filterAtt === 'pendente'  && !isPendenteOrder(o))  return false
       if (search) {
@@ -523,6 +543,7 @@ export function OrdersPage() {
 
   const attentionCounts = useMemo(() => ({
     cancelado: orders.filter(isCancelledOrder).length,
+    full:      orders.filter(isFullOrder).length,
     sem_sku:   orders.filter(isSemSkuOrder).length,
     pendente:  orders.filter(isPendenteOrder).length,
   }), [orders])
@@ -708,11 +729,12 @@ export function OrdersPage() {
               </div>
 
               {/* Filtro por atenção — o que precisa de ação, não só quantidade */}
-              {(attentionCounts.cancelado + attentionCounts.sem_sku + attentionCounts.pendente) > 0 && (
+              {(attentionCounts.cancelado + attentionCounts.full + attentionCounts.sem_sku + attentionCounts.pendente) > 0 && (
                 <div className="flex flex-wrap gap-2 items-center">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Precisa de atenção:</span>
                   {[
                     { key: 'cancelado', label: 'Cancelados',       count: attentionCounts.cancelado, icon: XCircle,        cls: 'bg-red-50 text-red-700 border-red-100' },
+                    { key: 'full',      label: 'Full (ML despacha)', count: attentionCounts.full,     icon: PackageCheck,   cls: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
                     { key: 'sem_sku',   label: 'Sem SKU',          count: attentionCounts.sem_sku,    icon: PackageSearch,  cls: 'bg-amber-50 text-amber-700 border-amber-100' },
                     { key: 'pendente',  label: 'Não separado',     count: attentionCounts.pendente,   icon: PackageX,       cls: 'bg-sky-50 text-sky-700 border-sky-100' },
                   ].filter(opt => opt.count > 0).map(opt => (
@@ -802,6 +824,14 @@ export function OrdersPage() {
       ) : (
         /* Histórico de importações — agrupado por dia */
         <div className="flex flex-col gap-5">
+          {!loadingEvents && allImportEvents.length > 0 && (
+            <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3">
+              <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+              <p className="text-xs text-emerald-800">
+                <strong>Sem risco de duplicar:</strong> o mesmo pedido nunca cria dois registros, venha ele pela API ou pelo <code className="bg-white/60 px-1 rounded">.xlsx</code> — o sistema reconhece pelo número de venda e só atualiza (nunca duplica). Abaixo, <span className="font-bold">🔄 Automático</span> = veio pela API, <span className="font-bold">📄 Arquivo</span> = importado manualmente.
+              </p>
+            </div>
+          )}
           {loadingEvents ? (
             <div className="card flex justify-center py-10">
               <div className="w-7 h-7 border-4 border-rose-100 border-t-rose-400 rounded-full animate-spin" />
@@ -812,11 +842,12 @@ export function OrdersPage() {
             </div>
           ) : (
             (() => {
-              // Agrupa os eventos por dia local (não UTC)
+              // Agrupa os eventos por dia — ML respeita o corte das 11h,
+              // então um mesmo lote pode ter uploads "de madrugada" que
+              // ainda contam pro dia anterior
               const dayMap = {}
               allImportEvents.forEach(ev => {
-                const d = new Date(ev.imported_at)
-                const dayKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+                const dayKey = pickDayKey(ev.imported_at, ev.source)
                 if (!dayMap[dayKey]) dayMap[dayKey] = []
                 dayMap[dayKey].push(ev)
               })
@@ -871,15 +902,27 @@ export function OrdersPage() {
                       const sorted = [...events].sort((a, b) => new Date(a.imported_at) - new Date(b.imported_at))
                       const b = batches.find(bt => bt.id === sorted[0].batch_id)
                       const totalNovos = sorted.reduce((s, e) => s + (e.new_orders_count || 0), 0)
+                      const ps = platformStyle(source)
+
+                      // Raio-x real do lote (não só a contagem bruta) — calculado em
+                      // cima dos pedidos já carregados (os 200 mais recentes). Pra
+                      // lote muito antigo, fora dessa janela, stats fica null e a
+                      // tela cai de volta pro resumo simples.
+                      const batchOrders = orders.filter(o => o.batch_id === b?.id)
+                      const stats = b && batchOrders.length > 0 ? {
+                        total:      batchOrders.length,
+                        cancelado:  batchOrders.filter(isCancelledOrder).length,
+                        full:       batchOrders.filter(isFullOrder).length,
+                        semSku:     batchOrders.filter(isSemSkuOrder).length,
+                      } : null
+                      const picklistReady = stats ? stats.total - stats.cancelado - stats.full : null
 
                       return (
                         <div key={source} className="bg-slate-50/70 rounded-xl p-3.5 flex flex-col gap-3">
                           {/* Cabeçalho da fonte — totais atuais + ações */}
                           <div className="flex items-center gap-3 flex-wrap">
-                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-base ${
-                              source==='ml' ? 'bg-yellow-100' : source==='shopee' ? 'bg-orange-100' : 'bg-slate-200'
-                            }`}>
-                              {source==='ml' ? '🛒' : source==='shopee' ? '🛍️' : '✍️'}
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-base ${ps.icon}`}>
+                              {ps.emoji}
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-bold text-slate-700">
@@ -920,12 +963,47 @@ export function OrdersPage() {
                             )}
                           </div>
 
-                          {/* Trilha de uploads — cada vez que o arquivo foi importado */}
+                          {/* Raio-x do lote — o que realmente vai pro picklist, não só o total */}
+                          {stats && (
+                            <div className="flex flex-wrap gap-1.5">
+                              <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                                <CheckCircle2 size={10}/> {picklistReady} vão pro picklist
+                              </span>
+                              {stats.cancelado > 0 && (
+                                <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-red-100 text-red-700 flex items-center gap-1">
+                                  <XCircle size={10}/> {stats.cancelado} cancelado{stats.cancelado !== 1 ? 's' : ''}
+                                </span>
+                              )}
+                              {stats.full > 0 && (
+                                <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-indigo-100 text-indigo-700 flex items-center gap-1">
+                                  📫 {stats.full} Full
+                                </span>
+                              )}
+                              {stats.semSku > 0 && (
+                                <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-amber-100 text-amber-700 flex items-center gap-1">
+                                  <AlertCircle size={10}/> {stats.semSku} sem SKU
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Trilha de uploads — cada vez que o pedido entrou, seja pela
+                              API (automático) ou por arquivo .xlsx (manual). Distinguir
+                              os dois aqui é o que deixa visível que um não some/duplica
+                              o outro — os dois convergem no MESMO pedido (upsert por
+                              número de venda), nunca criam um segundo registro. */}
                           <div className="flex flex-col gap-1.5 pl-1">
-                            {sorted.map((ev, idx) => (
+                            {sorted.map((ev, idx) => {
+                              const isApi = ev.filename?.startsWith('API ')
+                              return (
                               <div key={ev.id} className="flex items-center gap-2.5 text-xs">
-                                <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isApi ? 'bg-emerald-400' : 'bg-slate-300'}`} />
                                 <span className="font-mono text-slate-400 shrink-0">{fmtTimeOnly(ev.imported_at)}</span>
+                                {isApi ? (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 shrink-0">🔄 Automático</span>
+                                ) : (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">📄 Arquivo</span>
+                                )}
                                 <span className="text-slate-600 truncate flex-1 min-w-0">{ev.filename || 'Pedido manual'}</span>
                                 <span className="text-slate-400 shrink-0">
                                   {ev.total_orders_file} pedido(s)
@@ -935,7 +1013,8 @@ export function OrdersPage() {
                                   {' · '}{ev.total_items_file} item(ns)
                                 </span>
                               </div>
-                            ))}
+                              )
+                            })}
                           </div>
                         </div>
                       )

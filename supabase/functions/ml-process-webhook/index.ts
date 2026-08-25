@@ -51,6 +51,12 @@ function mapOrderToCommon(order: any, shipment: any | null) {
     cep:        addr?.zip_code || null,
     rastreio:   shipment?.tracking_number || null,
     is_pacote:  !!order.pack_id,
+    // Pedido Full = o ML guarda o estoque no centro de distribuição dele
+    // e despacha sozinho — a CoisaPet nunca separa/embala esse pedido.
+    // logistic_type='fulfillment' é o campo oficial da API pra isso.
+    // Bug real em 2026-08-24: sem essa checagem, pedido Full entrava no
+    // picklist normal como qualquer outro.
+    is_full:    shipment?.logistic_type === 'fulfillment',
     notes:      null,
     items,
   }
@@ -58,6 +64,19 @@ function mapOrderToCommon(order: any, shipment: any | null) {
 
 function isCancelledStatus(estado: string | null) {
   return !!estado && estado.toLowerCase().includes('cancelad')
+}
+
+// O "dia do picklist" do ML não vira à meia-noite — vira às 11h de
+// Brasília. Pedido que chega às 23h de hoje já é picklist de AMANHÃ, não
+// de hoje. Essa function roda no servidor em UTC (não em horário de
+// Brasília), então o corte é calculado em UTC: 11h BRT = 14h UTC
+// (Brasília é UTC-3 fixo, sem horário de verão desde 2019).
+function mlBatchDayStart(now = new Date()): Date {
+  const CUTOFF_UTC_HOUR = 14
+  const d = new Date(now)
+  if (d.getUTCHours() < CUTOFF_UTC_HOUR) d.setUTCDate(d.getUTCDate() - 1)
+  d.setUTCHours(CUTOFF_UTC_HOUR, 0, 0, 0)
+  return d
 }
 
 // Equivalente server-side de saveImportedOrders (useOrders.js), com uma
@@ -74,9 +93,11 @@ async function notifyNewOrder(db: ReturnType<typeof adminClient>, parsed: Return
   const semSku = itemsToInsert.filter(it => !it.sku_encontrado).length
   const statusLine = cancelado
     ? '🚫 Cancelado — não entra no picklist'
-    : semSku > 0
-      ? `⚠️ ${semSku} item(ns) sem SKU cadastrado`
-      : '✅ Vai pro picklist'
+    : parsed.is_full
+      ? '📫 Full — despachado pelo ML, não precisa separar'
+      : semSku > 0
+        ? `⚠️ ${semSku} item(ns) sem SKU cadastrado`
+        : '✅ Vai pro picklist'
   const totalQty = parsed.items.reduce((s, it) => s + (it.qty || 1), 0)
   const local = [parsed.cidade, parsed.estado_uf].filter(Boolean).join('/')
   const body = `${parsed.comprador || 'Comprador não identificado'}${local ? ` · ${local}` : ''}\n`
@@ -92,9 +113,9 @@ async function notifyNewOrder(db: ReturnType<typeof adminClient>, parsed: Return
 }
 
 async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<typeof mapOrderToCommon>) {
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+  const batchDayStart = mlBatchDayStart()
   const { data: existingBatch } = await db.from('import_batches')
-    .select('id').eq('source', 'ml').gte('imported_at', todayStart.toISOString())
+    .select('id').eq('source', 'ml').gte('imported_at', batchDayStart.toISOString())
     .order('imported_at', { ascending: false }).limit(1).maybeSingle()
 
   let batchId: string
@@ -126,6 +147,7 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
       cep:         parsed.cep,
       rastreio:    parsed.rastreio,
       is_pacote:   parsed.is_pacote,
+      is_full:     parsed.is_full,
       notes:       parsed.notes,
     }, { onConflict: 'source,num_venda' })
     .select('id').single()
@@ -154,7 +176,9 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
     const { error: itemsErr } = await db.from('order_items').insert(itemsToInsert)
     if (itemsErr) throw itemsErr
 
-    if (!cancelado) {
+    // Full nunca gera produção — o ML separa e despacha sozinho do centro
+    // de distribuição dele, a CoisaPet não tem esse pedido fisicamente.
+    if (!cancelado && !parsed.is_full) {
       const { data: prodOrder, error: prodErr } = await db.from('production_orders')
         .insert({ source: 'ml', date: new Date().toISOString().split('T')[0], import_batch_id: batchId, notes: `Sincronizado via API — pedido ${parsed.num}` })
         .select('id').single()

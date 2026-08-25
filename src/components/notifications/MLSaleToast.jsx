@@ -105,9 +105,10 @@ export function MLSaleToast() {
 function MLSaleCard({ t, notification, onOpen }) {
   const [linha1, linha2] = (notification.body || '').split('\n')
   const cancelado = (linha2 || '').includes('🚫')
+  const isFull    = (linha2 || '').includes('📫')
   const semSku    = (linha2 || '').includes('⚠️')
-  const accent    = cancelado ? '#F43F5E' : semSku ? '#F59E0B' : '#22C55E'
-  const wash      = cancelado ? '#FFF1F2' : semSku ? '#FFFBEB' : '#ECFDF5'
+  const accent    = cancelado ? '#F43F5E' : isFull ? '#6366F1' : semSku ? '#F59E0B' : '#22C55E'
+  const wash      = cancelado ? '#FFF1F2' : isFull ? '#EEF2FF' : semSku ? '#FFFBEB' : '#ECFDF5'
 
   return (
     <div

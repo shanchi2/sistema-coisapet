@@ -13,7 +13,7 @@ function isCancelledStatus(estado) {
 export async function fetchVirtualPicklistOrders(batchId) {
   const { data, error } = await supabase
     .from('orders')
-    .select('id, num_venda, comprador, cidade, estado_uf, status_ml, notes, shipping_deadline, items:order_items(id, titulo, sku, variacao, qty, obs_item)')
+    .select('id, num_venda, comprador, cidade, estado_uf, status_ml, notes, shipping_deadline, is_full, items:order_items(id, titulo, sku, variacao, qty, obs_item)')
     .eq('batch_id', batchId)
 
   if (error) throw error
@@ -22,6 +22,9 @@ export async function fetchVirtualPicklistOrders(batchId) {
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const orders = (data || [])
     .filter(o => !isCancelledStatus(o.status_ml))
+    // Full = o ML separa e despacha sozinho, a CoisaPet não separa esse
+    // pedido — nunca pode entrar em picklist nenhum (ver fase17-pedidos-full.sql)
+    .filter(o => !o.is_full)
     .filter(o => (o.items || []).length > 0)
     .filter(o => !o.shipping_deadline || o.shipping_deadline === today)
 
