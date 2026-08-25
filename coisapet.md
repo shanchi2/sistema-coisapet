@@ -25,10 +25,60 @@ reconstruir o raciocínio do zero.
   (só a do ML, até agora).
 - **Projeto Supabase**: `lcybmdiqxmbqeuyeuhdj` (região Ohio/East US). CLI já
   linkado nessa pasta.
+- **Kanban Operacional**: qualquer usuário vê a task de qualquer um (decisão
+  do Raphael + sócio) — inclusive tasks com os diretores. Filtro por setor
+  (barra de botões lá em cima) só aparece pra `admin` (diretoria); os
+  demais só têm o filtro por responsável, que já abre em "eu mesmo".
 
 ---
 
 ## Log
+
+### 2026-08-25 — Kanban Operacional: visibilidade total, filtro de setor restrito à diretoria
+
+**Motivação:** co-responsáveis de setores diferentes (ex: alguém do
+administrativo/escritório com alguém da produção na mesma task) perdiam a
+task da própria lista, porque a visibilidade era travada por setor —
+quem não era do setor da task simplesmente não a via, mesmo estando
+atribuído como responsável ou co-responsável. Decisão do Raphael com o
+sócio: simplificar — todo mundo vê a task de todo mundo no Kanban
+Operacional (inclusive as que estão com a diretoria em QA/aprovação), e
+quem restringe por setor lá em cima é só a diretoria mesmo.
+
+**O que foi feito** (`src/modules/kanban/KanbanOperacionalPage.jsx`):
+- Removida a restrição de visibilidade por setor no `load()` — antes,
+  papel `escritorio` só via o próprio setor, `marketplace` só via
+  marketplaces/geral, e quem não tinha `canSeeAtendimento` não via
+  atendimento/marketplaces. Agora todo mundo carrega todas as tasks do
+  Kanban Operacional. `mySector`/`escritorioSector` continuam existindo,
+  mas só pra permissão de edição (`canEdit`, `assignableUsers`), não pra
+  esconder task da lista.
+- Barra de filtro por setor (Produção/Atendimento/Marketplaces/
+  Administrativo/Advocacia/Marcas e Patentes) agora só aparece pra
+  `user.role === 'admin'` (era `canSeeAtendimento`, que incluía
+  administrativo e atendimento também). Pra todo mundo mais, some a
+  barra — fica só o filtro por responsável.
+- Filtro por responsável agora começa com o próprio usuário selecionado
+  (`filter.assigned` default `user.id`, antes era `''`/"Todos"). Pra ver
+  tudo ou de outra pessoa, troca manualmente no filtro.
+- O filtro por responsável agora também considera co-responsável
+  (`task_assignees`), não só `assigned_to` — a query do `load()` passou a
+  trazer `assignees:task_assignees(user_id)` junto com cada task.
+
+**Testado**: build de produção limpo e conferido manualmente no navegador
+pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
+
+**Pendências conhecidas:**
+- Mudança feita só no Kanban **Operacional**. O Kanban da Diretoria
+  (`KanbanPage.jsx`) não tinha essa restrição de setor pra começo de
+  conversa, então não foi mexido.
+- Permissões de **edição** (mover status, editar, apagar) continuam
+  travadas por setor como antes (`canEdit`, guards de `moveTask`/
+  `dropTask`/`deleteTask`) — só a *visibilidade* mudou. Se no futuro
+  quiserem que qualquer um também possa mexer em task de outro setor,
+  isso é uma decisão separada, ainda não tomada.
+
+---
 
 ### 2026-08-25 — Projeto entrou pro git, repositório no GitHub, chave vazada removida
 
