@@ -119,8 +119,14 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
   // amanhã se um webhook de status (ex: "pronto pra envio") chegasse à
   // tarde, porque só a hora de processamento era olhada.
   const batchDayStart = mlBatchDayStart(parsed.data ? new Date(parsed.data) : new Date())
+  // Janela FECHADA (>= início, < fim) — sem limite superior, um lote criado
+  // há pouco pra um dia mais recente era encontrado e reaproveitado por
+  // engano por um pedido de dias atrás.
+  const batchDayEnd = new Date(batchDayStart.getTime() + 24 * 60 * 60 * 1000)
   const { data: existingBatch } = await db.from('import_batches')
-    .select('id').eq('source', 'ml').gte('imported_at', batchDayStart.toISOString())
+    .select('id').eq('source', 'ml')
+    .gte('imported_at', batchDayStart.toISOString())
+    .lt('imported_at', batchDayEnd.toISOString())
     .order('imported_at', { ascending: false }).limit(1).maybeSingle()
 
   let batchId: string

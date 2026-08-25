@@ -407,11 +407,18 @@ export function useOrders() {
 
     const batchIdByDayKey = new Map()
     for (const [key, group] of groups) {
+      // Janela FECHADA (>= início, < fim) — sem o limite superior, um lote
+      // criado há pouco pra um dia mais recente era encontrado e reaproveitado
+      // por engano por um pedido de dias atrás (qualquer "imported_at" recente
+      // sempre bate num filtro só de ">="), grudando pedidos de datas bem
+      // diferentes no mesmo lote.
+      const dayEnd = new Date(group.dayStart.getTime() + 24 * 60 * 60 * 1000)
       const { data: existingBatch } = await supabase
         .from('import_batches')
         .select('id')
         .eq('source', source)
         .gte('imported_at', group.dayStart.toISOString())
+        .lt('imported_at', dayEnd.toISOString())
         .order('imported_at', { ascending: false })
         .limit(1)
         .maybeSingle()
