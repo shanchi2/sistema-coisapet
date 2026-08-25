@@ -29,10 +29,115 @@ reconstruir o raciocínio do zero.
   do Raphael + sócio) — inclusive tasks com os diretores. Filtro por setor
   (barra de botões lá em cima) só aparece pra `admin` (diretoria); os
   demais só têm o filtro por responsável, que já abre em "eu mesmo".
+- **Pedidos/Picklist/Expedição**: reformulado em 2026-08-25 — ver entrada
+  detalhada no Log. **Picklist Virtual foi descontinuado** (removido do
+  sistema); só existem mais "Gerar Picklist" e "Expedição". `batch_id` de
+  um pedido agora é definido uma vez (pela data real da venda) e nunca
+  mais reatribuído — corrige o corte de 11h e o sumiço de pedidos já
+  separados na Expedição. **Pendência real**: ainda falta rodar a
+  verificação no banco ao vivo (Fase 0 do plano) pra decidir a correção
+  do caso "pedido em pacote do ML" (possível duplicata genuína) — não foi
+  mexido ainda, ver pendência no Log.
 
 ---
 
 ## Log
+
+### 2026-08-25 — Pedidos/Picklist/Expedição: causa raiz do sumiço/duplicação corrigida, histórico de expedição criado, Picklist Virtual descontinuado
+
+**Motivação:** Raphael reportou três problemas no mesmo dia: pedido do ML
+duplicado (`#2000018101859182`), pedido comprado antes das 11h "pulando"
+pro picklist do dia seguinte, e o mais grave — pedidos já marcados como
+"pronto" sumindo inteiramente da tela de Expedição, sem histórico nenhum
+pra provar que existiram. Pedido explícito: máxima prioridade em
+correção, mesmo que demore, "um deslize aqui pode afetar nossa reputação
+nas plataformas de venda". Também decidido: parar de usar/manter o
+Picklist Virtual, focar só em "Gerar Picklist" + "Expedição".
+
+**Investigação** (3 agentes de exploração + 1 de design, todos read-only,
+antes de qualquer mudança de código): achada a causa raiz ÚNICA dos três
+sintomas.
+
+**Causa raiz:** em `useOrders.js` (import manual) e
+`ml-process-webhook/index.ts` (webhook do ML), a função que calcula o
+"dia de picklist" (corte às 11h de Brasília) era sempre chamada **sem
+argumento** — usava a hora de AGORA (hora do upload / hora em que o
+webhook processa), nunca a hora real da venda, que já estava disponível
+mas nunca era passada adiante. Pior: o `batch_id` do pedido era
+regravado **sem condição** em todo upsert, inclusive pra pedido que já
+existia. Resultado: pedido comprado às 9h podia ser corretamente
+colocado no lote certo na 1ª vez, e depois "pulado" pro lote de amanhã
+quando um novo status do ML chegava à tarde (ou numa reimportação do
+xlsx depois das 11h) — e como Expedição/Picklist filtram por `batch_id`
+exato, o pedido literalmente sumia da tela antiga.
+
+**O que foi corrigido:**
+- `supabase/fase18-shipping-history.sql` (migração nova, só aditiva):
+  - `orders.pack_id` (agrupamento visual de pacote ML) e
+    `orders.needs_attention` (pedido cancelado depois de já ter item
+    separado — não esconde mais, mostra com aviso).
+  - Função `upsert_orders_safe(p_orders jsonb)` — substitui o
+    `.upsert()` direto nos dois caminhos de gravação. **Protege**
+    `batch_id`/`data_venda` de pedido que já existe (nunca mais
+    reatribui o dia dele numa reimportação/re-sync); atualiza status,
+    rastreio, dados do comprador normalmente. Devolve `was_inserted`
+    (via `xmax=0`), eliminando a corrida que existia entre um SELECT de
+    pré-checagem e o upsert em si.
+  - Tabelas `shipping_day_closures` + `shipping_order_closures` —
+    histórico de expedição de verdade, append-only/versionado (fechar o
+    dia de novo cria nova versão, nunca sobrescreve). Função
+    `close_shipping_day(...)` grava tudo em transação.
+- `useOrders.js`: pedidos de um mesmo arquivo agora são agrupados pelo
+  DIA DA PRÓPRIA VENDA de cada um (não mais um lote único pro arquivo
+  inteiro) — upload feito à tarde não joga mais pedido da manhã pro dia
+  seguinte.
+- `ml-process-webhook/index.ts`: corte de dia agora usa
+  `order.date_created` (data real da venda) em vez da hora de
+  processamento do webhook.
+- `useShipping.js` + `ExpedicaoPage.jsx`: pedido cancelado com item já
+  separado (`needs_attention`) não some mais da tela — aparece com aviso
+  vermelho "CANCELADO APÓS SEPARADO — VERIFICAR" e um botão "Marcar como
+  revisado". Botão novo "Fechar o Dia" grava o histórico (quantos
+  fecharam, quantos ficaram incompletos, quais itens faltaram em cada
+  um) e botão "Histórico" mostra os fechamentos anteriores.
+- Picklist Virtual removido por completo (`PicklistVirtualPage.jsx`,
+  rota `/pick-list/virtual`, botão na tela de Pedidos). As 3 funções de
+  controle de embalagem que ele continha (`fetchPackagingBoxes`,
+  `fetchOrderPackaging`, `confirmOrderPackaging`) — que a Expedição usa
+  de verdade e não tinham nada a ver com a página removida — foram
+  movidas pra `src/modules/shipping/hooks/usePackaging.js`.
+
+**Pendências conhecidas (não mexidas ainda, de propósito):**
+- **Falta rodar a "Fase 0" de verificação no banco ao vivo** (não tenho
+  acesso de leitura ao Supabase de produção desta máquina — MCP e CLI
+  aqui estão logados em outras contas). Precisa: confirmar se a
+  constraint `UNIQUE (source, num_venda)` existe mesmo em produção
+  (nenhum `.sql` commitado cria ela, só o código depende dela via
+  `onConflict`); contar duplicatas `(source, num_venda)` existentes;
+  contar quantos pedidos estão hoje com `batch_id` errado; puxar o
+  pedido `#2000018101859182` (banco + API do ML) pra decidir a correção
+  do caso "pacote" (ver abaixo).
+- **Caso "pedido em pacote do ML" NÃO foi corrigido ainda**: o parser do
+  `.xlsx` junta os itens de um pacote numa única linha de pedido usando
+  o número da linha-resumo; a API trata cada pedido do pacote
+  separadamente com o próprio id. Se esses números não baterem pro mesmo
+  pacote, pode gerar uma duplicata de verdade em `orders` — precisa dos
+  dados reais (Fase 0) pra decidir se o certo é o `.xlsx` passar a gerar
+  uma linha por item (como a API já faz) ou o contrário.
+- Depois que a Fase 0 confirmar os números: limpar duplicatas existentes
+  caso a caso, só então criar a constraint `UNIQUE (source, num_venda)`
+  de fato, e corrigir o `batch_id` dos pedidos hoje mal-alocados
+  (restrito a pedidos ainda não totalmente separados).
+- **Ainda não testado em produção** — precisa rodar
+  `supabase/fase18-shipping-history.sql` no SQL Editor do Supabase e
+  fazer o deploy de `ml-process-webhook` (`supabase functions deploy
+  ml-process-webhook`) antes do código novo funcionar de verdade.
+
+Plano completo (7 fases, todas as decisões técnicas justificadas) salvo
+localmente em `C:\Users\User\.claude\plans\iridescent-fluttering-frost.md`
+nesta máquina — não está no repo (é específico da sessão do Claude Code).
+
+---
 
 ### 2026-08-25 — Bug: co-responsável não era salvo no Kanban Operacional
 
