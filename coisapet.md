@@ -43,6 +43,53 @@ reconstruir o raciocínio do zero.
 
 ## Log
 
+### 2026-08-25 — Histórico de importações agrupava pela hora do upload (bug separado, corrigido) + itens duplicados dentro do pedido (residual, aguardando limpeza)
+
+**O que aconteceu:** depois da correção de causa raiz (entrada abaixo),
+Raphael testou em produção e reportou dois problemas novos:
+1. Um upload feito às 16h27 (depois das 11h) apareceu inteiro na seção
+   "QUARTA-FEIRA, 26 DE AGOSTO" (amanhã) no Histórico de Importações,
+   mesmo contendo pedidos comprados antes das 11h de hoje.
+2. Duas tasks/pedidos (`#2000018111839528`, `#2000018111841230`)
+   mostraram o MESMO item duas vezes na Expedição.
+
+**Problema 1 — causa raiz encontrada e corrigida:** era um bug
+DIFERENTE do que já tinha sido corrigido, num trecho de código que eu
+ainda não tinha tocado. `OrdersPage.jsx` agrupa os cards do Histórico
+por dia usando `pickDayKey(ev.imported_at, ev.source)` — só que
+`ev.imported_at` é a hora do UPLOAD (evento de importação), não a hora
+da venda dos pedidos daquele upload. Um upload às 16h27 sempre caía na
+seção de amanhã, mesmo que a maioria dos pedidos dentro dele fosse de
+antes das 11h (e já estivesse corretamente no lote de hoje, graças à
+correção da causa raiz). Ou seja: o `batch_id`/picklist real dos
+pedidos já podia estar certo — só a ETIQUETA visual do card no
+Histórico é que mentia. Corrigido: agora agrupa pela data de criação do
+**lote** (`import_batches.imported_at`), que — depois da correção da
+causa raiz — reflete corretamente o dia real daquele lote.
+
+**Problema 2 — provavelmente resíduo de ANTES da correção, não
+confirmado ainda:** a correção de hoje impede um pedido de ter seus
+itens inseridos duas vezes daqui pra frente (só insere item pra pedido
+genuinamente novo). Itens duplicados numa task específica hoje são
+consistentes com terem sido criados ANTES do fix, quando um pedido
+podia ter o `batch_id` reatribuído e — dependendo da sequência exata —
+seus itens reinseridos. Criado `supabase/fase19-cleanup-duplicate-items.sql`
+com (1) uma query de auditoria pra ver o tamanho real do problema, e
+(2) um script de limpeza comentado de propósito (só roda se alguém
+descomentar conscientemente) que mantém a cópia já separada (`picked`)
+ou a mais antiga, e apaga o resto.
+
+**Pendências:**
+- Rodar a query de auditoria do `fase19` e decidir se roda a limpeza.
+- Ainda falta confirmar se `ml-process-webhook` foi reimplantado
+  (`supabase functions deploy ml-process-webhook`) — sem isso, pedidos
+  que chegam pela API continuam usando a lógica antiga.
+- Segue pendente a Fase 0 (constraint `UNIQUE(source,num_venda)`,
+  contagem de duplicatas em `orders`, caso do pedido em pacote do ML) —
+  ver entrada anterior.
+
+---
+
 ### 2026-08-25 — Pedidos/Picklist/Expedição: causa raiz do sumiço/duplicação corrigida, histórico de expedição criado, Picklist Virtual descontinuado
 
 **Motivação:** Raphael reportou três problemas no mesmo dia: pedido do ML
