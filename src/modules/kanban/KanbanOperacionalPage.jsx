@@ -568,7 +568,7 @@ function TaskModal({ task, users, open, onClose, onSave, onDelete, canSeeAtendim
     }
     setSaving(true)
     try {
-      await onSave({ ...task, ...form, assigned_to: form.assigned_to||null, due_date: form.due_date||null, color: form.color||null })
+      await onSave({ ...task, ...form, assigned_to: form.assigned_to||null, due_date: form.due_date||null, color: form.color||null }, assignees)
       // onSave chama load() que recarrega as tasks — aguarda um tick
       // O ID novo vai estar no banco; busca via título+status
       await new Promise(r => setTimeout(r, 600))
@@ -598,7 +598,7 @@ function TaskModal({ task, users, open, onClose, onSave, onDelete, canSeeAtendim
     if(!form.title.trim()){ toast.error('Título obrigatório.'); return }
     if(!form.color){ toast.error('Escolha uma categoria para a task.'); return }
     setSaving(true)
-    try{ await onSave({...task,...form,assigned_to:form.assigned_to||null,due_date:form.due_date||null,color:form.color||null}); onClose() }
+    try{ await onSave({...task,...form,assigned_to:form.assigned_to||null,due_date:form.due_date||null,color:form.color||null}, assignees); onClose() }
     catch(e){ toast.error('Erro ao salvar.') }
     finally{ setSaving(false) }
   }
