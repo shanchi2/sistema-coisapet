@@ -34,6 +34,33 @@ reconstruir o raciocínio do zero.
 
 ## Log
 
+### 2026-08-25 — Bug: co-responsável não era salvo no Kanban Operacional
+
+**O que era:** ao editar uma task no Kanban Operacional, definir/trocar o
+co-responsável e salvar, ao reabrir a task o co-responsável tinha sumido.
+Raphael notou isso testando a mudança de visibilidade (item acima) já em
+produção.
+
+**Causa raiz:** os dois pontos de salvar do modal (`handleSave` e
+`ensureTaskSaved`, em `KanbanOperacionalPage.jsx`) chamavam
+`onSave(dados)` sem passar o estado `assignees` como segundo argumento.
+A função `saveTask(data, assigneeIds=[])` do componente pai sempre
+**apaga** os `task_assignees` da task antes de reinserir — como
+`assigneeIds` chegava `[]` (valor default, nunca o estado real), a
+reinserção nunca acontecia. O Kanban da Diretoria (`KanbanPage.jsx`) já
+fazia isso corretamente (`onSave(dados, assignees)`) — foi só o
+Operacional que ficou faltando esse argumento.
+
+**Corrigido:** os dois `onSave(...)` em `KanbanOperacionalPage.jsx` agora
+passam `assignees` como segundo argumento, igual ao board da Diretoria.
+
+**Pendência de teste:** corrigido e buildado, mas ainda não confirmado
+manualmente em produção (o Raphael reportou o bug depois do deploy
+anterior) — testar: colocar co-responsável, salvar, reabrir a task,
+confirmar que continua lá.
+
+---
+
 ### 2026-08-25 — Kanban Operacional: visibilidade total, filtro de setor restrito à diretoria
 
 **Motivação:** co-responsáveis de setores diferentes (ex: alguém do
