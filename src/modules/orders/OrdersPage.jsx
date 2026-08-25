@@ -842,12 +842,18 @@ export function OrdersPage() {
             </div>
           ) : (
             (() => {
-              // Agrupa os eventos por dia — ML respeita o corte das 11h,
-              // então um mesmo lote pode ter uploads "de madrugada" que
-              // ainda contam pro dia anterior
+              // Agrupa os eventos por dia — usa a data de criação do LOTE
+              // (import_batches.imported_at), não a hora do upload em si.
+              // Um upload feito às 16h pode trazer pedidos de antes das 11h
+              // (que reaproveitam o lote de hoje, já criado de manhã) e
+              // pedidos de depois das 11h (que abrem um lote novo, de
+              // amanhã) — agrupar pela hora do UPLOAD misturava os dois e
+              // fazia o evento inteiro aparecer no dia errado.
+              const batchById = new Map(batches.map(b => [b.id, b]))
               const dayMap = {}
               allImportEvents.forEach(ev => {
-                const dayKey = pickDayKey(ev.imported_at, ev.source)
+                const batchDate = batchById.get(ev.batch_id)?.imported_at || ev.imported_at
+                const dayKey = pickDayKey(batchDate, ev.source)
                 if (!dayMap[dayKey]) dayMap[dayKey] = []
                 dayMap[dayKey].push(ev)
               })
