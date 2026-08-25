@@ -14,8 +14,8 @@ jogar fora/
 .env.local
 .env.*.local
 
-# Claude Code — config local por máquina, não compartilhar
-.claude/settings.local.json
+# Claude Code — config/estado local por máquina, não compartilhar
+.claude/
 
 # Editor
 .vscode/
