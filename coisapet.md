@@ -92,6 +92,40 @@ reconstruir o raciocínio do zero.
 
 ## Log
 
+### 2026-08-27 (2ª parte) — Corrige botões de Picklist/Expedição sumidos no Histórico da Shopee
+
+**Motivação:** Raphael confirmou o ML "perfeito" e pediu pra revisar a
+Shopee — mas ao abrir o Histórico de Importações, o cartão da Shopee
+tinha perdido os botões "Ver pedidos"/"Gerar Picklist"/"Expedição" e
+mostrava "— pedidos no total" (travessão em vez de número).
+
+**Causa raiz (não era bug da Shopee):** o Histórico resolve os botões de
+cada cartão buscando o lote (`import_batches`) dentro da lista dos
+**50 mais recentes** (`fetchBatches()`). O reprocessamento em massa do
+ML de ontem (Fase 26, 345+ pedidos com datas de venda espalhadas de
+13/08 até hoje) criou **637 lotes novos do ML nas últimas 24h** — um
+lote novo pra cada dia-de-venda distinto que ainda não tinha lote,
+porque o reprocessamento tocou pedidos de dias muito diferentes de uma
+vez. Isso lotou os 50 slots inteiros com lotes do ML, empurrando os
+lotes reais da Shopee (que só teve 1 lote tocado nas últimas 24h) pra
+fora da janela — o cartão simplesmente não achava o lote dela pra
+resolver os botões, mesmo o lote existindo normalmente no banco.
+
+**Corrigido** (`useOrders.js` + `OrdersPage.jsx`, só frontend, nenhuma
+mudança de banco/edge function):
+- Nova função `fetchBatchesByIds(ids)` — busca lote por id específico,
+  sem limite de 50.
+- Histórico agora complementa `batches` (os 50 mais recentes) com uma
+  busca direcionada por qualquer `batch_id` referenciado nos uploads
+  exibidos que não estava nessa lista — resolve o cartão certo
+  independente de quantos lotes outra fonte tenha criado recentemente.
+- **Efeito colateral esperado e bom**: também corrige a mesma contagem
+  zerada que aparecia no cartão do ML (mesmo bug, mesma causa) — não é
+  uma mudança de comportamento do ML, só o mesmo conserto de exibição.
+
+**Não precisa reimportar nada** — é só build + deploy do frontend pra
+ver o conserto; os lotes da Shopee sempre estiveram corretos no banco.
+
 ### 2026-08-27 — Corrige detecção de Full (campo errado na API) + pedido antigo esquecido
 
 **Motivação:** Raphael reportou dois problemas concretos com print do
