@@ -34,14 +34,18 @@ reconstruir o raciocínio do zero.
   Virtual foi descontinuado**; só existem mais "Gerar Picklist" e
   "Expedição". **`orders.ship_date`** (desde 26/08) é agora a ÚNICA fonte
   de verdade pra "que dia esse pedido pertence" — calculado uma vez, num
-  trigger no banco, nunca mais recalculado. ML usa corte configurável
-  (default 11h, editável na tela de Pedidos → aba Histórico → ⚙️); Shopee
-  usa a própria "Data prevista de envio" do arquivo, sem corte de horário.
-  Expedição/Picklist/Histórico todos leem por `ship_date` agora, não mais
-  por `batch_id`. Aviso permanente de "Atrasados" na Expedição (pedido com
-  `ship_date` passado e ainda não separado), independente de qual dia está
-  aberto na tela. Constraint `UNIQUE(source,num_venda)` confirmada
-  existente em produção.
+  trigger no banco, nunca mais recalculado. ML usa o prazo de envio REAL
+  que a própria API do ML manda (`shipment.lead_time.buffering.date` —
+  desde 26/08, confirmado no painel deles), com corte de horário
+  configurável (default 11h, tela de Pedidos → aba Histórico → ⚙️) só
+  como reserva pra quando esse prazo não vem (ex: importado por `.xlsx`);
+  Shopee usa a própria "Data prevista de envio" do arquivo. Expedição/
+  Picklist/Histórico todos leem por `ship_date` agora, não mais por
+  `batch_id`. Aviso permanente de "Atrasados" na Expedição, independente
+  de qual dia está aberto na tela. **Pedido em pacote do ML agora vira 1
+  pedido só** (era N, um por produto — corrigido 26/08). Constraint
+  `UNIQUE(source,num_venda)` confirmada existente em produção. Pedido
+  Full confirmado excluído do picklist (só aparece na aba Pedidos).
 
 ## ⏭️ Próximos passos imediatos (pra continuar de onde parou)
 
@@ -74,6 +78,65 @@ reconstruir o raciocínio do zero.
 ---
 
 ## Log
+
+### 2026-08-26 (2ª parte) — Pacote do ML vira 1 pedido só + prazo de envio real (não mais estimado)
+
+**Motivação:** Raphael mostrou um caso real — uma venda com 3 produtos
+(pacote) tinha virado 3 "pedidos" separados no sistema, cada um com 1
+item, todos "Pendente" e escalados pra hoje. No painel real do ML, essa
+venda tem prazo de envio pra **28/08** (3 dias, não hoje). Investiguei
+direto na API do ML (usando o token já conectado, sem precisar pedir pro
+Raphael nada) e confirmei dois campos reais que nunca tínhamos capturado.
+
+**Achados confirmados na API (não é suposição):**
+- `order.pack_id` = `2000014711473185` — bate exatamente com o número da
+  venda no painel do ML. É o identificador real que une os produtos de
+  uma mesma venda; `order.id` (o que usávamos como num_venda) é só o id
+  de cada PRODUTO dentro do pacote.
+- `shipment.lead_time.buffering.date` = `2026-08-28` — bate exatamente
+  com "Para enviar no dia 28" do painel. Comparei com 2 pedidos normais
+  (não-pacote) pra confirmar o padrão: prazo normal costuma bater com o
+  corte de 11h, mas pacote/envio mais lento pode dar vários dias — o ML
+  já sabe disso, a gente só nunca tinha capturado.
+
+**O que foi corrigido** (`supabase/fase22-ml-pacote-e-prazo-real.sql` +
+`ml-process-webhook/index.ts`, já reimplantada):
+- `compute_ship_date()` agora prioriza esse prazo real do ML também
+  (antes só priorizava pra Shopee) — só cai pro corte de horário quando
+  não vem (pedido importado por `.xlsx`, que não tem esse dado).
+- `mapOrderToCommon()`: quando `order.pack_id` existe, usa ele (não
+  `order.id`) como `num_venda` — todos os produtos do mesmo pacote caem
+  no MESMO pedido.
+- Trocado o gate de "insere item só se o pedido é novo" por "insere item
+  só se **esse produto específico** ainda não tinha entrado" (nova coluna
+  `order_items.source_order_id`, guarda o `order.id` individual de cada
+  produto) — sem isso, só o 1º produto do pacote entraria, os outros 2
+  seriam descartados por "pedido já existe".
+- **Backfill retroativo obrigatório**: todo item já existente ganhou
+  `source_order_id` preenchido (= `num_venda` do próprio pedido) — sem
+  isso, o PRÓXIMO webhook em QUALQUER pedido normal (não só pacote)
+  reinseriria os itens do zero, reproduzindo a duplicação corrigida ontem
+  por um caminho diferente. Rodado ANTES do deploy da function.
+- Conserto pontual: os 3 pedidos já quebrados da venda `2000014711473185`
+  foram consolidados em 1 só (`num_venda`/`pack_id` = o pack_id real,
+  `shipping_deadline`/`ship_date` = 28/08, os 3 itens juntos, cada um
+  marcado com seu `source_order_id` original).
+- Confirmado (não mudou, só reforcei): pedido Full continua excluído do
+  picklist em `useShipping.js`/`PickListShopee.jsx` — aparece só na aba
+  Pedidos, pra saber que vendeu.
+
+**Pendências conhecidas:**
+- **Não testado ao vivo ainda** com um pacote novo de verdade (nenhum
+  chegou depois do deploy) — testado só via chamada direta à API antes
+  de codar. Confirmar no próximo pacote real que vira 1 pedido só.
+- **Outros pedidos-pacote antigos NÃO foram consolidados** (só o da
+  Marirhem) — pra fazer isso precisaria chamar a API do ML de novo pra
+  cada um e descobrir o pack_id real (não temos isso salvo
+  retroativamente). Menor urgência, pedidos já mais antigos.
+- Shopee: nada mexido ainda — combinado com o Raphael de arrumar o ML
+  primeiro.
+
+---
 
 ### 2026-08-26 — `ship_date`: reconstrução da regra de "que dia é esse pedido", fim das 5 implementações divergentes
 
