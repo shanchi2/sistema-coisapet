@@ -20,6 +20,7 @@ export async function fetchShippingOrders(source, shipDate) {
     .select('id, num_venda, comprador, cidade, estado_uf, status_ml, notes, source, batch_id, ship_date, is_full, needs_attention, items:order_items(id, titulo, sku, variacao, qty, obs_item, picked, picked_at)')
     .eq('source', source)
     .eq('ship_date', shipDate)
+    .eq('archived', false)
 
   if (error) throw error
 
@@ -120,6 +121,7 @@ export async function fetchShippingDayCounts(source) {
     .from('orders')
     .select('ship_date, status_ml, is_full, order_items(id)')
     .eq('source', source)
+    .eq('archived', false)
     .gte('ship_date', todayStr)
 
   if (error) throw error
@@ -144,6 +146,7 @@ export async function fetchOverdueOrders() {
   const { data, error } = await supabase
     .from('orders')
     .select('id, num_venda, comprador, source, ship_date, batch_id, status_ml, is_full, needs_attention, items:order_items(id, picked)')
+    .eq('archived', false)
     .lt('ship_date', todayStr)
 
   if (error) throw error
@@ -166,6 +169,7 @@ export async function resolveBatchId(source, shipDate) {
     .select('batch_id')
     .eq('source', source)
     .eq('ship_date', shipDate)
+    .eq('archived', false)
     .not('batch_id', 'is', null)
   if (error) throw error
   if (!data || data.length === 0) return null

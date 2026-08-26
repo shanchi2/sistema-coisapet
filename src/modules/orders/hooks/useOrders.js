@@ -790,6 +790,30 @@ export async function fetchImportEvents({ limit = 200 } = {}) {
   return data || []
 }
 
+// Devolve { batch_id: ship_date } — o ship_date mais comum entre os pedidos
+// de cada lote (ver fase20-ship-date-corte-unico.sql). Usado só pra agrupar
+// o Histórico de Importações por dia de verdade — antes disso, o
+// agrupamento usava a hora do upload, que podia ser um dia diferente do
+// dia real do pedido (era exatamente isso que confundia o dono ao ver um
+// upload de tarde cair na seção de "amanhã").
+export async function fetchBatchShipDates(batchIds) {
+  const ids = [...new Set(batchIds.filter(Boolean))]
+  if (ids.length === 0) return {}
+  const { data, error } = await supabase.from('orders').select('batch_id, ship_date').in('batch_id', ids)
+  if (error) throw error
+  const counts = {} // batch_id -> { shipDate: count }
+  ;(data || []).forEach(o => {
+    if (!o.batch_id || !o.ship_date) return
+    counts[o.batch_id] = counts[o.batch_id] || {}
+    counts[o.batch_id][o.ship_date] = (counts[o.batch_id][o.ship_date] || 0) + 1
+  })
+  const result = {}
+  Object.entries(counts).forEach(([batchId, byDate]) => {
+    result[batchId] = Object.entries(byDate).sort((a, b) => b[1] - a[1])[0][0]
+  })
+  return result
+}
+
 // Busca TODOS os ids de pedido de um lote, sem cair no limite padrão de
 // 1000 linhas do Supabase — pagina automaticamente até esgotar
 async function fetchAllOrderIds(batchId) {
