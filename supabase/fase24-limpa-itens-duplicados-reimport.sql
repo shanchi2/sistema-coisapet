@@ -31,7 +31,7 @@
 -- ================================================================
 
 -- ── Confirma o escopo antes de apagar ────────────────────────────────
-SELECT oi.order_id, o.num_venda, o.comprador, oi.sku, oi.variacao, COUNT(*) AS cnt
+SELECT oi.order_id, o.num_venda, o.comprador, oi.sku, MAX(oi.variacao) AS variacao, COUNT(*) AS cnt
 FROM public.order_items oi
 JOIN public.orders o ON o.id = oi.order_id
 WHERE o.source = 'ml' AND o.archived = false
