@@ -61,7 +61,9 @@ export function MercadoLivreConnect() {
     return (
       <div className="flex items-center gap-2 text-xs font-semibold bg-emerald-50 text-emerald-700 px-3 py-2 rounded-xl">
         <Link2 size={13} />
-        <span>ML conectado{status.ml_nickname ? `: ${status.ml_nickname}` : ''}{status.last_sync_at ? ` · sync ${fmtTime(status.last_sync_at)}` : ''}</span>
+        <span title="Isso é a hora da ÚLTIMA venda recebida, não uma verificação periódica — o ML avisa a gente na hora que algo acontece (webhook), então esse relógio só anda quando chega pedido novo ou muda o status de um pedido.">
+          ML conectado{status.ml_nickname ? `: ${status.ml_nickname}` : ''}{status.last_sync_at ? ` · última venda recebida ${fmtTime(status.last_sync_at)}` : ''}
+        </span>
         <button onClick={disconnect} disabled={loading} title="Desconectar" className="text-emerald-600 hover:text-rose-600 transition-colors">
           <Unlink size={13} />
         </button>

@@ -17,6 +17,9 @@ jogar fora/
 # Claude Code — config/estado local por máquina, não compartilhar
 .claude/
 
+# Supabase CLI — estado local do link do projeto, por máquina
+supabase/.temp/
+
 # Editor
 .vscode/
 .idea/
