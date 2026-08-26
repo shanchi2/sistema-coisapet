@@ -46,13 +46,17 @@ reconstruir o raciocínio do zero.
   pedido só** (era N, um por produto — corrigido 26/08). Constraint
   `UNIQUE(source,num_venda)` confirmada existente em produção. Pedido
   Full confirmado excluído do picklist (só aparece na aba Pedidos).
+  **26/08 (3ª parte)**: todos os pedidos ML antigos foram arquivados
+  (`orders.archived`, nunca DELETE) e reimportados do zero via API —
+  Expedição de hoje bate 100% com o painel real do ML (7 pedidos).
+  Shopee intocado. Ver Log pra detalhes.
 
 ## ⏭️ Próximos passos imediatos (pra continuar de onde parou)
 
-1. **`npm run build` + subir `dist/` pra Hostinger** — o código de hoje
-   (ship_date, Atrasados, config de corte) já está no GitHub mas ainda não
-   foi buildado/subido pro site. A parte do banco (migração + trigger) já
-   está ativa em produção independente disso.
+1. **`npm run build` + subir `dist/` pra Hostinger** — o código (ship_date,
+   Atrasados, config de corte, filtro de `archived`) já está no GitHub
+   (buildado localmente e testado nesta sessão) mas ainda não foi subido
+   pro site. A parte do banco já está ativa em produção independente disso.
 2. **Rodar o `DELETE` do `supabase/fase19-cleanup-duplicate-items.sql`**
    (query 2, comentada de propósito) — 7 itens duplicados já auditados e
    confirmados como bug pelo Raphael, só falta apagar. Bloqueado pro
@@ -78,6 +82,65 @@ reconstruir o raciocínio do zero.
 ---
 
 ## Log
+
+### 2026-08-26 (3ª parte) — Arquiva todos os pedidos ML e reimporta do zero via API
+
+**Motivação:** mesmo depois da Fase 22 (pacote + prazo real), Raphael
+mandou print do painel real do ML: **7 envios pra hoje**, nada mais. O
+Expedição do sistema mostrava **17 pedidos + badge "603 atrasados"**.
+Diagnóstico: pedidos-pacote fragmentados de ANTES da Fase 22 continuavam
+na base como cartões-fantasma separados (ex: Camilla Fernandes duplicada
+em 5 cartões), e o badge de atrasados — feature nova, funcionando como
+projetado — estava corretamente expondo um acúmulo histórico nunca
+limpo (maioria Shopee antigo, que nem é o escopo de hoje). Raphael
+decidiu: não vale consertar pedido por pedido do passado — **arquivar
+tudo que é ML e recomeçar do zero puxando da API**, já que a equipe de
+produção está usando o próprio painel do ML como plano B enquanto isso.
+
+**O que foi feito** (`supabase/fase23-arquivar-pedidos-ml.sql`):
+- Nova coluna `orders.archived BOOLEAN DEFAULT false` — arquivar é só
+  uma flag, **nunca DELETE** (ação destrutiva sempre bloqueada pro
+  Claude Code rodar sozinho, e de todo jeito preserva dado/histórico).
+- `UPDATE orders SET archived = true WHERE source = 'ml'` — os 174
+  pedidos ML existentes (fragmentados ou não) saem das telas
+  operacionais de uma vez.
+- `upsert_orders_safe()`: `DO UPDATE SET archived = false` — qualquer
+  pedido tocado de novo (reimport ou webhook normal futuro) desarquiva
+  sozinho, sem precisar de passo manual extra daqui pra frente.
+- `useShipping.js`: `fetchShippingOrders`/`fetchShippingDayCounts`/
+  `fetchOverdueOrders`/`resolveBatchId` agora filtram `archived = false`.
+  **Reporting (`useOrdersReports.js`) e a aba Pedidos principal NÃO
+  filtram archived** — de propósito, pra não afetar relatório mensal de
+  vendas nem esconder histórico.
+
+**Reimportação via API** (sem escrever lógica nova de processamento):
+peguei o `access_token` de `ml_integration`, busquei via
+`/orders/search?seller=...&order.date_created.from=...` os pedidos reais
+dos últimos 5 dias (89 no total, paginado), e inseri um evento sintético
+por pedido em `ml_webhook_events` (`topic: 'orders_v2', resource:
+'/orders/{id}'`) — o Database Webhook já existente disparou o
+`ml-process-webhook` (já corrigido na Fase 22) pra cada um sozinho, sem
+precisar duplicar nenhuma lógica de merge/prazo. 88/89 processaram
+automaticamente em ~30s; 1 ficou "pending" sem erro (a chamada do
+Database Webhook parece ter falhado silenciosamente pra esse) — invoquei
+a function manualmente pra esse único caso e completou normal.
+
+**Resultado confirmado:**
+- Hoje (26/08) mostra **exatamente 7 pedidos** — bate 100% com o painel
+  do ML. Camilla Fernandes agora é 1 pedido só com 10 itens (era 5
+  cartões fragmentados).
+- Nenhum pedido `is_full` entre os 7 (regra de excluir Full do picklist
+  confirmada intacta).
+- Shopee **intocado**: 1065 pedidos, contagem idêntica à de antes —
+  escopo era só ML, por pedido explícito do Raphael.
+- ML: 69 pedidos ativos (não-arquivados, todos vindos da reimportação) +
+  128 arquivados (o total cresceu de 174 pro combinado porque pedidos-
+  pacote fragmentados viraram novas linhas consolidadas por `pack_id`,
+  as antigas ficam arquivadas como histórico morto).
+
+**Pendência que fica pra trás:** a partir de agora, todo pedido novo ML
+chega por webhook normal — já correto (Fase 22) e já desarquivado
+(`upsert_orders_safe`). Não é preciso repetir esse processo de novo.
 
 ### 2026-08-26 (2ª parte) — Pacote do ML vira 1 pedido só + prazo de envio real (não mais estimado)
 
