@@ -92,6 +92,66 @@ reconstruir o raciocínio do zero.
 
 ## Log
 
+### 2026-08-27 — Corrige detecção de Full (campo errado na API) + pedido antigo esquecido
+
+**Motivação:** Raphael reportou dois problemas concretos com print do
+painel do ML ao lado do nosso Expedição: 4 pedidos **Full** apareceram
+no picklist de amanhã (mesmo já existindo a regra de exclusão!), e um
+pedido de envio padrão de verdade pra amanhã (`#2000014512651529`) **não
+apareceu em lugar nenhum**.
+
+**Bug 1 — Full vazando pro picklist, causa raiz real:** o código lia
+`shipment.logistic_type` pra decidir `is_full`. Confirmei direto na API
+(fiz `GET /orders/{id}` + `GET /shipments/{id}` com o header
+`x-format-new: true`, o mesmo que usamos): nesse formato, `logistic_type`
+no nível raiz do shipment vem **sempre `null`** — o valor real está
+aninhado em `shipment.logistic.type`. Ou seja, `is_full` nunca dava
+`true` desde que foi criado (Fase 17/22) — só ficou visível agora porque
+esses 4 pedidos entraram pela primeira vez direto pela API (antes vinham
+majoritariamente por `.xlsx`, importado com outra lógica de Full).
+**Não era um bug de ontem, era um bug latente desde o início da
+integração**, mascarado até agora.
+
+**Bug 2 — pedido antigo "esquecido":** confirmado na API — pedido real,
+criado em 13/08 (item sob encomenda/prazo longo), fora da janela dos
+últimos 5 dias que a Fase 23 cobriu (ela só pegou desde 21/08). Qualquer
+pedido criado antes disso mas ainda em aberto (prazo de fabricação longo,
+etc.) ficaria invisível pro sistema.
+
+**Corrigido:**
+- `mapOrderToCommon()`: `is_full` agora checa `shipment.logistic?.type`
+  primeiro (caminho real), mantém o campo antigo como reserva. Deployado.
+- Reprocessamento usando `tags=not_delivered` na busca da API (não mais
+  uma janela de datas) — pega QUALQUER pedido ainda em aberto,
+  independente de quando foi criado, sem risco de re-arquivar pedido já
+  resolvido (`not_delivered` já exclui isso por definição). 345 pedidos
+  encontrados e reenfileirados via `ml_webhook_events` (mesmo mecanismo
+  da Fase 23).
+- **Achado no meio do processo**: o Database Webhook trigger empacou
+  num lote grande (345 de uma vez) — só ~66 processaram sozinhos em
+  vários minutos, o resto ficou parado (`status='pending'`, sem erro).
+  Confirmado que a função em si funciona bem quando chamada direto
+  (invoquei manualmente, respondeu em ~10s) — o gargalo é a fila do
+  trigger em lote grande, não o código. Contornado processando o
+  restante manualmente via `Invoke-RestMethod` em lotes de 8 concorrentes
+  (script `drain_webhook_queue.ps1`, temporário, não faz parte do repo).
+  **Pendência técnica**: investigar por que o Database Webhook não dá
+  conta de lote grande sozinho — pra próxima reimportação em massa,
+  considerar já processar em lotes menores de propósito, ou usar esse
+  mesmo contorno manual direto.
+- Confirmados corrigidos os 5 pedidos do relato original: os 4 Full
+  agora com `is_full=true`; o pedido da Adriely (`#2000014512651529`)
+  já está no banco com `ship_date=2026-08-27`, batendo com o painel.
+
+**Também esclarecido (pergunta do Raphael): botão "Fechar o Dia"** —
+confirmado no código (`close_shipping_day` + `handleCloseDay` em
+`ExpedicaoPage.jsx`) que é **só um registro histórico** (grava uma foto
+de quantos pedidos fecharam completos/incompletos, pra auditoria). Não
+move `ship_date`, não desmarca nada, não faz pedido incompleto "sumir"
+nem pular de dia — o mecanismo real que evita esquecimento é o
+"Atrasados" (pedido com `ship_date` passado e item não separado
+continua aparecendo lá, dia após dia, até ser resolvido ou arquivado).
+
 ### 2026-08-26 (5ª parte) — Alinhamento da Shopee: revisão do fluxo + arquivamento do histórico morto
 
 **Motivação:** com o ML confirmado funcionando perfeitamente (Raphael:
