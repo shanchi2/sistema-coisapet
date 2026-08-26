@@ -5,11 +5,12 @@ import {
   ChevronDown, ChevronUp, ChevronRight, Search, X, Check,
   Truck, CheckCircle2, Clock, AlertCircle, FileText,
   RefreshCw, ExternalLink, History, Filter, Pencil, Trash2, XCircle,
-  Radio, PackageX, PackageSearch, PackageCheck,
+  Radio, PackageX, PackageSearch, PackageCheck, Settings,
 } from 'lucide-react'
-import { useOrders, fetchImportEvents, checkBatchBeforeDelete, deleteBatchOrders } from './hooks/useOrders'
+import { useOrders, fetchImportEvents, fetchBatchShipDates, checkBatchBeforeDelete, deleteBatchOrders } from './hooks/useOrders'
 import { FeiraCombinadaModal } from './FeiraCombinadaModal'
 import { MercadoLivreConnect } from './MercadoLivreConnect'
+import { CutoffSettingsModal } from './CutoffSettingsModal'
 import toast from 'react-hot-toast'
 import { OrdersReportsTab } from './OrdersReportsTab'
 import { useProducts }  from '../products/hooks/useProducts'
@@ -30,16 +31,6 @@ function fmtDateTime(d) {
 function fmtTimeOnly(d) {
   if (!d) return '—'
   return new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-}
-
-// Chave de dia pro Histórico — respeita o corte real do ML (11h de
-// Brasília, não meia-noite): pedido sincronizado às 23h já conta pro
-// "dia" seguinte, mesma regra usada pra decidir o lote (useOrders.js /
-// ml-process-webhook). Shopee e manual continuam pelo dia de calendário puro.
-function pickDayKey(dateStr, source) {
-  const d = new Date(dateStr)
-  if (source === 'ml' && d.getHours() >= 11) d.setDate(d.getDate() + 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function dayGroupLabel(dateStr) {
@@ -418,6 +409,7 @@ export function OrdersPage() {
   const { orders, batches, loading, importing, newOrderIds, live, fetchOrders, fetchBatches, importAuto, createManualOrder } = useOrders()
   const [importEvents, setImportEvents] = useState([])
   const [loadingEvents, setLoadingEvents] = useState(false)
+  const [batchShipDates, setBatchShipDates] = useState({}) // { batch_id: ship_date } — dia real de cada lote
   const [openDays, setOpenDays] = useState(() => {
     const now = new Date()
     const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
@@ -484,11 +476,21 @@ export function OrdersPage() {
   const [editOpen,      setEditOpen]      = useState(false)
   const [editingOrder,  setEditingOrder]  = useState(null)
   const [view,          setView]          = useState('orders')
+  const [cutoffOpen,    setCutoffOpen]    = useState(false)
 
   useEffect(() => {
     if (view === 'history') {
       setLoadingEvents(true)
-      fetchImportEvents().then(setImportEvents).finally(() => setLoadingEvents(false))
+      fetchImportEvents()
+        .then(events => {
+          setImportEvents(events)
+          // Inclui também os lotes "legacy" (sem evento registrado) —
+          // batches já deve estar carregado (busca separada, no mount)
+          const ids = [...events.map(e => e.batch_id), ...batches.map(b => b.id)]
+          return fetchBatchShipDates(ids)
+        })
+        .then(setBatchShipDates)
+        .finally(() => setLoadingEvents(false))
     }
   }, [view])
 
@@ -605,19 +607,28 @@ export function OrdersPage() {
       </div>
 
       {/* Abas */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl w-fit">
-        {[
-          ['orders','📋 Pedidos'],
-          ...(canSeeValues ? [['reports','📊 Relatórios']] : []),
-          ['history','🕐 Histórico de importações'],
-        ].map(([v, label]) => (
-          <button key={v} onClick={() => setView(v)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${view===v ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            style={{ fontFamily:'Nunito,sans-serif' }}>
-            {label}
+      <div className="flex items-center gap-2">
+        <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl w-fit">
+          {[
+            ['orders','📋 Pedidos'],
+            ...(canSeeValues ? [['reports','📊 Relatórios']] : []),
+            ['history','🕐 Histórico de importações'],
+          ].map(([v, label]) => (
+            <button key={v} onClick={() => setView(v)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${view===v ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              style={{ fontFamily:'Nunito,sans-serif' }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {canSeeValues && view === 'history' && (
+          <button onClick={() => setCutoffOpen(true)} title="Corte de dia"
+            className="p-2.5 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors">
+            <Settings size={16} />
           </button>
-        ))}
+        )}
       </div>
+      <CutoffSettingsModal open={cutoffOpen} onClose={() => setCutoffOpen(false)} />
 
       {view === 'reports' && canSeeValues ? (
         <OrdersReportsTab />
@@ -842,18 +853,15 @@ export function OrdersPage() {
             </div>
           ) : (
             (() => {
-              // Agrupa os eventos por dia — usa a data de criação do LOTE
-              // (import_batches.imported_at), não a hora do upload em si.
-              // Um upload feito às 16h pode trazer pedidos de antes das 11h
-              // (que reaproveitam o lote de hoje, já criado de manhã) e
-              // pedidos de depois das 11h (que abrem um lote novo, de
-              // amanhã) — agrupar pela hora do UPLOAD misturava os dois e
-              // fazia o evento inteiro aparecer no dia errado.
-              const batchById = new Map(batches.map(b => [b.id, b]))
+              // Agrupa os eventos pelo ship_date REAL dos pedidos de cada
+              // lote (fase20-ship-date-corte-unico.sql) — o mesmo campo
+              // usado pela Expedição/Picklist, calculado uma vez na criação
+              // do pedido. Antes disso o agrupamento usava a hora do
+              // upload (ou a criação do lote), que podia divergir do dia
+              // real do pedido e fazer o evento aparecer na seção errada.
               const dayMap = {}
               allImportEvents.forEach(ev => {
-                const batchDate = batchById.get(ev.batch_id)?.imported_at || ev.imported_at
-                const dayKey = pickDayKey(batchDate, ev.source)
+                const dayKey = batchShipDates[ev.batch_id] || ev.imported_at?.slice(0, 10) || 'sem-data'
                 if (!dayMap[dayKey]) dayMap[dayKey] = []
                 dayMap[dayKey].push(ev)
               })
