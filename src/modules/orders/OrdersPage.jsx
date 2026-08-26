@@ -7,7 +7,7 @@ import {
   RefreshCw, ExternalLink, History, Filter, Pencil, Trash2, XCircle,
   Radio, PackageX, PackageSearch, PackageCheck, Settings,
 } from 'lucide-react'
-import { useOrders, fetchImportEvents, fetchBatchShipDates, checkBatchBeforeDelete, deleteBatchOrders } from './hooks/useOrders'
+import { useOrders, fetchImportEvents, fetchBatchShipDates, fetchBatchesByIds, checkBatchBeforeDelete, deleteBatchOrders } from './hooks/useOrders'
 import { FeiraCombinadaModal } from './FeiraCombinadaModal'
 import { MercadoLivreConnect } from './MercadoLivreConnect'
 import { CutoffSettingsModal } from './CutoffSettingsModal'
@@ -477,6 +477,18 @@ export function OrdersPage() {
   const [editingOrder,  setEditingOrder]  = useState(null)
   const [view,          setView]          = useState('orders')
   const [cutoffOpen,    setCutoffOpen]    = useState(false)
+  // Lotes buscados à parte, por id específico — batches (fetchBatches)
+  // só traz os 50 mais recentes, e uma fonte com muita atividade (ex: ML
+  // reprocessando em massa) pode empurrar o lote de OUTRA fonte pra fora
+  // dessa janela. Sem isso, o cartão daquela fonte no Histórico fica sem
+  // total/botões mesmo o lote existindo normalmente (bug real, 2026-08-27:
+  // aconteceu com a Shopee depois do reprocessamento do ML).
+  const [extraBatches,  setExtraBatches]  = useState([])
+  const batchesById = useMemo(() => {
+    const map = new Map()
+    ;[...batches, ...extraBatches].forEach(b => map.set(b.id, b))
+    return map
+  }, [batches, extraBatches])
 
   useEffect(() => {
     if (view === 'history') {
@@ -487,6 +499,9 @@ export function OrdersPage() {
           // Inclui também os lotes "legacy" (sem evento registrado) —
           // batches já deve estar carregado (busca separada, no mount)
           const ids = [...events.map(e => e.batch_id), ...batches.map(b => b.id)]
+          const knownIds = new Set(batches.map(b => b.id))
+          const missingIds = ids.filter(id => id && !knownIds.has(id))
+          if (missingIds.length > 0) fetchBatchesByIds(missingIds).then(setExtraBatches).catch(() => {})
           return fetchBatchShipDates(ids)
         })
         .then(setBatchShipDates)
@@ -920,8 +935,9 @@ export function OrdersPage() {
                       // cronológico é o lote certo, escolhe o que de fato tem os
                       // pedidos hoje (maior total_orders atual).
                       const candidateBatchIds = [...new Set(sorted.map(e => e.batch_id))]
-                      const b = batches
-                        .filter(bt => candidateBatchIds.includes(bt.id))
+                      const b = candidateBatchIds
+                        .map(id => batchesById.get(id))
+                        .filter(Boolean)
                         .sort((x, y) => (y.total_orders || 0) - (x.total_orders || 0))[0]
                       const totalNovos = sorted.reduce((s, e) => s + (e.new_orders_count || 0), 0)
                       const ps = platformStyle(source)

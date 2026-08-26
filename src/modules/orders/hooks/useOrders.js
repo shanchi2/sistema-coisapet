@@ -814,6 +814,22 @@ export async function fetchBatchShipDates(batchIds) {
   return result
 }
 
+// Busca lotes específicos por id, sem o limite de 50 mais recentes do
+// fetchBatches() — o Histórico de Importações precisa achar o lote de
+// QUALQUER upload exibido na tela, mesmo que o ML tenha criado um monte
+// de lotes novos nas últimas 24h (ex: reprocessamento em massa) e
+// empurrado o lote de outra fonte pra fora do "top 50 mais recentes".
+// Bug real em 2026-08-27: Shopee sumiu com os botões de Picklist/
+// Expedição porque nenhum dos lotes dela estava mais entre os 50
+// primeiros — não porque o lote dela tivesse algum problema.
+export async function fetchBatchesByIds(batchIds) {
+  const ids = [...new Set(batchIds.filter(Boolean))]
+  if (ids.length === 0) return []
+  const { data, error } = await supabase.from('import_batches').select('*').in('id', ids)
+  if (error) throw error
+  return data || []
+}
+
 // Busca TODOS os ids de pedido de um lote, sem cair no limite padrão de
 // 1000 linhas do Supabase — pagina automaticamente até esgotar
 async function fetchAllOrderIds(batchId) {
