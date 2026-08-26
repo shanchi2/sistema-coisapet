@@ -50,6 +50,11 @@ reconstruir o raciocínio do zero.
   (`orders.archived`, nunca DELETE) e reimportados do zero via API —
   Expedição de hoje bate 100% com o painel real do ML (7 pedidos).
   Shopee intocado. Ver Log pra detalhes.
+- **Shopee (26/08, 5ª parte)**: fluxo revisado, sem bug estrutural
+  (parser já agrupa pacote e protege item de pedido já existente —
+  diferente do ML, não precisou de correção de código). 723 pedidos
+  antigos arquivados (`ship_date < 15/08/2026`); badge de Atrasados caiu
+  de ~673+ pra 34 no total (7 Shopee + 23 ML + 4 manual).
 
 ## ⏭️ Próximos passos imediatos (pra continuar de onde parou)
 
@@ -86,6 +91,54 @@ reconstruir o raciocínio do zero.
 ---
 
 ## Log
+
+### 2026-08-26 (5ª parte) — Alinhamento da Shopee: revisão do fluxo + arquivamento do histórico morto
+
+**Motivação:** com o ML confirmado funcionando perfeitamente (Raphael:
+"aparentemente deu tudo certo, está perfeito"), partimos pra Shopee —
+mesmo pedido de "vamos alinhar" que abriu o trabalho do ML.
+
+**Revisão do fluxo Shopee (`parseShopeeXlsx`/`saveImportedOrders` em
+`useOrders.js`) — boa notícia, sem bug estrutural:**
+- O parser já agrupa itens de um mesmo pedido pelo "ID do pedido" DENTRO
+  do próprio arquivo, antes de qualquer insert — não existe o problema
+  de fragmentação que o ML tinha (pack virando N pedidos).
+- Item só é inserido quando o PEDIDO é genuinamente novo
+  (`wasInsertedByNum`) — pedido que já existia nunca tem os itens
+  retocados, mesmo reimportando um arquivo com intervalo de datas
+  sobreposto. Isso evita o exato bug de duplicação que achamos no ML
+  (Fase 24): lá o problema era um pedido já existente sendo "re-tocado"
+  por uma segunda fonte com id diferente; aqui isso não acontece porque
+  o gate é por pedido inteiro, não por sub-identificador. **Nenhuma
+  mudança de código necessária.**
+- `ship_date`/corte: já correto desde a Fase 20/22 — Shopee usa
+  `shipping_deadline` (a "Data prevista de envio" do próprio arquivo),
+  nunca corte de horário.
+
+**Achado real: 673 "atrasados" da Shopee eram quase todos históricos,
+mas não uniformemente** — distribuição por `ship_date`:
+- 465 de julho/2025 (mais de 1 ano).
+- 29 de 30-31/07/2026.
+- 172 concentrados entre 06/08 e 14/08/2026 (cluster incomum — só
+  8 pedidos entre 17/08 e 24/08, bem menor).
+
+Perguntei ao Raphael se a equipe marca "separado" (picked) pra Shopee do
+mesmo jeito que faz pro ML — confirmou que sim. Mesmo assim, decidiu
+arquivar tudo com `ship_date < 2026-08-15` (Fase 23 usa arquivamento
+igual — flag, nunca `DELETE`).
+
+**`supabase/fase25-arquivar-shopee-antigo.sql`** (rodada, é `UPDATE`,
+não bloqueada pro Claude Code): arquivou 723 pedidos Shopee (`ship_date
+< 2026-08-15`), deixou 348 ativos. Badge de Atrasados caiu de ~673+
+pra **7 (Shopee) + 23 (ML) + 4 (manual) = 34 no total**.
+
+**Observação registrada, não é bug novo:** os 23 "atrasados" do ML são
+esperados — são pedidos dos dias 21-25/08 que a Fase 23 recriou do zero
+via API (fisicamente já enviados na vida real), mas cujos itens nascem
+com `picked = false` por padrão, já que o sistema não tem como saber que
+já foram separados fisicamente antes de hoje. Não precisa de ação —
+vai sumir sozinho conforme a equipe for revisando/marcando, ou pode ser
+arquivado manualmente se quiser encerrar mais rápido.
 
 ### 2026-08-26 (4ª parte) — Corrige duplicação de item causada pela própria reimportação da Fase 23
 
