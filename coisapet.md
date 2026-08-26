@@ -53,6 +53,10 @@ reconstruir o raciocínio do zero.
 
 ## ⏭️ Próximos passos imediatos (pra continuar de onde parou)
 
+0. **Rodar `supabase/fase24-limpa-itens-duplicados-reimport.sql` manualmente**
+   (SQL Editor do Supabase) — limpa os 32 pares de item duplicado que a
+   reimportação da Fase 23 criou (bug já corrigido no código, mas o
+   estrago retroativo continua na tela até rodar isso).
 1. **`npm run build` + subir `dist/` pra Hostinger** — o código (ship_date,
    Atrasados, config de corte, filtro de `archived`) já está no GitHub
    (buildado localmente e testado nesta sessão) mas ainda não foi subido
@@ -82,6 +86,50 @@ reconstruir o raciocínio do zero.
 ---
 
 ## Log
+
+### 2026-08-26 (4ª parte) — Corrige duplicação de item causada pela própria reimportação da Fase 23
+
+**Motivação:** Raphael testou a Fase 23 e confirmou que a contagem bateu
+certinho com o painel do ML (7 hoje, dia 28 certo) — "acho que achamos o
+caminho" — mas reportou itens duplicados em alguns pedidos (ex: Camilla
+Fernandes mostrando 10 itens quando deveriam ser 5 produtos distintos,
+cada um aparecendo 2x).
+
+**Causa raiz (confirmada direto no banco, não suposição):** a
+reimportação via API tocou pedidos que JÁ EXISTIAM antes (importados por
+`.xlsx`, ou criados pelo webhook de antes da Fase 22). Pra esses
+pedidos, `order_items.source_order_id` tinha sido preenchido
+retroativamente na Fase 22 com o `num_venda` do pedido — só que pra
+pedido desse tipo, `num_venda` é o número da VENDA (pack_id), não o
+`order.id` individual que a API devolve pra cada produto. O gate "esse
+produto já entrou?" comparava exatamente por esse id, nunca batia, e
+reinseria o item de novo — 1 duplicata por produto já tocado.
+
+**Segundo achado, durante a limpeza:** nem todo par duplicado tinha
+`sku+variação` idênticos em string — o `.xlsx` antigo grava a variação
+como `"Cor : Amadeirado"` (espaço antes do `:`) e a API grava
+`"Cor: Amadeirado"` (sem espaço) pro MESMO produto. Comparação exata de
+string deixaria passar 11 dos 32 pares reais (confirmado: par do Caio
+Raváglia, sku `TER-60-C-AMD`). ML controla os dois formatos (xlsx e API)
+de jeitos diferentes e sem aviso — por isso a normalização usada é ampla
+(espaço + caixa), não uma lista de casos específicos.
+
+**Corrigido** (`ml-process-webhook/index.ts`, já reimplantada 3x hoje —
+2 iterações até fechar a normalização certa):
+- Gate de duplicidade trocado de "esse `source_order_id` já foi visto"
+  pra "esse produto (`sku`+`variação`, normalizado sem espaço e em minúsculo)
+  já foi gravado nesse pedido" — identidade que não muda dependendo de
+  como o pedido entrou no sistema (xlsx vs webhook vs API).
+- `supabase/fase24-limpa-itens-duplicados-reimport.sql` (criada, **ainda
+  não rodada** — ação destrutiva bloqueada pro Claude Code, precisa ser
+  manual no SQL Editor do Supabase): limpa os 32 pares já duplicados pela
+  Fase 23 (mantém a linha mais antiga de cada par, apaga a duplicata mais
+  nova), e recalcula `total_items` dos lotes ML afetados.
+
+**Pendência imediata:** rodar `fase24-limpa-itens-duplicados-reimport.sql`
+manualmente — sem isso, os 32 pares continuam duplicados na tela (a
+correção do código só impede duplicata NOVA daqui pra frente, não limpa
+a que já foi criada pela Fase 23).
 
 ### 2026-08-26 (3ª parte) — Arquiva todos os pedidos ML e reimporta do zero via API
 
