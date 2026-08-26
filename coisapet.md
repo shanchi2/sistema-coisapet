@@ -142,6 +142,12 @@ etc.) ficaria invisível pro sistema.
 - Confirmados corrigidos os 5 pedidos do relato original: os 4 Full
   agora com `is_full=true`; o pedido da Adriely (`#2000014512651529`)
   já está no banco com `ship_date=2026-08-27`, batendo com o painel.
+- **Resultado final do reprocessamento** (410 pedidos tocados, 0 erro
+  real — os 22 "error" restantes são identificadores inválidos da minha
+  primeira tentativa falha, sem pedido de verdade por trás, inofensivos):
+  **58 pedidos Full** identificados corretamente entre os 329 ativos do
+  ML — confirma que o bug não era só os 4 relatados, era sistêmico desde
+  a criação da checagem. Atrasados do ML caiu de 23 pra **12**.
 
 **Também esclarecido (pergunta do Raphael): botão "Fechar o Dia"** —
 confirmado no código (`close_shipping_day` + `handleCloseDay` em
