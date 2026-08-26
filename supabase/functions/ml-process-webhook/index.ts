@@ -39,10 +39,29 @@ function mapOrderToCommon(order: any, shipment: any | null) {
     obs_item:   null,
   }))
 
+  // Pacote (venda com N produtos): a API do ML entrega cada produto como
+  // um `order.id` separado, mas todos compartilham o mesmo `pack_id` —
+  // esse É o número real da venda (bate com o painel do ML). Usa ele
+  // como num_venda pra todos os produtos do mesmo pacote caírem no
+  // MESMO pedido, em vez de virar um pedido por produto (bug real
+  // confirmado em 2026-08-26: pacote de 3 produtos virava 3 "pedidos"
+  // separados, cada um com 1 item, todos "Pendente").
+  const childOrderId = String(order.id)
+  const num = order.pack_id ? String(order.pack_id) : childOrderId
+
   return {
-    num:        String(order.id),
+    num,
+    // ID individual do produto na API (nunca é o mesmo pro pedido inteiro
+    // quando é pacote) — usado só pra saber se ESSE produto específico já
+    // teve os itens inseridos antes, sem depender de "o pedido é novo".
+    childOrderId,
     data:       order.date_created || null,
-    shipping_deadline: null,
+    // Prazo de envio REAL do ML — bate com "Para enviar no dia X" do
+    // painel deles. NÃO é sempre "amanhã": varia com método de envio e
+    // tamanho do pacote (confirmado: pacote de 3 produtos p/ Bahia deu
+    // 3 dias, não 1). Só a parte da data — o ML sempre manda com hora
+    // zerada em UTC, representando o dia mesmo, sem precisar converter fuso.
+    shipping_deadline: shipment?.lead_time?.buffering?.date?.slice(0, 10) ?? null,
     estado,
     desc:       null,
     comprador,
@@ -51,6 +70,7 @@ function mapOrderToCommon(order: any, shipment: any | null) {
     cep:        addr?.zip_code || null,
     rastreio:   shipment?.tracking_number || null,
     is_pacote:  !!order.pack_id,
+    pack_id:    order.pack_id ? String(order.pack_id) : null,
     // Pedido Full = o ML guarda o estoque no centro de distribuição dele
     // e despacha sozinho — a CoisaPet nunca separa/embala esse pedido.
     // logistic_type='fulfillment' é o campo oficial da API pra isso.
@@ -159,15 +179,25 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
       cep:         parsed.cep,
       rastreio:    parsed.rastreio,
       is_pacote:   parsed.is_pacote,
+      pack_id:     parsed.pack_id,
       is_full:     parsed.is_full,
       notes:       parsed.notes,
     }],
   })
   if (ordErr) throw ordErr
   const savedOrder = savedRows[0]
-  const isNew = savedOrder.was_inserted
 
-  if (isNew && parsed.items.length > 0) {
+  // Não usa mais "o pedido é novo" pra decidir se insere item — num
+  // pacote, o pedido (linha em orders) já existe a partir do 2º produto
+  // em diante, mas cada PRODUTO ainda precisa entrar. Checa se ESSE
+  // produto específico (childOrderId) já teve os itens inseridos antes;
+  // pra pedido normal (sem pacote) isso equivale exatamente a "é novo",
+  // já que childOrderId === num nesse caso.
+  const { data: existingChildItems } = await db.from('order_items')
+    .select('id').eq('order_id', savedOrder.id).eq('source_order_id', parsed.childOrderId).limit(1)
+  const hasNewItems = (!existingChildItems || existingChildItems.length === 0) && parsed.items.length > 0
+
+  if (hasNewItems) {
     const skus = [...new Set(parsed.items.map(it => it.sku).filter(Boolean))]
     const skuMap = new Map<string, string>()
     if (skus.length > 0) {
@@ -186,6 +216,7 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
       preco_unit:     it.preco_unit,
       obs_item:       it.obs_item,
       sku_encontrado: it.sku ? skuMap.has(it.sku) : true,
+      source_order_id: parsed.childOrderId,
     }))
     const { error: itemsErr } = await db.from('order_items').insert(itemsToInsert)
     if (itemsErr) throw itemsErr
@@ -222,7 +253,7 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
   }
   await db.from('import_batches').update({ total_orders: allIds.length, total_items: totalItems }).eq('id', batchId)
 
-  return { isNew }
+  return { hasNewItems }
 }
 
 serve(async (req) => {
