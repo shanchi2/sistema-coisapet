@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Check, Package, PartyPopper, RefreshCw, ShoppingCart, ShoppingBag, PenLine, Minus, Plus, ClipboardList, ChevronLeft, ChevronRight, Calendar, Target, AlertTriangle, History, Lock } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useSignedUrl } from '../../lib/signedUrlCache'
-import { fetchShippingOrders, toggleItemPicked, fetchShippingDayCounts, fetchSaturdayTarget, activateSaturdayTarget, clearNeedsAttention, closeShippingDay, fetchShippingClosures } from './hooks/useShipping'
+import { fetchShippingOrders, toggleItemPicked, fetchShippingDayCounts, fetchSaturdayTarget, activateSaturdayTarget, clearNeedsAttention, closeShippingDay, fetchShippingClosures, fetchOverdueOrders, resolveBatchId } from './hooks/useShipping'
 import { fetchGathering, saveGatheringItem, sendShortageReport } from './hooks/usePicklistGathering'
 import { fetchPackagingBoxes, fetchOrderPackaging, confirmOrderPackaging } from './hooks/usePackaging'
 import toast from 'react-hot-toast'
@@ -78,6 +78,7 @@ export function ExpedicaoPage() {
   const [searchParams] = useSearchParams()
   const batchId = searchParams.get('batch')
 
+  const [source,   setSource]   = useState(null) // plataforma do lote da URL — resolvida uma vez
   const [orders,   setOrders]   = useState([])
   const [boxes,    setBoxes]    = useState([])
   const [loading,  setLoading]  = useState(true)
@@ -97,25 +98,51 @@ export function ExpedicaoPage() {
   const [showHistory, setShowHistory] = useState(false)
   const [closures, setClosures] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [overdue, setOverdue] = useState([]) // "Atrasados" — independente de qual dia está aberto
+  const [showOverdue, setShowOverdue] = useState(false)
+  // Lote "canônico" pra esse source+dia — só usado pelas ações que ainda
+  // dependem de batch_id (Fechar o Dia, Meta de Sábado, Fazer a Feira),
+  // enquanto a consolidação de import_batches (Fase 3) não torna batch_id
+  // exato por (source, ship_date). Cai pro batchId da URL se não achar nada.
+  const [resolvedBatchId, setResolvedBatchId] = useState(null)
+  const activeBatchId = resolvedBatchId || batchId
 
   const isMonday = new Date(viewDate + 'T12:00:00').getDay() === 1
 
-  useEffect(() => { load() }, [batchId, viewDate])
-
+  // Resolve a plataforma do lote da URL uma única vez — a partir daqui a
+  // busca de pedidos é sempre por (source, ship_date), não mais por batch_id.
   useEffect(() => {
     if (!batchId) return
-    fetchShippingDayCounts(batchId).then(setDayCounts).catch(() => {})
+    supabase.from('import_batches').select('source').eq('id', batchId).single()
+      .then(({ data }) => setSource(data?.source ?? null))
+      .catch(() => setSource(null))
   }, [batchId])
 
+  useEffect(() => { if (source) load() }, [source, viewDate])
+
   useEffect(() => {
-    if (!batchId || !isMonday) { setSatTarget(null); return }
-    fetchSaturdayTarget(batchId, viewDate).then(setSatTarget).catch(() => {})
-  }, [batchId, viewDate, isMonday])
+    if (!source) return
+    fetchShippingDayCounts(source).then(setDayCounts).catch(() => {})
+  }, [source])
+
+  useEffect(() => {
+    fetchOverdueOrders().then(setOverdue).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!source) return
+    resolveBatchId(source, viewDate).then(setResolvedBatchId).catch(() => setResolvedBatchId(null))
+  }, [source, viewDate])
+
+  useEffect(() => {
+    if (!activeBatchId || !isMonday) { setSatTarget(null); return }
+    fetchSaturdayTarget(activeBatchId, viewDate).then(setSatTarget).catch(() => {})
+  }, [activeBatchId, viewDate, isMonday])
 
   async function handleActivateSaturdayTarget() {
     setActivatingTarget(true)
     try {
-      const target = await activateSaturdayTarget(batchId, viewDate, orders.length)
+      const target = await activateSaturdayTarget(activeBatchId, viewDate, orders.length)
       setSatTarget(target)
       toast.success(`Meta de sábado ativada: pelo menos ${target.target_count} pedido(s)!`)
     } catch (err) {
@@ -136,15 +163,15 @@ export function ExpedicaoPage() {
     : 0
 
   async function load() {
-    if (!batchId) return
+    if (!source) return
     setLoading(true)
     try {
       // Cada busca é isolada — se uma falhar (ex: tabela ainda não criada),
       // as outras continuam funcionando e a tela não quebra inteira.
       const [osResult, bxResult, gtResult] = await Promise.allSettled([
-        fetchShippingOrders(batchId, viewDate),
+        fetchShippingOrders(source, viewDate),
         fetchPackagingBoxes(),
-        fetchGathering(batchId, viewDate),
+        activeBatchId ? fetchGathering(activeBatchId, viewDate) : Promise.resolve({}),
       ])
 
       if (osResult.status === 'fulfilled') setOrders(osResult.value)
@@ -205,9 +232,10 @@ export function ExpedicaoPage() {
   // cria uma nova versão) de quantos pedidos fecharam/ficaram incompletos
   // e exatamente quais itens faltaram em cada um.
   async function handleCloseDay() {
+    if (!activeBatchId) { toast.error('Nenhum lote encontrado pra esse dia ainda.'); return }
     setClosingDay(true)
     try {
-      await closeShippingDay(batchId, viewDate, orders)
+      await closeShippingDay(activeBatchId, viewDate, orders)
       toast.success(`Dia fechado! ${doneCount}/${orders.length} pedido(s) completos.`)
     } catch (err) {
       toast.error('Erro ao fechar o dia: ' + err.message)
@@ -220,7 +248,7 @@ export function ExpedicaoPage() {
     setShowHistory(true)
     setLoadingHistory(true)
     try {
-      setClosures(await fetchShippingClosures(batchId))
+      setClosures(activeBatchId ? await fetchShippingClosures(activeBatchId) : [])
     } catch (err) {
       toast.error('Erro ao carregar histórico: ' + err.message)
     } finally {
@@ -276,22 +304,24 @@ export function ExpedicaoPage() {
   }
 
   function adjustFound(key, delta, max) {
+    if (!activeBatchId) return
     setFound(prev => {
       const current = prev[key] ?? 0
       const next = Math.max(0, Math.min(max, current + delta))
-      saveGatheringItem(batchId, key, next, viewDate).catch(() => {}) // salva em segundo plano
+      saveGatheringItem(activeBatchId, key, next, viewDate).catch(() => {}) // salva em segundo plano
       return { ...prev, [key]: next }
     })
   }
 
   async function handleSendShortageReport() {
+    if (!activeBatchId) return
     const missing = aggregatedItems
       .map(it => ({ ...it, missing: it.qty - (found[it.key] ?? 0) }))
       .filter(it => it.missing > 0)
     if (missing.length === 0) return
     setSendingReport(true)
     try {
-      await sendShortageReport(batchId, missing, viewDate)
+      await sendShortageReport(activeBatchId, missing, viewDate)
       setReportSent(true)
       toast.success('Relatório enviado pra Produção!')
     } catch (err) {
@@ -346,6 +376,46 @@ export function ExpedicaoPage() {
               )}
             </div>
           ))}
+        </div>
+      </div>
+    )
+  }
+
+  // ══════════════════════ ATRASADOS ══════════════════════
+  // Independente de qual dia/lote está aberto — pedido cujo ship_date já
+  // passou e ainda tem item não separado. É isso que garante que nada
+  // fica esquecido pra trás só porque ninguém voltou a olhar um dia antigo.
+  if (showOverdue) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col">
+        <div className="bg-rose-600 px-4 py-4 sticky top-0 z-10 flex items-center gap-3">
+          <button onClick={() => setShowOverdue(false)} className="p-3 -ml-1 rounded-xl text-white bg-white/20 shrink-0">
+            <ArrowLeft size={24} />
+          </button>
+          <p className="text-xl font-black text-white">⚠️ Pedidos atrasados</p>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 max-w-2xl mx-auto w-full">
+          {overdue.length === 0 ? (
+            <p className="text-center text-slate-400 py-16">Nenhum pedido atrasado. 🎉</p>
+          ) : overdue.map(o => {
+            const plat = platformBadge(o.source)
+            const sameSource = o.source === source
+            return (
+              <button key={o.id} disabled={!sameSource}
+                onClick={() => { if (sameSource) { setViewDate(o.ship_date); setShowOverdue(false) } }}
+                className={`text-left rounded-2xl border-2 border-rose-200 bg-rose-50 p-4 ${sameSource ? 'active:scale-[0.98]' : 'opacity-80 cursor-default'}`}>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className={`flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${plat.badge}`}>
+                    <plat.icon size={13} strokeWidth={2.5} /> {plat.label}
+                  </span>
+                  <span className="text-xs font-bold text-rose-600">devia ter ido em {fmtDayLong(o.ship_date)}</span>
+                </div>
+                {o.num_venda && <p className="text-lg font-black text-slate-800 font-mono">#{o.num_venda}</p>}
+                <p className="text-sm font-semibold text-slate-600">{o.comprador || 'Não identificado'}</p>
+                {!sameSource && <p className="text-xs text-slate-400 mt-1">Abra a Expedição de {plat.label} pra ver esse.</p>}
+              </button>
+            )
+          })}
         </div>
       </div>
     )
@@ -580,6 +650,12 @@ export function ExpedicaoPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {overdue.length > 0 && (
+              <button onClick={() => setShowOverdue(true)}
+                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-600 text-white font-black text-sm animate-pulse">
+                <AlertTriangle size={16} strokeWidth={2.5} /> {overdue.length} atrasado{overdue.length !== 1 ? 's' : ''}
+              </button>
+            )}
             {isMonday && !satTarget && (
               <button onClick={handleActivateSaturdayTarget} disabled={activatingTarget || orders.length === 0}
                 className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-amber-100 text-amber-700 font-bold text-sm disabled:opacity-50">
@@ -598,7 +674,7 @@ export function ExpedicaoPage() {
               className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-100 text-rose-700 font-bold text-sm disabled:opacity-50">
               <Lock size={16} strokeWidth={2.5} /> {closingDay ? 'Fechando...' : 'Fechar o Dia'}
             </button>
-            <button onClick={() => { load(); fetchShippingDayCounts(batchId).then(setDayCounts).catch(() => {}) }} className="p-2.5 rounded-xl bg-slate-100 text-slate-500"><RefreshCw size={18} /></button>
+            <button onClick={() => { load(); fetchShippingDayCounts(source).then(setDayCounts).catch(() => {}); fetchOverdueOrders().then(setOverdue).catch(() => {}) }} className="p-2.5 rounded-xl bg-slate-100 text-slate-500"><RefreshCw size={18} /></button>
           </div>
         </div>
         <div className="h-2 bg-slate-100 rounded-full overflow-hidden mt-3">
@@ -631,7 +707,6 @@ export function ExpedicaoPage() {
         </div>
         <p className="text-xs text-slate-400 mt-0.5 pl-[23px]">
           {orders.length} pedido(s)
-          {viewDate !== todayISO() && ' · adiantando — só Shopee com essa data aparece aqui'}
         </p>
         {(() => {
           const tomorrow = addDays(todayISO(), 1)

@@ -7,10 +7,16 @@ function getSession() {
 
 // Junta os pedidos de dois lotes (ex: ML + Shopee) pra um dia específico —
 // reaproveita a mesma busca segura já usada na Expedição (mesmas regras de
-// filtro por data, mesma exclusão de cancelados)
+// filtro por data, mesma exclusão de cancelados). Recebe batchIds (como
+// sempre foi chamado) e só resolve a fonte de cada um, já que a busca em
+// si agora é por (source, ship_date), não mais por batch_id.
 export async function fetchCombinedOrders(batchIds, targetDate) {
+  const ids = batchIds.filter(Boolean)
+  if (ids.length === 0) return []
+  const { data: batches } = await supabase.from('import_batches').select('id, source').in('id', ids)
+  const sources = [...new Set((batches || []).map(b => b.source))]
   const results = await Promise.all(
-    batchIds.filter(Boolean).map(id => fetchShippingOrders(id, targetDate).catch(() => []))
+    sources.map(source => fetchShippingOrders(source, targetDate).catch(() => []))
   )
   return results.flat()
 }

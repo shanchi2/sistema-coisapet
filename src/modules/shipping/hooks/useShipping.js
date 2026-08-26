@@ -7,29 +7,21 @@ function isCancelledStatus(estado) {
   return !!estado && estado.toLowerCase().includes('cancelad')
 }
 
-// Carrega os pedidos do lote (exclui cancelados/vazios), com foto por SKU
-// e o status 'picked' de cada item — filtra por "Data prevista de envio"
-// (targetDate, ou hoje por padrão).
-//
-// REGRA DE SEGURANÇA IMPORTANTE: só a Shopee informa "data prevista de
-// envio" no relatório — ML e pedido manual NÃO têm essa informação, então
-// NUNCA sabemos se um pedido deles é de hoje ou de amanhã. Por isso:
-//   • Na visão de HOJE: aparece tudo (ML, Shopee de hoje, manual) — igual sempre foi
-//   • Em qualquer OUTRO dia: aparece só Shopee com aquela data exata —
-//     ML/manual NUNCA aparecem em dia futuro, pra não arriscar "esconder"
-//     um pedido de hoje achando que é de outro dia.
-export async function fetchShippingOrders(batchId, targetDate = null) {
+// Carrega os pedidos de UMA PLATAFORMA pra UM DIA específico — usa
+// ship_date (calculado uma única vez na criação do pedido, ver
+// fase20-ship-date-corte-unico.sql), a mesma fonte de verdade usada em
+// TODA a tela agora. Antes disso, o pedido era guardado sob um batch_id
+// calculado de um jeito (dia da compra) e mostrado filtrando por outro
+// campo à parte (shipping_deadline) — os dois podiam divergir, e foi
+// exatamente isso que fez um pedido Shopee sumir da Expedição.
+export async function fetchShippingOrders(source, shipDate) {
   const { data, error } = await supabase
     .from('orders')
-    .select('id, num_venda, comprador, cidade, estado_uf, status_ml, notes, source, shipping_deadline, is_full, needs_attention, items:order_items(id, titulo, sku, variacao, qty, obs_item, picked, picked_at)')
-    .eq('batch_id', batchId)
+    .select('id, num_venda, comprador, cidade, estado_uf, status_ml, notes, source, batch_id, ship_date, is_full, needs_attention, items:order_items(id, titulo, sku, variacao, qty, obs_item, picked, picked_at)')
+    .eq('source', source)
+    .eq('ship_date', shipDate)
 
   if (error) throw error
-
-  const now = new Date()
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  const filterDate = targetDate || today
-  const isToday = filterDate === today
 
   const orders = (data || [])
     // Cancelado normalmente some da Expedição — MAS se já tinha item
@@ -41,10 +33,6 @@ export async function fetchShippingOrders(batchId, targetDate = null) {
     // (ver fase17-pedidos-full.sql)
     .filter(o => !o.is_full)
     .filter(o => (o.items || []).length > 0)
-    .filter(o => {
-      if (o.shipping_deadline) return o.shipping_deadline === filterDate
-      return isToday // sem data de envio — só existe na visão de hoje
-    })
 
   const skus = [...new Set(orders.flatMap(o => o.items.map(it => it.sku).filter(Boolean)))]
   let photoMap = {}
@@ -125,12 +113,14 @@ export async function fetchShippingClosures(batchId) {
 // visualmente quais dias têm algo esperando — não usado pra decidir o que
 // mostra no picklist (isso é sempre feito de novo, com segurança, dentro
 // de fetchShippingOrders)
-export async function fetchShippingDayCounts(batchId) {
+export async function fetchShippingDayCounts(source) {
+  const now = new Date()
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const { data, error } = await supabase
     .from('orders')
-    .select('shipping_deadline, status_ml, is_full, order_items(id)')
-    .eq('batch_id', batchId)
-    .not('shipping_deadline', 'is', null)
+    .select('ship_date, status_ml, is_full, order_items(id)')
+    .eq('source', source)
+    .gte('ship_date', todayStr)
 
   if (error) throw error
 
@@ -139,9 +129,49 @@ export async function fetchShippingDayCounts(batchId) {
     if (isCancelledStatus(o.status_ml)) return
     if (o.is_full) return
     if (!o.order_items || o.order_items.length === 0) return
-    counts[o.shipping_deadline] = (counts[o.shipping_deadline] || 0) + 1
+    counts[o.ship_date] = (counts[o.ship_date] || 0) + 1
   })
   return counts
+}
+
+// "Atrasados" — pedido cujo ship_date já passou e ainda não foi
+// totalmente separado. Independente de qual dia/lote está aberto na
+// tela no momento — é isso que garante que nenhum pedido fica esquecido
+// pra trás só porque ninguém voltou pra conferir um dia antigo.
+export async function fetchOverdueOrders() {
+  const now = new Date()
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const { data, error } = await supabase
+    .from('orders')
+    .select('id, num_venda, comprador, source, ship_date, batch_id, status_ml, is_full, needs_attention, items:order_items(id, picked)')
+    .lt('ship_date', todayStr)
+
+  if (error) throw error
+
+  return (data || [])
+    .filter(o => !isCancelledStatus(o.status_ml) || o.needs_attention)
+    .filter(o => !o.is_full)
+    .filter(o => (o.items || []).length > 0 && o.items.some(it => !it.picked))
+}
+
+// Acha o batch_id "canônico" pra essa plataforma+dia — usado só pelas
+// ações que ainda dependem de batch_id (Fechar o Dia, Meta de Sábado,
+// histórico de fechamentos) enquanto a Fase 3 (consolidação de
+// import_batches) não torna batch_id exato por (source, ship_date). Se
+// houver mais de um lote com pedido nesse dia (resíduo do bug antigo),
+// usa o que tem mais pedidos.
+export async function resolveBatchId(source, shipDate) {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('batch_id')
+    .eq('source', source)
+    .eq('ship_date', shipDate)
+    .not('batch_id', 'is', null)
+  if (error) throw error
+  if (!data || data.length === 0) return null
+  const counts = {}
+  data.forEach(o => { counts[o.batch_id] = (counts[o.batch_id] || 0) + 1 })
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
 }
 
 // ── Meta de "Envios de Sábado" (20% + 1) ────────────────────────
