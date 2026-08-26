@@ -29,38 +29,138 @@ reconstruir o raciocínio do zero.
   do Raphael + sócio) — inclusive tasks com os diretores. Filtro por setor
   (barra de botões lá em cima) só aparece pra `admin` (diretoria); os
   demais só têm o filtro por responsável, que já abre em "eu mesmo".
-- **Pedidos/Picklist/Expedição**: reformulado em 2026-08-25 — ver as 3
-  entradas detalhadas no Log (mais recente primeiro). **Picklist Virtual
-  foi descontinuado**; só existem mais "Gerar Picklist" e "Expedição".
-  `batch_id` de um pedido agora é definido uma vez (pela data real da
-  venda) e nunca mais reatribuído. Constraint `UNIQUE(source,num_venda)`
-  **confirmada existente** em produção. Hoje e ontem já foram consolidados
-  manualmente no banco (ver Log) — dados mais antigos (maio/início de
-  agosto) ainda têm resíduo do bug antigo, não é urgente.
+- **Pedidos/Picklist/Expedição**: reformulado em 2026-08-25 e 2026-08-26 —
+  ver entradas detalhadas no Log (mais recente primeiro). **Picklist
+  Virtual foi descontinuado**; só existem mais "Gerar Picklist" e
+  "Expedição". **`orders.ship_date`** (desde 26/08) é agora a ÚNICA fonte
+  de verdade pra "que dia esse pedido pertence" — calculado uma vez, num
+  trigger no banco, nunca mais recalculado. ML usa corte configurável
+  (default 11h, editável na tela de Pedidos → aba Histórico → ⚙️); Shopee
+  usa a própria "Data prevista de envio" do arquivo, sem corte de horário.
+  Expedição/Picklist/Histórico todos leem por `ship_date` agora, não mais
+  por `batch_id`. Aviso permanente de "Atrasados" na Expedição (pedido com
+  `ship_date` passado e ainda não separado), independente de qual dia está
+  aberto na tela. Constraint `UNIQUE(source,num_venda)` confirmada
+  existente em produção.
 
 ## ⏭️ Próximos passos imediatos (pra continuar de onde parou)
 
-1. **`npm run build` + subir `dist/` pra Hostinger** — última mudança de
-   código (correção do botão Gerar Picklist/Expedição) ainda não foi pro
-   ar. Sem isso, usar os links diretos de hoje/ontem que estão na entrada
-   de log mais recente.
+1. **`npm run build` + subir `dist/` pra Hostinger** — o código de hoje
+   (ship_date, Atrasados, config de corte) já está no GitHub mas ainda não
+   foi buildado/subido pro site. A parte do banco (migração + trigger) já
+   está ativa em produção independente disso.
 2. **Rodar o `DELETE` do `supabase/fase19-cleanup-duplicate-items.sql`**
    (query 2, comentada de propósito) — 7 itens duplicados já auditados e
    confirmados como bug pelo Raphael, só falta apagar. Bloqueado pro
    Claude Code rodar sozinho (ação destrutiva), precisa ser manual (SQL
    Editor do Supabase) ou aprovado explicitamente na hora, se pedido de novo.
-3. **Decidir o caso do pedido em pacote do ML** (Design A vs B — ver
-   entrada "causa raiz do sumiço/duplicação" no Log) — ainda não mexido.
+3. **Fase 3 (não urgente)**: consolidar `import_batches` pra ficar exato
+   por `(source, ship_date)` — hoje um `batch_id` ainda pode conter
+   pedidos de vários dias (resíduo do bug antigo, confirmado indo até
+   maio/2025). Não afeta o que aparece na tela (isso já foi corrigido),
+   só a "canalização" por trás (histórico de lotes, Fechar o Dia, Meta de
+   Sábado usam um `batch_id` "resolvido na hora" como workaround —
+   ver `resolveBatchId` em `useShipping.js`). Ver `fase21` no plano.
 4. **Acesso ao Supabase é por máquina**: nesta máquina (escritório), o
    Claude Code ganhou acesso de leitura/escrita ao banco via
    `supabase link --project-ref lcybmdiqxmbqeuyeuhdj` (rodado pelo
    Raphael) + `supabase db query --linked "<sql>"`. Numa máquina nova
    (casa, notebook), isso provavelmente NÃO está disponível de cara —
    se precisar, rodar `supabase link` de novo lá (mesmo processo).
+   Ações destrutivas (`DELETE`) são sempre bloqueadas pelo classificador
+   de segurança do Claude Code, mesmo com esse acesso — precisa ser
+   manual ou aprovado explicitamente na hora.
 
 ---
 
 ## Log
+
+### 2026-08-26 — `ship_date`: reconstrução da regra de "que dia é esse pedido", fim das 5 implementações divergentes
+
+**Motivação:** mesmo depois de tudo que foi corrigido em 25/08, surgiu
+MAIS um bug do mesmo tipo: um pedido Shopee foi pro dia errado na
+Expedição (arquivo `Order.toship...` de hoje, pedido caiu em "ontem").
+Raphael cogitou refazer o Picklist/Expedição do zero — a investigação
+mostrou que não precisava reescrever a tela, só trocar uma peça
+específica: "que dia esse pedido pertence" era decidido em pelo menos 5
+lugares diferentes do código (duas cópias de `mlBatchDayStart()`, o
+`pickDayKey()` do Histórico, e o filtro de `shipping_deadline`/`isToday`
+da Expedição, cada um calculando por conta própria). A causa exata de
+hoje: o pedido Shopee foi guardado num `batch_id` calculado pela DATA DE
+COMPRA, mas a Expedição filtrava por `shipping_deadline` (campo
+diferente) — nunca iam bater.
+
+**Regra confirmada com o Raphael:**
+- **ML**: corte configurável (default 11h de Brasília) sobre a hora real
+  da compra (`data_venda`).
+- **Shopee**: usa literalmente a "Data prevista de envio" que a própria
+  Shopee manda no arquivo (`shipping_deadline`) — SEM corte de horário
+  nenhum. Confirmado explicitamente (não é suposição) — Raphael escolheu
+  essa opção quando perguntado diretamente.
+- Manual: dia da própria criação.
+
+**O que foi feito** (`supabase/fase20-ship-date-corte-unico.sql`, já
+rodado em produção via `supabase db query --linked`):
+- Tabela `platform_cutoff_settings (source, cutoff_hour)` — só a linha
+  `ml` importa hoje (Shopee não usa corte, mas a tabela já é genérica
+  pra quando ela tiver API própria).
+- Coluna `orders.ship_date DATE NOT NULL` — a fonte única de verdade.
+- Função `compute_ship_date(source, data_venda, shipping_deadline)` — a
+  regra escrita **uma vez só, no banco**, não em JS/TS.
+- Trigger `BEFORE INSERT ON orders` que preenche `ship_date` sozinho em
+  QUALQUER jeito de inserir pedido (`upsert_orders_safe` — cobre xlsx e
+  webhook — e `createManualOrder`), sem precisar editar essas funções.
+  **Confirmado funcionando ao vivo**: pedido Shopee inserido depois da
+  migração já saiu com `ship_date` certo, sem precisar redeployar a
+  `ml-process-webhook`.
+- Backfill: todo pedido já existente (ML desde jun/2025, Shopee desde
+  jul/2025, ~1250 pedidos) ganhou `ship_date` calculado pela própria data
+  real de cada um.
+- `useShipping.js` (`fetchShippingOrders`, `fetchShippingDayCounts`):
+  agora filtram por `(source, ship_date)` direto — removido o filtro
+  antigo de `shipping_deadline`/`isToday` que causava o bug de hoje.
+- Nova `fetchOverdueOrders()` + badge permanente "⚠️ N atrasados" na
+  Expedição, **independente** de qual dia/lote está aberto — pedido com
+  `ship_date` passado e ainda não separado nunca mais fica invisível só
+  porque ninguém voltou a olhar um dia antigo.
+- `ExpedicaoPage.jsx`: resolve a plataforma do lote da URL uma vez, e a
+  navegação por dia (setas/data) busca direto por `source + ship_date` —
+  não fica mais presa a um único `batch_id`. Nova `resolveBatchId()`
+  (workaround temporário, ver Fase 3) resolve o lote "mais provável" pra
+  ações que ainda dependem de `batch_id` (Fechar o Dia, Meta de Sábado).
+- `OrdersPage.jsx`: Histórico agora agrupa pelo `ship_date` real dos
+  pedidos de cada lote (nova `fetchBatchShipDates()` em `useOrders.js`),
+  não mais pela hora do upload/criação do lote. `pickDayKey()` apagado.
+- Novo botão ⚙️ (só admin) na aba Histórico → `CutoffSettingsModal.jsx`,
+  pra trocar o corte do ML sem precisar de deploy. Deixa claro na própria
+  tela que a mudança **não é retroativa**.
+- `PickListShopee.jsx` — conferido, não precisou mudar nada (já filtrava
+  só por `batch_id`, sem lógica de data própria).
+
+**Pendências conhecidas:**
+- **Fase 3 (não urgente)**: `import_batches` ainda não é exato por
+  `(source, ship_date)` — um lote antigo pode ter pedido de vários dias
+  (resíduo indo até maio/2025, confirmado ontem). Isso não afeta mais o
+  que aparece na tela (já corrigido), só a precisão de `batch_id` usado
+  em Fechar o Dia/Meta de Sábado/histórico de fechamentos (usam
+  `resolveBatchId()` como workaround por enquanto). Ponto de atenção pra
+  quando fizer essa fase: `picklist_gathering` tem chave única
+  `(batch_id, item_key, target_date)` — consolidar lotes duplicados pode
+  colidir, precisa checar antes de rodar.
+- **Ainda falta rebuildar e subir o site pra Hostinger** — o banco já
+  está correto e funcionando (confirmado com pedido real), mas a
+  interface nova (badge de Atrasados, config de corte, Histórico
+  agrupado certo) só aparece depois do deploy do frontend.
+- **Não mexi** em `ml-process-webhook/index.ts` nem em `useOrders.js` —
+  `mlBatchDayStart()`/`dayStartForOrder()` continuam lá e continuam
+  rodando, ainda são usados pra decidir o `batch_id` (agrupamento de
+  upload/produção), só não são mais usados pra decidir o que aparece na
+  Expedição/Picklist (isso agora é só `ship_date`). Viram de fato código
+  morto só depois da Fase 3, quando `import_batches` passar a ser exato
+  por `(source, ship_date)` e o `batch_id` puder ser resolvido direto por
+  esse par em vez de uma janela de tempo calculada.
+
+---
 
 ### 2026-08-25 — Acesso ao Supabase liberado + causa raiz #2 (janela sem limite superior) + consolidação manual de hoje/ontem
 
