@@ -187,18 +187,33 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
   if (ordErr) throw ordErr
   const savedOrder = savedRows[0]
 
-  // Não usa mais "o pedido é novo" pra decidir se insere item — num
-  // pacote, o pedido (linha em orders) já existe a partir do 2º produto
-  // em diante, mas cada PRODUTO ainda precisa entrar. Checa se ESSE
-  // produto específico (childOrderId) já teve os itens inseridos antes;
-  // pra pedido normal (sem pacote) isso equivale exatamente a "é novo",
-  // já que childOrderId === num nesse caso.
-  const { data: existingChildItems } = await db.from('order_items')
-    .select('id').eq('order_id', savedOrder.id).eq('source_order_id', parsed.childOrderId).limit(1)
-  const hasNewItems = (!existingChildItems || existingChildItems.length === 0) && parsed.items.length > 0
+  // Não usa mais "esse childOrderId específico já foi visto" pra decidir
+  // se insere item — `source_order_id` só é confiável pra pedido que
+  // SEMPRE entrou pela API. Pedido que já existia antes (importado por
+  // `.xlsx`, ou criado pelo webhook antigo antes da Fase 22) tem
+  // `source_order_id` backfilled = num_venda, que pode ser bem diferente
+  // do `order.id` individual que a API devolve agora — o gate antigo
+  // achava "produto novo" e duplicava o item de novo (bug real,
+  // confirmado em 2026-08-26 logo depois da reimportação da Fase 23).
+  // Em vez disso, compara por produto (sku+variação) já gravado nesse
+  // pedido — é a única identidade que não muda dependendo de como o
+  // pedido entrou no sistema. Normaliza espaços e maiúsculas na variação:
+  // o `.xlsx` antigo grava "Cor : Amadeirado" (espaço antes dos ":") e a
+  // API grava "Cor: Amadeirado" (sem espaço) pro MESMO produto —
+  // comparação exata deixava passar duplicata real (confirmado: par do
+  // Caio Raváglia). ML controla os dois formatos (xlsx e API) de jeitos
+  // diferentes e sem aviso, então normaliza de forma ampla (espaço +
+  // caixa) em vez de tentar prever cada variação de formatação possível.
+  const itemKey = (sku: string | null, variacao: string | null) =>
+    `${sku || ''}::${(variacao || '').replace(/\s+/g, '').toLowerCase()}`
+  const { data: existingItems } = await db.from('order_items')
+    .select('sku, variacao').eq('order_id', savedOrder.id)
+  const existingKeys = new Set((existingItems || []).map(it => itemKey(it.sku, it.variacao)))
+  const newItems = parsed.items.filter(it => !existingKeys.has(itemKey(it.sku, it.variacao)))
+  const hasNewItems = newItems.length > 0
 
   if (hasNewItems) {
-    const skus = [...new Set(parsed.items.map(it => it.sku).filter(Boolean))]
+    const skus = [...new Set(newItems.map(it => it.sku).filter(Boolean))]
     const skuMap = new Map<string, string>()
     if (skus.length > 0) {
       const { data: products } = await db.from('products').select('id, sku').in('sku', skus)
@@ -206,7 +221,7 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
     }
 
     const cancelado = isCancelledStatus(parsed.estado)
-    const itemsToInsert = parsed.items.map(it => ({
+    const itemsToInsert = newItems.map(it => ({
       order_id:       savedOrder.id,
       product_id:     it.sku ? (skuMap.get(it.sku) || null) : null,
       titulo:         it.titulo,
