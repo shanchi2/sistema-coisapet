@@ -73,10 +73,17 @@ function mapOrderToCommon(order: any, shipment: any | null) {
     pack_id:    order.pack_id ? String(order.pack_id) : null,
     // Pedido Full = o ML guarda o estoque no centro de distribuição dele
     // e despacha sozinho — a CoisaPet nunca separa/embala esse pedido.
-    // logistic_type='fulfillment' é o campo oficial da API pra isso.
     // Bug real em 2026-08-24: sem essa checagem, pedido Full entrava no
     // picklist normal como qualquer outro.
-    is_full:    shipment?.logistic_type === 'fulfillment',
+    // Bug real em 2026-08-27: a checagem lia `shipment.logistic_type`,
+    // que no formato novo da API (x-format-new: true, o que usamos) vem
+    // SEMPRE null — o valor de verdade fica aninhado em
+    // `shipment.logistic.type`. Resultado: is_full nunca dava true,
+    // mesmo pra pedido Full de verdade (confirmado direto na API: 4
+    // pedidos Full entraram no picklist de amanhã). Checa os dois
+    // caminhos por segurança (aninhado é o real; plano é reserva caso
+    // algum outro formato de resposta volte a usar o campo antigo).
+    is_full:    shipment?.logistic?.type === 'fulfillment' || shipment?.logistic_type === 'fulfillment',
     notes:      null,
     items,
   }
