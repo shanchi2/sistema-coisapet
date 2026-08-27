@@ -108,6 +108,48 @@ export function RHHorasPage() {
   )
 }
 
+// ─── FÉRIAS: upload de Recibo/Documento (colunas já existiam no banco,
+// nunca tinham sido usadas em lugar nenhum — nem aqui, nem no app da
+// equipe). Só aparece pra solicitação já aprovada.
+function VacDocsRow({ v, onUploaded }) {
+  const [uploading, setUploading] = useState(null) // 'receipt' | 'voucher' | null
+  async function upload(kind, file) {
+    if (!file) return
+    setUploading(kind)
+    try {
+      const ext  = file.name.split('.').pop()
+      const path = `ferias/${v.employee_id}/${v.id}-${kind}.${ext}`
+      const { error: ue } = await supabase.storage.from('employee-docs').upload(path, file, { upsert: true })
+      if (ue) throw ue
+      const col = kind === 'receipt' ? 'receipt_url' : 'voucher_url'
+      const { error } = await supabase.from('vacation_requests').update({ [col]: path }).eq('id', v.id)
+      if (error) throw error
+      toast.success('Documento enviado!')
+      onUploaded()
+    } catch (e) { toast.error('Erro ao enviar: ' + (e?.message || 'tente novamente.')) } finally { setUploading(null) }
+  }
+  const DOCS = [['receipt', 'Recibo de Férias', v.receipt_url], ['voucher', 'Documento de Férias', v.voucher_url]]
+  return (
+    <div className="flex gap-4 flex-wrap mt-3 pt-3 border-t border-slate-100">
+      {DOCS.map(([kind, label, url]) => (
+        <div key={kind} className="flex items-center gap-2">
+          {url && (
+            <button onClick={() => viewStorageFile(url)}
+              className="flex items-center gap-1 text-xs font-bold text-sky-600 hover:text-sky-700">
+              <Eye size={12}/> {label}
+            </button>
+          )}
+          <label className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-600 cursor-pointer">
+            <Upload size={12}/> {uploading === kind ? 'Enviando...' : url ? 'Substituir' : `Enviar ${label}`}
+            <input type="file" accept=".pdf,image/*" className="hidden" disabled={uploading === kind}
+              onChange={e => upload(kind, e.target.files[0])}/>
+          </label>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── FÉRIAS ───────────────────────────────────────────────────────
 export function RHFeriasPage() {
   const [vacations, setVacations] = useState([])
@@ -185,6 +227,7 @@ export function RHFeriasPage() {
                   {v.notes && <p className="text-xs text-slate-400 mt-1 italic">"{v.notes}"</p>}
                   {v.reject_reason && <p className="text-xs text-rose-500 mt-1">Motivo da rejeição: {v.reject_reason}</p>}
                   <p className="text-xs text-slate-300 mt-1">Solicitado em {fmtDT(v.created_at)}</p>
+                  {v.status === 'aprovado' && <VacDocsRow v={v} onUploaded={load} />}
                 </div>
                 {v.status === 'pendente' && (
                   <div className="flex gap-2 shrink-0">

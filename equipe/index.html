@@ -972,7 +972,11 @@ async function loadFerias(){
   const vl=document.getElementById('vl')
   if(!data?.length){vl.innerHTML='<div class="empty" style="padding:14px 0"><p>Nenhuma solicitação</p></div>';return}
   const bc={pendente:'badge-pend',aprovado:'badge-ok',rejeitado:'badge-no'},bl={pendente:'Pendente',aprovado:'Aprovado',rejeitado:'Rejeitado'}
-  vl.innerHTML=data.map(v=>`<div class="vaci"><div class="row-between" style="margin-bottom:6px"><span class="badge ${bc[v.status]}">${bl[v.status]}</span><span style="font-size:11px;color:var(--muted);font-weight:600">${v.days} dias</span></div><div style="font-size:13px;font-weight:700;color:var(--txt)">${fmtD(v.date_start)} → ${fmtD(v.date_end)}</div>${v.notes?`<div style="font-size:11px;color:var(--txt2);margin-top:3px">${v.notes}</div>`:''}${v.reject_reason?`<div style="font-size:11px;color:#b43228;margin-top:4px">Motivo: ${v.reject_reason}</div>`:''}</div>`).join('')
+  vl.innerHTML=data.map(v=>{
+    const docs=(v.receipt_url?`<button onclick="viewPs('${v.receipt_url}')" class="btn-sm">📄 Recibo de Férias</button>`:'')
+      +(v.voucher_url?`<button onclick="viewPs('${v.voucher_url}')" class="btn-sm">📋 Documento de Férias</button>`:'')
+    return `<div class="vaci"><div class="row-between" style="margin-bottom:6px"><span class="badge ${bc[v.status]}">${bl[v.status]}</span><span style="font-size:11px;color:var(--muted);font-weight:600">${v.days} dias</span></div><div style="font-size:13px;font-weight:700;color:var(--txt)">${fmtD(v.date_start)} → ${fmtD(v.date_end)}</div>${v.notes?`<div style="font-size:11px;color:var(--txt2);margin-top:3px">${v.notes}</div>`:''}${v.reject_reason?`<div style="font-size:11px;color:#b43228;margin-top:4px">Motivo: ${v.reject_reason}</div>`:''}${docs?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${docs}</div>`:''}</div>`
+  }).join('')
 }
 async function reqVac(){
   const s=document.getElementById('vs').value,e=document.getElementById('ve').value,n=document.getElementById('vn').value

@@ -797,13 +797,17 @@ function TaskModal({ task, users, open, onClose, onSave, onDelete, canSeeAtendim
           </select>
         </div>
 
-        {/* Co-responsáveis */}
+        {/* Co-responsáveis — mostra TODO MUNDO, sem filtro de setor/cargo
+            (diferente do Responsável): pedido explícito do Raphael, já que
+            é comum precisar marcar alguém de outra área (ex: produção numa
+            task de atendimento) só pra dar visibilidade/cobrança, sem
+            precisar que a pessoa "pertença" ao setor da categoria. */}
         <div>
           <label className="form-label">Co-responsável adicional</label>
           <select className="select" value={assignees[0] || ''}
             onChange={e => setAssignees(e.target.value ? [e.target.value] : [])}>
             <option value="">Ninguém</option>
-            {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         </div>
       </div>
@@ -1145,7 +1149,7 @@ function TaskModal({ task, users, open, onClose, onSave, onDelete, canSeeAtendim
             <select className="select text-sm" value={assignees[0] || ''}
               onChange={e => setAssignees(e.target.value ? [e.target.value] : [])}>
               <option value="">Ninguém</option>
-              {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </div>
 

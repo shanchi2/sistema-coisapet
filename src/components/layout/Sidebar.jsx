@@ -5,7 +5,7 @@ import {
   ChevronRight, Truck, History,
   TrendingUp, Calendar, FileSpreadsheet, MessageSquare, MessagesSquare,
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
-  PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, PackageSearch, Star, QrCode, Layers, Link2, ClipboardCheck,
+  PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, PackageSearch, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
@@ -51,6 +51,7 @@ const NAV_SECTIONS = [
       { to: '/rh/avisos',    moduleKey: 'rh', icon: Bell,            label: 'Avisos',             roles: ['admin','administrativo'] },
       { to: '/reunioes',     moduleKey: 'reunioes', icon: CalendarCheck2, label: 'Reuniões',       roles: ['admin','administrativo'] },
       { to: '/rh/holerites', moduleKey: 'rh', icon: Receipt,         label: 'Holerites',          roles: ['admin','administrativo'] },
+      { to: '/rh/ponto',     moduleKey: 'rh', icon: Clock,           label: 'Registros de Ponto', roles: ['admin','administrativo'] },
       { to: '/rh/relatorio', moduleKey: 'rh', icon: FileSpreadsheet, label: 'Relatório de Ponto', roles: ['admin','administrativo'] },
     ],
   },
@@ -237,7 +238,7 @@ export function Sidebar({ open, onToggle }) {
                     >
                       {({ isActive }) => (
                         <>
-                          <Icon size={16} style={{ color: isActive ? sc.light : 'rgba(255,255,255,0.35)' }}/>
+                          <Icon size={16} style={{ color: isActive ? sc.light : sc.light + 'B3' }}/>
                           <span style={{ fontFamily: 'Nunito Sans, sans-serif' }}>{itemLabel}</span>
                           {isActive && <ChevronRight size={13} className="ml-auto" style={{ color: sc.light + '80' }}/>}
                         </>
@@ -256,7 +257,7 @@ export function Sidebar({ open, onToggle }) {
                         })}
                       >
                         {({ isActive }) => (
-                          <Icon size={17} style={{ color: isActive ? sc.light : 'rgba(255,255,255,0.40)' }}/>
+                          <Icon size={17} style={{ color: isActive ? sc.light : sc.light + 'B3' }}/>
                         )}
                       </NavLink>
                     </NavTooltip>
