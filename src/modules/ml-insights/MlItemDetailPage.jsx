@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Loader2, AlertTriangle, ExternalLink, Save, DollarSign,
   Type, Image as ImageIcon, TrendingUp, Package, Star, HeartPulse,
   ClipboardList, Megaphone, CheckCircle2, XCircle, ChevronDown, Sparkles, Wand2, Truck,
+  Zap, Play, Pause, History,
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -11,6 +12,8 @@ import {
 import toast from 'react-hot-toast'
 import { useMlInsights } from './hooks/useMlInsights'
 import { ConfirmWriteModal } from './ConfirmWriteModal'
+import { InfoTooltip } from './InfoTooltip'
+import { AttributeRow } from './AttributeRow'
 
 function fmtMoney(v) {
   if (v == null) return '—'
@@ -20,44 +23,22 @@ function fmtPct(v) {
   if (v == null || Number.isNaN(v)) return '—'
   return `${(v * 100).toFixed(1)}%`
 }
+function fmtDateTime(iso) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+const UPDATE_ACTION_LABEL = {
+  attributes: 'Ficha técnica atualizada',
+  content: 'Título/descrição atualizados',
+  quick_fields: 'Preço/estoque/status atualizado',
+  create: 'Anúncio criado',
+  promotion_join: 'Indicado pra campanha',
+  promotion_leave: 'Removido de campanha',
+}
 function scoreColor(score) {
   if (score >= 80) return { text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' }
   if (score >= 50) return { text: 'text-amber-600',   bg: 'bg-amber-50',   border: 'border-amber-200'   }
   return { text: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200' }
-}
-
-// "?" clicável — explicação em linguagem simples pra quem não é da área
-// técnica. Clique pra abrir/fechar (sem depender de hover, funciona em
-// celular também). Fecha também clicando em qualquer lugar fora dele.
-function InfoTooltip({ text, source }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-
-  useEffect(() => {
-    if (!open) return
-    function onOutside(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', onOutside)
-    return () => document.removeEventListener('mousedown', onOutside)
-  }, [open])
-
-  if (!text) return null
-  const sourceLabel = source === 'ia' ? 'Explicação gerada por IA — confira se tiver dúvida real.'
-    : source === 'nosso' ? 'Explicação da nossa equipe, não é texto oficial do Mercado Livre.'
-    : null
-  return (
-    <span ref={ref} className="relative inline-flex">
-      <button type="button" onClick={() => setOpen(o => !o)}
-        className="w-4 h-4 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 text-[10px] font-bold flex items-center justify-center transition-colors">
-        ?
-      </button>
-      {open && (
-        <span className="absolute left-1/2 -translate-x-1/2 top-6 z-20 w-60 bg-slate-800 text-white text-xs leading-relaxed rounded-lg px-3 py-2.5 shadow-lg space-y-1.5">
-          <span className="block">{text}</span>
-          {sourceLabel && <span className="block text-slate-400 italic">{sourceLabel}</span>}
-        </span>
-      )}
-    </span>
-  )
 }
 
 function Card({ icon: Icon, title, caption, help, children }) {
@@ -81,135 +62,6 @@ function CustomTooltip({ active, payload, label }) {
     <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm text-xs">
       <p className="text-slate-500">{label}</p>
       <p className="font-semibold text-slate-800">{payload[0].value} visitas</p>
-    </div>
-  )
-}
-
-// Sim/Não com valor livre "Outro" pra atributo booleano que a API não
-// manda `values` (lista fechada) pra escolher — sem isso o campo virava
-// texto livre puro, fácil de digitar algo fora do padrão.
-const BOOLEAN_PRESET = ['Sim', 'Não']
-
-// `field` guarda ou {value_id} (lista fechada) ou {value_name} (texto
-// livre/booleano) — nunca os dois.
-function AttributeRow({ attr, value, onChange }) {
-  const editable = !attr.is_variation_attribute
-  const hasClosedList = (attr.value_type === 'list' || attr.value_type === 'boolean') && attr.values?.length
-  const isBooleanFreeform = attr.value_type === 'boolean' && !attr.values?.length
-  const isNumberUnit = attr.value_type === 'number_unit'
-
-  const [booleanMode, setBooleanMode] = useState(() => {
-    const v = value?.value_name
-    if (!v) return ''
-    return BOOLEAN_PRESET.includes(v) ? v : 'Outro'
-  })
-
-  // Medida/peso (comprimento, largura, peso da embalagem etc.) — o ML
-  // exige o valor COM a unidade junto no texto ("20 cm", nunca só "20",
-  // erro real visto em 2026-09-01: seller_package_dimensions rejeitado
-  // por vir sem unidade). Guarda a unidade escolhida à parte e monta
-  // "número unidade" só na hora de mandar pro form do pai.
-  const [unit, setUnit] = useState(attr.default_unit || attr.allowed_units?.[0]?.id || '')
-  const numberPart = value?.value_name ? value.value_name.split(' ')[0] : ''
-
-  function handleNumberChange(numStr) {
-    onChange(numStr.trim() ? { value_name: `${numStr.trim()} ${unit}` } : null)
-  }
-  function handleUnitChange(newUnit) {
-    setUnit(newUnit)
-    if (numberPart) onChange({ value_name: `${numberPart} ${newUnit}` })
-  }
-
-  function handleBooleanModeChange(mode) {
-    setBooleanMode(mode)
-    if (mode === 'Sim' || mode === 'Não') onChange({ value_name: mode })
-    else onChange(null) // 'Outro' ou vazio — espera o usuário digitar (ou limpa)
-  }
-
-  return (
-    <div className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-100 last:border-0">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm text-slate-700 flex items-center gap-1.5">
-          {attr.name}
-          {attr.required && <span className="text-rose-400">*</span>}
-          <InfoTooltip text={attr.hint} source={attr.hint_source}/>
-        </p>
-        {attr.current_value && <p className="text-xs text-slate-400 truncate">Atual: {attr.current_value}</p>}
-        {attr.is_variation_attribute && <p className="text-[11px] text-sky-500">Controlado por variação — editar direto no Mercado Livre</p>}
-        {editable && attr.default_value && !value && (
-          <button type="button"
-            onClick={() => {
-              if (attr.default_value.value_id) onChange({ value_id: attr.default_value.value_id })
-              else onChange({ value_name: attr.default_value.value_name })
-              if (attr.value_type === 'boolean' && !attr.default_value.value_id) setBooleanMode('Outro')
-            }}
-            className="text-[11px] text-emerald-600 hover:text-emerald-700 underline underline-offset-2 mt-0.5">
-            Usar padrão: "{attr.default_value.label}"
-          </button>
-        )}
-      </div>
-      {editable && (
-        <div className="w-56 shrink-0 space-y-1.5">
-          {hasClosedList ? (
-            <select
-              value={value?.value_id || ''}
-              onChange={e => onChange(e.target.value ? { value_id: e.target.value } : null)}
-              className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-400 bg-white"
-            >
-              <option value="">{attr.current_value ? 'Manter atual' : 'Selecione...'}</option>
-              {attr.values.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </select>
-          ) : isBooleanFreeform ? (
-            <>
-              <select
-                value={booleanMode}
-                onChange={e => handleBooleanModeChange(e.target.value)}
-                className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-400 bg-white"
-              >
-                <option value="">{attr.current_value ? 'Manter atual' : 'Selecione...'}</option>
-                <option value="Sim">Sim</option>
-                <option value="Não">Não</option>
-                <option value="Outro">Outro...</option>
-              </select>
-              {booleanMode === 'Outro' && (
-                <input
-                  type="text"
-                  value={value?.value_name && !BOOLEAN_PRESET.includes(value.value_name) ? value.value_name : ''}
-                  onChange={e => onChange(e.target.value.trim() ? { value_name: e.target.value } : null)}
-                  placeholder="Digite o valor..."
-                  className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-400"
-                />
-              )}
-            </>
-          ) : isNumberUnit ? (
-            <div className="flex gap-1.5">
-              <input
-                type="number" inputMode="decimal" step="any"
-                value={numberPart}
-                onChange={e => handleNumberChange(e.target.value)}
-                placeholder={attr.current_value?.split(' ')[0] || '0'}
-                className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-400"
-              />
-              {attr.allowed_units?.length > 1 ? (
-                <select value={unit} onChange={e => handleUnitChange(e.target.value)}
-                  className="text-xs border border-slate-200 rounded-lg px-1.5 focus:outline-none focus:border-emerald-400 bg-white shrink-0">
-                  {attr.allowed_units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-              ) : (
-                <span className="text-xs text-slate-400 self-center px-1 shrink-0">{unit}</span>
-              )}
-            </div>
-          ) : (
-            <input
-              type="text"
-              value={value?.value_name || ''}
-              onChange={e => onChange(e.target.value.trim() ? { value_name: e.target.value } : null)}
-              placeholder={attr.current_value || 'Digite o valor...'}
-              className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-400"
-            />
-          )}
-        </div>
-      )}
     </div>
   )
 }
@@ -239,10 +91,16 @@ function pickAdsMetrics(raw) {
 export function MlItemDetailPage() {
   const { itemId } = useParams()
   const navigate = useNavigate()
-  const { loading, error, fetchItemDetail, applyAttributes, suggestContent, applyContent } = useMlInsights()
+  const { loading, error, fetchItemDetail, applyAttributes, suggestContent, applyContent, updateItemFields, fetchItemUpdateHistory } = useMlInsights()
   const [detail, setDetail] = useState(null)
+  const [updateHistory, setUpdateHistory] = useState(null)
+  const [showHistory, setShowHistory] = useState(false)
   const [form,   setForm]   = useState({})
   const [saving, setSaving] = useState(false)
+  const [quickPrice,  setQuickPrice]  = useState('')
+  const [quickStock,  setQuickStock]  = useState('')
+  const [quickStatus, setQuickStatus] = useState('active')
+  const [savingQuick, setSavingQuick] = useState(false)
   const [suggestion, setSuggestion] = useState(null)
   const [editedTitle, setEditedTitle] = useState('')
   const [editedDescription, setEditedDescription] = useState('')
@@ -251,11 +109,21 @@ export function MlItemDetailPage() {
   const [applyingContent, setApplyingContent] = useState(false)
   const [showRawAds, setShowRawAds] = useState(false)
   const [showRawPerf, setShowRawPerf] = useState(false)
-  const [confirmModal, setConfirmModal] = useState(null) // null | 'attributes' | 'content'
+  const [confirmModal, setConfirmModal] = useState(null) // null | 'attributes' | 'content' | 'quick'
+
+  function refreshHistory() {
+    fetchItemUpdateHistory(itemId).then(setUpdateHistory).catch(() => {})
+  }
 
   useEffect(() => {
-    fetchItemDetail(itemId).then(setDetail).catch(() => {})
-  }, [itemId, fetchItemDetail])
+    fetchItemDetail(itemId).then(d => {
+      setDetail(d)
+      setQuickPrice(String(d.item.price ?? ''))
+      setQuickStock(String(d.item.available_quantity ?? ''))
+      setQuickStatus(d.item.status || 'active')
+    }).catch(() => {})
+    refreshHistory()
+  }, [itemId, fetchItemDetail]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const filledCount = Object.values(form).filter(Boolean).length
 
@@ -263,6 +131,40 @@ export function MlItemDetailPage() {
   function requestSave() {
     if (!filledCount) return
     setConfirmModal('attributes')
+  }
+
+  // Só manda pro ML os campos que o usuário de fato mudou (mesmo
+  // espírito da Ficha Técnica). Compara contra o valor carregado, não
+  // contra o input anterior.
+  const quickChanges = detail ? {
+    ...(Number(quickPrice) !== detail.item.price && quickPrice.trim() !== '' ? { price: Number(quickPrice) } : {}),
+    ...(Number(quickStock) !== detail.item.available_quantity && quickStock.trim() !== '' ? { available_quantity: Number(quickStock) } : {}),
+    ...(quickStatus !== (detail.item.status || 'active') ? { status: quickStatus } : {}),
+  } : {}
+  const quickChangeCount = Object.keys(quickChanges).length
+
+  function requestQuickSave() {
+    if (!quickChangeCount) return
+    setConfirmModal('quick')
+  }
+
+  async function confirmQuickSave() {
+    setSavingQuick(true)
+    try {
+      await updateItemFields(itemId, quickChanges)
+      toast.success('Anúncio atualizado no Mercado Livre!')
+      const updated = await fetchItemDetail(itemId)
+      setDetail(updated)
+      setQuickPrice(String(updated.item.price ?? ''))
+      setQuickStock(String(updated.item.available_quantity ?? ''))
+      setQuickStatus(updated.item.status || 'active')
+      refreshHistory()
+    } catch (err) {
+      toast.error('Erro ao salvar: ' + err.message)
+    } finally {
+      setSavingQuick(false)
+      setConfirmModal(null)
+    }
   }
 
   async function confirmSave() {
@@ -274,6 +176,7 @@ export function MlItemDetailPage() {
       const updated = await fetchItemDetail(itemId)
       setDetail(updated)
       setForm({})
+      refreshHistory()
     } catch (err) {
       toast.error('Erro ao salvar: ' + err.message)
     } finally {
@@ -323,6 +226,7 @@ export function MlItemDetailPage() {
 
       const updated = await fetchItemDetail(itemId)
       setDetail(updated)
+      if (res.title || res.description) refreshHistory()
 
       if (!res.errors) {
         setSuggestion(null)
@@ -393,6 +297,31 @@ export function MlItemDetailPage() {
             </div>
             <p className="text-2xl font-bold text-slate-800">{fmtMoney(detail.item.price)}</p>
           </div>
+
+          {updateHistory && (
+            <div className="mt-2">
+              {updateHistory.length === 0 ? (
+                <p className="text-xs text-slate-400 flex items-center gap-1"><History size={12}/> Nenhuma alteração feita pelo sistema ainda.</p>
+              ) : (
+                <>
+                  <button onClick={() => setShowHistory(s => !s)} className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1">
+                    <History size={12}/> Última atualização: {fmtDateTime(updateHistory[0].updated_at)}
+                    <ChevronDown size={12} className={showHistory ? 'rotate-180' : ''}/>
+                  </button>
+                  {showHistory && (
+                    <ul className="mt-1.5 space-y-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 max-w-md">
+                      {updateHistory.map((h, i) => (
+                        <li key={i} className="text-xs text-slate-500 flex items-center justify-between gap-3">
+                          <span>{UPDATE_ACTION_LABEL[h.action] || h.action}</span>
+                          <span className="text-slate-400 shrink-0">{fmtDateTime(h.updated_at)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {error && (
@@ -456,6 +385,38 @@ export function MlItemDetailPage() {
             <p className="text-xs text-slate-400">{detail.item.available_quantity ?? 0} unidades em estoque · {detail.sales.d30 ?? 0} vendidas nos últimos 30 dias</p>
           </Card>
         </div>
+
+        {/* Ações rápidas — pausar/reativar, preço, estoque */}
+        <Card icon={Zap} title="Ações rápidas"
+          help="Muda preço, estoque e ativa/pausa o anúncio direto no Mercado Livre. Nada é gravado sozinho — só abre a confirmação depois de clicar em 'Salvar alterações', mostrando exatamente o que vai mudar.">
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Preço</label>
+              <input type="number" inputMode="decimal" step="0.01" value={quickPrice} onChange={e => setQuickPrice(e.target.value)}
+                className="w-28 text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-400"/>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Estoque</label>
+              <input type="number" inputMode="numeric" step="1" min="0" value={quickStock} onChange={e => setQuickStock(e.target.value)}
+                className="w-24 text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-400"/>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Status</label>
+              <button type="button"
+                onClick={() => setQuickStatus(s => s === 'active' ? 'paused' : 'active')}
+                className={`flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+                  quickStatus === 'active' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-slate-500 bg-slate-50 border-slate-200'
+                }`}>
+                {quickStatus === 'active' ? <><Play size={13}/> Ativo</> : <><Pause size={13}/> Pausado</>}
+              </button>
+            </div>
+            <button onClick={requestQuickSave} disabled={!quickChangeCount || savingQuick}
+              className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
+              {savingQuick ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>}
+              Salvar alterações{quickChangeCount ? ` (${quickChangeCount})` : ''}
+            </button>
+          </div>
+        </Card>
 
         {/* Sugestão de IA */}
         <Card icon={Sparkles} title="Sugestão de IA para título e descrição" caption="Gerado com base só nos dados reais do anúncio — nunca inventa característica que não esteja na ficha técnica"
@@ -710,6 +671,22 @@ export function MlItemDetailPage() {
             {applyDescFlag && <p className="whitespace-pre-wrap"><strong>Descrição:</strong> {editedDescription}</p>}
           </div>
         )}
+      />
+
+      <ConfirmWriteModal
+        open={confirmModal === 'quick'}
+        title="Atualizar anúncio"
+        description="Vai gravar essas mudanças direto no anúncio real do Mercado Livre."
+        confirming={savingQuick}
+        onConfirm={confirmQuickSave}
+        onCancel={() => setConfirmModal(null)}
+        detail={
+          <ul className="text-sm text-slate-700 space-y-1">
+            {quickChanges.price != null && <li><strong>Preço:</strong> {fmtMoney(quickChanges.price)}</li>}
+            {quickChanges.available_quantity != null && <li><strong>Estoque:</strong> {quickChanges.available_quantity} unidades</li>}
+            {quickChanges.status && <li><strong>Status:</strong> {quickChanges.status === 'active' ? 'Ativo' : 'Pausado'}</li>}
+          </ul>
+        }
       />
     </div>
   )

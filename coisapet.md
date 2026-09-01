@@ -50,10 +50,20 @@ reconstruir o raciocínio do zero.
   (`orders.archived`, nunca DELETE) e reimportados do zero via API —
   Expedição de hoje bate 100% com o painel real do ML (7 pedidos).
   Shopee intocado. Ver Log pra detalhes.
-- **Otimização ML (28/08, Fase 1)**: categoria nova no sidebar —
-  "Saúde dos Anúncios" e "Perguntas & Reputação", só leitura da API do
-  ML via edge function `ml-insights` nova. Deployada, ainda não testada
-  com dado real nem commitada. Detalhes na entrada de 28/08 no Log.
+- **Otimização ML (28/08 a 01/09)**: módulo "Otimização ML" no sidebar,
+  todo em cima da edge function `ml-insights` — Saúde dos Anúncios,
+  Tráfego, Perguntas & Reputação, Promoções, Oportunidades de Venda,
+  Sugestão de IA de título/descrição, Anúncios (Fase 36: gestão +
+  criação do zero com upload de foto), e agora (Fase 37, 01/09) Campanhas
+  & Promoções de verdade: indicar item pra campanha tradicional (tipo
+  `DEAL`, ex: a 9.9, que a conta já tem rodando) com preço sugerido pelo
+  próprio ML. **Importante já confirmado por pesquisa**: impulsionar
+  Ads (Product Ads) NÃO é possível via API pública, só leitura — não
+  vale tentar de novo sem achado novo. Sempre atrás de `ConfirmWriteModal`
+  — regra permanente do Raphael, nenhuma gravação de 1 clique. Commit do
+  módulo até Fase 35 já feito (`0c0690b`, ainda só local — push bloqueado
+  nesta máquina, ver entrada de 09/01 2ª parte); Fases 36 e 37 seguem
+  sem commit.
 - **Shopee (26/08, 5ª parte)**: fluxo revisado, sem bug estrutural
   (parser já agrupa pacote e protege item de pedido já existente —
   diferente do ML, não precisou de correção de código). 723 pedidos
@@ -91,6 +101,207 @@ reconstruir o raciocínio do zero.
    Ações destrutivas (`DELETE`) são sempre bloqueadas pelo classificador
    de segurança do Claude Code, mesmo com esse acesso — precisa ser
    manual ou aprovado explicitamente na hora.
+
+---
+
+### 2026-09-01 (5ª parte) — Fase 38: log de alterações, Tráfego menos vago, Dashboard com dado real do ML
+
+**Motivação:** usando os módulos novos, Raphael apontou 3 problemas
+reais — sem "última atualização" na Saúde do Anúncio, Tráfego & Conversão
+vaga (card de palavra-chave só mostrava `category_id` cru, tipo
+"plaquinha de bebida festa" parecendo vinda do nada), e a Visão Geral
+não batendo com o painel real do ML (mandou print: 543 unidades/
+R$46.173 em 30 dias).
+
+**Investigação do Dashboard (a mais importante)**: comparei direto no
+banco via `supabase db query --linked` — nosso total real de pedidos ML
+nos últimos 30 dias é 338 unidades/R$27.179 (233 sem contar arquivados),
+bem abaixo do real. Quebra por dia mostrou a causa: **antes de 24/08**
+(quando a integração automática com a API entrou no ar) a captura de
+pedido era só manual e claramente incompleta (1-5 pedidos/dia, contra
+10-30/dia depois) — não é bug de cálculo, é histórico incompleto de
+antes da integração, mas qualquer janela de 30/90 dias cruza esse
+período. **Corrigido de vez**: `fetchAccountRevenueFromMl` troca a
+fonte — em vez de somar o nosso banco, escaneia
+`GET /orders/search?seller=...&order.date_created.from/to=...`
+(confirmado ao vivo, paginado, `total_amount` já vem pronto por pedido,
+dedup de "quantidade de vendas" por `pack_id` igual ao `ml-process-webhook`).
+**Resultado real testado**: R$43.960/514 unidades/**12 canceladas
+(bateu EXATO com o print)** contra os R$46.173/543/12 do painel —
+diferença de ~5% (provavelmente só o corte exato de "30 dias"), muito
+melhor que os 42% de erro de antes. 2 cards novos (Vendas canceladas,
+Compradores distintos) + nota deixando claro que agora vem da API, não
+do banco.
+
+**Log de "última atualização" por anúncio**: tabela nova
+`ml_item_updates` (`supabase/fase38-ml-item-updates-log.sql`, já
+aplicada em produção via `supabase db query --linked`) — toda gravação
+que o sistema já fazia (ficha técnica, título/descrição, preço/estoque,
+criação, entrar/sair de campanha) agora loga 1 linha (`logItemUpdate`,
+nunca derruba a gravação principal se o log falhar). Mostrado na Saúde
+do Anúncio: "Última atualização: {data/hora}" + histórico expansível
+dos últimos 10.
+
+**Tráfego & Conversão menos vaga**: `trafficAudit` agora busca também
+`/categories/{id}` (mesmo padrão de `categoryAttributesForCreate`) e
+devolve `category_names`. A tela mostra nome da categoria + até 3
+títulos de exemplo dos seus próprios anúncios naquela categoria, em vez
+do `category_id` cru. Achado ao vivo: `MLB186421` = "Placas
+Decorativas" — categoria bem genérica, provável origem da palavra-chave
+"plaquinha de bebida festa" que intrigou o Raphael (não é bug nosso, é
+categorização abrangente da própria categoria no ML).
+
+**Bônus rápido**: botão "Ajustar" nas 5 listas de Oportunidades de
+Venda, levando direto pra Saúde do Anúncio daquele item.
+
+**Tudo testado ao vivo** (leitura: `account_dashboard`,
+`item_update_history`, `traffic_audit` com `category_names`).
+`npm run build` limpo, `ml-insights` redeployada 2x. Migration da Fase
+38 já ativa em produção (não é destrutiva — só `CREATE TABLE`). Nada
+commitado ainda.
+
+---
+
+### 2026-09-01 (4ª parte) — Fase 37: Campanhas & Promoções vira acionável (indicar item pra campanha de verdade) + fix no "Impulsionar"
+
+**Motivação:** Raphael pediu ajuda pra impulsionar os melhores itens —
+sugestões melhores de Ads, e principalmente ajuda pra decidir/entrar em
+campanhas sazonais tipo a 9.9, que estavam chegando.
+
+**Pesquisa antes de construir** (doc oficial do ML, acessada pelo
+navegador logado como Raphael — o bloqueio de antes era só contra fetch
+automatizado, manual funciona normal):
+- **Product Ads (impulsionar anúncio) é SÓ LEITURA na API pública** —
+  nunca existiu endpoint de criar campanha/ativar anúncio, nem na
+  versão legada (descontinuada 27/05/2026). Confirmado ao vivo: a conta
+  tem 2 campanhas e 237 "ad groups" (1 por produto,
+  IDLE/ACTIVE/PAUSED/HOLD) — dá pra saber quem tá promovido, não dá pra
+  mudar por aqui. **Não é possível impulsionar Ads pelo sistema.**
+- **`/seller-promotions` (campanhas tradicionais) É gravável** —
+  `POST /seller-promotions/items/{id}` com `{deal_price, promotion_id,
+  promotion_type}` indica item pra campanha, `PUT` edita, `DELETE`
+  remove. Confirmado ao vivo contra a conta real: a CoisaPet tem a
+  campanha **"9.9" rodando agora** (`P-MLB17923006`, tipo DEAL, prazo
+  até 09/09) com **223 candidatos reais**, cada um já com
+  `suggested_discounted_price`/`min`/`max` calculados pelo próprio ML.
+- **Bug achado e corrigido**: o `promotionsOverview` antigo chamava
+  `GET /seller-promotions/candidates` sem ID — testei ao vivo, dá 404.
+  Nunca funcionou (a própria tela já avisava "endpoint novo, ainda não
+  testado"). Trocado por `GET /seller-promotions/users/{id}`
+  (documentado, testado ao vivo, é de lá que veio a campanha 9.9 real).
+
+**Construído** (`ml-insights/index.ts` + `MlPromotionsPage.jsx`
+reescrita):
+1. **Fix na aba "Impulsionar" de Oportunidades**: `adsCoverage()`
+   contava item com Ads `status: "idle"` (no "pool" mas não promovido
+   de verdade) como "já tem Ads" — agora só conta `status: "active"`.
+   Sem UI nova, só o cruzamento existente ficou mais preciso (25 itens
+   ativos de verdade vs. o número inflado de antes).
+2. **Campanhas & Promoções** (tela reescrita): lista os convites reais
+   (`promotion_invites`), campanha `DEAL` (tipo da 9.9) tem botão "Ver
+   candidatos" → cruza os 223 candidatos com venda real dos últimos 30
+   dias (mesmo hook de Tráfego já usado em Oportunidades), ordena por
+   quem mais vende, mostra preço sugerido pelo ML pré-preenchido e
+   editável (dentro do min/max), checkbox pra selecionar quem indicar.
+   "Indicar selecionados" → `ConfirmWriteModal` → grava de verdade
+   (`promotion_join_item`), sucesso parcial por item (mesmo espírito de
+   `applyContent`/`create_item` — item com preço não crível falha
+   isolado, os outros continuam). Item já participando aparece
+   separado, com "Sair da campanha" (`promotion_leave_item`, também
+   confirmado). **v1 só cobre tipo `DEAL`** — os outros 9 tipos de
+   campanha (`SMART`, `LIGHTNING`, `PRICE_MATCHING` etc., a conta
+   também tem convite ativo desses) aparecem na lista mas são só
+   consulta por enquanto — cada um tem regra de aceite própria, fica
+   pra confirmar ao vivo quando for a vez de mexer neles.
+
+**Tudo de leitura testado ao vivo** (`promotion_invites`,
+`promotion_candidates` contra a 9.9 real — 223 itens confirmados,
+paginação por `search_after` funcionando —, `ads_coverage` com o fix).
+Escrita (`promotion_join_item`/`promotion_leave_item`) não testada
+sozinho — é gravação real numa campanha de verdade, fica pro Raphael
+testar pela tela. `npm run build` limpo, `ml-insights` redeployada 3x
+nesta sessão. Nada commitado ainda.
+
+**Plano completo desta fase**: `C:\Users\User\.claude\plans\radiant-jingling-blanket.md`
+(só existe localmente nesta máquina — sobrescreveu o plano da Fase 36).
+
+---
+
+### 2026-09-01 (3ª parte) — Fase 36: módulo de Criação & Gestão de Anúncios ML
+
+**Motivação:** Raphael perguntou se dava pra criar/gerenciar anúncio ML
+direto pelo sistema. Topou construir com a mesma regra de sempre: nenhuma
+gravação sem confirmação explícita (nada de pausar/reativar/editar/criar
+com 1 clique).
+
+**Gestão de anúncios ativos** (`/ml/anuncios`, tela nova
+`MlActiveListingsPage.jsx`): lista todo mundo (ativo + pausado, thumbnail/
+preço/estoque/status), busca por título, pausar/reativar direto na lista
+(atrás de `ConfirmWriteModal`). Preço/estoque agora também editáveis no
+detalhe do anúncio (`MlItemDetailPage.jsx` → card novo "Ações rápidas") —
+1 botão só, manda pro ML SÓ os campos que mudaram (`update_item_fields`,
+mesmo espírito do save da Ficha Técnica).
+
+**Criação de anúncio novo** (`/ml/anuncios/novo`, tela nova
+`MlCreateListingPage.jsx`, wizard de 7 passos): nome → categoria
+(sugestão por IA via `domain_discovery`, testado ao vivo antes de
+construir a UI — ou digitar o ID manualmente) → ficha técnica (mesmo
+`AttributeRow`, agora extraído pra componente próprio e reaproveitado
+nas duas telas) → preço/estoque/frete → fotos (upload direto na tela,
+multipart repassado pro ML pela edge function) → descrição (manual —
+a Sugestão de IA existente continua só pra anúncio já criado) →
+revisão + publicar. Dá pra usar um anúncio já existente como "modelo"
+(pré-preenche categoria + ficha técnica com os valores reais dele —
+preço/estoque/foto NUNCA vêm do modelo).
+
+**Detalhe técnico que vale registrar**: os campos "estruturais" da
+criação que a API valida sem dar erro claro se estiver errado
+(`listing_type_id`, `buying_mode`, `currency_id`, `shipping.mode`) são
+copiados de um anúncio real já ativo do vendedor em vez de chutados —
+`structural_defaults`, cai num default fixo (`gold_special`/
+`buy_it_now`/`BRL`/`me2`) só se não achar nenhum anúncio ativo pra
+copiar.
+
+**Bug pego e corrigido durante o teste ao vivo**: `item_detail` já
+buscava `status` da API mas esquecia de repassar no `return` — corrigido
+antes de virar problema real (o card "Ações rápidas" dependia disso pra
+saber se o anúncio tá ativo/pausado).
+
+**Todas as actions novas testadas ao vivo (as de LEITURA, via curl —
+`category_predict_debug`, `predict_category`, `category_attributes_for_create`,
+`structural_defaults`, `active_listings`, `item_detail`)** antes de
+liberar. `upload_picture` e `create_item` são escrita real — não testei
+sozinho via terminal, ficam pro Raphael testar pela tela (pode pausar o
+anúncio de teste logo depois, se quiser). `npm run build` limpo,
+`ml-insights` redeployada 3x nesta sessão. Nada commitado ainda.
+
+**Plano completo desta fase**: `C:\Users\User\.claude\plans\radiant-jingling-blanket.md`
+(só existe localmente nesta máquina).
+
+---
+
+### 2026-09-01 (2ª parte) — Commit do trabalho acumulado (Fases 28-35) + push bloqueado nesta máquina
+
+**O que foi feito:** todo o trabalho acumulado desde 28/08 (módulo de
+otimização ML inteiro — Saúde dos Anúncios, Tráfego, Oportunidades de
+Venda, Sugestão de IA — mais as correções desta mesma sessão de
+número_unit/read_only) finalmente foi pro git, commit `0c0690b`.
+Checado antes de commitar: nenhuma chave/segredo hardcoded nos arquivos
+novos.
+
+**`git push` falhou nesta máquina**: `Permission to
+shanchi2/sistema-coisapet.git denied to shanchi-mtz` (403) — a
+credencial do GitHub salva no Gerenciador de Credenciais do Windows
+desta máquina é de uma conta diferente da dona do repo. Combinado com
+o Raphael de deixar assim por enquanto (não é urgente).
+
+**Pendente**: commit `0c0690b` está só local nesta máquina, **ainda não
+chegou no GitHub**. Se abrir uma sessão em outra máquina (a que sincroniza
+`.git` via OneDrive), ela pode já ter esse commit via OneDrive mesmo sem
+push — mas não confiar nisso como método (ver aviso no `CLAUDE.md` sobre
+sync de `.git` via OneDrive). Quando for resolver a credencial nesta
+máquina: limpar a entrada do GitHub no Gerenciador de Credenciais do
+Windows e fazer login como `shanchi2` no próximo `git push`.
 
 ---
 

@@ -19,6 +19,25 @@ function json(body: unknown, status = 200) {
   })
 }
 
+// Log de "última atualização" (Fase 38) — 1 linha por gravação real
+// feita pelo sistema num anúncio. Nunca derruba a ação principal se
+// falhar (é só um registro, não faz parte do fluxo crítico de escrita).
+async function logItemUpdate(db: ReturnType<typeof adminClient>, itemId: string, action: string, detail?: unknown) {
+  try {
+    await db.from('ml_item_updates').insert({ item_id: itemId, action, detail: detail ?? null })
+  } catch { /* log falho não é motivo pra falhar a gravação real */ }
+}
+
+async function itemUpdateHistory(db: ReturnType<typeof adminClient>, itemId: string) {
+  const { data, error } = await db.from('ml_item_updates')
+    .select('action, detail, updated_at')
+    .eq('item_id', itemId)
+    .order('updated_at', { ascending: false })
+    .limit(10)
+  if (error) throw error
+  return { results: data || [] }
+}
+
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length)
   let cursor = 0
@@ -189,13 +208,22 @@ async function trafficAudit(integration: any, db: ReturnType<typeof adminClient>
   }
 
   // Tendências por categoria — 1 chamada por categoria DISTINTA no lote.
+  // Nome da categoria buscado junto (mesmo padrão de
+  // `categoryAttributesForCreate`) — sem isso a tela só tinha o
+  // `category_id` cru pra mostrar, o que deixava a palavra-chave
+  // parecendo "vinda do nada" (reportado pelo Raphael em 2026-09-01).
   const categoryIds = [...new Set([...itemMeta.values()].map((m) => m.category_id).filter(Boolean))] as string[]
   const trendsByCategory = new Map<string, string[]>()
+  const categoryNames = new Map<string, string>()
   for (const categoryId of categoryIds) {
     try {
       const trends = await mlFetch(`/trends/MLB/${categoryId}`, integration.access_token)
       trendsByCategory.set(categoryId, (trends || []).map((t: any) => t.keyword).filter(Boolean))
     } catch { trendsByCategory.set(categoryId, []) }
+    try {
+      const category = await mlFetch(`/categories/${categoryId}`, integration.access_token)
+      categoryNames.set(categoryId, category?.name || categoryId)
+    } catch { categoryNames.set(categoryId, categoryId) }
   }
 
   const results = ids.map((id) => {
@@ -218,7 +246,7 @@ async function trafficAudit(integration: any, db: ReturnType<typeof adminClient>
       permalink: meta.permalink,
     }
   })
-  return { total, offset, limit, results }
+  return { total, offset, limit, results, category_names: Object.fromEntries(categoryNames) }
 }
 
 // Produtos comprados juntos — só do NOSSO histórico de pedidos ML
@@ -581,7 +609,17 @@ async function adsCoverage(accessToken: string) {
       )
       const list = res.results ?? res.ads ?? (Array.isArray(res) ? res : [])
       if (!list.length) break
-      list.forEach((ad: any) => { const id = ad.item_id ?? ad.id; if (id) itemIds.add(String(id)) })
+      // Só conta item REALMENTE promovido agora (`status: "active"`) —
+      // confirmado ao vivo em 2026-09-01 que a busca também devolve
+      // item com status "idle" (no "pool" do Ads mas sem campanha
+      // ativa de verdade). Contar idle como "já tem Ads" fazia esse
+      // item sumir errado da lista de candidatos a impulsionar.
+      list.forEach((ad: any) => {
+        const status = String(ad.status ?? '').toLowerCase()
+        if (status !== 'active') return
+        const id = ad.item_id ?? ad.id
+        if (id) itemIds.add(String(id))
+      })
       if (list.length < limit) break
       offset += limit
     }
@@ -598,7 +636,7 @@ async function adsCoverage(accessToken: string) {
 // nunca derruba o resto do painel.
 async function itemDetail(integration: any, itemId: string, db: ReturnType<typeof adminClient>) {
   const item = await mlFetch(
-    `/items/${itemId}?attributes=id,title,price,category_id,attributes,permalink,pictures,variations,available_quantity,sold_quantity,shipping`,
+    `/items/${itemId}?attributes=id,title,price,category_id,attributes,permalink,pictures,variations,available_quantity,sold_quantity,shipping,status`,
     integration.access_token,
   )
 
@@ -652,7 +690,7 @@ async function itemDetail(integration: any, itemId: string, db: ReturnType<typeo
     item: {
       id: item.id, title: item.title, price: item.price, category_id: item.category_id,
       permalink: item.permalink, available_quantity: item.available_quantity, sold_quantity: item.sold_quantity,
-      shipping: extractShippingInfo(item),
+      status: item.status, shipping: extractShippingInfo(item),
     },
     title_analysis: scoreTitle(item.title || '', trendKeywords),
     images: analyzeImages(item),
@@ -672,7 +710,7 @@ async function itemDetail(integration: any, itemId: string, db: ReturnType<typeo
 // usuário na tela (nunca em lote, nunca automático). Só os atributos que
 // o usuário de fato preencheu no formulário chegam aqui; ML faz merge
 // com o que já existe no anúncio, não precisa reenviar o item inteiro.
-async function updateItemAttributes(integration: any, itemId: string, attributes: any[]) {
+async function updateItemAttributes(integration: any, db: ReturnType<typeof adminClient>, itemId: string, attributes: any[]) {
   if (!Array.isArray(attributes) || attributes.length === 0) throw new Error('Nenhum atributo informado.')
   const clean = attributes
     .filter((a) => a?.id && (a.value_id != null || (a.value_name && String(a.value_name).trim())))
@@ -680,6 +718,7 @@ async function updateItemAttributes(integration: any, itemId: string, attributes
   if (!clean.length) throw new Error('Nenhum valor válido pra salvar.')
 
   const updated = await mlWrite(`/items/${itemId}`, integration.access_token, 'PUT', { attributes: clean })
+  await logItemUpdate(db, itemId, 'attributes', { count: clean.length, ids: clean.map((a) => a.id) })
   return { ok: true, item_id: itemId, attributes: updated.attributes }
 }
 
@@ -866,12 +905,25 @@ async function suggestContent(integration: any, itemId: string) {
 // avaliou em cima dele. Confirmado no item de teste: `sold_quantity: 13`
 // — a 1ª tentativa (título) e a 2ª (family_name, fallback abaixo) falham
 // pelo MESMO motivo de fundo, só com mensagens de erro diferentes da API.
-function friendlyContentError(raw: string): string {
+function friendlyMlError(raw: string): string {
   if (/field family name is invalid/i.test(raw)) {
     return 'Esse anúncio já teve pelo menos 1 venda — o Mercado Livre trava a edição de título (e do campo que faz esse papel nesse formato mais novo de anúncio) depois da primeira venda, pra impedir trocar o título depois que o cliente já avaliou em cima dele. Não é bug nosso, é regra do próprio ML — a descrição continua editável normalmente, só o título fica travado nesse tipo de anúncio.'
   }
   if (/cannot modify the title if the item has a family_name/i.test(raw)) {
     return 'Esse anúncio está no formato de família de variações do ML e nem o jeito alternativo (editar via family_name) funcionou — provavelmente porque já teve alguma venda (o ML trava título de anúncio já vendido). Só dá pra mudar o título direto no painel deles, se é que dá.'
+  }
+  // Erro de validação de criação de anúncio (atributo obrigatório faltando,
+  // categoria não aceita publicação, etc.) — o ML devolve um array `cause`
+  // com o motivo de cada campo. Extrai e lista em vez de esconder o JSON
+  // cru, sem inventar explicação pra nada que a API não disse de verdade.
+  const jsonStart = raw.indexOf('{')
+  if (jsonStart >= 0) {
+    try {
+      const parsed = JSON.parse(raw.slice(jsonStart))
+      const causes = (parsed?.cause || []).map((c: any) => c?.message || c?.code).filter(Boolean)
+      if (causes.length) return `O Mercado Livre recusou: ${causes.join('; ')}`
+      if (parsed?.message) return `O Mercado Livre recusou: ${parsed.message}`
+    } catch { /* não era JSON — mostra o texto cru mesmo */ }
   }
   return raw
 }
@@ -881,7 +933,7 @@ function friendlyContentError(raw: string): string {
 // normalmente, em vez de tudo falhar junto (bug real: título rejeitado
 // por restrição de família de variações fazia a descrição, que não
 // tinha nenhum problema, nunca nem ser tentada).
-async function applyContent(integration: any, itemId: string, title?: string, description?: string) {
+async function applyContent(integration: any, db: ReturnType<typeof adminClient>, itemId: string, title?: string, description?: string) {
   const results: { title?: boolean; description?: boolean } = {}
   const errors: { title?: string; description?: string } = {}
 
@@ -905,10 +957,10 @@ async function applyContent(integration: any, itemId: string, title?: string, de
           await mlWrite(`/items/${itemId}`, integration.access_token, 'PUT', { family_name: title })
           results.title = true
         } catch (err2) {
-          errors.title = friendlyContentError(String(err2))
+          errors.title = friendlyMlError(String(err2))
         }
       } else {
-        errors.title = friendlyContentError(raw)
+        errors.title = friendlyMlError(raw)
       }
     }
   }
@@ -917,57 +969,244 @@ async function applyContent(integration: any, itemId: string, title?: string, de
       await mlWrite(`/items/${itemId}/description?api_version=2`, integration.access_token, 'PUT', { plain_text: description })
       results.description = true
     } catch (err) {
-      errors.description = friendlyContentError(String(err))
+      errors.description = friendlyMlError(String(err))
     }
   }
 
   if (!results.title && !results.description) {
     throw new Error([errors.title, errors.description].filter(Boolean).join(' | ') || 'Nada pra aplicar.')
   }
+  if (results.title || results.description) {
+    await logItemUpdate(db, itemId, 'content', { title: !!results.title, description: !!results.description })
+  }
   return { ok: true, item_id: itemId, ...results, errors: Object.keys(errors).length ? errors : undefined }
 }
 
-// Receita/vendas do período — do NOSSO banco, não da API do ML. Segue
-// EXATAMENTE a mesma conta que o relatório que já existe
-// (`useOrdersReports.js` → /relatorios): faturamento = soma de
-// `order_items.preco_unit × qty`, não as colunas `total_brl`/`total_value`
-// de `orders` (existem mas não são usadas pra isso em nenhum lugar do
-// sistema) — pra nunca aparecer um número diferente em duas telas.
-async function fetchAccountRevenue(db: ReturnType<typeof adminClient>, days: number) {
+// ── Gestão de anúncios ativos (pausar/reativar, preço, estoque) ──────
+// Lista TODOS os anúncios (ativo + pausado) pra tela de gestão — 2
+// buscas de ids (`status=active` / `status=paused`) + 1 multiget em
+// lotes de 20 (mesmo padrão de `trafficAudit`) pra trazer thumbnail/
+// preço/estoque/status de uma vez, sem 1 chamada por item.
+async function activeListings(integration: any) {
+  const [activeRes, pausedRes] = await Promise.all([
+    mlFetch(`/users/${integration.ml_user_id}/items/search?status=active&limit=100`, integration.access_token),
+    mlFetch(`/users/${integration.ml_user_id}/items/search?status=paused&limit=100`, integration.access_token),
+  ])
+  const ids = [...(activeRes.results || []), ...(pausedRes.results || [])]
+  if (!ids.length) return { results: [] }
+
+  const results: any[] = []
+  for (const group of chunk(ids, 20)) {
+    try {
+      const multi = await mlFetch(`/items?ids=${group.join(',')}&attributes=id,title,thumbnail,price,available_quantity,status,permalink`, integration.access_token)
+      ;(multi || []).forEach((entry: any) => {
+        const item = entry?.body
+        if (!item?.id) return
+        results.push({
+          item_id: item.id, title: item.title, thumbnail: item.thumbnail,
+          price: item.price, available_quantity: item.available_quantity,
+          status: item.status, permalink: item.permalink || null,
+        })
+      })
+    } catch { /* lote falho não derruba os outros */ }
+  }
+  return { results }
+}
+
+// Pausar/reativar, editar preço, editar estoque — os 3 casos viram 1
+// PUT só, mandando SÓ os campos que o usuário realmente mudou (mesmo
+// espírito de `updateItemAttributes`, que também só manda o que foi
+// preenchido). Sempre atrás de confirmação explícita na tela.
+async function updateItemFields(integration: any, db: ReturnType<typeof adminClient>, itemId: string, fields: Record<string, unknown>) {
+  const allowed = ['status', 'price', 'available_quantity']
+  const clean: Record<string, unknown> = {}
+  for (const k of allowed) if (fields?.[k] != null) clean[k] = fields[k]
+  if (!Object.keys(clean).length) throw new Error('Nenhum campo pra salvar.')
+  try {
+    const updated = await mlWrite(`/items/${itemId}`, integration.access_token, 'PUT', clean)
+    await logItemUpdate(db, itemId, 'quick_fields', clean)
+    return { ok: true, item_id: itemId, status: updated.status, price: updated.price, available_quantity: updated.available_quantity }
+  } catch (err) {
+    throw new Error(friendlyMlError(String(err)))
+  }
+}
+
+// ── Criação de anúncio novo ───────────────────────────────────────────
+// Endpoint de predição de categoria a partir do título — AINDA NÃO
+// confirmado ao vivo (a doc oficial bloqueou fetch direto na pesquisa,
+// igual já aconteceu com Ads/performance antes). Ação de debug separada,
+// permanente (mesmo padrão de `item_raw_debug`/`order_shipment_debug`),
+// pra testar com título real antes de confiar no formato da resposta.
+async function categoryPredictDebug(accessToken: string, title: string) {
+  return await mlFetch(`/sites/MLB/domain_discovery/search?q=${encodeURIComponent(title)}`, accessToken)
+}
+
+// Wrapper já formatado pro frontend — lista enxuta de candidatos pra
+// escolher. Se o formato real (confirmado via `category_predict_debug`)
+// vier diferente do esperado aqui, é só ajustar o `.map` abaixo.
+async function predictCategory(accessToken: string, title: string) {
+  const raw = await categoryPredictDebug(accessToken, title)
+  const list = Array.isArray(raw) ? raw : (raw?.results ?? [])
+  return {
+    candidates: list.map((c: any) => ({
+      category_id:   c.category_id ?? c.id,
+      category_name: c.category_name ?? c.name ?? null,
+      domain_name:   c.domain_name ?? null,
+    })).filter((c: any) => c.category_id),
+  }
+}
+
+// Ficha técnica "vazia" pra preencher do zero — reaproveita
+// `buildFullAttributes` passando `{}` no lugar de um item real (a
+// function já lida bem com isso: nenhum atributo aparece como
+// preenchido, current_value fica sempre null).
+async function categoryAttributesForCreate(accessToken: string, categoryId: string) {
+  const [catAttrs, category] = await Promise.all([
+    mlFetch(`/categories/${categoryId}/attributes`, accessToken),
+    mlFetch(`/categories/${categoryId}`, accessToken).catch(() => null),
+  ])
+  return { category_id: categoryId, category_name: category?.name ?? null, attributes: buildFullAttributes({}, catAttrs) }
+}
+
+// Upload de foto — recebe o arquivo em base64 do frontend, decodifica e
+// repassa como multipart pro ML (o `fetch` do Deno monta o multipart
+// sozinho a partir de um FormData, não precisa montar string à mão).
+// Devolve o `id` da foto — é isso que entra em `pictures: [{id}]` na
+// hora de criar o anúncio.
+async function uploadPicture(accessToken: string, fileBase64: string, fileName: string, mimeType: string) {
+  const bytes = Uint8Array.from(atob(fileBase64), c => c.charCodeAt(0))
+  const fd = new FormData()
+  fd.append('file', new Blob([bytes], { type: mimeType || 'image/jpeg' }), fileName || 'foto.jpg')
+  const res = await fetch('https://api.mercadolibre.com/pictures/items/upload', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: fd,
+  })
+  if (!res.ok) throw new Error(friendlyMlError(`${res.status} ${await res.text()}`))
+  const data = await res.json()
+  return { id: data.id, raw: data }
+}
+
+// Copia campos "estruturais" de 1 anúncio real já ativo do vendedor
+// (de preferência da mesma categoria) em vez de adivinhar valor de
+// campo que a API valida sem erro claro na hora — mesmo raciocínio já
+// usado em outras correções deste módulo. Sem nenhum anúncio ativo pra
+// copiar (loja nova/zerada), cai num default fixo razoável pro Brasil.
+async function fetchStructuralDefaults(integration: any, categoryId: string) {
+  const FALLBACK = { listing_type_id: 'gold_special', buying_mode: 'buy_it_now', currency_id: 'BRL', shipping_mode: 'me2' }
+  try {
+    let search = await mlFetch(`/users/${integration.ml_user_id}/items/search?category=${categoryId}&status=active&limit=1`, integration.access_token)
+    if (!search.results?.length) {
+      search = await mlFetch(`/users/${integration.ml_user_id}/items/search?status=active&limit=1`, integration.access_token)
+    }
+    const sampleId = search.results?.[0]
+    if (!sampleId) return FALLBACK
+    const sample = await mlFetch(`/items/${sampleId}?attributes=listing_type_id,buying_mode,currency_id,shipping`, integration.access_token)
+    return {
+      listing_type_id: sample.listing_type_id || FALLBACK.listing_type_id,
+      buying_mode:      sample.buying_mode || FALLBACK.buying_mode,
+      currency_id:      sample.currency_id || FALLBACK.currency_id,
+      shipping_mode:    sample.shipping?.mode || FALLBACK.shipping_mode,
+    }
+  } catch {
+    return FALLBACK
+  }
+}
+
+// Cria o anúncio de verdade. Sempre atrás de confirmação explícita na
+// tela de revisão. Descrição é ESCRITA SEPARADA (só existe depois do
+// item existir, diferente de `applyContent` onde título/descrição são
+// independentes) — mas segue o mesmo espírito de sucesso parcial: se o
+// item foi criado mas a descrição falhou, devolve o item criado mesmo
+// assim + erro isolado da descrição, nunca esconde que o anúncio já
+// está no ar sem descrição.
+async function createItem(integration: any, db: ReturnType<typeof adminClient>, itemPayload: any, description?: string) {
+  let created: any
+  try {
+    created = await mlWrite('/items', integration.access_token, 'POST', itemPayload)
+  } catch (err) {
+    throw new Error(friendlyMlError(String(err)))
+  }
+
+  let descriptionError: string | undefined
+  if (description && description.trim()) {
+    try {
+      await mlWrite(`/items/${created.id}/description?api_version=2`, integration.access_token, 'PUT', { plain_text: description.trim() })
+    } catch (err) {
+      descriptionError = friendlyMlError(String(err))
+    }
+  }
+  await logItemUpdate(db, created.id, 'create', { title: created.title })
+  return { ok: true, item: { id: created.id, permalink: created.permalink, title: created.title }, description_error: descriptionError }
+}
+
+// Receita/vendas do período — direto da API de Pedidos do ML
+// (`/orders/search`), NÃO do nosso banco. Trocado em 2026-09-01: a
+// versão antiga somava `order_items` do nosso banco e batia bem abaixo
+// do painel real do ML (confirmado comparando os dois — 338 unidades
+// nossas contra 543 reais em 30 dias). Causa raiz: antes de 24/08 (quando
+// a integração automática com a API entrou no ar) a captura de pedido
+// era só manual e claramente incompleta — não é bug de cálculo, é
+// histórico incompleto de antes da integração, mas qualquer janela de
+// 30/90 dias cruza esse período. Puxar direto da API resolve de vez,
+// sem depender da completude do nosso próprio histórico de sincronização.
+//
+// `total_amount` de cada `order` já vem pronto (não precisa somar
+// `order_items[].unit_price × quantity` na mão) — confirmado ao vivo
+// em 2026-09-01. Pedido em "pacote" (N produtos comprados juntos) vem
+// como N registros de `order` distintos, cada um com o `total_amount`
+// só da sua parte (somar todos dá o total certo do pacote) — mas
+// compartilham o mesmo `pack_id`, que é o "número da venda" de verdade
+// pro ML (mesma regra já usada em `ml-process-webhook`). Por isso
+// receita/unidades somam TODOS os registros, mas "quantidade de vendas"
+// conta `pack_id ?? id` DISTINTOS, senão um pacote de 3 produtos vira
+// "3 vendas" em vez de 1.
+async function fetchAccountRevenueFromMl(integration: any, days: number) {
   const now = new Date()
   const periodStart = new Date(now.getTime() - days * 86400000)
   const prevStart = new Date(now.getTime() - 2 * days * 86400000)
 
-  const { data, error } = await db
-    .from('order_items')
-    .select('order_id, titulo, sku, qty, preco_unit, orders!inner(data_venda, source, archived)')
-    .eq('orders.source', 'ml')
-    .or('archived.is.null,archived.eq.false', { foreignTable: 'orders' })
-    .gte('orders.data_venda', prevStart.toISOString())
-    .limit(5000)
-  if (error) throw error
+  const orders: any[] = []
+  let offset = 0
+  for (let i = 0; i < 40; i++) { // teto de segurança — até 2000 pedidos
+    const res = await mlFetch(
+      `/orders/search?seller=${integration.ml_user_id}`
+      + `&order.date_created.from=${encodeURIComponent(prevStart.toISOString())}`
+      + `&order.date_created.to=${encodeURIComponent(now.toISOString())}`
+      + `&limit=50&offset=${offset}`,
+      integration.access_token,
+    )
+    const results = res.results || []
+    orders.push(...results)
+    if (results.length < 50) break
+    offset += 50
+  }
 
-  const rows = (data || []).filter((r: any) => r.orders?.data_venda)
-  const isCurrent = (r: any) => new Date(r.orders.data_venda).getTime() >= periodStart.getTime()
-  const current  = rows.filter(isCurrent)
-  const previous = rows.filter((r: any) => !isCurrent(r))
+  const isCurrent = (o: any) => new Date(o.date_created).getTime() >= periodStart.getTime()
+  const current  = orders.filter(isCurrent)
+  const previous = orders.filter((o: any) => !isCurrent(o))
+  const notCancelled = (arr: any[]) => arr.filter((o: any) => o.status !== 'cancelled')
+  const orderKey = (o: any) => String(o.pack_id ?? o.id)
+  const itemUnits = (o: any) => (o.order_items || []).reduce((s: number, it: any) => s + (it.quantity || 0), 0)
 
-  const revenueOf = (arr: any[]) => arr.reduce((s, r) => s + (r.preco_unit ? r.preco_unit * (r.qty || 0) : 0), 0)
-  const unitsOf   = (arr: any[]) => arr.reduce((s, r) => s + (r.qty || 0), 0)
+  const revenueOf = (arr: any[]) => notCancelled(arr).reduce((s, o) => s + (o.total_amount || 0), 0)
+  const unitsOf   = (arr: any[]) => notCancelled(arr).reduce((s, o) => s + itemUnits(o), 0)
 
   const revenue     = revenueOf(current)
   const revenuePrev = revenueOf(previous)
   const units       = unitsOf(current)
-  const orderCount  = new Set(current.map((r: any) => r.order_id)).size
+  const orderCount  = new Set(notCancelled(current).map(orderKey)).size
+  const cancelledCount = new Set(current.filter((o: any) => o.status === 'cancelled').map(orderKey)).size
+  const distinctBuyers = new Set(notCancelled(current).map((o: any) => o.buyer?.id).filter(Boolean)).size
   const avgTicket   = orderCount > 0 ? revenue / orderCount : 0
   const revenueChangePct = revenuePrev > 0 ? (revenue - revenuePrev) / revenuePrev : null
 
   const byDay = new Map<string, { revenue: number; units: number }>()
-  current.forEach((r: any) => {
-    const day = String(r.orders.data_venda).slice(0, 10)
+  notCancelled(current).forEach((o: any) => {
+    const day = String(o.date_created).slice(0, 10)
     const entry = byDay.get(day) ?? { revenue: 0, units: 0 }
-    entry.revenue += r.preco_unit ? r.preco_unit * (r.qty || 0) : 0
-    entry.units += r.qty || 0
+    entry.revenue += o.total_amount || 0
+    entry.units += itemUnits(o)
     byDay.set(day, entry)
   })
   const daily = [...byDay.entries()].map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date))
@@ -975,19 +1214,21 @@ async function fetchAccountRevenue(db: ReturnType<typeof adminClient>, days: num
 
   const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
   const byWeekday = WEEKDAYS.map((label) => ({ label, revenue: 0 }))
-  current.forEach((r: any) => {
-    const d = new Date(r.orders.data_venda).getDay()
-    byWeekday[d].revenue += r.preco_unit ? r.preco_unit * (r.qty || 0) : 0
+  notCancelled(current).forEach((o: any) => {
+    const d = new Date(o.date_created).getDay()
+    byWeekday[d].revenue += o.total_amount || 0
   })
 
   const byProduct = new Map<string, { titulo: string; sku: string | null; qty: number; revenue: number }>()
-  current.forEach((r: any) => {
-    const key = r.sku || r.titulo
-    if (!key) return
-    const entry = byProduct.get(key) ?? { titulo: r.titulo, sku: r.sku, qty: 0, revenue: 0 }
-    entry.qty += r.qty || 0
-    entry.revenue += r.preco_unit ? r.preco_unit * (r.qty || 0) : 0
-    byProduct.set(key, entry)
+  notCancelled(current).forEach((o: any) => {
+    ;(o.order_items || []).forEach((it: any) => {
+      const key = it.item?.seller_sku || it.item?.title
+      if (!key) return
+      const entry = byProduct.get(key) ?? { titulo: it.item?.title || key, sku: it.item?.seller_sku || null, qty: 0, revenue: 0 }
+      entry.qty += it.quantity || 0
+      entry.revenue += (it.unit_price || 0) * (it.quantity || 0)
+      byProduct.set(key, entry)
+    })
   })
   const topProducts = [...byProduct.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 5)
 
@@ -1000,7 +1241,9 @@ async function fetchAccountRevenue(db: ReturnType<typeof adminClient>, days: num
   return {
     revenue, revenue_prev: revenuePrev, revenue_change_pct: revenueChangePct,
     units, order_count: orderCount, avg_ticket: avgTicket,
+    cancelled_count: cancelledCount, distinct_buyers: distinctBuyers,
     daily, peak_day: peakDay, by_weekday: byWeekday, top_products: topProducts, calendar,
+    source: 'ml_api',
   }
 }
 
@@ -1061,9 +1304,9 @@ function buildNarrative(rev: any, rep: any) {
   return parts.join(' ')
 }
 
-async function accountDashboard(integration: any, db: ReturnType<typeof adminClient>, days: number) {
+async function accountDashboard(integration: any, days: number) {
   const [revResult, repResult, adsResult] = await Promise.allSettled([
-    fetchAccountRevenue(db, days),
+    fetchAccountRevenueFromMl(integration, days),
     reputation(integration),
     fetchAccountAdsSummary(integration.access_token, days),
   ])
@@ -1147,39 +1390,58 @@ async function claimsByProduct(integration: any, db: ReturnType<typeof adminClie
 // exato de LISTAGEM em massa (query params pra "todos os meus
 // candidatos pendentes") não foi. Nunca derruba a tela — sempre
 // devolve algo, com `raw_sample` pra ajuste rápido se o formato não bater.
-async function promotionsOverview(integration: any) {
-  try {
-    const res = await mlFetch(`/seller-promotions/candidates`, integration.access_token)
-    const candidates = res?.results ?? res?.data ?? (Array.isArray(res) ? res : [])
-    const byType = new Map<string, number>()
-    candidates.forEach((c: any) => {
-      const type = c?.type ?? 'outro'
-      byType.set(type, (byType.get(type) || 0) + 1)
-    })
+// ── Campanhas & Promoções (Fase 37) ───────────────────────────────────
+// Substitui o antigo `promotionsOverview`, que chamava
+// `/seller-promotions/candidates` sem ID — confirmado ao vivo em
+// 2026-09-01 que isso dá 404 (a doc só documenta busca por
+// `candidate_id` específico, vindo de notificação; nunca existiu como
+// listagem geral). `/seller-promotions/users/{id}` é o jeito certo,
+// documentado, e devolve os convites reais — testado ao vivo, a
+// CoisaPet tem a campanha "9.9" (tipo DEAL) rodando agora.
+async function promotionInvites(integration: any) {
+  const res = await mlFetch(`/seller-promotions/users/${integration.ml_user_id}?app_version=v2`, integration.access_token)
+  return { results: res?.results ?? [] }
+}
 
-    const top = candidates.slice(0, 50)
-    const permalinks = new Map<string, string>()
-    const itemIds = [...new Set(top.map((c: any) => c.item_id).filter(Boolean))]
-    for (const group of chunk(itemIds, 20)) {
-      try {
-        const multi = await mlFetch(`/items?ids=${group.join(',')}&attributes=id,permalink`, integration.access_token)
-        ;(multi || []).forEach((entry: any) => { if (entry?.body?.id && entry.body.permalink) permalinks.set(entry.body.id, entry.body.permalink) })
-      } catch { /* sem permalink pra esse lote — link cai no fallback construído no frontend */ }
-    }
-
-    return {
-      available: true,
-      total: candidates.length,
-      by_type: Object.fromEntries(byType),
-      results: top.map((c: any) => ({
-        item_id: c.item_id, promotion_id: c.promotion_id, type: c.type, status: c.status?.id ?? c.status,
-        permalink: permalinks.get(c.item_id) || null,
-      })),
-      raw_sample: candidates.slice(0, 3),
-    }
-  } catch (err) {
-    return { available: false, error: String(err) }
+// Candidatos de 1 campanha tradicional (DEAL) — `min/max/suggested_discounted_price`
+// já vêm calculados pelo próprio ML (confirmado ao vivo: 223 candidatos
+// reais na campanha "9.9"). Pagina por `search_after` (documentado,
+// TTL de 5min) até acabar ou até o teto de segurança de páginas.
+async function promotionCandidates(integration: any, promotionId: string, promotionType: string) {
+  const results: any[] = []
+  let searchAfter: string | null = null
+  for (let i = 0; i < 20; i++) { // teto de segurança — no máx. 1000 itens
+    const url = `/seller-promotions/promotions/${promotionId}/items?promotion_type=${promotionType}&app_version=v2&limit=50`
+      + (searchAfter ? `&search_after=${searchAfter}` : '')
+    const page = await mlFetch(url, integration.access_token)
+    results.push(...(page.results || []))
+    searchAfter = page.paging?.searchAfter || null
+    if (!searchAfter || !page.results?.length) break
   }
+  return { results }
+}
+
+// Escrita — SEMPRE atrás de confirmação explícita na tela. Indica 1
+// item pra campanha tradicional (v1 só cobre `promotion_type: 'DEAL'`,
+// o único com o fluxo de escrita 100% confirmado na doc oficial).
+async function promotionJoinItem(integration: any, db: ReturnType<typeof adminClient>, itemId: string, promotionId: string, promotionType: string, dealPrice: number, topDealPrice?: number) {
+  try {
+    const body: Record<string, unknown> = { deal_price: dealPrice, promotion_id: promotionId, promotion_type: promotionType }
+    if (topDealPrice != null) body.top_deal_price = topDealPrice
+    const res = await mlWrite(`/seller-promotions/items/${itemId}?app_version=v2`, integration.access_token, 'POST', body)
+    await logItemUpdate(db, itemId, 'promotion_join', { promotion_id: promotionId, promotion_type: promotionType, deal_price: dealPrice })
+    return { ok: true, item_id: itemId, ...res }
+  } catch (err) {
+    throw new Error(friendlyMlError(String(err)))
+  }
+}
+
+async function promotionLeaveItem(integration: any, db: ReturnType<typeof adminClient>, itemId: string, promotionId: string, promotionType: string) {
+  const url = `https://api.mercadolibre.com/seller-promotions/items/${itemId}?promotion_type=${promotionType}&promotion_id=${promotionId}&app_version=v2`
+  const res = await fetch(url, { method: 'DELETE', headers: { Authorization: `Bearer ${integration.access_token}` } })
+  if (!res.ok) throw new Error(friendlyMlError(`${res.status} ${await res.text()}`))
+  await logItemUpdate(db, itemId, 'promotion_leave', { promotion_id: promotionId, promotion_type: promotionType })
+  return { ok: true, item_id: itemId }
 }
 
 async function responseTime(integration: any) {
@@ -1189,6 +1451,38 @@ async function responseTime(integration: any) {
 async function reputation(integration: any) {
   const user = await mlFetch(`/users/${integration.ml_user_id}`, integration.access_token)
   return { nickname: user.nickname, seller_reputation: user.seller_reputation ?? null }
+}
+
+// Debug temporário — pesquisando o formato real de criação/ativação de
+// Product Ads (impulsionar anúncio direto do sistema, pedido do
+// Raphael em 2026-09-01). SÓ LEITURA (GET), nada de escrita ainda.
+// `path` é o sufixo depois de /advertisers/{id}/, pra testar variações
+// sem precisar redeploy a cada tentativa.
+// Debug genérico — GET cru autenticado em qualquer path da API do ML.
+// Usado pra confirmar ao vivo o formato do `/seller-promotions/*`
+// (Fase 37) antes de finalizar as actions reais. Só leitura.
+async function mlRawGetDebug(accessToken: string, path: string) {
+  try {
+    return { ok: true, res: await mlFetch(path, accessToken, { 'Api-Version': '2' }) }
+  } catch (err) {
+    return { ok: false, error: String(err) }
+  }
+}
+
+async function adsCampaignsDebug(accessToken: string, path: string, method = 'GET') {
+  const advertiser = await findMlAdvertiser(accessToken)
+  if (!advertiser) return { error: 'Sem advertiser encontrado' }
+  const url = `https://api.mercadolibre.com/marketplace/advertising/MLB/advertisers/${advertiser.advertiser_id}/${path}`
+  if (method === 'OPTIONS') {
+    const res = await fetch(url, { method: 'OPTIONS', headers: { Authorization: `Bearer ${accessToken}`, 'Api-Version': '2' } })
+    return { url, status: res.status, allow: res.headers.get('allow'), body: await res.text() }
+  }
+  try {
+    const res = await mlFetch(url, accessToken, { 'Api-Version': '2' })
+    return { url, ok: true, res }
+  } catch (err) {
+    return { url, ok: false, error: String(err) }
+  }
 }
 
 serve(async (req) => {
@@ -1236,11 +1530,14 @@ serve(async (req) => {
       case 'item_detail':
         if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
         return json(await itemDetail(integration, body.item_id, db))
+      case 'item_update_history':
+        if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
+        return json(await itemUpdateHistory(db, body.item_id))
       case 'update_item_attributes':
         if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
-        return json(await updateItemAttributes(integration, body.item_id, body.attributes))
+        return json(await updateItemAttributes(integration, db, body.item_id, body.attributes))
       case 'account_dashboard':
-        return json(await accountDashboard(integration, db, Number(body.period) || 30))
+        return json(await accountDashboard(integration, Number(body.period) || 30))
       case 'traffic_audit':
         return json(await trafficAudit(integration, db, offset, limit, Number(body.days) || 30))
       case 'price_scan':
@@ -1249,8 +1546,17 @@ serve(async (req) => {
         return json(await claimsByProduct(integration, db))
       case 'ads_coverage':
         return json(await adsCoverage(integration.access_token))
-      case 'promotions_overview':
-        return json(await promotionsOverview(integration))
+      case 'promotion_invites':
+        return json(await promotionInvites(integration))
+      case 'promotion_candidates':
+        if (!body.promotion_id || !body.promotion_type) return json({ error: 'promotion_id e promotion_type obrigatórios' }, 400)
+        return json(await promotionCandidates(integration, body.promotion_id, body.promotion_type))
+      case 'promotion_join_item':
+        if (!body.item_id || !body.promotion_id || !body.promotion_type || body.deal_price == null) return json({ error: 'item_id, promotion_id, promotion_type e deal_price obrigatórios' }, 400)
+        return json(await promotionJoinItem(integration, db, body.item_id, body.promotion_id, body.promotion_type, Number(body.deal_price), body.top_deal_price != null ? Number(body.top_deal_price) : undefined))
+      case 'promotion_leave_item':
+        if (!body.item_id || !body.promotion_id || !body.promotion_type) return json({ error: 'item_id, promotion_id e promotion_type obrigatórios' }, 400)
+        return json(await promotionLeaveItem(integration, db, body.item_id, body.promotion_id, body.promotion_type))
       case 'combo_suggestions':
         return json(await comboSuggestions(db, Number(body.days) || 180))
       case 'suggest_content':
@@ -1258,7 +1564,36 @@ serve(async (req) => {
         return json(await suggestContent(integration, body.item_id))
       case 'apply_content':
         if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
-        return json(await applyContent(integration, body.item_id, body.title, body.description))
+        return json(await applyContent(integration, db, body.item_id, body.title, body.description))
+      case 'active_listings':
+        return json(await activeListings(integration))
+      case 'update_item_fields':
+        if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
+        return json(await updateItemFields(integration, db, body.item_id, body.fields || {}))
+      case 'category_predict_debug':
+        if (!body.title) return json({ error: 'title obrigatório' }, 400)
+        return json(await categoryPredictDebug(integration.access_token, body.title))
+      case 'predict_category':
+        if (!body.title) return json({ error: 'title obrigatório' }, 400)
+        return json(await predictCategory(integration.access_token, body.title))
+      case 'category_attributes_for_create':
+        if (!body.category_id) return json({ error: 'category_id obrigatório' }, 400)
+        return json(await categoryAttributesForCreate(integration.access_token, body.category_id))
+      case 'upload_picture':
+        if (!body.file_base64) return json({ error: 'file_base64 obrigatório' }, 400)
+        return json(await uploadPicture(integration.access_token, body.file_base64, body.file_name, body.mime_type))
+      case 'structural_defaults':
+        if (!body.category_id) return json({ error: 'category_id obrigatório' }, 400)
+        return json(await fetchStructuralDefaults(integration, body.category_id))
+      case 'create_item':
+        if (!body.item) return json({ error: 'item obrigatório' }, 400)
+        return json(await createItem(integration, db, body.item, body.description))
+      case 'ads_campaigns_debug':
+        if (!body.path) return json({ error: 'path obrigatório' }, 400)
+        return json(await adsCampaignsDebug(integration.access_token, body.path, body.method || 'GET'))
+      case 'ml_raw_get_debug':
+        if (!body.path) return json({ error: 'path obrigatório' }, 400)
+        return json(await mlRawGetDebug(integration.access_token, body.path))
       default:                  return json({ error: `Ação desconhecida: ${action}` }, 400)
     }
   } catch (err) {

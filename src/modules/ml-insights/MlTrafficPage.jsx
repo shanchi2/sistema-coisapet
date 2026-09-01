@@ -66,14 +66,25 @@ export function MlTrafficPage() {
   const trendingByCategory = useMemo(() => {
     if (!rows) return []
     const map = new Map()
+    const itemsByCategory = new Map()
     rows.forEach(r => {
       if (!r.category_id) return
       const catMap = map.get(r.category_id) || new Map()
       ;(r.trending_missing || []).forEach(k => catMap.set(k, (catMap.get(k) || 0) + 1))
       map.set(r.category_id, catMap)
+      const items = itemsByCategory.get(r.category_id) || []
+      if (r.title) items.push(r.title)
+      itemsByCategory.set(r.category_id, items)
     })
+    const categoryNames = rows.category_names || {}
     return [...map.entries()]
-      .map(([category_id, kwMap]) => ({ category_id, keywords: [...kwMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8) }))
+      .map(([category_id, kwMap]) => ({
+        category_id,
+        category_name: categoryNames[category_id] || category_id,
+        example_items: (itemsByCategory.get(category_id) || []).slice(0, 3),
+        item_count: (itemsByCategory.get(category_id) || []).length,
+        keywords: [...kwMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8),
+      }))
       .filter(c => c.keywords.length > 0)
   }, [rows])
 
@@ -147,7 +158,14 @@ export function MlTrafficPage() {
                 <div className="space-y-3">
                   {trendingByCategory.map(c => (
                     <div key={c.category_id}>
-                      <p className="text-xs font-mono text-slate-400 mb-1.5">{c.category_id}</p>
+                      <p className="text-xs text-slate-600 mb-0.5">
+                        <span className="font-semibold">{c.category_name}</span>
+                        <span className="text-slate-400 font-mono"> · {c.category_id}</span>
+                        <span className="text-slate-400"> · {c.item_count} anúncio{c.item_count === 1 ? '' : 's'} seu{c.item_count === 1 ? '' : 's'} nessa categoria</span>
+                      </p>
+                      {c.example_items.length > 0 && (
+                        <p className="text-xs text-slate-400 mb-1.5 truncate">Ex: {c.example_items.join(' · ')}</p>
+                      )}
                       <div className="flex flex-wrap gap-1.5">
                         {c.keywords.map(([kw, count]) => (
                           <span key={kw} className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">

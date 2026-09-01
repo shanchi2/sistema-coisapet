@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
-import { Rocket, RefreshCw, Loader2, AlertTriangle, ExternalLink, Truck, TrendingDown, Ghost, DollarSign, Boxes, Megaphone } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Rocket, RefreshCw, Loader2, AlertTriangle, ExternalLink, Truck, TrendingDown, Ghost, DollarSign, Boxes, Megaphone, HeartPulse } from 'lucide-react'
 import { useMlInsights } from './hooks/useMlInsights'
 
 function fmtMoney(v) {
@@ -53,6 +54,10 @@ function ItemRow({ r, right, tags }) {
           </div>
         )}
       </div>
+      <Link to={`/ml/saude/${r.item_id}`} title="Ajustar na Saúde do Anúncio"
+        className="shrink-0 flex items-center gap-1 text-xs text-slate-400 hover:text-emerald-600 border border-slate-200 hover:border-emerald-300 rounded-lg px-2 py-1 transition-colors">
+        <HeartPulse size={12}/> Ajustar
+      </Link>
       <div className="text-right shrink-0">{right}</div>
     </div>
   )

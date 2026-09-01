@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   LayoutDashboard, RefreshCw, Loader2, AlertTriangle, TrendingUp, TrendingDown,
   DollarSign, Sparkles, ThermometerSun, HeartPulse, Megaphone, ArrowRight,
-  MessageSquareWarning, ChevronDown,
+  MessageSquareWarning, ChevronDown, XCircle, Users,
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -121,6 +121,10 @@ export function MlAccountDashboardPage() {
               </div>
             )}
 
+            <p className="text-xs text-slate-400 -mb-1">
+              Números direto da API de Pedidos do Mercado Livre (não do nosso banco) — batem com o painel real deles.
+            </p>
+
             {/* Receita */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-white border border-slate-200 rounded-xl p-5">
@@ -142,6 +146,17 @@ export function MlAccountDashboardPage() {
                 <div className="flex items-center gap-2 mb-1"><Megaphone size={14} className="text-slate-400"/><p className="text-xs font-semibold text-slate-500 uppercase">Ads (aprox.)</p></div>
                 <p className="text-2xl font-bold text-sky-600">{data.ads?.available ? fmtMoney(data.ads.ads_revenue) : '—'}</p>
                 <p className="text-xs text-slate-400 mt-1">{data.ads?.available ? `Investido: ${fmtMoney(data.ads.cost)}` : (data.ads?.reason || data.ads?.error || 'Sem dado de Ads')}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="bg-white border border-slate-200 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-1"><XCircle size={14} className="text-slate-400"/><p className="text-xs font-semibold text-slate-500 uppercase">Vendas canceladas</p></div>
+                <p className="text-2xl font-bold text-rose-600">{rev?.cancelled_count ?? 0}</p>
+              </div>
+              <div className="bg-white border border-slate-200 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-1"><Users size={14} className="text-slate-400"/><p className="text-xs font-semibold text-slate-500 uppercase">Compradores distintos</p></div>
+                <p className="text-2xl font-bold text-slate-800">{rev?.distinct_buyers ?? 0}</p>
               </div>
             </div>
 

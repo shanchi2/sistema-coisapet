@@ -21,7 +21,10 @@ async function callMlInsights(payload) {
 // Varre TODOS os anúncios ativos em lotes de `limit`, chamando a mesma
 // action repetidas vezes com offset crescente — evita 1 invocação gigante
 // da edge function pra ~400+ anúncios de uma vez só.
-async function scanAllPages(action, { limit = 50, onProgress, extraParams = {} } = {}) {
+// `onExtra(page)` — chamado a cada página, pra quem precisa acumular
+// algo além de `results` (ex: `category_names` do traffic_audit) sem
+// mudar o contrato de retorno (array puro) pros outros usos.
+async function scanAllPages(action, { limit = 50, onProgress, extraParams = {}, onExtra } = {}) {
   let offset = 0
   let total = Infinity
   const results = []
@@ -29,6 +32,7 @@ async function scanAllPages(action, { limit = 50, onProgress, extraParams = {} }
     const page = await callMlInsights({ action, offset, limit, ...extraParams })
     total = page.total ?? 0
     results.push(...(page.results || []))
+    onExtra?.(page)
     offset += limit
     onProgress?.({ done: Math.min(offset, total), total })
     if (!page.results?.length) break // segurança: evita loop infinito se a API parar de paginar
@@ -66,8 +70,21 @@ export function useMlInsights() {
     [run],
   )
 
+  // `results.category_names` fica pendurado no array devolvido (não muda
+  // o contrato de "array de linhas" que os outros usos já esperam) —
+  // mapa `{category_id: nome}` acumulado de todas as páginas do scan,
+  // usado só pela tela de Tráfego pra explicar de onde vêm as
+  // palavras-chave em alta.
   const fetchTrafficAudit = useCallback(
-    (days = 30) => run(() => scanAllPages('traffic_audit', { onProgress: setProgress, extraParams: { days } })),
+    (days = 30) => run(async () => {
+      const categoryNames = {}
+      const results = await scanAllPages('traffic_audit', {
+        onProgress: setProgress, extraParams: { days },
+        onExtra: (page) => Object.assign(categoryNames, page.category_names),
+      })
+      results.category_names = categoryNames
+      return results
+    }),
     [run],
   )
 
@@ -93,6 +110,11 @@ export function useMlInsights() {
 
   const fetchItemDetail = useCallback(
     (itemId) => run(() => callMlInsights({ action: 'item_detail', item_id: itemId })),
+    [run],
+  )
+
+  const fetchItemUpdateHistory = useCallback(
+    (itemId) => run(async () => (await callMlInsights({ action: 'item_update_history', item_id: itemId })).results || []),
     [run],
   )
 
@@ -130,8 +152,30 @@ export function useMlInsights() {
     [run],
   )
 
-  const fetchPromotionsOverview = useCallback(
-    () => run(() => callMlInsights({ action: 'promotions_overview' })),
+  const fetchPromotionInvites = useCallback(
+    () => run(async () => (await callMlInsights({ action: 'promotion_invites' })).results || []),
+    [run],
+  )
+
+  const fetchPromotionCandidates = useCallback(
+    (promotionId, promotionType) => run(async () =>
+      (await callMlInsights({ action: 'promotion_candidates', promotion_id: promotionId, promotion_type: promotionType })).results || []),
+    [run],
+  )
+
+  // Sempre chamado depois de confirmação explícita na tela.
+  const promotionJoinItem = useCallback(
+    (itemId, promotionId, promotionType, dealPrice, topDealPrice) => run(() => callMlInsights({
+      action: 'promotion_join_item', item_id: itemId, promotion_id: promotionId, promotion_type: promotionType,
+      deal_price: dealPrice, top_deal_price: topDealPrice,
+    })),
+    [run],
+  )
+
+  const promotionLeaveItem = useCallback(
+    (itemId, promotionId, promotionType) => run(() => callMlInsights({
+      action: 'promotion_leave_item', item_id: itemId, promotion_id: promotionId, promotion_type: promotionType,
+    })),
     [run],
   )
 
@@ -140,17 +184,74 @@ export function useMlInsights() {
     [run],
   )
 
+  // ── Gestão de anúncios ativos ────────────────────────────────────
+  const fetchActiveListings = useCallback(
+    () => run(async () => (await callMlInsights({ action: 'active_listings' })).results || []),
+    [run],
+  )
+
+  // fields: { status?, price?, available_quantity? } — só o que mudou.
+  // Sempre chamado depois de confirmação explícita na tela.
+  const updateItemFields = useCallback(
+    (itemId, fields) => run(() => callMlInsights({ action: 'update_item_fields', item_id: itemId, fields })),
+    [run],
+  )
+
+  // ── Criação de anúncio novo ──────────────────────────────────────
+  const predictCategory = useCallback(
+    (title) => run(async () => (await callMlInsights({ action: 'predict_category', title })).candidates || []),
+    [run],
+  )
+
+  const fetchCategoryAttributesForCreate = useCallback(
+    (categoryId) => run(() => callMlInsights({ action: 'category_attributes_for_create', category_id: categoryId })),
+    [run],
+  )
+
+  // file: objeto File do input — converte pra base64 aqui mesmo antes de
+  // mandar (Edge Function decodifica e repassa como multipart pro ML).
+  const uploadPicture = useCallback(
+    (file) => run(() => new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(new Error('Falha ao ler o arquivo de imagem.'))
+      reader.onload = async () => {
+        try {
+          const base64 = String(reader.result).split(',')[1] || ''
+          resolve(await callMlInsights({ action: 'upload_picture', file_base64: base64, file_name: file.name, mime_type: file.type }))
+        } catch (err) { reject(err) }
+      }
+      reader.readAsDataURL(file)
+    })),
+    [run],
+  )
+
+  const fetchStructuralDefaults = useCallback(
+    (categoryId) => run(() => callMlInsights({ action: 'structural_defaults', category_id: categoryId })),
+    [run],
+  )
+
+  // item: payload completo pro ML (title, category_id, price, attributes,
+  // pictures, etc.) — montado no frontend a partir do wizard. Sempre
+  // chamado depois de confirmação explícita na tela de revisão.
+  const createItem = useCallback(
+    (item, description) => run(() => callMlInsights({ action: 'create_item', item, description })),
+    [run],
+  )
+
   return {
     loading, progress, error,
     fetchItemsHealth, fetchAttributesAudit,
     fetchTrafficAudit, fetchPriceScan,
     fetchQuestions, fetchResponseTime, fetchReputation,
-    fetchItemDetail, applyAttributes,
+    fetchItemDetail, applyAttributes, fetchItemUpdateHistory,
     fetchAccountDashboard,
     suggestContent, applyContent,
     fetchClaimsByProduct,
     fetchAdsCoverage,
-    fetchPromotionsOverview,
+    fetchPromotionInvites, fetchPromotionCandidates, promotionJoinItem, promotionLeaveItem,
     fetchComboSuggestions,
+    fetchActiveListings, updateItemFields,
+    predictCategory, fetchCategoryAttributesForCreate,
+    uploadPicture, fetchStructuralDefaults, createItem,
   }
 }

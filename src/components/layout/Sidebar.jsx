@@ -6,7 +6,7 @@ import {
   TrendingUp, Calendar, FileSpreadsheet, MessageSquare, MessagesSquare,
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
   PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, PackageSearch, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
-  HeartPulse, MessageCircleQuestion, Tag, Rocket,
+  HeartPulse, MessageCircleQuestion, Tag, Rocket, Store,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
@@ -25,6 +25,7 @@ const NAV_SECTIONS = [
     label: 'Otimização ML',
     items: [
       { to: '/ml',            moduleKey: 'ml-insights', icon: LayoutDashboard,       label: 'Visão Geral',           roles: ['admin','marketplace'] },
+      { to: '/ml/anuncios',   moduleKey: 'ml-insights', icon: Store,                 label: 'Anúncios',              roles: ['admin','marketplace'] },
       { to: '/ml/trafego',    moduleKey: 'ml-insights', icon: TrendingUp,            label: 'Tráfego & Conversão',   roles: ['admin','marketplace'] },
       { to: '/ml/saude',      moduleKey: 'ml-insights', icon: HeartPulse,            label: 'Saúde dos Anúncios',    roles: ['admin','marketplace'] },
       { to: '/ml/perguntas',  moduleKey: 'ml-insights', icon: MessageCircleQuestion, label: 'Perguntas & Reputação', roles: ['admin','marketplace'] },
