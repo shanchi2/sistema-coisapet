@@ -6,6 +6,7 @@ import {
   TrendingUp, Calendar, FileSpreadsheet, MessageSquare, MessagesSquare,
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
   PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, PackageSearch, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
+  HeartPulse, MessageCircleQuestion, Tag, Rocket,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
@@ -18,6 +19,17 @@ const NAV_SECTIONS = [
       { to: '/pedidos',    moduleKey: 'pedidos',    icon: ClipboardList,   label: 'Pedidos',    roles: ['admin','administrativo','atendimento'] },
       { to: '/pick-list',  moduleKey: 'pedidos',    icon: PackageSearch,   label: 'Pick List',  roles: ['admin','administrativo','atendimento'] },
       { to: '/orcamentos', moduleKey: 'orcamentos', icon: Receipt,         label: 'Orçamentos', roles: ['admin','administrativo','atendimento'] },
+    ],
+  },
+  {
+    label: 'Otimização ML',
+    items: [
+      { to: '/ml',            moduleKey: 'ml-insights', icon: LayoutDashboard,       label: 'Visão Geral',           roles: ['admin','marketplace'] },
+      { to: '/ml/trafego',    moduleKey: 'ml-insights', icon: TrendingUp,            label: 'Tráfego & Conversão',   roles: ['admin','marketplace'] },
+      { to: '/ml/saude',      moduleKey: 'ml-insights', icon: HeartPulse,            label: 'Saúde dos Anúncios',    roles: ['admin','marketplace'] },
+      { to: '/ml/perguntas',  moduleKey: 'ml-insights', icon: MessageCircleQuestion, label: 'Perguntas & Reputação', roles: ['admin','marketplace'] },
+      { to: '/ml/promocoes',  moduleKey: 'ml-insights', icon: Tag,                   label: 'Promoções',             roles: ['admin','marketplace'] },
+      { to: '/ml/oportunidades', moduleKey: 'ml-insights', icon: Rocket,             label: 'Oportunidades de Venda', roles: ['admin','marketplace'] },
     ],
   },
   {
@@ -102,6 +114,7 @@ const ESCRITORIO_SECTIONS = [
 // 'light' pro ícone/texto do item ativo (tom mais claro da mesma cor)
 const SECTION_COLORS = {
   'Principal':        { base: '#F43F5E', light: '#FCA5B8' }, // rose
+  'Otimização ML':    { base: '#10B981', light: '#6EE7B7' }, // emerald
   'Produção':         { base: '#F59E0B', light: '#FCD34D' }, // amber
   'Recursos Humanos': { base: '#8B5CF6', light: '#C4B5FD' }, // violeta
   'Gestão':           { base: '#0EA5E9', light: '#7DD3FC' }, // azul
@@ -225,7 +238,7 @@ export function Sidebar({ open, onToggle }) {
                 {visible.map(({ to, icon: Icon, label: itemLabel }) => (
                   open ? (
                     <NavLink key={to} to={to}
-                      end={to === '/rh'}
+                      end={to === '/rh' || to === '/ml'}
                       className={({ isActive }) =>
                         `flex items-center gap-2.5 mx-2 px-3 py-2 rounded-xl text-sm transition-all ${isActive ? 'font-semibold' : 'hover:bg-[var(--nav-hover)]'}`
                       }
@@ -247,7 +260,7 @@ export function Sidebar({ open, onToggle }) {
                   ) : (
                     <NavTooltip key={to} label={itemLabel}>
                       <NavLink to={to}
-                        end={to === '/rh'}
+                        end={to === '/rh' || to === '/ml'}
                         className={({ isActive }) =>
                           `flex items-center justify-center w-9 h-9 mx-auto rounded-xl transition-all ${isActive ? '' : 'hover:bg-[var(--nav-hover)]'}`
                         }

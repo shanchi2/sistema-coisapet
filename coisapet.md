@@ -50,6 +50,10 @@ reconstruir o raciocínio do zero.
   (`orders.archived`, nunca DELETE) e reimportados do zero via API —
   Expedição de hoje bate 100% com o painel real do ML (7 pedidos).
   Shopee intocado. Ver Log pra detalhes.
+- **Otimização ML (28/08, Fase 1)**: categoria nova no sidebar —
+  "Saúde dos Anúncios" e "Perguntas & Reputação", só leitura da API do
+  ML via edge function `ml-insights` nova. Deployada, ainda não testada
+  com dado real nem commitada. Detalhes na entrada de 28/08 no Log.
 - **Shopee (26/08, 5ª parte)**: fluxo revisado, sem bug estrutural
   (parser já agrupa pacote e protege item de pedido já existente —
   diferente do ML, não precisou de correção de código). 723 pedidos
@@ -90,7 +94,971 @@ reconstruir o raciocínio do zero.
 
 ---
 
-## Log
+### 2026-09-01 — Corrige erro ao salvar dimensão/peso da embalagem + remove campos read_only da Ficha Técnica
+
+**Motivação:** Raphael tentou salvar atualização de produto e recebeu
+erro 400 da API: `seller_package_height/length/weight/width` "in the
+wrong format — Only integers... with cm as unit... Examples: 10 cm,
+100 g".
+
+**Causa raiz confirmada** — puxei a definição completa de atributos da
+categoria (`item_raw_debug` ganhou `with_category_attrs`, novo parâmetro
+opcional): `SELLER_PACKAGE_WIDTH/HEIGHT/LENGTH/WEIGHT` são
+`value_type: "number_unit"` — o ML exige o número JUNTO com a unidade
+no texto ("20 cm", nunca só "20"). Nosso campo de texto livre não sabia
+disso, mandava só o número puro.
+
+**Achado bônus, explica a confusão de campo desconhecido de antes**:
+boa parte dos campos estranhos que apareciam na Ficha Técnica (Número
+da DI, IEPS, Origem do dado do pacote de fábrica, Chave SAT, unidade de
+medida, imposto de importação, etc.) são marcados pelo próprio ML como
+`read_only` — **a API rejeita qualquer tentativa de gravar nesses
+campos**, mesmo que ela devolva o valor atual numa consulta. A tela
+mostrava um monte de campo "editável" que nunca poderia ser salvo de
+verdade.
+
+**Corrigido, os 2 problemas de uma vez** (`buildFullAttributes`,
+`ml-insights`):
+1. `catAttrs.filter(a => !a.tags?.read_only)` — atributo read_only nunca
+   mais aparece na Ficha Técnica editável (resolve a causa, não só
+   explica com tooltip um campo que nunca ia funcionar mesmo — o
+   trabalho de tooltip da Fase 32/33 continua útil pros campos que
+   sobraram e são editáveis de verdade).
+2. `allowed_units`/`default_unit` (vem direto da API de categoria)
+   agora exposto por atributo `number_unit`. `MlItemDetailPage.jsx`:
+   campo novo pra esse tipo — input de número + unidade (dropdown se
+   tiver mais de 1 opção válida, ex: Comprimento/Largura/Altura do
+   produto aceitam cm/mm/m; só texto fixo se tiver 1 só, ex: embalagem
+   sempre cm/g) — monta "número unidade" sozinho antes de mandar pro ML.
+3. `fallbackDefault()` (botão "Usar padrão") também corrigido — não
+   sugere mais "Não informado" pra campo `number`/`number_unit` (isso
+   causaria o MESMO erro de formato).
+
+**`npm run build` limpo, `ml-insights` redeployada.** Testado ao vivo
+via `item_detail`: `SELLER_PACKAGE_WIDTH` confirmado com
+`allowed_units`/`default_unit` corretos, Número da DI e IEPS confirmados
+fora da lista. Nada commitado.
+
+### 2026-08-31 (11ª parte) — Causa raiz corrigida: não é "família", é venda já feita
+
+**Motivação:** o fallback via `family_name` da 10ª parte também falhou
+("The field family name is invalid") quando Raphael testou de verdade
+— minha hipótese de pesquisa da rodada anterior estava incompleta.
+
+**Causa raiz REAL, confirmada com pesquisa mais direcionada (fontes
+BR: ecommercenapratica.com, Bling, Real Trends) + teste ao vivo**: não
+é sobre o anúncio "ser uma família de variações" — é que **o Mercado
+Livre trava edição de título (e do `family_name`, que faz esse papel
+no formato novo de anúncio) de QUALQUER item que já teve pelo menos 1
+venda**, pra impedir o vendedor de trocar o título depois que o
+comprador já avaliou em cima dele. Confirmado direto na API: o item de
+teste tem `sold_quantity: 13` — bate exatamente com a regra encontrada
+("you can only edit family_name when none of the conditions have sales
+yet"). **Isso é uma regra de plataforma do próprio ML, não um bug
+nosso, e não tem workaround por API** — vale pra praticamente todo
+anúncio "estabelecido" (que já vendeu), não só os migrados pro formato
+de família.
+
+**Corrigido**: `friendlyContentError()` agora explica a causa real
+(venda já feita, não "família") nos dois pontos onde pode falhar
+(tentativa de `title` direto, e o fallback de `family_name`). O
+fallback em si continua tentando — pesquisa indica que funciona
+normalmente pra anúncio que NUNCA vendeu, só falha mesmo quando já tem
+venda no histórico.
+
+**Importante pro Raphael saber, já que vão fazer isso em vários
+produtos**: pra anúncio que já vendeu, só a **descrição** é editável
+por aqui — o título fica travado pelo próprio ML, provavelmente até
+pelo painel deles também (não confirmado com certeza). Pra anúncio
+NUNCA vendido, título deve continuar editável normal.
+
+**`ml-insights` redeployada.** Uma tentativa de teste ao vivo (mesmo
+valor de `family_name`, sem mudar nada) foi corretamente **bloqueada
+pelo classificador de segurança do Claude Code** (é escrita real, deve
+passar pela confirmação do Raphael na tela, não por mim testando via
+terminal) — não contornei, expliquei e segui pesquisando por outro
+caminho. Nada commitado.
+
+### 2026-08-31 (10ª parte) — Corrige erro ao aplicar título de anúncio com família de variações
+
+**Motivação:** Raphael tentou aplicar título+descrição sugeridos e
+recebeu o erro cru da API: `"You cannot modify the title if the item
+has a family_name"`, 400 BODY_INVALID_FIELDS.
+
+**Causa raiz confirmada direto na API** — ação de diagnóstico nova
+`item_raw_debug` (`ml-insights`, mesmo padrão do `order_shipment_debug`
+de antes, fica permanente): o anúncio
+(`Plaquinha Personalizada Para Terrários Casinhas Pet Nome`) tem
+`family_name` preenchido — faz parte de uma família de variações do ML
+(ex: mesma peça em cores/desenhos diferentes agrupada). Nesse caso o ML
+trava edição de título por item individual — título é compartilhado
+entre as variações da família, só edita pelo painel deles.
+
+**2 bugs reais corrigidos** (`applyContent`, `ml-insights`):
+1. Título e descrição eram escritas em SEQUÊNCIA — se o título falhasse
+   (qualquer motivo), a descrição nunca chegava a ser tentada, mesmo
+   sendo uma chamada totalmente independente sem nenhum problema.
+   Corrigido: cada uma tenta e falha por conta própria agora
+   (try/catch separado), só lança erro de verdade se as DUAS falharem.
+2. Erro cru da API (JSON técnico em inglês) agora vira mensagem em
+   português explicando a restrição de família de variações —
+   `friendlyContentError()` novo, casa por texto do erro (só esse caso
+   conhecido por enquanto; erro desconhecido continua mostrando o texto
+   original, sem esconder informação).
+
+**Frontend** (`MlItemDetailPage.jsx`): `confirmApplyContent` agora
+trata sucesso parcial — toast de sucesso separado por campo que deu
+certo, toast de erro (8s, tempo pra ler) pro campo que falhou, e
+desmarca só o checkbox do que falhou (evita tentar de novo a mesma
+restrição). Só fecha a sugestão inteira se tudo que foi marcado deu
+certo.
+
+**`npm run build` limpo, `ml-insights` redeployada.** Não testei
+aplicando de verdade via curl (seria escrita real no anúncio ao vivo,
+sem confirmação explícita do Raphael na tela) — pedido pro Raphael
+tentar de novo pela tela mesma (a descrição, que não tinha problema
+nenhum, deve aplicar normal agora; o título desse anúncio específico só
+dá pra mudar direto no painel do ML). Nada commitado.
+
+### 2026-08-31 (9ª parte) — Sugestão de IA vira editável antes de aplicar
+
+**Motivação:** Raphael pediu pra poder editar o título/descrição
+sugeridos pela IA antes de aplicar — adicionar, remover ou ajustar algo
+que a IA não acertou, sem precisar gerar de novo do zero.
+
+**O que foi feito** (`MlItemDetailPage.jsx`, só frontend — nenhuma
+mudança no backend/prompt):
+- O bloco "Sugerido" virou campo editável de verdade: `<input>` pro
+  título (com contador de caracteres, fica vermelho passando de 60) e
+  `<textarea>` pra descrição — pré-preenchidos com a sugestão da IA.
+- Botão "Restaurar sugestão da IA" aparece só quando o texto foi editado
+  (compara com o valor original da IA) — desfaz a edição sem precisar
+  gerar de novo.
+- O que vai pro Mercado Livre ao aplicar é o texto EDITADO, não mais o
+  original da IA (`confirmApplyContent` e o modal de confirmação usam
+  `editedTitle`/`editedDescription`) — o modal de confirmação mostra
+  exatamente o texto final antes de gravar.
+- Botão "Aplicar" bloqueado se o campo marcado ficar vazio depois de
+  editado (evita mandar título/descrição em branco pro ML por engano).
+
+**`npm run build` limpo.** Não precisou redeploy da edge function (é só
+UI). Nada commitado.
+
+### 2026-08-31 (8ª parte) — Ajustes finos no prompt de IA: filtro de campo interno, tom mais fofo
+
+**Motivação:** depois de testar a v2 do prompt, Raphael pediu 4
+ajustes: trocar "Desenho" por "Cor/Variação", tirar "Condição do item"
+(sempre novo), tirar SKU (interno), tirar dimensão/peso da EMBALAGEM
+(diferente da dimensão do PRODUTO, que continua) — e deixar o tom mais
+fofo/carinhoso/vendável (produtos pra pets pequenos), não só
+"profissional e direto" como ficou na v2.
+
+**Filtro feito no CÓDIGO, não só pedido pra IA** (mais confiável — IA
+pode esquecer uma instrução de "não mencionar"): `sanitizeAttrsForContent()`
+novo em `ml-insights` — remove `SELLER_SKU` e atributos de dimensão/peso
+de embalagem (`PACKAGE_*` + padrão de nome) da lista ANTES dela chegar
+no prompt, e renomeia atributo "Desenho" pra "Cor/Variação". Reforçado
+também no próprio prompt (defesa dupla).
+
+**Tom**: reescrita a seção de regras da descrição — carinho/fofura nos
+blocos de abertura, uso e fechamento; o bloco "Especificações técnicas"
+(título literal obrigatório) continua objetivo e completo, sem perder
+informação por causa do tom. Isso resolveu um problema encontrado no
+1º teste desta rodada: a IA tinha ficado menos completa (pulou
+Marca/Modelo) e escapou `**negrito**` mesmo proibido — corrigido com
+regra mais explícita (exemplo errado/certo) e estrutura obrigatória em
+5 blocos nessa ordem fixa.
+
+**Testado ao vivo 3x nesta rodada** (mesmo anúncio, gaiola de hamster)
+até fechar: resultado final sem negrito, sem SKU/condição/embalagem,
+bloco de especificações completo (11 atributos, incluindo os com valor
+"0"/"Não" — completo de verdade, não só os "bonitos"), abertura e
+fechamento fofos, meio técnico objetivo.
+
+**`ml-insights` redeployada 3x** (1 delas quebrou o deploy por um erro
+de sintaxe meu — usei crase dentro de outra crase no template string do
+prompt, corrigido na hora). Nada commitado.
+
+### 2026-08-31 (7ª parte) — Reescreve o prompt de IA (título/descrição) — Raphael achou a v1 fraca
+
+**Motivação:** Raphael testou a Sugestão de IA (agora que a chave da
+OpenAI foi configurada) e achou a descrição curta/genérica demais
+("propaganda" tipo "transforme seu cantinho") — pediu mais informação e
+tom mais profissional, e perguntou se precisava configurar prompt em
+algum lugar da própria OpenAI. **Esclarecido**: não, o prompt mora
+inteiro no nosso código (`ml-insights`), nada pra configurar do lado da
+OpenAI além da chave — dá pra melhorar só ajustando o prompt aqui.
+
+**Causa do resultado fraco**: a v1 do prompt já mandava a ficha técnica
+inteira, mas nunca EXIGIA usar tudo, nem dava a estrutura real de SEO
+de título que o buscador do ML pondera (produto → atributos em ordem
+de relevância de busca) — só pedia "priorizar termos que o comprador
+busca", vago demais.
+
+**`OPENAI_SYSTEM_PROMPT` reescrito** (mantém a mesma regra dura contra
+inventar fato, só ficou mais explícita):
+- Título: estrutura explícita (produto primeiro, atributos em ordem de
+  relevância), lista de palavras proibidas por serem promocionais/
+  subjetivas ("grátis", "promoção", "imperdível", "o melhor" etc. — o
+  ML despriorizada isso).
+- Descrição: EXIGE usar TODOS os atributos da ficha técnica (não só
+  1-2), organizada em blocos por quebra de linha dupla (o que é →
+  especificações completas → personalização/uso → cuidados), tom
+  "fabricante profissional" em vez de "propaganda emocional exagerada"
+  (deu até exemplos do que evitar: "transforme seu cantinho", "toque
+  especial"). `buildContentPrompt` reforça a mesma exigência na mensagem
+  do usuário, não só no system prompt (reforço duplo ajuda o modelo a
+  seguir).
+- Ajuste fino depois do 1º teste: liberado usar linha com "- " pra
+  listar especificações (proibido na v1, mas testado ao vivo e
+  confirmado que só vira lista legível, o campo do ML é texto puro sem
+  parser de markdown — não quebra nada).
+
+**Testado ao vivo, resultado bem melhor** (anúncio real, gaiola de
+hamster): descrição foi de 1 parágrafo curto genérico pra texto
+estruturado com seção própria de "Especificações técnicas" (todos os
+atributos) e "Cuidados e observações", tom direto sem "enfeite". Título
+ficou objetivo, com dimensão+material, dentro do limite de 60
+caracteres, sem palavra promocional.
+
+**`ml-insights` redeployada 2x** (prompt + ajuste do "- "). Nada
+commitado. Fica pro Raphael testar mais alguns anúncios reais e me
+dizer se a qualidade já está boa ou se precisa calibrar mais.
+
+### 2026-08-31 (6ª parte) — Corrige link quebrado do anúncio (bug desde a Fase 1, em TODO o módulo ML) + abas em Oportunidades
+
+**Motivação:** Raphael reportou que clicar no anúncio em Oportunidades
+abria `vendedores.mercadolivre.com.br/anuncios/...`, que não leva a
+lugar nenhum. Também pediu pra trocar as 6 seções empilhadas por abas.
+
+**Causa raiz — não era só dessa tela nova**: toda tela de listagem do
+módulo ML (`MlHealthPage`, `MlTrafficPage`, `MlPromotionsPage`,
+`MlQuestionsReputationPage`, e o fallback de `MlItemDetailPage`)
+sempre construiu o link "chutando" o formato
+`https://www.mercadolivre.com.br/anuncios/{id}` — nunca foi o formato
+real, só nunca tinha sido reportado antes agora. O jeito certo é usar
+o campo `permalink` que a própria API do item já devolve (já era usado
+certo só no card principal do detalhe do anúncio).
+
+**Corrigido em TODAS as telas** (backend + frontend):
+- `attributesAudit`, `trafficAudit`, `unansweredQuestions`,
+  `promotionsOverview` (`ml-insights`) — todas passaram a pedir/repassar
+  `permalink` no multiget que já faziam (sem chamada extra à API).
+- Todo `<a href>` do módulo trocado pra `r.permalink || fallback` — o
+  fallback (só usado se `permalink` vier vazio por algum erro pontual)
+  também corrigido pra `https://produto.mercadolivre.com.br/{id}` (o
+  formato real, testado ao vivo — antes até o fallback estava errado).
+
+**Oportunidades de Venda virou abas** — as 6 seções (Impulsionar, Frete
+grátis, Baixa conversão, Parado, Preço, Combos) agora são abas com
+contador, não mais empilhadas uma embaixo da outra.
+
+**`npm run build` limpo, `ml-insights` redeployada.** Testado ao vivo
+via curl: `permalink` confirmado vindo certo
+(`https://produto.mercadolivre.com.br/MLB-...`). Nada commitado.
+
+### 2026-08-31 (5ª parte) — Fase 35: "Oportunidades de Venda" — 6 sugestões pra alavancar vendas no ML
+
+**Motivação:** Raphael pediu sugestões de melhoria pro módulo ML focadas
+em vendas (não só diagnóstico técnico) — discutimos 6 ideias e ele
+pediu pra construir todas.
+
+**Tela nova** (`/ml/oportunidades`, sidebar "Oportunidades de Venda"):
+1. **Candidatos a impulsionar** — vende de verdade (30d) + tem estoque +
+   ainda NÃO tem Ads ativo (cruza `traffic_audit` com `ads_coverage`,
+   os 2 já existiam).
+2. **Quase lá pro frete grátis** — vende mas não tem frete grátis
+   (cruza `traffic_audit` com o `shipping` que adicionei ontem).
+3. **Alto tráfego, baixa conversão + causa provável** — mesmo critério
+   já usado em Tráfego & Conversão (visits≥10, conv<1%), mas agora
+   sugere ONDE mexer primeiro (nota de título baixa / sem frete grátis /
+   perdendo buy box / sem estoque), cruzando os outros scans.
+4. **Anúncio parado** — estoque disponível, ZERO venda em 30d, anunciado
+   há 60+ dias (`date_created` novo no scan) — diferente do "candidato a
+   relâmpago" que já existe em Promoções (aquele é "vende pouco", este é
+   "não vende nada").
+5. **Prioridade de ajuste de preço** — perdendo buy box (`price_scan`,
+   já existia) E COM venda de verdade — ajustar preço de quem já vende
+   bem tem retorno mais imediato que de quem quase não vende.
+6. **Produtos comprados juntos (kit)** — ação nova `combo_suggestions`,
+   única que não usa a API do ML — só cruza `order_items` (últimos 180
+   dias): pares de SKU que apareceram juntos no mesmo pedido 3+ vezes.
+   Testado ao vivo: 257 pedidos analisados, 0 pares bateram o limite de
+   3 — não é bug (confirmei a query rodando limpo), CoisaPet
+   aparentemente não tem padrão forte de recompra conjunta nesse
+   período ainda.
+
+**Custo de API mantido baixo**: os itens 1-5 não pedem nenhuma chamada
+nova à API — só reaproveitam os 3 scans que já existiam
+(`traffic_audit`, `price_scan`, `ads_coverage`), mesclados no
+frontend por `item_id`. `traffic_audit` ganhou 2 campos novos no
+multiget que já fazia (`shipping`, `date_created`) e passou a calcular
+`title_analysis`/`days_listed` em memória (sem chamada extra) — quem já
+usa essa ação (Tráfego & Conversão) só ganha campos extras que ignora,
+nada mudou pra tela existente.
+
+**`npm run build` limpo, `ml-insights` redeployada.** Testado ao vivo
+via curl direto na function (traffic_audit com shipping/title_analysis
+populados corretos, combo_suggestions rodando sem erro). Não testado
+na tela pelo Raphael ainda. Nada commitado.
+
+### 2026-08-31 (4ª parte) — Corrige pedido volumoso com prazo real capturado tarde demais (condição de corrida)
+
+**Motivação:** Raphael reportou um pedido (`#2000018182112956`, gaiola
+grande 100x50x50) que apareceu no picklist de HOJE mas o painel do ML
+mostrava "Para enviar no dia 16 de setembro".
+
+**Causa raiz confirmada direto na API (não suposição)** — criei uma
+ação de diagnóstico nova, `order_shipment_debug` (`ml-insights`, fica
+permanente, útil pra próximas investigações desse tipo), que busca
+pedido + shipment reais na hora. `shipping_deadline` desse pedido
+estava `NULL` no banco; o shipment real tem
+`lead_time.buffering.date = 2026-09-16` — bate exatamente com o painel.
+Esse pedido é volumoso (108x56x23cm, 20kg, `tracking_method: "MEL
+Voluminoso"`, `logistic.type: xd_drop_off`) — o ML demora mais pra
+calcular o prazo desse tipo de envio, e nosso webhook processou o
+pedido com **menos de 10 segundos** de diferença da criação (rápido
+demais pro prazo já estar pronto). Como `shipping_deadline` veio vazio
+na hora, `compute_ship_date()` caiu no corte de horário padrão
+(assumiu "amanhã"), e como o `ship_date` só é calculado 1x na criação
+(Fase 20, nunca recalculado), ficou errado até agora.
+
+**Verificado que NÃO é bug sistêmico**: conferi os outros 23 pedidos
+ativos de hoje que também estavam com `shipping_deadline NULL` — 4
+confirmaram o próprio dia 31/08 (bate com o que já estava certo), os
+outros 19 genuinamente não têm esse campo na API (frete padrão sem
+prazo especial, comportamento normal — a maioria dos pedidos nunca tem
+`buffering`, só esse tipo de envio volumoso/cross-dock). Não tem outro
+pedido de hoje escondido com prazo real diferente.
+
+**Corrigido**: `UPDATE` pontual no pedido — `ship_date` e
+`shipping_deadline` agora `2026-09-16`. Saiu do picklist de hoje.
+
+**Observação à parte, não mexida agora**: a mesma consulta mostrou
+várias dezenas de pedidos ML ativos (`archived=false`) com
+`shipping_deadline NULL` e `ship_date` de MESES atrás (alguns de
+2025) — parecem ser pedidos sob encomenda de prazo muito longo nunca
+resolvidos, ou lixo de reimportação antiga. Não investiguei fundo
+(fora do escopo do que foi pedido agora) — vale uma auditoria separada
+se o Raphael quiser.
+
+**Raphael confirmou que vale montar a reconferência automática** —
+feito na sequência, mesma sessão:
+
+**Fase 34 — cron de reconferência automática:**
+- `orders.shipping_deadline_checked_at` (coluna nova) — marca quando um
+  pedido já foi rechecado, pra não ficar tentando pra sempre pedido que
+  genuinamente nunca teve prazo especial.
+- Edge Function nova `ml-shipping-deadline-recheck` (deploy
+  `--no-verify-jwt`, só cron chama) — pega pedidos ML ativos, sem pack
+  (`pack_id IS NULL` — pack tem vários `order.id`, nenhum bate com
+  `num_venda`, fica de fora por ora, caso raro dentro de um caso já
+  raro), `shipping_deadline` ainda NULL, criados entre 2h e 48h atrás
+  (dá tempo do ML terminar de calcular, mas não perde tempo com pedido
+  velho demais) e ainda não rechecados. Rebusca pedido+shipment na API;
+  se aparecer prazo real diferente do que já está, corrige `ship_date`
+  + `shipping_deadline` e notifica admin/administrativo (reaproveita
+  `NotificationBell.jsx`). Se não tem prazo especial mesmo, só marca
+  como checado.
+- `supabase/fase34-ml-shipping-deadline-recheck-cron.sql` — agenda via
+  `pg_cron`/`pg_net`, a cada 3h (`cron.schedule`, jobid 2, confirmado
+  ativo). Testada manualmente via curl: rechecou 9 pedidos elegíveis,
+  0 precisaram de correção (bate com a checagem manual desta sessão).
+
+### 2026-08-31 (3ª parte) — Fase 33: explicação de campo por IA (escala o dicionário), valor padrão sugerido, tooltip fecha clicando fora
+
+**Motivação:** Raphael achou inviável ir listando campo por campo da
+Ficha Técnica pra eu adicionar no dicionário manual (Fase 32) — tem
+categoria com dezenas de campos desconhecidos. Também pediu valor
+padrão pra preencher quando a CoisaPet não tem aquela informação, e o
+tooltip fechar clicando fora (não só clicando de novo no "?").
+
+**1. Explicação de campo por IA, cacheada por categoria (escala o
+dicionário):**
+- Tabela nova `ml_attribute_hints_cache` (`category_id, attribute_id →
+  hint`), só acessada pela edge function via service role (sem GRANT
+  pra `anon` — não é usada direto pelo frontend).
+- `itemDetail`: pros campos que NEM a API do ML (`a.hint`) NEM o
+  dicionário fixo da Fase 32 souberam explicar, pergunta pra OpenAI
+  (mesma chave `OPENAI_API_KEY` da Sugestão de IA) — 1 chamada só,
+  todos os campos desconhecidos daquela categoria de uma vez, resultado
+  gravado no cache. Próximo produto da MESMA categoria reaproveita sem
+  gastar de novo. Prompt exige "Provavelmente..." quando a IA não tiver
+  certeza, e proíbe conselho jurídico/fiscal definitivo — mesmo cuidado
+  já usado na Sugestão de título/descrição.
+- **Ainda não funciona de verdade**: `OPENAI_API_KEY` continua sem
+  configurar (confirmado via `supabase secrets list` agora, mesma
+  pendência da Fase 4) — até o Raphael configurar, esses campos
+  simplesmente não mostram "?" (falha silenciosa, não quebra a página).
+- Tooltip agora mostra de onde veio a explicação (itálico, dentro do
+  próprio balão): "gerado por IA" ou "da nossa equipe, não é oficial do
+  ML" — só quando não é o `hint` oficial do Mercado Livre.
+
+**2. Valor padrão sugerido ("Usar padrão"):** `buildFullAttributes`
+ganhou `default_value` por atributo, só quando o campo está vazio:
+- Lista fechada: só sugere se existir de verdade uma opção tipo "Não
+  especificado"/"Outros" NA PRÓPRIA API — nunca inventa um valor real
+  (não sugere uma cor ou material que a gente não sabe).
+- Campo livre/booleano: "Não aplicável" pros casos já mapeados (DI,
+  IEPS), "Não informado" genérico pros demais.
+- `MlItemDetailPage.jsx`: botão `Usar padrão: "X"` abaixo do nome do
+  campo (só aparece se ele está vazio) — preenche o formulário com um
+  clique, mas ainda passa pelo fluxo normal de confirmação antes de
+  gravar no ML de verdade (nada novo é escrito sozinho).
+
+**3. Tooltip fecha clicando fora:** `InfoTooltip` ganhou listener de
+`mousedown` fora do próprio balão (`ref` + `useEffect`) — antes só
+fechava clicando de novo no "?".
+
+**`npm run build` limpo, `ml-insights` redeployada.** Não testado com
+dado real ainda. Nada commitado (junto com o resto do módulo ML).
+
+### 2026-08-31 (2ª parte) — Fase 32: filtro de frete grátis/Full, tooltip na ficha técnica, dropdown Sim/Não/Outro
+
+**Motivação:** Raphael trouxe 4 melhorias pro módulo de Otimização ML:
+filtrar anúncios por frete grátis (com/sem Full), ver a pontuação real
+do ML com as ponderações, tooltip explicando campo técnico confuso
+(Número da DI, IEPS, Origem do dado do pacote etc.), e trocar campo
+booleano de texto livre por dropdown Sim/Não/Outro. Implementados 3 dos
+4 agora (item da pontuação ponderada fica pendente — ver abaixo).
+
+**1. Filtro de frete grátis/Full (Saúde dos Anúncios):**
+- `attributesAudit`/`itemDetail` (`ml-insights`) passam a pedir o campo
+  `shipping` no `/items/{id}` (já incluído na mesma chamada que já
+  buscava atributos — sem chamada extra à API). `extractShippingInfo()`
+  novo — `logistic_type === 'fulfillment'` = Full, `free_shipping` é
+  independente disso (dá pra ter frete grátis sem ser Full).
+- `MlHealthPage.jsx`: barra de filtro (Todos / Frete grátis qualquer /
+  Frete grátis sem Full / Full) + badge por card (🏷️ Full em âmbar, 🚚
+  Frete grátis em azul, mutuamente exclusivos no badge mesmo podendo
+  coexistir no dado). Mesmo badge no cabeçalho do detalhe do anúncio.
+
+**2. Pontuação real do ML com ponderações — PENDENTE:** o endpoint
+`/item/{id}/performance` nunca teve o formato exato confirmado (mesma
+limitação já registrada nas Fases 1-2, doc bloqueou pesquisa direta).
+Pedido ao Raphael pra colar aqui o JSON de "ver dados brutos" da seção
+Qualidade do Anúncio de um anúncio real — só assim dá pra parsear os
+grupos/pesos de verdade em vez de continuar só mostrando o bruto.
+
+**3. Tooltip "?" na Ficha Técnica:** `buildFullAttributes()` agora
+inclui `hint` por atributo — prioriza o `hint` oficial que a própria API
+de categorias às vezes manda; quando vem vazio, cai num dicionário de
+reserva nosso (`ATTR_HINT_FALLBACK`) só pros 3 exemplos que o Raphael
+deu (DI, IEPS, Origem do dado do pacote) — casado por trecho do NOME do
+atributo, texto deixa claro que não é explicação oficial do ML. Campos
+sem hint nenhum (nem da API, nem no dicionário) simplesmente não mostram
+"?" — nada inventado. Se aparecer outro campo confuso, é só pedir que eu
+acrescento no dicionário.
+
+**4. Dropdown Sim/Não/Outro pra atributo booleano:** `buildFullAttributes`
+agora também popula `values` pra `value_type === 'boolean'` (antes só
+`'list'`) — quando a própria API manda essas 2 opções, vira `<select>`
+igual lista fechada. Quando a API NÃO manda `values` pro booleano (não
+garantido em toda categoria), `MlItemDetailPage.jsx` sintetiza um select
+Sim/Não/Outro na hora — escolher "Outro" libera um campo de texto
+abaixo. Escopo só nos atributos de `value_type: 'boolean'` — texto livre
+(string/number) continua como estava, de propósito (não faz sentido
+Sim/Não pra um campo numérico, por ex.).
+
+**`npm run build` limpo, `ml-insights` redeployada.** Não testado com
+dado real ainda pelo Raphael. Nada commitado (junto com o resto do
+módulo ML, que já estava aguardando confirmação — ver pendências no
+topo do arquivo).
+
+### 2026-08-31 — Fase 31: ML não atende fim de semana — picklist de sábado/domingo concentrado na segunda
+
+**Motivação:** Raphael notou, olhando o painel do ML numa segunda-feira,
+20 produtos pendentes de envio contra só 13 no picklist do sistema —
+suspeitou que o sistema tinha gerado picklist separado pra sábado e
+domingo, mesmo sem expediente/coleta do ML nesses dias (só a Shopee
+atende fim de semana, com a regra dos 20%+1).
+
+**Confirmado no banco antes de mexer:** `compute_ship_date()` (Fase 22)
+usa o prazo real que a API do ML manda
+(`shipment.lead_time.buffering.date`, ou o corte de horário como
+fallback) sem nunca checar se esse prazo caía em sábado/domingo. 4
+pedidos ML ativos estavam presos com `ship_date` de sábado (29/08) e 10
+com `ship_date` de domingo (30/08) — invisíveis no picklist de hoje.
+
+**Corrigido** (`supabase/fase31-ml-fim-de-semana-para-segunda.sql`,
+rodada em produção):
+- `compute_ship_date()`: pra ML (só ML — Shopee e manual intocados), se
+  o prazo calculado cair em sábado ou domingo, rola pra segunda-feira
+  seguinte, como último passo depois do cálculo normal (prazo real da
+  API ou corte de horário).
+- `UPDATE` retroativo: os 14 pedidos ML já presos em 29/08 e 30/08
+  passaram a `ship_date = 2026-08-31`, consolidando no picklist de hoje
+  junto com os que já estavam lá.
+
+**Confirmado após rodar**: nenhum pedido ML ativo restou com
+`ship_date` em sábado/domingo (25/08–01/09 checado); segunda passou a
+concentrar tudo. Não precisa reprocessar nada — é só o campo `ship_date`
+sendo corrigido, o pedido em si (itens, valores) não muda.
+
+**Escopo explicitamente fora**: calendário de feriados (só a regra
+sábado/domingo → segunda, sem checar feriado na própria segunda) — não
+pedido, não implementado.
+
+### 2026-08-29 (8ª parte) — Fase 7: módulo Promoções (candidatos + relâmpago)
+
+**Pesquisa antes de codar** (mesmo aprendizado de Ads): o endpoint que
+o roteiro original citava exigia um `promotion_id` já conhecido —
+achado o recurso real, `/seller-promotions/candidates` (formato de 1
+candidato confirmado: `{id, item_id, promotion_id, type, status:{id}}`),
+mas **não achei confirmação do formato de listagem em massa** — menor
+confiança do painel, implementado com `try/catch` isolado + "ver dados
+brutos", avisado ao Raphael antes de codar.
+
+**Achado ao explorar:** `products` (produtos finalizados) da CoisaPet
+não tem campo de estoque — produção é sob demanda. "Estoque parado" só
+faz sentido usando `available_quantity` do próprio anúncio no ML. Por
+isso o card de candidatos a relâmpago **reaproveita `traffic_audit`**
+(de ontem) em vez de criar uma varredura nova — só adicionei
+`available_quantity` no multiget que ele já fazia.
+
+**O que foi feito:**
+- `traffic_audit` ganhou `available_quantity` por item (sem chamada
+  extra).
+- Ação nova `promotions_overview` — tenta `/seller-promotions/candidates`,
+  agrupa por `type`.
+- `MlPromotionsPage.jsx` (novo, `/ml/promocoes`): card "Convites e
+  candidatos pendentes" (botão manual, "ver dados brutos" se o formato
+  não bater) + card "Candidatos a campanha relâmpago" (reaproveita o
+  botão/scan de Tráfego & Conversão, ordena por estoque parado ÷ vendas).
+
+**Fora do escopo de propósito:** criar/aceitar/deletar promoção pela
+API — é escrita real que muda o que o cliente vê como "oferta", mais
+uma camada de risco. O pedido foi só monitorar/sugerir/lembrar.
+Lembrete de campanha expirando também ficou de fora — depende da parte
+de "campanhas ativas" ainda não confirmada.
+
+`npm run build` limpo, `ml-insights` redeployada. Não testado com dado
+real ainda.
+
+### 2026-08-29 (7ª parte) — Ads: nomes certos de métrica + destaque de anúncios com campanha ativa
+
+**Progresso real:** depois da correção anterior (rota + header), o erro
+virou 400 "Metrics ... is not valid" — ou seja, a ROTA já está certa
+agora, só o nome de 2 métricas estava errado. Confirmado por pesquisa: o
+certo é `direct_amount`/`indirect_amount`, não `direct_units_amount`/
+`indirect_units_amount` (não existem). Corrigido em
+`fetchAccountAdsSummary`.
+
+**Novo, a pedido do Raphael** (facilitar achar um anúncio com campanha
+ativa pra testar): ação `ads_coverage` — lista todos os `item_id` com
+algum anúncio patrocinado (pagina `ads/search` sem filtro de item, só
+`Api-Version: 2` + limit/offset). Botão **"Ver quem tem Ads"** na Saúde
+dos Anúncios sobe esses itens pro topo da lista com selo roxo "📢
+Campanha ativa".
+
+`npm run build` limpo, `ml-insights` redeployada. Ainda aguardando
+Raphael confirmar que o card "Ads (aprox.)" da Visão Geral mostra dado
+real agora (sem o 400).
+
+### 2026-08-29 (6ª parte) — Correção real do endpoint de Mercado Ads (faltava `/search` e header `Api-Version: 2`)
+
+**Motivação:** Raphael pediu explicitamente pra fazer o módulo de
+Publicidade Paga (Mercado Ads) funcionar de verdade — a Visão Geral e o
+detalhe do anúncio já tinham tentativas desde ontem, mas o card de Ads
+da conta dava 404 "No static resource".
+
+**Causa raiz encontrada por pesquisa nova (não é permissão, é rota
+errada):**
+1. Faltava o sufixo **`/search`** no endpoint de listar campanhas — o
+   certo é `.../product_ads/campaigns/search`, não
+   `.../product_ads/campaigns`. Confirmado por 2 fontes de pesquisa
+   independentes hoje.
+2. Faltava o header **`Api-Version: 2`**, obrigatório nessa família de
+   endpoints — nenhuma chamada de Ads até agora incluía isso.
+3. Formato de filtro é `filters[campo]=valor` (não `campo=valor` solto)
+   — corrigido no filtro `item_id` do card por anúncio.
+
+**Corrigido:** `fetchAccountAdsSummary` (Visão Geral) e `fetchAdsMetrics`
+(detalhe do anúncio) — extraído `findMlAdvertiser()` compartilhado pra
+não duplicar a busca do advertiser. `ml-insights` redeployada.
+
+**Pendência imediata:** pedido pro Raphael testar os 2 cards que já
+existem (Visão Geral → "Ads (aprox.)" e detalhe de um anúncio com
+campanha ativa → "Mercado Ads") pra confirmar que agora vem dado real,
+**antes** de construir a tela dedicada completa (lista de campanhas,
+alerta de ACOS, produtos sem campanha, orgânico×pago por anúncio) —
+evita repetir o padrão de construir UI grande em cima de endpoint ainda
+não validado ao vivo.
+
+### 2026-08-29 (5ª parte) — Fase 6: módulo dedicado "Tráfego & Conversão" + regra de confirmação de escrita
+
+**Confirmação de escrita (antes do módulo novo):** Raphael foi
+explícito — nenhuma escrita no Mercado Livre pode acontecer com 1
+clique só, nunca. Trocado o `confirm()` nativo do navegador (fácil de
+clicar sem ler) por um modal de verdade (`ConfirmWriteModal.jsx`) nos 2
+pontos de escrita que já existiam (ficha técnica, título/descrição via
+IA) — mostra o valor exato que vai mudar antes do botão de confirmar.
+**Regra salva na memória do Claude** (`coisapet_ml_write_confirmation.md`)
+pra valer automaticamente em qualquer escrita nova nesse módulo, mesmo
+em outra sessão/máquina.
+
+**Tráfego & Conversão — módulo novo:** Raphael tratou isso como peça
+importante do roteiro original (visitas × vendas real, separar "muito
+tráfego + pouca conversão" de "pouco tráfego", cruzar com tendências de
+busca) — decisão: em vez de deixar enterrado como botão secundário em
+Saúde dos Anúncios (como ficou ontem), virou **página própria**.
+
+- Backend: `conversion_audit` (de ontem) evoluiu pra `traffic_audit` —
+  ganhou parâmetro `days` (7/15/30, mesmo padrão da Visão Geral) e
+  passou a resolver também `category_id` no mesmo multiget que já
+  buscava `SELLER_SKU` (sem chamada extra). Tendências por categoria
+  cacheadas por `category_id` dentro da própria varredura — 1 chamada
+  de `/trends` por categoria DISTINTA no lote, não por item.
+- `MlHealthPage.jsx`: removido o botão "Analisar Conversão" (só
+  "Atualizar" + "Analisar Preço" continuam lá) — não fica mais
+  duplicado em 2 lugares.
+- `MlTrafficPage.jsx` (novo, rota `/ml/trafego`, sidebar entre Visão
+  Geral e Saúde dos Anúncios): 3 baldes de resumo (alto tráfego+baixa
+  conversão / baixo tráfego / sem problema, clicáveis como filtro),
+  seção de palavras-chave em alta ausentes agrupadas por categoria, e
+  lista completa ordenada por visitas.
+
+`npm run build` limpo, `ml-insights` redeployada. Ainda não testado com
+dado real pelo Raphael. Nada commitado.
+
+### 2026-08-29 (4ª parte) — Fase 5: alerta de reputação (cron), conversão real, preço/buy box, reclamações por produto
+
+**Motivação:** Raphael pediu pra atacar mais 4 itens do roteiro original
+de uma vez: alerta preventivo de reputação, conversão real por anúncio,
+preço vs. mercado, reclamações por produto.
+
+**1. Alerta preventivo de reputação — primeira infraestrutura de cron
+do projeto:**
+- Edge Function nova `ml-reputation-check` (deploy `--no-verify-jwt`,
+  só cron chama). Checa taxa de cancelamento; se ≥80% do limite (3%, ou
+  2% Mercado Líder), insere notificação em `notifications` pra
+  admin/administrativo (reaproveita `NotificationBell.jsx` — sem UI
+  nova). Dedupe: não repete alerta se já tem um das últimas 24h (sem
+  tabela nova, só checa a própria `notifications`).
+- `supabase/fase30-reputation-alert-cron.sql` — habilita `pg_cron`/
+  `pg_net` e agenda `cron.schedule('ml-reputation-check-diario', '0 11
+  * * *', ...)`. **Rodou direto sem bloqueio** (não tinha DELETE) —
+  confirmado com `select * from cron.job` (jobid 1, ativo). Function
+  testada manualmente via curl — respondeu "taxa 0.0%, longe do
+  limite" (comportamento correto, sem cancelamento recente).
+
+**2. Conversão real por anúncio (estende Saúde dos Anúncios):**
+- Ação `conversion_audit` — usa multiget em lotes de 20 (`/items?ids=`
+  pra achar `SELLER_SKU`, `/items/visits?ids=` pra visitas) em vez de
+  1 chamada por item — bem mais barato que os scans de ontem. Vendas
+  vêm do nosso banco (mesma lógica de `fetchSalesFromDb`).
+- Botão novo "Analisar Conversão" na Saúde dos Anúncios — badge de
+  visitas/vendas/conversão por card + toggle de ordenação "mais
+  tráfego, menos conversão" (o sinal mais acionável: anúncio popular
+  que não converte).
+
+**3. Preço vs. mercado / buy box (estende Saúde dos Anúncios):**
+- Ação `price_scan` — `suggested_price` (já usado no detalhe) +
+  `price_to_win` (novo — status `winning`/`competing`, só existe pra
+  item de catálogo compartilhado).
+- Botão "Analisar Preço" — badge "Perdendo buy box" quando
+  `competing`, badge com preço sugerido.
+
+**4. Reclamações por produto (novo card na Visão Geral):**
+- Ação `claims_by_product` — `GET /post-purchase/v1/claims/search`
+  (API nunca usada antes, pesquisada agora: `resource_id` = pedido no
+  ML). Resolve `resource_id` → SKU usando o NOSSO banco
+  (`orders.num_venda` → `order_items.sku`), sem chamar a API de novo
+  por claim. Agrupa por SKU + motivo. **Menor confiança das 4** —
+  parâmetros de filtro por vendedor/data não confirmados ao vivo,
+  implementado com `try/catch` isolado + "ver dados brutos" pra ajuste
+  rápido se precisar (mesmo padrão que funcionou bem pra Ads/
+  performance).
+
+`npm run build` limpo, `ml-insights` redeployada, `ml-reputation-check`
+deployada e testada. Cron confirmado ativo em produção. Conversão/
+Preço/Reclamações ainda não testadas com dado real pelo Raphael. Nada
+commitado ainda.
+
+### 2026-08-29 (3ª parte) — Ajustes de UX na página do anúncio: tooltips "?" + confirmação de que Ads da conta é API interna do ML
+
+**Ads da conta:** Raphael capturou a URL real via DevTools
+(`ads.mercadolivre.com.br/advertiser-hub/api/advertiser/134318/product/PADS/metrics`)
+— confirmado: é API **interna** do painel do ML (domínio diferente,
+autenticada por cookie de sessão do navegador, sem `Authorization`), não
+a API pública de desenvolvedor. Não dá pra chamar isso do nosso backend.
+**Decisão:** parar de tentar adivinhar esse endpoint — o card "Ads
+(aprox.)" da Visão Geral já lida bem com a ausência do dado, fica assim
+por enquanto. `advertiserId=134318` da URL bate com o que a API pública
+já retorna pra gente, confirmando que essa parte está correta.
+
+**UX — `MlItemDetailPage.jsx`:** Raphael testou a tela ao vivo (ficou
+com boa cara) e trouxe 2 pontos:
+- Dúvida se "Gerar sugestão" (Sugestão de IA) aplicava algo sozinho —
+  não aplica, é só prévia. Deixado isso explícito na própria tela agora
+  (não só na conversa).
+- Pediu bolinha "?" explicando cada seção pra quem não é da área
+  técnica. Componente novo `InfoTooltip` (clique pra abrir, não hover —
+  funciona em celular também), adicionado nos 10 cards da página
+  (Nota do título, Imagens, Preço, Estoque, Sugestão de IA, Visitas/
+  Vendas/Conversão, Avaliações, Qualidade do Anúncio, Ficha técnica,
+  Mercado Ads), cada um com explicação em linguagem simples.
+
+`npm run build` limpo — mudança só de frontend, nenhum deploy de edge
+function necessário nesta parte. Nada commitado ainda.
+
+### 2026-08-29 (2ª parte) — Fase 4: sugestão de IA (OpenAI) pra título e descrição + correções de Ads/termômetro
+
+**Motivação:** depois de ver o "Agente de Descrições" do concorrente,
+Raphael quis a mesma coisa de verdade — IA reescrevendo título e
+descrição, não só apontando o que falta. Esclarecido com ele que a
+assinatura do ChatGPT Plus não dá acesso à API (é produto separado,
+cobrado por uso à parte) — confirmado preço atual (GPT-4o-mini:
+$0,15/$0,60 por milhão de tokens entrada/saída, irrelevante pro volume
+daqui). Decidido: **OpenAI GPT-4o-mini**, escopo título+descrição juntos
+já nessa rodada. Chave `OPENAI_API_KEY` configurada por ele via
+`supabase secrets set` direto (nunca passou pelo chat).
+
+**O que foi feito** (`ml-insights`, 2 ações novas):
+- `suggest_content` — busca contexto real do anúncio (título/descrição
+  atuais via `GET /items/{id}/description`, ficha técnica preenchida,
+  palavras-chave em alta da categoria) e chama a OpenAI
+  (`gpt-4o-mini`, JSON mode) com um prompt que **proíbe explicitamente
+  inventar característica/medida/garantia que não esteja nos dados
+  fornecidos** — risco real de propaganda enganosa num anúncio de venda
+  de verdade, não é só estilo.
+- `apply_content` — escreve no ML só depois de confirmação explícita:
+  título via `PUT /items/{id}`, descrição via
+  `PUT /items/{id}/description?api_version=2` (endpoint SEPARADO do
+  item, `{ plain_text }` — confirmado na pesquisa). Cada campo é
+  opcional, dá pra aplicar só um dos dois.
+- `MlItemDetailPage.jsx`: card novo "Sugestão de IA" com botão manual
+  "Gerar sugestão" (não dispara sozinho — cada chamada tem custo, mesmo
+  que baixo), mostra atual × sugerido lado a lado com checkbox por
+  campo, sempre com `confirm(...)` antes de aplicar.
+
+**Correções da mesma sessão:**
+- **Ads da conta (404 corrigido)**: o card "Ads (aprox.)" da Visão Geral
+  usava um caminho de API diferente do que já funciona na tela por
+  anúncio — faltava o prefixo `/marketplace/advertising/MLB/advertisers/...`.
+  **Segundo teste ainda deu 404** ("No static resource..." — erro típico
+  de rota que não existe de verdade, não é permissão) — pedido pro
+  Raphael capturar a URL real que o painel de Ads do próprio ML usa
+  (via DevTools → Network) em vez de eu continuar chutando às cegas.
+  **Ainda pendente essa URL.**
+- **Termômetro de reputação visual**: trocado o badge de cor única por
+  uma barra com os 5 níveis reais do ML (vermelho→laranja→amarelo→
+  verde-claro→verde) com marcador — componente novo
+  `ReputationThermometer.jsx`, reaproveitado na Visão Geral e em
+  Perguntas & Reputação.
+
+**`npm run build` limpo, `ml-insights` redeployada.** `OPENAI_API_KEY`
+ainda não configurada (confirmado via `supabase secrets list`) — a
+função dá erro claro até o Raphael configurar. Nada commitado ainda.
+
+### 2026-08-29 — Fase 3: Visão Geral da conta (receita, orgânico×ads, reputação, top produtos)
+
+**Motivação:** Raphael mostrou o dashboard de CONTA do concorrente
+(diferente das telas por anúncio das rodadas anteriores) — receita
+total, saúde geral, reputação, melhores produtos, padrão de vendas.
+Decidido: **sem gamificação** (conquistas/streak — faz mais sentido pra
+vendedor sozinho numa plataforma pública que pro nosso time interno) e
+**narrativa em texto por template**, não IA de verdade (evita custo e
+complexidade extra por agora). "Ferramentas do seu time" (gerador de
+EAN, agentes de conteúdo) ficou de fora — escopo bem diferente, conversa
+separada se/quando fizer sentido.
+
+**Achado importante ao explorar antes de codar:** a tabela `orders` tem
+colunas `total_brl` E `total_value`, mas **nenhuma das duas é usada**
+pelo relatório que já existe (`useOrdersReports.js` → `/relatorios`) —
+o faturamento real ali é `order_items.preco_unit × qty`. A Visão Geral
+nova segue exatamente essa mesma conta, pra nunca mostrar um número de
+receita diferente do relatório que já existe.
+
+**O que foi feito:**
+- Nova ação `account_dashboard` (recebe `period`: 7/30/90 dias) no
+  `ml-insights`:
+  - Receita/vendas/ticket médio do período + variação vs. período
+    anterior — tudo do nosso banco (`order_items`+`orders`,
+    `source='ml'`), não da API do ML.
+  - Série diária, padrão por dia da semana, top 5 produtos, calendário
+    de frequência de vendas (30 dias) — tudo derivado da mesma consulta.
+  - Reputação ML — reaproveita `reputation()` já existente.
+  - **Ads agregado da conta** (melhor esforço) — soma métricas de todas
+    as campanhas do período via `/advertising/advertisers/{id}/product_ads/campaigns`.
+    **Orgânico × Ads é aproximado** (receita total − receita atribuída
+    ao Ads), não por pedido individual — deixado claro na tela.
+  - Narrativa em texto — função `buildNarrative()`, só template com os
+    números reais (faturamento, melhor dia, variação %), nunca IA.
+- **Saúde da conta não dispara o scan pesado** (~800 chamadas) sozinha
+  — esse card só tem um link pra tela dedicada de Saúde dos Anúncios,
+  onde o "Atualizar" já é manual desde ontem.
+- Sidebar: novo item **"Visão Geral"** no topo da seção Otimização ML,
+  rota `/ml` (vira a entrada do módulo). Corrigido também um bug latente
+  de destaque de menu: só `/rh` tinha a checagem `end` no `NavLink`
+  (rota-prefixo article causava dois itens "ativos" ao mesmo tempo) —
+  `/ml` precisava da mesma correção agora que virou prefixo de
+  `/ml/saude` e `/ml/perguntas`.
+- `npm run build` limpo, `ml-insights` redeployada.
+
+**Não testado com dado real ainda.** Ads agregado da conta tem a mesma
+incerteza de formato já avisada ontem (doc bloqueada nas pesquisas) —
+se os números não baterem, é só avisar. Nada commitado (Raphael
+confirmando tudo antes).
+
+### 2026-08-28 (3ª parte) — Fase 2: análise completa por anúncio (título, imagens, vendas reais, avaliações, ficha técnica inteira, Ads)
+
+**Motivação:** Raphael mostrou o print de um concorrente ("Marketfacil")
+com análise bem mais profunda por anúncio — pediu a mesma profundidade
+(não o visual, que ele achou ruim) dentro do nosso sistema. Decidiu
+incluir Mercado Ads nesta rodada também (habilitou a permissão
+"Publicidade de um produto" no painel do app, mesmo lugar de antes).
+
+**Mudança de arquitetura:** o modal de detalhe da rodada anterior
+(`MlItemDetailModal.jsx`) virou **página própria**
+(`/ml/saude/:itemId`) — conteúdo demais pra um modal, e permite
+compartilhar link de um anúncio específico. `MlHealthPage.jsx` agora
+navega em vez de abrir modal.
+
+**O que foi adicionado em `item_detail` (`ml-insights`):**
+- **Nota de título** — heurística nossa (tamanho vs. limite 60, palavra
+  repetida, maiúscula excessiva, termo em alta via `/trends`) —
+  deixado claro na própria tela que não é nota oficial do ML.
+- **Imagens** — contagem vs. faixa ideal (6-10) + cobertura por variação.
+- **Visitas/vendas/conversão (7/15/30d)** — visitas via
+  `/items/{id}/visits/time_window` (1 chamada, série diária, com
+  gráfico); **vendas vêm do NOSSO banco** (`order_items`/`orders`,
+  cruzando pelo atributo `SELLER_SKU` do item), não da API do ML — o
+  `sold_quantity` de lá é cumulativo desde a criação, não dá pra fatiar
+  por período. Mais preciso, sem chamada extra.
+- **Estoque restante em dias** — `available_quantity ÷ (vendas 30d/30)`.
+- **Avaliações** — `/reviews/item/{id}` (endpoint novo).
+- **Ficha técnica completa** — agora TODOS os atributos (obrigatórios +
+  extras), não só os faltando, cada um com valor atual e editável
+  (exceto os controlados por variação — só informativo, link pro ML).
+- **Mercado Ads** — `/advertising/advertisers?product_id=PADS` (confirmado
+  na pesquisa) + `.../product_ads/ads/search` filtrado por item
+  (**não confirmado ao vivo** — doc bloqueou fetch direto nas duas
+  pesquisas de ontem, igual aconteceu com `/performance`). Card sempre
+  aparece, nunca quebra o resto da página, com "ver dados brutos" pra
+  facilmente comparar com o que a tela mostra.
+- Qualidade do Anúncio (`/performance`, já existia desde a Fase 1)
+  ganhou o mesmo "ver dados brutos" — ainda não confirmamos o formato
+  real (percentual + grupos, como no print do concorrente).
+
+**`npm run build` limpo, `ml-insights` redeployada.** Não testado com
+dado real ainda.
+
+**Pendência clara pro próximo teste real:** as duas seções com "ver
+dados brutos" (Qualidade do Anúncio e Ads) são as que mais provavelmente
+precisam de 1 rodada de ajuste — se o formato não bater, copiar o JSON
+bruto da tela e mandar aqui que eu ajusto o parser. Nada commitado ainda
+(Raphael pediu pra esperar confirmar tudo antes).
+
+### 2026-08-28 (2ª parte) — Painel de Saúde do Anúncio: detalhe + aplicar ficha técnica direto no ML
+
+**Motivação:** confirmado o funcionamento da Fase 1 (ver entrada abaixo,
+com 2 bugs reais resolvidos no caminho), o Raphael pediu o próximo passo:
+não só listar o que falta em cada anúncio, mas um painel de análise
+completa por anúncio, com sugestão de melhoria — e aplicar essas
+sugestões direto pelo sistema quando der. Decisão tomada junto: **preço
+fica só como comparação (atual vs. sugerido pela API), sem botão de
+aplicar** — mexe direto em quanto o cliente paga, decisão adiada de
+propósito. O que passou a ser aplicável de verdade é **ficha técnica**.
+
+**O que foi feito:**
+- `_shared/mercadolivre.ts`: novo helper `mlWrite()` (PUT/POST
+  autenticado) — `mlFetch` continua só leitura.
+- `ml-insights`: 2 ações novas —
+  - `item_detail` — ficha técnica completa (não só o que falta),
+    `/item/{id}/performance`, e `/suggestions/items/{id}/details`
+    (preço sugerido, em `Promise.allSettled` isolado porque nem todo
+    item tem sugestão disponível).
+  - `update_item_attributes` — `PUT /items/{id}` só com os atributos que
+    o usuário preencheu no formulário (ML faz merge, não sobrescreve o
+    resto da ficha).
+- `MlItemDetailModal.jsx` (novo) — abre ao clicar num card da Saúde dos
+  Anúncios. Atributo de lista fechada (cor, material, etc.) vira
+  `<select>` com as opções reais da API (nunca texto livre nesses
+  casos, pra não mandar valor inválido). Botão "Salvar no Mercado Livre"
+  sempre pede confirmação (`confirm(...)`) antes de escrever — **regra
+  dura do projeto: nenhuma escrita no ML acontece sem clique explícito
+  por item, nunca em lote/automático**.
+- `MlHealthPage.jsx`: cards viram clicáveis; depois de salvar no modal,
+  só a linha afetada é atualizada na lista (não re-escaneia os ~400
+  anúncios de novo).
+- `npm run build` limpo, `ml-insights` redeployada.
+
+**Não testado com dado real ainda** — só quem tem login admin consegue
+confirmar contra um anúncio de verdade. Plano completo (com o raciocínio
+de cada decisão) em
+`C:\Users\User\.claude\plans\shimmering-sparking-engelbart.md`.
+
+**Pendência:** nada commitado ainda (Raphael pediu pra esperar ele
+confirmar tudo primeiro, Fase 1 + esta parte, antes de qualquer commit
+ou deploy do frontend pra Hostinger).
+
+### 2026-08-28 — Nova categoria "Otimização ML" (Fase 1): Saúde dos Anúncios + Perguntas & Reputação
+
+**Motivação:** depois de uma pesquisa aprofundada sobre o que a API do
+Mercado Livre expõe além de pedidos (publicada como Artifact "Raio-X dos
+Anúncios" — qualidade/catálogo + analytics/ads/reputação, 18 recursos
+mapeados), o Raphael pediu pra começar a construir ainda no mesmo dia:
+uma categoria nova no sidebar dedicada a análise/otimização de anúncios.
+Plano completo salvo em
+`C:\Users\User\.claude\plans\shimmering-sparking-engelbart.md` (só nesta
+máquina, não está no repo).
+
+**Escopo de hoje (Fase 1 do roteiro de 5 fases):** as 2 telas de maior
+impacto × menor esforço, só leitura (nenhuma escrita no ML, nenhum
+cron/tabela nova):
+- **Saúde dos Anúncios** (`/ml/saude`) — status `healthy`/`warning`/
+  `unhealthy` via `GET /item/{id}/performance` (sucessor do antigo
+  `/health`, descontinuado) + auditoria de ficha técnica obrigatória
+  (cruza `GET /items/{id}` com `GET /categories/{id}/attributes`).
+- **Perguntas & Reputação** (`/ml/perguntas`) — perguntas sem resposta
+  (`/questions/search`), impacto projetado de responder rápido
+  (`/users/{id}/questions/response_time` → `sales_percent_increase`) e
+  termômetro de reputação com alerta preventivo de taxa de cancelamento
+  perto do limite (3%, ou 2% Mercado Líder).
+
+**O que foi feito:**
+- Edge Function nova `supabase/functions/ml-insights/index.ts` — **primeira
+  function do projeto invocada diretamente pelo frontend**
+  (`supabase.functions.invoke`), não por webhook/trigger. Reaproveita
+  `getValidIntegration`/`mlFetch` de `_shared/mercadolivre.ts`. Deploy
+  **com verificação de JWT ativa** (diferente de `ml-webhook`/
+  `ml-oauth-callback`, que usam `--no-verify-jwt` por serem chamadas pelo
+  próprio ML). Já deployada em produção.
+- `src/modules/ml-insights/` — hook `useMlInsights.js` (pagina os
+  anúncios ativos em lotes de 50 pra não estourar 1 chamada gigante) +
+  `MlHealthPage.jsx` + `MlQuestionsReputationPage.jsx`.
+- Sidebar: seção nova "Otimização ML" (cor emerald, nova — as outras 5
+  seções já usavam rose/amber/violeta/azul/magenta), roles `admin` +
+  `marketplace`.
+- `AccessControlPage.jsx`: módulo `ml-insights` adicionado à lista, e a
+  role **`marketplace` foi adicionada ao array `ROLES`** — não existia
+  lá antes (só administrativo/atendimento/produção eram geridas por essa
+  tela, mesmo `marketplace` já sendo usada em vários `moduleKey` do
+  Sidebar). Sem isso, não teria como o Raphael liberar a categoria nova
+  pra essa role pela própria tela de Controle de Acesso.
+- `npm run build` limpo (só os warnings de chunk size já existentes,
+  nada novo). Deploy da function testado (`supabase functions deploy
+  ml-insights`, sucesso). **Não testado com dado real ainda** — só quem
+  tem login admin de verdade consegue confirmar contra o painel do ML.
+
+**Pendências imediatas:**
+- Como só `admin` enxerga módulo novo por padrão (sem linha em
+  `role_permissions`), falta o Raphael ir em Controle de Acesso e ligar
+  `ml-insights` pra `marketplace` se quiser que esse perfil veja a
+  categoria.
+- Clicar em "Atualizar" nas duas telas com um usuário real logado e
+  conferir contra o painel do ML — o formato exato de `/item/{id}/
+  performance` não pôde ser confirmado na pesquisa (fetch direto à doc
+  bloqueado), o código normaliza algumas variações plausíveis mas pode
+  precisar de ajuste depois do primeiro teste ao vivo.
+- `npm run build` + subir `dist/` pra Hostinger — **ainda não subido**
+  (só buildado localmente pra validar). Continua pendente também o
+  build anterior (ship_date/Atrasados da Fase 20, ver pendência mais
+  antiga abaixo).
+- Nada commitado ainda — aguardando o Raphael revisar antes do commit.
+- Fases 2-5 do roteiro (conversão por anúncio, preço/buy box, Mercado
+  Ads, promoções) ficam pra depois — registradas no plano salvo.
 
 ### 2026-08-27 (2ª parte) — Corrige botões de Picklist/Expedição sumidos no Histórico da Shopee
 

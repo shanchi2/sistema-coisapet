@@ -56,6 +56,13 @@ import { ProductionEntriesPage } from './modules/production/ProductionEntriesPag
 import { BioLinksPage } from './modules/links/BioLinksPage'
 import { ChecklistPage } from './modules/checklist/ChecklistPage'
 import { ReviewsPage } from './modules/reviews/ReviewsPage'
+import { MlAccountDashboardPage } from './modules/ml-insights/MlAccountDashboardPage'
+import { MlTrafficPage } from './modules/ml-insights/MlTrafficPage'
+import { MlHealthPage } from './modules/ml-insights/MlHealthPage'
+import { MlItemDetailPage } from './modules/ml-insights/MlItemDetailPage'
+import { MlQuestionsReputationPage } from './modules/ml-insights/MlQuestionsReputationPage'
+import { MlPromotionsPage } from './modules/ml-insights/MlPromotionsPage'
+import { MlOpportunitiesPage } from './modules/ml-insights/MlOpportunitiesPage'
 
 
 
@@ -123,6 +130,14 @@ export default function App() {
                 <Route path="/checklist"      element={<GuardedRoute moduleKey="checklist"><ChecklistPage /></GuardedRoute>} />
                 <Route path="/avaliacoes"     element={<GuardedRoute moduleKey="avaliacoes"><ReviewsPage /></GuardedRoute>} />
 
+                {/* Otimização ML */}
+                <Route path="/ml"                element={<GuardedRoute moduleKey="ml-insights"><MlAccountDashboardPage /></GuardedRoute>} />
+                <Route path="/ml/trafego"        element={<GuardedRoute moduleKey="ml-insights"><MlTrafficPage /></GuardedRoute>} />
+                <Route path="/ml/saude"          element={<GuardedRoute moduleKey="ml-insights"><MlHealthPage /></GuardedRoute>} />
+                <Route path="/ml/saude/:itemId"  element={<GuardedRoute moduleKey="ml-insights"><MlItemDetailPage /></GuardedRoute>} />
+                <Route path="/ml/perguntas"      element={<GuardedRoute moduleKey="ml-insights"><MlQuestionsReputationPage /></GuardedRoute>} />
+                <Route path="/ml/promocoes"      element={<GuardedRoute moduleKey="ml-insights"><MlPromotionsPage /></GuardedRoute>} />
+                <Route path="/ml/oportunidades"  element={<GuardedRoute moduleKey="ml-insights"><MlOpportunitiesPage /></GuardedRoute>} />
 
                 {/* Catálogo */}
                 <Route path="/materia-prima"  element={<GuardedRoute moduleKey="materiais"><MaterialsPage /></GuardedRoute>} />

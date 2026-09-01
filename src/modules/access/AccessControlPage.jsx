@@ -12,6 +12,7 @@ const MODULES = [
   { key: 'pedidos',      label: 'Pedidos',         section: 'Principal',     icon: '🛒' },
   { key: 'orcamentos',   label: 'Orçamentos',      section: 'Principal',     icon: '🧾' },
   { key: 'reunioes',     label: 'Reuniões',        section: 'Principal',     icon: '🗓️' },
+  { key: 'ml-insights',  label: 'Otimização ML',   section: 'Otimização ML', icon: '🩺' },
   { key: 'producao',     label: 'Produção',        section: 'Produção',      icon: '🏭' },
   { key: 'manutencao',   label: 'Manutenção',      section: 'Produção',      icon: '🔧' },
   { key: 'baixa-diaria', label: 'Baixa Diária',    section: 'Produção',      icon: '📦' },
@@ -45,9 +46,10 @@ const MODULES = [
 ]
 
 const ROLES = [
-  { key: 'administrativo', label: 'Gerente',     color: 'text-violet-400', bg: 'bg-violet-500/10 border-violet-500/20' },
-  { key: 'atendimento',    label: 'Atendimento', color: 'text-sky-400',    bg: 'bg-sky-500/10 border-sky-500/20'       },
-  { key: 'producao',       label: 'Produção',    color: 'text-amber-400',  bg: 'bg-amber-500/10 border-amber-500/20'   },
+  { key: 'administrativo', label: 'Gerente',     color: 'text-violet-400',  bg: 'bg-violet-500/10 border-violet-500/20'  },
+  { key: 'atendimento',    label: 'Atendimento', color: 'text-sky-400',     bg: 'bg-sky-500/10 border-sky-500/20'        },
+  { key: 'producao',       label: 'Produção',    color: 'text-amber-400',  bg: 'bg-amber-500/10 border-amber-500/20'    },
+  { key: 'marketplace',    label: 'Marketplace', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
 ]
 
 const SECTIONS = [...new Set(MODULES.map(m => m.section))]

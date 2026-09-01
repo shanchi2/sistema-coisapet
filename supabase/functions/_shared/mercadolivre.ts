@@ -71,10 +71,35 @@ export async function getValidIntegration(db: ReturnType<typeof adminClient>) {
   return integration
 }
 
+const BASE_HEADERS = {
+  Accept: 'application/json',
+  // Identifica a aplicação nas chamadas — boa prática, mesmo não tendo
+  // sido a causa do 403 PA_UNAUTHORIZED_RESULT_FROM_POLICIES que apareceu
+  // ao ligar o ml-insights (causa real: o app no painel do ML só tinha
+  // permissão granular pra "Venda e envios" — "Publicação e sincronização"
+  // e "Comunicações pré e pós-vendas" estavam em "Sem acesso").
+  'User-Agent': 'CoisaPet-Sistema/1.0 (+https://coisapet.com.br; contato: raphaelspag@gmail.com)',
+}
+
 export async function mlFetch(path: string, accessToken: string, extraHeaders: Record<string, string> = {}) {
   const url = path.startsWith('http') ? path : `${ML_API}${path}`
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}`, ...extraHeaders },
+    headers: { Authorization: `Bearer ${accessToken}`, ...BASE_HEADERS, ...extraHeaders },
+  })
+  if (!res.ok) throw new Error(`Erro na API do ML (${url}): ${res.status} ${await res.text()}`)
+  return res.json()
+}
+
+// PUT/POST autenticado — usado pelas ações de "aplicar sugestão" do
+// ml-insights (ex: preencher atributo faltando). Sempre chamado a partir
+// de uma ação que o próprio usuário confirmou explicitamente na tela —
+// nunca em lote nem automático.
+export async function mlWrite(path: string, accessToken: string, method: string, body: unknown) {
+  const url = path.startsWith('http') ? path : `${ML_API}${path}`
+  const res = await fetch(url, {
+    method,
+    headers: { Authorization: `Bearer ${accessToken}`, ...BASE_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`Erro na API do ML (${url}): ${res.status} ${await res.text()}`)
   return res.json()
