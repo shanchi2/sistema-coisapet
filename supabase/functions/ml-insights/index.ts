@@ -161,11 +161,11 @@ async function trafficAudit(integration: any, db: ReturnType<typeof adminClient>
 
   const itemMeta = new Map<string, {
     sku: string | null; title: string | null; category_id: string | null; available_quantity: number | null
-    shipping: any; date_created: string | null; permalink: string | null
+    shipping: any; date_created: string | null; permalink: string | null; thumbnail: string | null
   }>()
   for (const group of chunk(ids, 20)) {
     try {
-      const multi = await mlFetch(`/items?ids=${group.join(',')}&attributes=id,title,category_id,attributes,available_quantity,shipping,date_created,permalink`, integration.access_token)
+      const multi = await mlFetch(`/items?ids=${group.join(',')}&attributes=id,title,category_id,attributes,available_quantity,shipping,date_created,permalink,thumbnail`, integration.access_token)
       ;(multi || []).forEach((entry: any) => {
         const item = entry?.body
         if (!item?.id) return
@@ -175,6 +175,7 @@ async function trafficAudit(integration: any, db: ReturnType<typeof adminClient>
           category_id: item.category_id ?? null,
           available_quantity: item.available_quantity ?? null,
           shipping: item.shipping ?? null,
+          thumbnail: item.thumbnail ?? null,
           date_created: item.date_created ?? null,
           permalink: item.permalink ?? null,
         })
@@ -233,7 +234,7 @@ async function trafficAudit(integration: any, db: ReturnType<typeof adminClient>
   }
 
   const results = ids.map((id) => {
-    const meta = itemMeta.get(id) ?? { sku: null, title: null, category_id: null, available_quantity: null, shipping: null, date_created: null, permalink: null }
+    const meta = itemMeta.get(id) ?? { sku: null, title: null, category_id: null, available_quantity: null, shipping: null, date_created: null, permalink: null, thumbnail: null }
     const visits = visitsByItem.get(id) ?? 0
     const sales = meta.sku ? (salesBySku.get(meta.sku) || 0) : 0
     const keywords = meta.category_id ? (trendsByCategory.get(meta.category_id) || []) : []
@@ -250,6 +251,7 @@ async function trafficAudit(integration: any, db: ReturnType<typeof adminClient>
       date_created: meta.date_created,
       days_listed: meta.date_created ? Math.floor((Date.now() - new Date(meta.date_created).getTime()) / 86400000) : null,
       permalink: meta.permalink,
+      thumbnail: meta.thumbnail,
     }
   })
   return { total, offset, limit, results, category_names: Object.fromEntries(categoryNames) }

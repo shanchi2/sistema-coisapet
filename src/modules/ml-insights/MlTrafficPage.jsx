@@ -1,7 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { TrendingUp, RefreshCw, Loader2, AlertTriangle, ExternalLink, Flame } from 'lucide-react'
+import { TrendingUp, RefreshCw, Loader2, AlertTriangle, ExternalLink, Flame, Eye, CheckCircle2, ImageOff } from 'lucide-react'
 import { useMlInsights } from './hooks/useMlInsights'
+
+// A API do ML às vezes devolve o thumbnail em http:// puro — o site roda
+// em https, então isso vira mixed content bloqueado pelo navegador.
+function secureThumb(url) {
+  return url ? url.replace(/^http:\/\//, 'https://') : null
+}
 
 const PERIODS = [
   { key: 7,  label: '7D'  },
@@ -20,18 +26,18 @@ function bucketOf(r) {
 // `text-${color}-600`, precisa aparecer literal no código.
 const BUCKETS = [
   {
-    key: 'high_low_conv', label: 'Alto tráfego, baixa conversão',
-    text: 'text-rose-600', badgeText: 'text-rose-700', badgeBg: 'bg-rose-50', badgeBorder: 'border-rose-200',
+    key: 'high_low_conv', label: 'Alto tráfego, baixa conversão', icon: AlertTriangle,
+    text: 'text-rose-600', solid: 'bg-rose-500', badgeText: 'text-rose-700', badgeBg: 'bg-rose-50', badgeBorder: 'border-rose-200',
     ring: 'border-rose-400 ring-1 ring-rose-200',
   },
   {
-    key: 'low_traffic', label: 'Baixo tráfego',
-    text: 'text-amber-600', badgeText: 'text-amber-700', badgeBg: 'bg-amber-50', badgeBorder: 'border-amber-200',
+    key: 'low_traffic', label: 'Baixo tráfego', icon: Eye,
+    text: 'text-amber-600', solid: 'bg-amber-500', badgeText: 'text-amber-700', badgeBg: 'bg-amber-50', badgeBorder: 'border-amber-200',
     ring: 'border-amber-400 ring-1 ring-amber-200',
   },
   {
-    key: 'ok', label: 'Sem problema aparente',
-    text: 'text-emerald-600', badgeText: 'text-emerald-700', badgeBg: 'bg-emerald-50', badgeBorder: 'border-emerald-200',
+    key: 'ok', label: 'Sem problema aparente', icon: CheckCircle2,
+    text: 'text-emerald-600', solid: 'bg-emerald-500', badgeText: 'text-emerald-700', badgeBg: 'bg-emerald-50', badgeBorder: 'border-emerald-200',
     ring: 'border-emerald-400 ring-1 ring-emerald-200',
   },
 ]
@@ -89,17 +95,17 @@ export function MlTrafficPage() {
   }, [rows])
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
+      <div className="max-w-[1600px] mx-auto space-y-6">
 
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shrink-0">
-              <TrendingUp size={20} strokeWidth={1.5} className="text-white"/>
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center shrink-0 shadow-sm shadow-emerald-200">
+              <TrendingUp size={22} strokeWidth={1.5} className="text-white"/>
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-slate-800">Tráfego & Conversão</h1>
+              <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Tráfego & Conversão</h1>
               <p className="text-sm text-slate-500">Quanta gente vê cada anúncio, não só quantos compram — e palavras-chave em alta que faltam no título</p>
             </div>
           </div>
@@ -113,7 +119,7 @@ export function MlTrafficPage() {
               ))}
             </div>
             <button onClick={scan} disabled={loading}
-              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors">
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors shadow-sm">
               {loading ? <Loader2 size={15} className="animate-spin"/> : <RefreshCw size={15}/>}
               {loading ? (progress ? `Analisando ${progress.done}/${progress.total}...` : 'Analisando...') : 'Analisar'}
             </button>
@@ -127,7 +133,7 @@ export function MlTrafficPage() {
         )}
 
         {rows === null && !loading && (
-          <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+          <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
             <TrendingUp size={32} strokeWidth={1} className="mx-auto mb-3 text-slate-200"/>
             <p className="text-slate-500 mb-1">Nenhuma análise ainda</p>
             <p className="text-sm text-slate-400">Clique em "Analisar" pra cruzar visitas da API com vendas reais do sistema.</p>
@@ -137,83 +143,99 @@ export function MlTrafficPage() {
         {counts && (
           <>
             {/* Resumo em 3 baldes */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {BUCKETS.map(b => (
-                <button key={b.key} onClick={() => setFilter(f => f === b.key ? 'all' : b.key)}
-                  className={`bg-white border rounded-xl p-4 text-left transition-all ${filter === b.key ? b.ring : 'border-slate-200 hover:border-slate-300'}`}>
-                  <p className={`text-2xl font-bold ${b.text}`}>{counts[b.key]}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{b.label}</p>
-                </button>
-              ))}
-            </div>
-
-            {/* Tendências por categoria */}
-            {trendingByCategory.length > 0 && (
-              <div className="bg-white border border-slate-200 rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-1">
-                  <Flame size={15} className="text-amber-500"/>
-                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Palavras-chave em alta ausentes por categoria</p>
-                </div>
-                <p className="text-xs text-slate-400 mb-3">Quanto mais anúncios da categoria sem o termo no título, maior a oportunidade de revisar em massa.</p>
-                <div className="space-y-3">
-                  {trendingByCategory.map(c => (
-                    <div key={c.category_id}>
-                      <p className="text-xs text-slate-600 mb-0.5">
-                        <span className="font-semibold">{c.category_name}</span>
-                        <span className="text-slate-400 font-mono"> · {c.category_id}</span>
-                        <span className="text-slate-400"> · {c.item_count} anúncio{c.item_count === 1 ? '' : 's'} seu{c.item_count === 1 ? '' : 's'} nessa categoria</span>
-                      </p>
-                      {c.example_items.length > 0 && (
-                        <p className="text-xs text-slate-400 mb-1.5 truncate">Ex: {c.example_items.join(' · ')}</p>
-                      )}
-                      <div className="flex flex-wrap gap-1.5">
-                        {c.keywords.map(([kw, count]) => (
-                          <span key={kw} className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-                            {kw} <span className="text-amber-400">· {count}</span>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Filtro ativo */}
-            {filter !== 'all' && (
-              <button onClick={() => setFilter('all')} className="text-xs text-slate-500 hover:text-slate-700 underline">
-                Filtrando por "{BUCKETS.find(b => b.key === filter)?.label}" — limpar filtro
-              </button>
-            )}
-
-            {/* Lista */}
-            <div className="space-y-3">
-              {displayRows.map(r => {
-                const bucket = bucketOf(r)
-                const bucketInfo = BUCKETS.find(b => b.key === bucket)
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {BUCKETS.map(b => {
+                const Icon = b.icon
+                const active = filter === b.key
                 return (
-                  <div key={r.item_id} onClick={() => navigate(`/ml/saude/${r.item_id}`)}
-                    className="bg-white border border-slate-200 rounded-xl p-5 cursor-pointer hover:border-emerald-300 hover:shadow-sm transition-all">
-                    <div className="flex items-center gap-2.5 flex-wrap mb-2">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${bucketInfo.badgeText} ${bucketInfo.badgeBg} ${bucketInfo.badgeBorder}`}>
-                        {r.visits} visitas · {r.sales} vendas · {r.visits > 0 ? `${((r.conversion ?? 0) * 100).toFixed(1)}%` : '—'} conv.
-                      </span>
-                      {r.trending_missing?.length > 0 && (
-                        <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
-                          {r.trending_missing.length} palavra-chave em alta ausente
-                        </span>
-                      )}
+                  <button key={b.key} onClick={() => setFilter(f => f === b.key ? 'all' : b.key)}
+                    className={`flex items-center gap-3.5 bg-white border rounded-2xl p-4 text-left transition-all ${active ? b.ring : 'border-slate-200 hover:border-slate-300'}`}>
+                    <div className={`w-10 h-10 rounded-xl ${b.solid} flex items-center justify-center shrink-0`}>
+                      <Icon size={18} strokeWidth={2} className="text-white"/>
                     </div>
-                    <a href={r.permalink || `https://produto.mercadolivre.com.br/${r.item_id}`} target="_blank" rel="noreferrer"
-                      onClick={e => e.stopPropagation()}
-                      className="text-sm font-medium text-slate-800 hover:text-emerald-600 inline-flex items-center gap-1.5">
-                      {r.title || r.item_id}
-                      <ExternalLink size={12} className="text-slate-300"/>
-                    </a>
-                    <p className="text-xs font-mono text-slate-400 mt-0.5">{r.item_id}</p>
-                  </div>
+                    <div className="min-w-0">
+                      <p className={`text-2xl font-bold leading-none ${b.text}`}>{counts[b.key]}</p>
+                      <p className="text-xs text-slate-500 mt-1">{b.label}</p>
+                    </div>
+                  </button>
                 )
               })}
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+              {/* Lista — coluna principal */}
+              <div className="xl:col-span-2 space-y-3">
+                {filter !== 'all' && (
+                  <button onClick={() => setFilter('all')} className="text-xs text-slate-500 hover:text-slate-700 underline">
+                    Filtrando por "{BUCKETS.find(b => b.key === filter)?.label}" — limpar filtro
+                  </button>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {displayRows.map(r => {
+                    const bucket = bucketOf(r)
+                    const bucketInfo = BUCKETS.find(b => b.key === bucket)
+                    const thumb = secureThumb(r.thumbnail)
+                    return (
+                      <div key={r.item_id} onClick={() => navigate(`/ml/saude/${r.item_id}`)}
+                        className={`group flex gap-3.5 bg-white border rounded-2xl p-4 cursor-pointer hover:shadow-md hover:shadow-slate-100 transition-all ${bucket === 'high_low_conv' ? 'border-rose-100 hover:border-rose-300' : 'border-slate-200 hover:border-emerald-300'}`}>
+                        <div className="w-14 h-14 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center">
+                          {thumb ? <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy"/> : <ImageOff size={16} className="text-slate-300"/>}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full border mb-1.5 ${bucketInfo.badgeText} ${bucketInfo.badgeBg} ${bucketInfo.badgeBorder}`}>
+                            {r.visits} visitas · {r.sales} vendas · {r.visits > 0 ? `${((r.conversion ?? 0) * 100).toFixed(1)}%` : '—'} conv.
+                          </span>
+                          <a href={r.permalink || `https://produto.mercadolivre.com.br/${r.item_id}`} target="_blank" rel="noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="text-sm font-medium text-slate-800 group-hover:text-emerald-600 flex items-start gap-1.5">
+                            <span className="line-clamp-2">{r.title || r.item_id}</span>
+                            <ExternalLink size={12} className="text-slate-300 mt-0.5 shrink-0"/>
+                          </a>
+                          {r.trending_missing?.length > 0 && (
+                            <span className="inline-block text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full mt-1.5">
+                              {r.trending_missing.length} palavra-chave em alta ausente
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Tendências por categoria — coluna lateral */}
+              <div className="space-y-4">
+                {trendingByCategory.length > 0 && (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Flame size={15} className="text-amber-500"/>
+                      <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Em alta, ausentes por categoria</p>
+                    </div>
+                    <p className="text-xs text-slate-400 mb-3">Quanto mais anúncios sem o termo, maior a oportunidade de revisar em massa.</p>
+                    <div className="space-y-4">
+                      {trendingByCategory.map(c => (
+                        <div key={c.category_id}>
+                          <p className="text-xs text-slate-600 mb-0.5">
+                            <span className="font-semibold">{c.category_name}</span>
+                            <span className="text-slate-400"> · {c.item_count} anúncio{c.item_count === 1 ? '' : 's'}</span>
+                          </p>
+                          {c.example_items.length > 0 && (
+                            <p className="text-xs text-slate-400 mb-1.5 truncate">Ex: {c.example_items.join(' · ')}</p>
+                          )}
+                          <div className="flex flex-wrap gap-1.5">
+                            {c.keywords.map(([kw, count]) => (
+                              <span key={kw} className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                                {kw} <span className="text-amber-400">· {count}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </>
         )}

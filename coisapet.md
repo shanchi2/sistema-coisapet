@@ -132,6 +132,20 @@ genéricos empilhados numa coluna só — não preenchiam bem telas largas.
 
 ---
 
+### 2026-09-02 (5ª parte) — Redesign da tela Tráfego & Conversão
+
+Mesmo padrão largo (`max-w-[1600px]`) em `MlTrafficPage.jsx`: os 3
+"baldes" resumo ganharam ícone colorido (mesmo estilo dos tiles da Saúde
+dos Anúncios), grid de 2 colunas na lista principal com foto do produto,
+e "Palavras-chave em alta por categoria" virou uma coluna lateral fixa
+(era um bloco full-width solto no meio da página). Fotos vieram de um
+campo `thumbnail` novo no multiget de `trafficAudit` (mesmo padrão do
+`attributesAudit` na sessão anterior). Testado ao vivo (223 anúncios
+reais, scan completo), sem erro de console. `npm run build` limpo,
+deploy da `ml-insights` feito.
+
+---
+
 ### 2026-09-02 (4ª parte) — Redesign da tela Anúncios (mesmo padrão visual)
 
 Raphael deu sinal verde pra continuar o redesign pelas outras telas do
