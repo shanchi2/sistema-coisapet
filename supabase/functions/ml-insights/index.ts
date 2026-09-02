@@ -699,6 +699,7 @@ async function itemDetail(integration: any, itemId: string, db: ReturnType<typeo
       id: item.id, title: item.title, price: item.price, category_id: item.category_id,
       permalink: item.permalink, available_quantity: item.available_quantity, sold_quantity: item.sold_quantity,
       status: item.status, shipping: extractShippingInfo(item),
+      pictures: (item.pictures || []).map((p: any) => p.secure_url || p.url).filter(Boolean),
     },
     title_analysis: scoreTitle(item.title || '', trendKeywords),
     images: analyzeImages(item),

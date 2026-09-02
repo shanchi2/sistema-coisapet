@@ -132,6 +132,39 @@ genéricos empilhados numa coluna só — não preenchiam bem telas largas.
 
 ---
 
+### 2026-09-02 (7ª parte) — Redesign completo do Detalhe do Anúncio (hero + abas)
+
+Raphael pediu pra caprichar nessa — é a maior tela do módulo (692 linhas,
+9 seções empilhadas numa coluna só de `max-w-4xl`, rolagem enorme).
+Reestruturado do zero em `MlItemDetailPage.jsx`:
+
+- **Hero fixo no topo** (`max-w-[1600px]`): foto real do anúncio (novo —
+  `detail.item.pictures` agora vem preenchido do backend, antes só o
+  `count` chegava no frontend) + tira de miniaturas das outras fotos,
+  título grande com link, badges (Ativo/Pausado, Full, frete grátis),
+  histórico de atualização, preço em destaque.
+- **Ações rápidas sempre visível** logo abaixo do hero, fora das abas —
+  é a ação mais frequente (preço/estoque/status), não devia exigir
+  navegar pra achar.
+- **4 abas** dividindo o resto do conteúdo (padrão de painel de produto
+  tipo Shopify/Stripe — reduz uma rolagem gigante pra navegação
+  objetiva): **Visão Geral** (nota do título, imagens, preço, estoque em
+  grid de 4 + qualidade do anúncio ML), **Conteúdo & IA** (sugestão de
+  título/descrição), **Ficha Técnica** (formulário completo, agora em 2
+  colunas — obrigatórios e extras lado a lado), **Desempenho** (visitas/
+  vendas/conversão + Mercado Ads na coluna principal, Avaliações na
+  lateral).
+- Aba "Ficha Técnica" ganha **badge vermelho com a contagem de
+  obrigatórios faltando** — dá pra saber que tem pendência sem precisar
+  clicar. Barra de abas fica **fixa (sticky)** ao rolar, útil numa aba
+  como Ficha Técnica que pode ter dezenas de campos.
+- Nenhuma lógica de gravação/confirmação mudou — só a organização visual.
+  Testado ao vivo nas 4 abas com anúncio real (MLB3328467471, sticky tab
+  funcionando, sem erro de console). `npm run build` limpo, deploy da
+  `ml-insights` feito.
+
+---
+
 ### 2026-09-02 (6ª parte) — Redesign das 3 últimas telas do módulo (lista completa)
 
 Raphael pediu pra seguir até terminar o módulo. Aplicado o mesmo padrão
