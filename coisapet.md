@@ -132,6 +132,39 @@ genéricos empilhados numa coluna só — não preenchiam bem telas largas.
 
 ---
 
+### 2026-09-02 (10ª parte) — Redesign completo da Criação de Anúncio (wizard)
+
+Última tela do módulo. Era um wizard de 7 passos empilhado num `max-w-3xl`
+com só uma fileira de pílulas no topo como indicador. Reestruturado em
+`MlCreateListingPage.jsx` em 3 colunas (`max-w-[1400px]`, telas grandes):
+
+- **Trilha de passos lateral** (esquerda): cada passo com ícone, os já
+  concluídos ficam clicáveis pra voltar direto (sem perder o que já foi
+  preenchido — testado ao vivo: voltar pra Categoria com Ficha
+  técnica/Preço já preenchidos manteve tudo). Os que ainda não chegaram
+  ficam bloqueados (a ordem importa — não dá pra pular ficha técnica sem
+  categoria carregada).
+- **Painel de resumo ao vivo** (direita, `sticky`): foto do produto (a
+  1ª foto enviada), título, categoria, preço/estoque/fotos e uma
+  checklist de progresso — tudo atualiza em tempo real conforme
+  preenche, sem precisar chegar no passo de Revisão pra ver como o
+  anúncio está ficando. Novo, não existia antes.
+- Em telas pequenas, a trilha lateral e o resumo somem (`lg:hidden`) e
+  volta a fileira de pílulas compacta original — o formulário continua
+  sendo o mesmo em qualquer tamanho de tela.
+- Nenhuma lógica de categoria/atributos/preço/foto/publicação mudou — só
+  a organização visual. Testado ao vivo com modelo real (pulou direto
+  pra Ficha Técnica com Marca/Modelo pré-preenchidos, categoria "Gaiolas
+  para Animais"), preenchimento de preço refletindo no resumo em tempo
+  real, navegação de volta preservando dados. Não cheguei a publicar de
+  verdade (ação real e irreversível no Mercado Livre — não faz sentido
+  testar isso). `npm run build` limpo, sem erro de console.
+
+**Módulo Otimização ML: as 9 telas todas redesenhadas.** Fica pendente
+só subir o `dist/` pra Hostinger quando o Raphael quiser.
+
+---
+
 ### 2026-09-02 (9ª parte) — Fix: vão feio na barra de abas fixa (Detalhe do Anúncio)
 
 Raphael reportou espaço estranho entre a barra de abas (sticky) e o

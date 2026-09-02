@@ -2,14 +2,23 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, Loader2, AlertTriangle, Sparkles, Search,
-  Image as ImageIcon, X, CheckCircle2, PlusCircle,
+  Image as ImageIcon, X, CheckCircle2, Circle, PlusCircle,
+  Type, LayoutGrid, ClipboardList, DollarSign, AlignLeft,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useMlInsights } from './hooks/useMlInsights'
 import { ConfirmWriteModal } from './ConfirmWriteModal'
 import { AttributeRow } from './AttributeRow'
 
-const STEPS = ['Produto', 'Categoria', 'Ficha técnica', 'Preço e estoque', 'Fotos', 'Descrição', 'Revisão']
+const STEPS = [
+  { label: 'Produto',           icon: Type },
+  { label: 'Categoria',         icon: LayoutGrid },
+  { label: 'Ficha técnica',     icon: ClipboardList },
+  { label: 'Preço e estoque',   icon: DollarSign },
+  { label: 'Fotos',             icon: ImageIcon },
+  { label: 'Descrição',         icon: AlignLeft },
+  { label: 'Revisão',           icon: CheckCircle2 },
+]
 
 function fmtMoney(v) {
   if (v == null || Number.isNaN(v)) return '—'
@@ -31,7 +40,7 @@ function prefillFormFromAttributes(attrs) {
 
 function Card({ title, children }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-5">
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 lg:p-6">
       <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-3">{title}</p>
       {children}
     </div>
@@ -165,6 +174,7 @@ export function MlCreateListingPage() {
   const requiredAttrs = attributes.filter(a => a.required)
   const extraAttrs    = attributes.filter(a => !a.required)
   const missingRequired = requiredAttrs.filter(a => !a.is_variation_attribute && !form[a.id])
+  const filledAttrCount = Object.values(form).filter(Boolean).length
 
   async function handlePhotoSelect(e) {
     const files = Array.from(e.target.files || [])
@@ -249,26 +259,45 @@ export function MlCreateListingPage() {
     )
   }
 
+  // Progresso pro painel de resumo — mesma condição usada em cada etapa
+  // pra liberar o "Continuar", só que aqui é só leitura (não bloqueia nada).
+  const progress = [
+    { label: 'Produto',         done: !!title.trim() },
+    { label: 'Categoria',       done: !!categoryId },
+    { label: 'Ficha técnica',   done: !!categoryId && !missingRequired.length },
+    { label: 'Preço e estoque', done: !!price.trim() && Number(price) > 0 && !!stock.trim() },
+    { label: 'Fotos',           done: uploadedPhotos.length > 0 },
+    { label: 'Descrição',       done: !!description.trim() },
+  ]
+
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-3xl mx-auto space-y-5">
+    <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
+      <div className="max-w-[1400px] mx-auto space-y-6">
 
         <div>
           <button onClick={() => navigate('/ml/anuncios')} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 mb-3">
             <ArrowLeft size={14}/> Voltar pra Anúncios
           </button>
-          <h1 className="text-xl font-semibold text-slate-800">Criar anúncio novo</h1>
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center shrink-0 shadow-sm shadow-emerald-200">
+              <PlusCircle size={22} strokeWidth={1.5} className="text-white"/>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Criar anúncio novo</h1>
+              <p className="text-sm text-slate-500">Passo {step} de {STEPS.length} — {STEPS[step - 1].label}</p>
+            </div>
+          </div>
         </div>
 
-        {/* Stepper */}
-        <div className="flex items-center gap-1 flex-wrap text-xs">
-          {STEPS.map((label, i) => (
-            <span key={label} className={`px-2.5 py-1 rounded-full border font-medium ${
+        {/* Trilha compacta — só em telas pequenas, sem a coluna lateral */}
+        <div className="flex items-center gap-1 flex-wrap text-xs lg:hidden">
+          {STEPS.map((s, i) => (
+            <span key={s.label} className={`px-2.5 py-1 rounded-full border font-medium ${
               i + 1 === step ? 'bg-emerald-600 border-emerald-600 text-white'
                 : i + 1 < step ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                 : 'bg-white border-slate-200 text-slate-400'
             }`}>
-              {i + 1}. {label}
+              {i + 1}. {s.label}
             </span>
           ))}
         </div>
@@ -279,240 +308,295 @@ export function MlCreateListingPage() {
           </div>
         )}
 
-        {/* Step 1 — Produto */}
-        {step === 1 && (
-          <Card title="Nome do produto">
-            <input type="text" value={title} onChange={e => { setTitle(e.target.value); if (templateId) clearTemplate() }}
-              placeholder="Ex: Gaiola para Hamster com Roda e Casinha"
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-400"/>
+        <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr_300px] gap-6 items-start">
 
-            <div className="mt-5 pt-4 border-t border-slate-100">
-              <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Ou usar um anúncio já existente como modelo (opcional)</p>
-              <p className="text-xs text-slate-400 mb-3">Copia categoria e ficha técnica de um anúncio seu — preço, estoque e fotos são sempre do zero.</p>
-              {templateId ? (
-                <div className="flex items-center justify-between gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-                  <span className="text-sm text-emerald-800 truncate">{templateLoading ? 'Carregando modelo...' : title}</span>
-                  <button onClick={clearTemplate} className="text-emerald-600 hover:text-emerald-800 shrink-0"><X size={15}/></button>
-                </div>
-              ) : (
-                <>
-                  <div className="relative mb-2">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                    <input type="text" value={templateSearch} onChange={e => setTemplateSearch(e.target.value)}
-                      placeholder="Buscar anúncio..."
-                      className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:border-emerald-400"/>
-                  </div>
-                  {templates === null ? (
-                    <p className="text-xs text-slate-400">Carregando anúncios...</p>
-                  ) : (
-                    <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-lg divide-y divide-slate-100">
-                      {filteredTemplates.slice(0, 30).map(t => (
-                        <button key={t.item_id} onClick={() => selectTemplate(t)}
-                          className="w-full text-left text-xs px-3 py-2 hover:bg-slate-50 truncate">
-                          {t.title}
-                        </button>
-                      ))}
-                      {!filteredTemplates.length && <p className="text-xs text-slate-400 px-3 py-2">Nenhum anúncio encontrado.</p>}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div className="flex justify-end mt-4">
-              <button onClick={() => templateId ? setStep(3) : setStep(2)} disabled={!title.trim() || templateLoading}
-                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
-                Continuar <ArrowRight size={14}/>
-              </button>
-            </div>
-          </Card>
-        )}
-
-        {/* Step 2 — Categoria */}
-        {step === 2 && (
-          <Card title="Categoria">
-            {!candidates ? (
-              <button onClick={handlePredict} disabled={categoryLoading}
-                className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors">
-                {categoryLoading ? <Loader2 size={15} className="animate-spin"/> : <Sparkles size={15}/>}
-                {categoryLoading ? 'Buscando...' : 'Sugerir categoria pelo título'}
-              </button>
-            ) : (
-              <div className="space-y-1.5">
-                {candidates.map(c => (
-                  <button key={c.category_id} onClick={() => loadCategory(c.category_id, null)} disabled={categoryLoading}
-                    className="w-full text-left text-sm border border-slate-200 rounded-lg px-3 py-2.5 hover:border-emerald-300 hover:bg-emerald-50 transition-colors disabled:opacity-50">
-                    <span className="font-medium text-slate-700">{c.category_name}</span>
-                    {c.domain_name && <span className="text-xs text-slate-400 ml-2">{c.domain_name}</span>}
-                  </button>
-                ))}
-                {!candidates.length && <p className="text-xs text-slate-400">Nenhuma sugestão encontrada — use o ID manual abaixo.</p>}
-              </div>
-            )}
-
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Ou digitar o ID da categoria manualmente</p>
-              <div className="flex gap-2">
-                <input type="text" value={manualCategoryId} onChange={e => setManualCategoryId(e.target.value)}
-                  placeholder="Ex: MLB456660"
-                  className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-400"/>
-                <button onClick={() => loadCategory(manualCategoryId.trim(), null)} disabled={!manualCategoryId.trim() || categoryLoading}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
-                  Usar
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-between mt-5">
-              <button onClick={() => setStep(1)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"><ArrowLeft size={14}/> Voltar</button>
-            </div>
-          </Card>
-        )}
-
-        {/* Step 3 — Ficha técnica */}
-        {step === 3 && (
-          <Card title={`Ficha técnica${categoryName ? ` — ${categoryName}` : ''}`}>
-            <div className="mb-3">
-              <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Obrigatórios ({requiredAttrs.length})</p>
-              {requiredAttrs.map(attr => (
-                <AttributeRow key={attr.id} attr={attr} value={form[attr.id]} onChange={v => setForm(f => ({ ...f, [attr.id]: v }))}/>
-              ))}
-            </div>
-            {extraAttrs.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Extras ({extraAttrs.length})</p>
-                {extraAttrs.map(attr => (
-                  <AttributeRow key={attr.id} attr={attr} value={form[attr.id]} onChange={v => setForm(f => ({ ...f, [attr.id]: v }))}/>
-                ))}
-              </div>
-            )}
-            <div className="flex justify-between mt-4">
-              <button onClick={() => setStep(templateId ? 1 : 2)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"><ArrowLeft size={14}/> Voltar</button>
-              <button onClick={() => setStep(4)} disabled={!!missingRequired.length}
-                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
-                Continuar{missingRequired.length ? ` (faltam ${missingRequired.length})` : ''} <ArrowRight size={14}/>
-              </button>
-            </div>
-          </Card>
-        )}
-
-        {/* Step 4 — Preço, estoque, frete */}
-        {step === 4 && (
-          <Card title="Preço, estoque e frete">
-            <div className="flex flex-wrap gap-4">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Preço</label>
-                <input type="number" inputMode="decimal" step="0.01" value={price} onChange={e => setPrice(e.target.value)}
-                  className="w-32 text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-400"/>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Estoque</label>
-                <input type="number" inputMode="numeric" step="1" min="0" value={stock} onChange={e => setStock(e.target.value)}
-                  className="w-24 text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-400"/>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Condição</label>
-                <span className="block text-sm text-slate-500 px-2.5 py-1.5">Novo (fixo)</span>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Frete</label>
-                <button type="button" onClick={() => setFreeShipping(f => !f)}
-                  className={`text-sm font-medium px-3 py-1.5 rounded-lg border transition-colors ${
-                    freeShipping ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-slate-500 bg-slate-50 border-slate-200'
+          {/* Trilha de passos — só em telas grandes */}
+          <nav className="hidden lg:flex lg:flex-col gap-1 lg:sticky lg:top-6">
+            {STEPS.map((s, i) => {
+              const n = i + 1
+              const isDone = n < step
+              const isCurrent = n === step
+              const Icon = s.icon
+              return (
+                <button key={s.label} disabled={!isDone} onClick={() => isDone && setStep(n)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-colors ${
+                    isCurrent ? 'bg-emerald-600 text-white shadow-sm'
+                      : isDone ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer'
+                      : 'text-slate-400 cursor-default'
                   }`}>
-                  {freeShipping ? 'Frete grátis' : 'Frete pago pelo comprador'}
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+                    isCurrent ? 'bg-white/20' : isDone ? 'bg-emerald-500 text-white' : 'bg-slate-100'
+                  }`}>
+                    {isDone ? <CheckCircle2 size={13}/> : <Icon size={12}/>}
+                  </span>
+                  <span className="text-sm font-medium">{s.label}</span>
                 </button>
-              </div>
-            </div>
-            <div className="flex justify-between mt-5">
-              <button onClick={() => setStep(3)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"><ArrowLeft size={14}/> Voltar</button>
-              <button onClick={() => setStep(5)} disabled={!price.trim() || Number(price) <= 0 || !stock.trim() || Number(stock) < 0}
-                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
-                Continuar <ArrowRight size={14}/>
-              </button>
-            </div>
-          </Card>
-        )}
+              )
+            })}
+          </nav>
 
-        {/* Step 5 — Fotos */}
-        {step === 5 && (
-          <Card title="Fotos">
-            <p className="text-xs text-slate-400 mb-3">Mínimo 1 foto pra publicar — ideal entre 6 e 10.</p>
-            <label className="flex items-center gap-2 w-fit px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-xl cursor-pointer transition-colors">
-              <ImageIcon size={15}/> Adicionar fotos
-              <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoSelect}/>
-            </label>
-            {photos.length > 0 && (
-              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mt-4">
-                {photos.map(p => (
-                  <div key={p.localId} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
-                    <img src={p.previewUrl} alt="" className="w-full h-full object-cover"/>
-                    {p.status === 'uploading' && (
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                        <Loader2 size={16} className="animate-spin text-white"/>
+          {/* Conteúdo do passo atual */}
+          <div>
+            {/* Step 1 — Produto */}
+            {step === 1 && (
+              <Card title="Nome do produto">
+                <input type="text" value={title} onChange={e => { setTitle(e.target.value); if (templateId) clearTemplate() }}
+                  placeholder="Ex: Gaiola para Hamster com Roda e Casinha"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-400"/>
+
+                <div className="mt-5 pt-4 border-t border-slate-100">
+                  <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Ou usar um anúncio já existente como modelo (opcional)</p>
+                  <p className="text-xs text-slate-400 mb-3">Copia categoria e ficha técnica de um anúncio seu — preço, estoque e fotos são sempre do zero.</p>
+                  {templateId ? (
+                    <div className="flex items-center justify-between gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                      <span className="text-sm text-emerald-800 truncate">{templateLoading ? 'Carregando modelo...' : title}</span>
+                      <button onClick={clearTemplate} className="text-emerald-600 hover:text-emerald-800 shrink-0"><X size={15}/></button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative mb-2">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                        <input type="text" value={templateSearch} onChange={e => setTemplateSearch(e.target.value)}
+                          placeholder="Buscar anúncio..."
+                          className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:border-emerald-400"/>
                       </div>
-                    )}
-                    {p.status === 'error' && (
-                      <div className="absolute inset-0 bg-rose-900/70 flex items-center justify-center p-1" title={p.error}>
-                        <AlertTriangle size={16} className="text-white"/>
-                      </div>
-                    )}
-                    <button onClick={() => removePhoto(p.localId)}
-                      className="absolute top-1 right-1 w-5 h-5 bg-black/60 hover:bg-black/80 rounded-full flex items-center justify-center">
-                      <X size={11} className="text-white"/>
+                      {templates === null ? (
+                        <p className="text-xs text-slate-400">Carregando anúncios...</p>
+                      ) : (
+                        <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-lg divide-y divide-slate-100">
+                          {filteredTemplates.slice(0, 30).map(t => (
+                            <button key={t.item_id} onClick={() => selectTemplate(t)}
+                              className="w-full text-left text-xs px-3 py-2 hover:bg-slate-50 truncate">
+                              {t.title}
+                            </button>
+                          ))}
+                          {!filteredTemplates.length && <p className="text-xs text-slate-400 px-3 py-2">Nenhum anúncio encontrado.</p>}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="flex justify-end mt-4">
+                  <button onClick={() => templateId ? setStep(3) : setStep(2)} disabled={!title.trim() || templateLoading}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
+                    Continuar <ArrowRight size={14}/>
+                  </button>
+                </div>
+              </Card>
+            )}
+
+            {/* Step 2 — Categoria */}
+            {step === 2 && (
+              <Card title="Categoria">
+                {!candidates ? (
+                  <button onClick={handlePredict} disabled={categoryLoading}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors">
+                    {categoryLoading ? <Loader2 size={15} className="animate-spin"/> : <Sparkles size={15}/>}
+                    {categoryLoading ? 'Buscando...' : 'Sugerir categoria pelo título'}
+                  </button>
+                ) : (
+                  <div className="space-y-1.5">
+                    {candidates.map(c => (
+                      <button key={c.category_id} onClick={() => loadCategory(c.category_id, null)} disabled={categoryLoading}
+                        className="w-full text-left text-sm border border-slate-200 rounded-lg px-3 py-2.5 hover:border-emerald-300 hover:bg-emerald-50 transition-colors disabled:opacity-50">
+                        <span className="font-medium text-slate-700">{c.category_name}</span>
+                        {c.domain_name && <span className="text-xs text-slate-400 ml-2">{c.domain_name}</span>}
+                      </button>
+                    ))}
+                    {!candidates.length && <p className="text-xs text-slate-400">Nenhuma sugestão encontrada — use o ID manual abaixo.</p>}
+                  </div>
+                )}
+
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Ou digitar o ID da categoria manualmente</p>
+                  <div className="flex gap-2">
+                    <input type="text" value={manualCategoryId} onChange={e => setManualCategoryId(e.target.value)}
+                      placeholder="Ex: MLB456660"
+                      className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-400"/>
+                    <button onClick={() => loadCategory(manualCategoryId.trim(), null)} disabled={!manualCategoryId.trim() || categoryLoading}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
+                      Usar
                     </button>
                   </div>
-                ))}
-              </div>
+                </div>
+
+                <div className="flex justify-between mt-5">
+                  <button onClick={() => setStep(1)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"><ArrowLeft size={14}/> Voltar</button>
+                </div>
+              </Card>
             )}
-            <div className="flex justify-between mt-5">
-              <button onClick={() => setStep(4)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"><ArrowLeft size={14}/> Voltar</button>
-              <button onClick={() => setStep(6)} disabled={!uploadedPhotos.length || anyPhotoUploading}
-                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
-                Continuar <ArrowRight size={14}/>
-              </button>
-            </div>
-          </Card>
-        )}
 
-        {/* Step 6 — Descrição */}
-        {step === 6 && (
-          <Card title="Descrição">
-            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={10}
-              placeholder="Descreva o produto — o que é, do que é feito, medidas, cuidados..."
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-emerald-400 resize-y"/>
-            <p className="text-xs text-slate-400 mt-1">Pode deixar em branco e escrever depois no detalhe do anúncio (que já tem sugestão de IA).</p>
-            <div className="flex justify-between mt-4">
-              <button onClick={() => setStep(5)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"><ArrowLeft size={14}/> Voltar</button>
-              <button onClick={() => setStep(7)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors">
-                Continuar <ArrowRight size={14}/>
-              </button>
-            </div>
-          </Card>
-        )}
+            {/* Step 3 — Ficha técnica */}
+            {step === 3 && (
+              <Card title={`Ficha técnica${categoryName ? ` — ${categoryName}` : ''}`}>
+                <div className="mb-3">
+                  <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Obrigatórios ({requiredAttrs.length})</p>
+                  {requiredAttrs.map(attr => (
+                    <AttributeRow key={attr.id} attr={attr} value={form[attr.id]} onChange={v => setForm(f => ({ ...f, [attr.id]: v }))}/>
+                  ))}
+                </div>
+                {extraAttrs.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Extras ({extraAttrs.length})</p>
+                    {extraAttrs.map(attr => (
+                      <AttributeRow key={attr.id} attr={attr} value={form[attr.id]} onChange={v => setForm(f => ({ ...f, [attr.id]: v }))}/>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-between mt-4">
+                  <button onClick={() => setStep(templateId ? 1 : 2)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"><ArrowLeft size={14}/> Voltar</button>
+                  <button onClick={() => setStep(4)} disabled={!!missingRequired.length}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
+                    Continuar{missingRequired.length ? ` (faltam ${missingRequired.length})` : ''} <ArrowRight size={14}/>
+                  </button>
+                </div>
+              </Card>
+            )}
 
-        {/* Step 7 — Revisão */}
-        {step === 7 && (
-          <Card title="Revisão">
-            <div className="space-y-3 text-sm text-slate-700">
-              <p><strong>Título:</strong> {title}</p>
-              <p><strong>Categoria:</strong> {categoryName || categoryId}</p>
-              <p><strong>Preço:</strong> {fmtMoney(price)} · <strong>Estoque:</strong> {stock} unidades · {freeShipping ? 'Frete grátis' : 'Frete pago pelo comprador'}</p>
-              <p><strong>Fotos:</strong> {uploadedPhotos.length}</p>
-              <p><strong>Atributos preenchidos:</strong> {Object.values(form).filter(Boolean).length}</p>
-              {description.trim() && <p className="whitespace-pre-wrap"><strong>Descrição:</strong> {description}</p>}
-            </div>
-            <div className="flex justify-between mt-5">
-              <button onClick={() => setStep(6)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"><ArrowLeft size={14}/> Voltar</button>
-              <button onClick={() => setConfirmOpen(true)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors">
-                <PlusCircle size={15}/> Publicar anúncio
-              </button>
-            </div>
-          </Card>
-        )}
+            {/* Step 4 — Preço, estoque, frete */}
+            {step === 4 && (
+              <Card title="Preço, estoque e frete">
+                <div className="flex flex-wrap gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Preço</label>
+                    <input type="number" inputMode="decimal" step="0.01" value={price} onChange={e => setPrice(e.target.value)}
+                      className="w-32 text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Estoque</label>
+                    <input type="number" inputMode="numeric" step="1" min="0" value={stock} onChange={e => setStock(e.target.value)}
+                      className="w-24 text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Condição</label>
+                    <span className="block text-sm text-slate-500 px-2.5 py-1.5">Novo (fixo)</span>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Frete</label>
+                    <button type="button" onClick={() => setFreeShipping(f => !f)}
+                      className={`text-sm font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+                        freeShipping ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-slate-500 bg-slate-50 border-slate-200'
+                      }`}>
+                      {freeShipping ? 'Frete grátis' : 'Frete pago pelo comprador'}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex justify-between mt-5">
+                  <button onClick={() => setStep(3)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"><ArrowLeft size={14}/> Voltar</button>
+                  <button onClick={() => setStep(5)} disabled={!price.trim() || Number(price) <= 0 || !stock.trim() || Number(stock) < 0}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
+                    Continuar <ArrowRight size={14}/>
+                  </button>
+                </div>
+              </Card>
+            )}
 
+            {/* Step 5 — Fotos */}
+            {step === 5 && (
+              <Card title="Fotos">
+                <p className="text-xs text-slate-400 mb-3">Mínimo 1 foto pra publicar — ideal entre 6 e 10.</p>
+                <label className="flex items-center gap-2 w-fit px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-xl cursor-pointer transition-colors">
+                  <ImageIcon size={15}/> Adicionar fotos
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoSelect}/>
+                </label>
+                {photos.length > 0 && (
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mt-4">
+                    {photos.map(p => (
+                      <div key={p.localId} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
+                        <img src={p.previewUrl} alt="" className="w-full h-full object-cover"/>
+                        {p.status === 'uploading' && (
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <Loader2 size={16} className="animate-spin text-white"/>
+                          </div>
+                        )}
+                        {p.status === 'error' && (
+                          <div className="absolute inset-0 bg-rose-900/70 flex items-center justify-center p-1" title={p.error}>
+                            <AlertTriangle size={16} className="text-white"/>
+                          </div>
+                        )}
+                        <button onClick={() => removePhoto(p.localId)}
+                          className="absolute top-1 right-1 w-5 h-5 bg-black/60 hover:bg-black/80 rounded-full flex items-center justify-center">
+                          <X size={11} className="text-white"/>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-between mt-5">
+                  <button onClick={() => setStep(4)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"><ArrowLeft size={14}/> Voltar</button>
+                  <button onClick={() => setStep(6)} disabled={!uploadedPhotos.length || anyPhotoUploading}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
+                    Continuar <ArrowRight size={14}/>
+                  </button>
+                </div>
+              </Card>
+            )}
+
+            {/* Step 6 — Descrição */}
+            {step === 6 && (
+              <Card title="Descrição">
+                <textarea value={description} onChange={e => setDescription(e.target.value)} rows={10}
+                  placeholder="Descreva o produto — o que é, do que é feito, medidas, cuidados..."
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-emerald-400 resize-y"/>
+                <p className="text-xs text-slate-400 mt-1">Pode deixar em branco e escrever depois no detalhe do anúncio (que já tem sugestão de IA).</p>
+                <div className="flex justify-between mt-4">
+                  <button onClick={() => setStep(5)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"><ArrowLeft size={14}/> Voltar</button>
+                  <button onClick={() => setStep(7)}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors">
+                    Continuar <ArrowRight size={14}/>
+                  </button>
+                </div>
+              </Card>
+            )}
+
+            {/* Step 7 — Revisão */}
+            {step === 7 && (
+              <Card title="Revisão">
+                <div className="space-y-3 text-sm text-slate-700">
+                  <p><strong>Título:</strong> {title}</p>
+                  <p><strong>Categoria:</strong> {categoryName || categoryId}</p>
+                  <p><strong>Preço:</strong> {fmtMoney(price)} · <strong>Estoque:</strong> {stock} unidades · {freeShipping ? 'Frete grátis' : 'Frete pago pelo comprador'}</p>
+                  <p><strong>Fotos:</strong> {uploadedPhotos.length}</p>
+                  <p><strong>Atributos preenchidos:</strong> {filledAttrCount}</p>
+                  {description.trim() && <p className="whitespace-pre-wrap"><strong>Descrição:</strong> {description}</p>}
+                </div>
+                <div className="flex justify-between mt-5">
+                  <button onClick={() => setStep(6)} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"><ArrowLeft size={14}/> Voltar</button>
+                  <button onClick={() => setConfirmOpen(true)}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors">
+                    <PlusCircle size={15}/> Publicar anúncio
+                  </button>
+                </div>
+              </Card>
+            )}
+          </div>
+
+          {/* Painel de resumo — foto + dados + progresso, sempre visível */}
+          <aside className="hidden lg:block lg:sticky lg:top-6">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Resumo</p>
+              <div className="w-full aspect-square rounded-xl bg-slate-100 border border-slate-200 overflow-hidden mb-3 flex items-center justify-center">
+                {uploadedPhotos[0]
+                  ? <img src={uploadedPhotos[0].previewUrl} alt="" className="w-full h-full object-cover"/>
+                  : <ImageIcon size={28} className="text-slate-300"/>}
+              </div>
+              <p className="text-sm font-semibold text-slate-800 line-clamp-2 mb-1">{title.trim() || 'Sem título ainda'}</p>
+              <p className="text-xs text-slate-400 mb-3">{categoryName || 'Categoria não definida'}</p>
+              <div className="flex items-baseline gap-2 mb-4 pb-4 border-b border-slate-100">
+                <p className="text-lg font-bold text-slate-800">{price.trim() ? fmtMoney(price) : '—'}</p>
+                <p className="text-xs text-slate-400">{stock || 0} un. · {uploadedPhotos.length} foto{uploadedPhotos.length === 1 ? '' : 's'}</p>
+              </div>
+              <ul className="space-y-1.5">
+                {progress.map(p => (
+                  <li key={p.label} className={`flex items-center gap-1.5 text-xs ${p.done ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    {p.done ? <CheckCircle2 size={13}/> : <Circle size={13}/>} {p.label}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </aside>
+        </div>
       </div>
 
       <ConfirmWriteModal
