@@ -194,54 +194,40 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
   if (ordErr) throw ordErr
   const savedOrder = savedRows[0]
 
-  // Não usa mais "esse childOrderId específico já foi visto" pra decidir
-  // se insere item — `source_order_id` só é confiável pra pedido que
-  // SEMPRE entrou pela API. Pedido que já existia antes (importado por
-  // `.xlsx`, ou criado pelo webhook antigo antes da Fase 22) tem
-  // `source_order_id` backfilled = num_venda, que pode ser bem diferente
-  // do `order.id` individual que a API devolve agora — o gate antigo
-  // achava "produto novo" e duplicava o item de novo (bug real,
-  // confirmado em 2026-08-26 logo depois da reimportação da Fase 23).
-  // Em vez disso, compara por produto (sku+variação) já gravado nesse
-  // pedido — é a única identidade que não muda dependendo de como o
-  // pedido entrou no sistema. Normaliza espaços e maiúsculas na variação:
-  // o `.xlsx` antigo grava "Cor : Amadeirado" (espaço antes dos ":") e a
-  // API grava "Cor: Amadeirado" (sem espaço) pro MESMO produto —
-  // comparação exata deixava passar duplicata real (confirmado: par do
-  // Caio Raváglia). ML controla os dois formatos (xlsx e API) de jeitos
-  // diferentes e sem aviso, então normaliza de forma ampla (espaço +
-  // caixa) em vez de tentar prever cada variação de formatação possível.
-  const itemKey = (sku: string | null, variacao: string | null) =>
-    `${sku || ''}::${(variacao || '').replace(/\s+/g, '').toLowerCase()}`
-  const { data: existingItems } = await db.from('order_items')
-    .select('sku, variacao').eq('order_id', savedOrder.id)
-  const existingKeys = new Set((existingItems || []).map(it => itemKey(it.sku, it.variacao)))
-  const newItems = parsed.items.filter(it => !existingKeys.has(itemKey(it.sku, it.variacao)))
-  const hasNewItems = newItems.length > 0
+  // Identidade do item pra dedup é sku+variação (não `childOrderId` —
+  // não é confiável pra pedido que já existia antes de entrar pela API,
+  // ver Fase 22/23) e não é mais checada aqui: `insert_order_items_safe`
+  // faz o INSERT com `ON CONFLICT DO NOTHING` num índice único por
+  // order_id+sku+variação normalizada (Fase 39) — fecha a corrida entre
+  // 2 webhooks quase simultâneos pro mesmo pedido, que antes conseguiam
+  // os dois passar por um SELECT de pré-checagem (sem trava real) e os
+  // dois inserirem (confirmado: 53ms de diferença entre as 2 linhas).
+  // `RETURNING` só devolve o que foi REALMENTE inserido agora.
+  const skus = [...new Set(parsed.items.map(it => it.sku).filter(Boolean))]
+  const skuMap = new Map<string, string>()
+  if (skus.length > 0) {
+    const { data: products } = await db.from('products').select('id, sku').in('sku', skus)
+    ;(products || []).forEach(p => skuMap.set(p.sku, p.id))
+  }
+
+  const cancelado = isCancelledStatus(parsed.estado)
+  const candidateItems = parsed.items.map(it => ({
+    order_id:       savedOrder.id,
+    product_id:     it.sku ? (skuMap.get(it.sku) || null) : null,
+    titulo:         it.titulo,
+    sku:            it.sku,
+    variacao:       it.variacao,
+    qty:            it.qty,
+    preco_unit:     it.preco_unit,
+    obs_item:       it.obs_item,
+    sku_encontrado: it.sku ? skuMap.has(it.sku) : true,
+    source_order_id: parsed.childOrderId,
+  }))
+  const { data: itemsToInsert, error: itemsErr } = await db.rpc('insert_order_items_safe', { p_items: candidateItems })
+  if (itemsErr) throw itemsErr
+  const hasNewItems = (itemsToInsert || []).length > 0
 
   if (hasNewItems) {
-    const skus = [...new Set(newItems.map(it => it.sku).filter(Boolean))]
-    const skuMap = new Map<string, string>()
-    if (skus.length > 0) {
-      const { data: products } = await db.from('products').select('id, sku').in('sku', skus)
-      ;(products || []).forEach(p => skuMap.set(p.sku, p.id))
-    }
-
-    const cancelado = isCancelledStatus(parsed.estado)
-    const itemsToInsert = newItems.map(it => ({
-      order_id:       savedOrder.id,
-      product_id:     it.sku ? (skuMap.get(it.sku) || null) : null,
-      titulo:         it.titulo,
-      sku:            it.sku,
-      variacao:       it.variacao,
-      qty:            it.qty,
-      preco_unit:     it.preco_unit,
-      obs_item:       it.obs_item,
-      sku_encontrado: it.sku ? skuMap.has(it.sku) : true,
-      source_order_id: parsed.childOrderId,
-    }))
-    const { error: itemsErr } = await db.from('order_items').insert(itemsToInsert)
-    if (itemsErr) throw itemsErr
 
     // Full nunca gera produção — o ML separa e despacha sozinho do centro
     // de distribuição dele, a CoisaPet não tem esse pedido fisicamente.

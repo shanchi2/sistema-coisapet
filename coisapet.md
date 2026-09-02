@@ -60,10 +60,9 @@ reconstruir o raciocínio do zero.
   próprio ML. **Importante já confirmado por pesquisa**: impulsionar
   Ads (Product Ads) NÃO é possível via API pública, só leitura — não
   vale tentar de novo sem achado novo. Sempre atrás de `ConfirmWriteModal`
-  — regra permanente do Raphael, nenhuma gravação de 1 clique. Commit do
-  módulo até Fase 35 já feito (`0c0690b`, ainda só local — push bloqueado
-  nesta máquina, ver entrada de 09/01 2ª parte); Fases 36 e 37 seguem
-  sem commit.
+  — regra permanente do Raphael, nenhuma gravação de 1 clique. Módulo
+  todo commitado (`0c0690b` Fases 28-35, `0254099` Fases 36-38) — ainda
+  só local, push bloqueado nesta máquina (ver entrada de 09/01 2ª parte).
 - **Shopee (26/08, 5ª parte)**: fluxo revisado, sem bug estrutural
   (parser já agrupa pacote e protege item de pedido já existente —
   diferente do ML, não precisou de correção de código). 723 pedidos
@@ -72,19 +71,10 @@ reconstruir o raciocínio do zero.
 
 ## ⏭️ Próximos passos imediatos (pra continuar de onde parou)
 
-0. **Rodar `supabase/fase24-limpa-itens-duplicados-reimport.sql` manualmente**
-   (SQL Editor do Supabase) — limpa os 32 pares de item duplicado que a
-   reimportação da Fase 23 criou (bug já corrigido no código, mas o
-   estrago retroativo continua na tela até rodar isso).
 1. **`npm run build` + subir `dist/` pra Hostinger** — o código (ship_date,
    Atrasados, config de corte, filtro de `archived`) já está no GitHub
    (buildado localmente e testado nesta sessão) mas ainda não foi subido
    pro site. A parte do banco já está ativa em produção independente disso.
-2. **Rodar o `DELETE` do `supabase/fase19-cleanup-duplicate-items.sql`**
-   (query 2, comentada de propósito) — 7 itens duplicados já auditados e
-   confirmados como bug pelo Raphael, só falta apagar. Bloqueado pro
-   Claude Code rodar sozinho (ação destrutiva), precisa ser manual (SQL
-   Editor do Supabase) ou aprovado explicitamente na hora, se pedido de novo.
 3. **Fase 3 (não urgente)**: consolidar `import_batches` pra ficar exato
    por `(source, ship_date)` — hoje um `batch_id` ainda pode conter
    pedidos de vários dias (resíduo do bug antigo, confirmado indo até
@@ -101,6 +91,46 @@ reconstruir o raciocínio do zero.
    Ações destrutivas (`DELETE`) são sempre bloqueadas pelo classificador
    de segurança do Claude Code, mesmo com esse acesso — precisa ser
    manual ou aprovado explicitamente na hora.
+
+---
+
+### 2026-09-02 — Fase 39: corrige corrida entre webhooks que duplicava order_items
+
+**Motivação:** Raphael reportou pedido com item duplicado (01/09). Causa
+raiz confirmada: `ml-process-webhook` fazia SELECT (esse produto já
+existe nesse pedido?) e só depois INSERT — sem trava real no banco, então
+2 webhooks quase simultâneos pro mesmo pedido (comum, o ML manda mais de
+1 notificação quando o status muda rápido) podiam os dois "ver" que não
+existia e os dois inserirem. Confirmado no pedido reportado: os 2
+`order_items` foram criados com 53ms de diferença.
+
+**O que foi feito** (`supabase/fase39-order-items-dedup-race-fix.sql`,
+já aplicada em produção via `supabase db query --linked`):
+- Índice único em `order_items` por `order_id` + sku + variação
+  normalizada (mesma chave que o código já usava pra comparar).
+- RPC `insert_order_items_safe(p_items jsonb)` — mesmo padrão já usado
+  pra `orders` (`upsert_orders_safe`): INSERT em lote com
+  `ON CONFLICT ... DO NOTHING`, atômico de verdade. `ml-process-webhook/
+  index.ts` foi reescrito pra chamar esse RPC em vez do SELECT-depois-
+  INSERT antigo — `RETURNING` devolve só o que foi realmente inserido
+  agora, não precisa mais pré-filtrar "item novo" no código. Deploy
+  feito (`supabase functions deploy ml-process-webhook`).
+- **Limpeza retroativa**: antes de criar o índice único, precisou apagar
+  7 pares de `order_items` duplicados que já existiam (e as 7 ordens de
+  produção/itens duplicados que cada um gerou) — todas ainda `pendente`,
+  nada embalado/enviado, seguro de limpar. Confirmado com o Raphael antes
+  de rodar o DELETE. **Essas eram as mesmas 7 linhas que já tinham sido
+  auditadas na Fase 19** (`fase19-cleanup-duplicate-items.sql`, query 1)
+  mas nunca tinham sido de fato apagadas — a explicação de causa daquela
+  fase (bug de corte de dia) provavelmente estava errada; a causa real
+  era essa corrida de webhook. Confirmado depois da limpeza: **zero**
+  grupos de item duplicado restantes no banco (pedidos ML ativos).
+- Itens 0 e 2 da lista de "Próximos passos" (limpezas pendentes das
+  Fases 19 e 24) removidos daqui — ambos resolvidos: a verificação final
+  não achou nenhum duplicado restante de nenhuma das duas origens.
+
+**Pendências conhecidas:** nenhuma nova. `npm run build` não é necessário
+pra esta fase (só backend/edge function).
 
 ---
 
