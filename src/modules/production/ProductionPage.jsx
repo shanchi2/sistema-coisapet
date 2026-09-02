@@ -11,6 +11,7 @@ import { useProducts }      from '../products/hooks/useProducts'
 import { ConfirmDialog }    from '../../components/ui/ConfirmDialog'
 import { EmptyState }       from '../../components/ui/EmptyState'
 import { useAuth }          from '../../contexts/AuthContext'
+import { useSignedUrl }     from '../../lib/signedUrlCache'
 
 // ─── Helpers ─────────────────────────────────────────────────────
 function todayISO() { return new Date().toISOString().split('T')[0] }
@@ -49,6 +50,15 @@ const SOURCE_CONFIG = {
   manual:  { label: 'Avulso',        color: 'bg-slate-200 text-slate-700', emoji: '✍️' },
 }
 const SOURCE_ORDER = ['ml', 'shopee', 'manual']
+
+// `products.photo_url` é só o CAMINHO no bucket privado do Storage, não
+// uma URL de verdade — precisa de URL assinada pra funcionar num <img>
+// (mesmo padrão do `ThumbPhoto` em FeiraCombinadaModal.jsx).
+function ProductThumb({ photoUrl }) {
+  const url = useSignedUrl('product-photos', photoUrl)
+  if (!url) return <Package size={18} className="text-slate-300" />
+  return <img src={url} alt="" className="w-full h-full object-cover" />
+}
 
 function StatusBadge({ status }) {
   const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.pendente
@@ -553,9 +563,7 @@ function ProductGroupCard({ group, onAdvanceBulk, onConfirmStock, canEdit }) {
     <div className="card overflow-hidden">
       <div className="flex items-center gap-3.5">
         <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden">
-          {group.photo_url
-            ? <img src={group.photo_url} alt="" className="w-full h-full object-cover" />
-            : <Package size={18} className="text-slate-300" />}
+          <ProductThumb photoUrl={group.photo_url} />
         </div>
 
         <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setExpanded(e => !e)}>

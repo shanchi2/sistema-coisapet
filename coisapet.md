@@ -104,6 +104,19 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-09-02 (12ª parte) — Fix rápido: fotos não apareciam na Produção
+
+Raphael reportou logo depois da Fase 40. Causa: `products.photo_url`
+não é uma URL de verdade, é só o CAMINHO no bucket privado do Storage —
+precisa virar URL assinada (`useSignedUrl`) antes de usar num `<img>`,
+mesmo padrão já usado no `ThumbPhoto` de `FeiraCombinadaModal.jsx`. Eu
+tinha esquecido isso e usado o caminho puro direto no `src` do
+`ProductGroupCard`. Corrigido com um `ProductThumb` local (mesmo
+padrão), testado ao vivo — fotos reais aparecendo (gaiola, caixa,
+escada, etc.), sem erro de console.
+
+---
+
 ### 2026-09-02 (11ª parte) — Fase 40: Produção redesenhada + bug real da Feira corrigido
 
 **Motivação:** Raphael avisou que a partir de agora a equipe de produção
