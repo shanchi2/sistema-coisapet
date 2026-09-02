@@ -132,6 +132,22 @@ genéricos empilhados numa coluna só — não preenchiam bem telas largas.
 
 ---
 
+### 2026-09-02 (9ª parte) — Fix: vão feio na barra de abas fixa (Detalhe do Anúncio)
+
+Raphael reportou espaço estranho entre a barra de abas (sticky) e o
+topo da tela quando ela gruda ao rolar. Medido ao vivo
+(`getBoundingClientRect`) antes de mexer: a causa é que `<main>` (o
+container de rolagem do `Layout.jsx` da aplicação inteira) já tem
+`padding-top: 24px` — `position: sticky` calcula o "colar" a partir da
+borda do padding do ancestral com scroll, não da borda real da tela, e
+`top-0` fica colado 24px ABAIXO do topo visível, sobrando aquele vão.
+Corrigido trocando `top-0` por `-top-6` (-24px) na barra
+(`MlItemDetailPage.jsx`) — cancela exatamente o padding do `<main>`.
+Confirmado com medição antes/depois: `sticky.top === main.top` exato,
+zero vão. `npm run build` limpo.
+
+---
+
 ### 2026-09-02 (8ª parte) — Pendências do ML viram links de ação, não só texto
 
 Raphael perguntou sobre custo/limite da API do ML e da OpenAI (respondido

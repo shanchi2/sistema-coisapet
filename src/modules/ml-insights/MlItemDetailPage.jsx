@@ -447,7 +447,10 @@ export function MlItemDetailPage() {
         </Card>
 
         {/* Navegação por abas */}
-        <div className="sticky top-0 z-10 -mx-6 lg:-mx-8 px-6 lg:px-8 py-2 bg-slate-50/95 backdrop-blur-sm">
+        {/* -top-6 cancela o padding-top do <main> do Layout (24px) — sem
+            isso o "sticky top-0" gruda 24px abaixo do topo real da área
+            de rolagem, deixando um vão feio entre a barra e o cabeçalho. */}
+        <div className="sticky -top-6 z-10 -mx-6 lg:-mx-8 px-6 lg:px-8 py-2 bg-slate-50/95 backdrop-blur-sm">
           <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit overflow-x-auto">
             {TABS.map(t => {
               const Icon = t.icon
