@@ -132,6 +132,27 @@ genéricos empilhados numa coluna só — não preenchiam bem telas largas.
 
 ---
 
+### 2026-09-02 (4ª parte) — Redesign da tela Anúncios (mesmo padrão visual)
+
+Raphael deu sinal verde pra continuar o redesign pelas outras telas do
+módulo. Apliquei o mesmo padrão das duas anteriores em
+`MlActiveListingsPage.jsx` (`/ml/anuncios`): container largo
+(`max-w-[1600px]`), header com ícone em badge gradiente, lista virou
+grid de 2 colunas (era 1 coluna cheia com linhas finas) com foto maior.
+Testado ao vivo (108 anúncios reais, 100 ativos/8 pausados), sem erro de
+console, `npm run build` limpo. Não fiz deploy de function (só frontend
+— `updateItemFields`/`fetchActiveListings` não mudaram).
+
+**Faltam no módulo** (mesmo padrão largo, ainda não aplicado): Tráfego &
+Conversão, Perguntas & Reputação, Promoções, Oportunidades de Venda —
+essas têm formatos de conteúdo bem diferentes entre si (gráficos, threads
+de perguntas, cards de campanha), cada uma merece pensar o layout
+específico em vez de copiar o mesmo grid de cards. Também ainda não
+mexi nas telas grandes (`MlItemDetailPage.jsx` e `MlCreateListingPage.jsx`,
+535 linhas).
+
+---
+
 ### 2026-09-02 (3ª parte) — Fix: bug real no diagnóstico de saúde por anúncio
 
 **O que era:** Raphael perguntou por que tantos anúncios apareciam

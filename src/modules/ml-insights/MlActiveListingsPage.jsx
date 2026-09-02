@@ -59,20 +59,21 @@ export function MlActiveListingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-5xl mx-auto space-y-5">
+    <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
+      <div className="max-w-[1600px] mx-auto space-y-6">
 
         <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-xl font-semibold text-slate-800 flex items-center gap-2">
-              <Store size={20} className="text-slate-400"/> Anúncios
-            </h1>
-            <p className="text-sm text-slate-500 mt-1">
-              Pausar, reativar e criar anúncio novo. Preço/estoque/ficha técnica são editados no detalhe de cada anúncio.
-            </p>
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center shrink-0 shadow-sm shadow-emerald-200">
+              <Store size={22} strokeWidth={1.5} className="text-white"/>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Anúncios</h1>
+              <p className="text-sm text-slate-500">Pausar, reativar e criar anúncio novo — preço/estoque/ficha técnica são editados no detalhe de cada um</p>
+            </div>
           </div>
           <button onClick={() => navigate('/ml/anuncios/novo')}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-xl transition-colors">
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm">
             <Plus size={15}/> Criar anúncio novo
           </button>
         </div>
@@ -104,42 +105,48 @@ export function MlActiveListingsPage() {
               </button>
             ))}
           </div>
+          {rows && <span className="text-xs text-slate-400 ml-auto">{filtered.length} de {rows.length} anúncio{rows.length > 1 ? 's' : ''}</span>}
         </div>
 
         {loading && !rows ? (
           <div className="flex items-center justify-center py-16"><Loader2 size={24} className="animate-spin text-slate-400"/></div>
         ) : !filtered.length ? (
-          <p className="text-sm text-slate-400 text-center py-16">
-            {rows && !rows.length ? 'Nenhum anúncio encontrado.' : 'Nenhum anúncio bate com o filtro.'}
-          </p>
+          <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
+            <Store size={32} strokeWidth={1} className="mx-auto mb-3 text-slate-200"/>
+            <p className="text-slate-400">{rows && !rows.length ? 'Nenhum anúncio encontrado.' : 'Nenhum anúncio bate com o filtro.'}</p>
+          </div>
         ) : (
-          <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
             {filtered.map(row => (
-              <div key={row.item_id} className="flex items-center gap-3 p-3">
-                <img src={row.thumbnail} alt="" className="w-12 h-12 rounded-lg object-cover border border-slate-100 shrink-0 bg-slate-50"/>
+              <div key={row.item_id} className="group flex items-center gap-4 bg-white border border-slate-200 hover:border-emerald-300 hover:shadow-md hover:shadow-slate-100 rounded-2xl p-4 transition-all">
+                <img src={row.thumbnail} alt="" className="w-16 h-16 rounded-xl object-cover border border-slate-100 shrink-0 bg-slate-50"/>
                 <div className="min-w-0 flex-1 cursor-pointer" onClick={() => navigate(`/ml/saude/${row.item_id}`)}>
-                  <p className="text-sm text-slate-800 font-medium truncate hover:text-emerald-600">{row.title}</p>
-                  <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
-                    {fmtMoney(row.price)} · {row.available_quantity ?? 0} em estoque
-                  </p>
+                  <p className="text-sm text-slate-800 font-medium line-clamp-2 group-hover:text-emerald-600">{row.title}</p>
+                  <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
+                      row.status === 'active' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-slate-500 bg-slate-50 border-slate-200'
+                    }`}>
+                      {row.status === 'active' ? 'Ativo' : row.status === 'paused' ? 'Pausado' : row.status}
+                    </span>
+                    <p className="text-xs text-slate-400">
+                      {fmtMoney(row.price)} · {row.available_quantity ?? 0} em estoque
+                    </p>
+                  </div>
                 </div>
-                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border shrink-0 ${
-                  row.status === 'active' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-slate-500 bg-slate-50 border-slate-200'
-                }`}>
-                  {row.status === 'active' ? 'Ativo' : row.status === 'paused' ? 'Pausado' : row.status}
-                </span>
-                <a href={row.permalink} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-                  className="text-slate-300 hover:text-slate-500 shrink-0" title="Ver no Mercado Livre">
-                  <ExternalLink size={15}/>
-                </a>
-                <button onClick={() => requestToggle(row)}
-                  className={`flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg border shrink-0 transition-colors ${
-                    row.status === 'active'
-                      ? 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100'
-                      : 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
-                  }`}>
-                  {row.status === 'active' ? <><Pause size={12}/> Pausar</> : <><Play size={12}/> Reativar</>}
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <a href={row.permalink} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                    className="text-slate-300 hover:text-slate-500 p-1.5" title="Ver no Mercado Livre">
+                    <ExternalLink size={15}/>
+                  </a>
+                  <button onClick={() => requestToggle(row)}
+                    className={`flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg border shrink-0 transition-colors ${
+                      row.status === 'active'
+                        ? 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100'
+                        : 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
+                    }`}>
+                    {row.status === 'active' ? <><Pause size={12}/> Pausar</> : <><Play size={12}/> Reativar</>}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
