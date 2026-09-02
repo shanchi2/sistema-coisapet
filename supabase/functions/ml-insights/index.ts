@@ -58,15 +58,21 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 // GET /item/{id}/performance — sucessor do antigo /health (descontinuado).
-// Formato exato ainda não confirmado ao vivo (doc bloqueou fetch direto na
-// pesquisa) — normaliza algumas variações plausíveis e sempre devolve o
-// `raw` cru junto, pra tela conseguir mostrar mesmo se o parsing não bater.
+// Formato confirmado ao vivo em 2026-09-02 (chamada real contra 223 itens
+// da conta): raw.level é "good"|"medium"|"bad", ou ausente quando o ML
+// ainda não calculou (item novo — ~5% dos casos reais, "não informado" é
+// legítimo nesse caso). As pendências ficam dentro de
+// raw.buckets[].variables[] (status "PENDING"|"COMPLETED"), cada uma já
+// com `title` pronto pra exibir — NÃO em raw.results/actions como a
+// primeira versão (escrita sem ver a resposta real) supunha; por isso
+// ~95% dos itens apareciam "Não informado" antes desta correção, mesmo
+// tendo diagnóstico de verdade.
+const PERFORMANCE_LEVEL_TO_STATUS: Record<string, string> = { good: 'healthy', medium: 'warning', bad: 'unhealthy' }
 function normalizePerformance(raw: any) {
-  const status = raw?.status ?? raw?.health ?? raw?.item_health ?? null
-  const actionList = raw?.results ?? raw?.actions ?? raw?.action_items ?? []
-  const pending = Array.isArray(actionList)
-    ? actionList.filter((a: any) => (a?.status ?? a?.state) === 'PENDING' || a?.pending === true)
-    : []
+  const status = raw?.level ? (PERFORMANCE_LEVEL_TO_STATUS[raw.level] ?? null) : null
+  const pending = (raw?.buckets || []).flatMap((b: any) =>
+    (b?.variables || []).filter((v: any) => v?.status === 'PENDING'),
+  )
   return { status, pending_count: pending.length, pending, raw }
 }
 

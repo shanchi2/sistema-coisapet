@@ -559,7 +559,6 @@ export function MlItemDetailPage() {
 
         {/* Qualidade do anúncio (ML) */}
         <Card icon={HeartPulse} title="Qualidade do anúncio (indicador do Mercado Livre)"
-          caption="Exibição pode precisar de ajuste depois do primeiro teste real — a doc oficial bloqueou acesso direto na pesquisa"
           help="É um diagnóstico que o PRÓPRIO Mercado Livre faz sobre esse anúncio (não somos nós que calculamos) — aponta pendências que podem estar reduzindo a exposição dele nas buscas. 'ver dados brutos' mostra a resposta original da API, útil se algo parecer estranho.">
           {detail.performance ? (
             <>

@@ -127,11 +127,35 @@ genéricos empilhados numa coluna só — não preenchiam bem telas largas.
   erro de console. `npm run build` limpo. Deploy feito
   (`supabase functions deploy ml-insights`).
 
-**Achado à parte (não é bug do redesign, não mexido):** o diagnóstico de
-saúde por anúncio (`itemsHealth`/`/item/{id}/performance`) está voltando
-"Não informado" pra todos os 223 anúncios ativos no scan ao vivo — parece
-problema de dados/formato da API, não visual. Fica pra próxima sessão
-investigar se o Raphael quiser.
+**Achado à parte, corrigido na sessão seguinte (mesmo dia):** ver
+"Fix: bug real no diagnóstico de saúde" abaixo.
+
+---
+
+### 2026-09-02 (3ª parte) — Fix: bug real no diagnóstico de saúde por anúncio
+
+**O que era:** Raphael perguntou por que tantos anúncios apareciam
+"Não informado" na Saúde dos Anúncios. Investigado ao vivo (console do
+navegador, chamando `ml-insights` direto com a sessão logada) contra os
+223 anúncios reais da conta: **não era falta de dado, era bug**.
+`normalizePerformance` (`ml-insights/index.ts`, escrita na Fase 28 sem
+nunca ter visto uma resposta real — tinha até um aviso `⚠️ formato a
+confirmar` no código) procurava `raw.status`/`raw.health`/`item_health` e
+pendências em `raw.results`/`actions` — nenhum desses campos existe na
+resposta real. O formato de verdade é `raw.level` (`"good"|"medium"|
+"bad"`, ausente só quando o ML genuinamente ainda não calculou — item
+novo) e as pendências ficam em `raw.buckets[].variables[]` (cada uma já
+com `title` pronto, tipo "Crie um vídeo para não perder vendas").
+
+**Correção:** `normalizePerformance` reescrita pra ler os campos certos
+e mapear `level` pro nosso vocabulário (`good→healthy, medium→warning,
+bad→unhealthy`). Testado ao vivo depois do deploy: **47 healthy / 144
+warning / 21 unhealthy / 11 null (legítimo — item sem cálculo ainda)**,
+bate com os 223 anúncios ativos. Tela de Saúde dos Anúncios e a Qualidade
+do Anúncio (detalhe do item) passam a mostrar diagnóstico real em vez de
+"Não informado" pra quase tudo. Removida também a legenda "formato a
+confirmar" da tela de detalhe (`MlItemDetailPage.jsx`), já resolvida.
+Deploy feito (`supabase functions deploy ml-insights`).
 
 ---
 
