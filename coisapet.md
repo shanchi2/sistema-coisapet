@@ -68,6 +68,16 @@ reconstruir o raciocínio do zero.
   diferente do ML, não precisou de correção de código). 723 pedidos
   antigos arquivados (`ship_date < 15/08/2026`); badge de Atrasados caiu
   de ~673+ pra 34 no total (7 Shopee + 23 ML + 4 manual).
+- **Produção (02/09, Fase 40)**: módulo redesenhado do zero — a equipe
+  de produção começa a usar de verdade a partir de agora. Bug real
+  corrigido: achar item na "Feira" (`FeiraCombinadaModal` ou a feira
+  single-platform da Expedição) agora de fato reduz o que a Esteira pede
+  pra produzir (antes as duas coisas eram desconectadas — ver Log pra
+  detalhes). Esteira virou "hoje por padrão", agrupada por
+  plataforma→produto (não mais por lote de importação). Backlog de 3.173
+  itens "pendente" desde maio (nunca operado) foi arquivado — não é
+  DELETE, status `arquivado`, dado continua no banco. Ver
+  `supabase/fase40-producao-reconciliacao-feira.sql`.
 
 ## ⏭️ Próximos passos imediatos (pra continuar de onde parou)
 
@@ -91,6 +101,94 @@ reconstruir o raciocínio do zero.
    Ações destrutivas (`DELETE`) são sempre bloqueadas pelo classificador
    de segurança do Claude Code, mesmo com esse acesso — precisa ser
    manual ou aprovado explicitamente na hora.
+
+---
+
+### 2026-09-02 (11ª parte) — Fase 40: Produção redesenhada + bug real da Feira corrigido
+
+**Motivação:** Raphael avisou que a partir de agora a equipe de produção
+vai usar este módulo de verdade, e pediu visual limpo/entendível — e
+descreveu um comportamento que parecia errado: achar 3 de 5 unidades na
+"Feira" (checagem física de estoque antes de produzir) não tirava as 5
+unidades da lista de "precisa produzir".
+
+**Investigação (antes de mexer em qualquer coisa — entrei em modo de
+planejamento dado o tamanho):** confirmado que é um bug real, não
+achismo. `FeiraCombinadaModal.jsx` (Feira Combinada ML+Shopee, aberta em
+`OrdersPage.jsx` → Histórico de Importações) e a feira single-platform
+embutida em `ExpedicaoPage.jsx` só gravavam a diferença (faltante) numa
+tabela separada (`picklist_shortage_reports`, lida pela aba "Itens
+Faltando") — **nunca tocavam `production_order_items`**, a tabela que a
+aba "Esteira" lê. Achar estoque na feira nunca reduzia o que a Esteira
+pedia pra produzir. Confirmado também ao vivo no banco: **3.173 itens em
+status "pendente" acumulados desde maio/2026**, só 5 no total já tinham
+avançado de status alguma vez — a esteira nunca foi de fato operada, era
+um despejo histórico sem filtro de data, agrupado por "lote de
+importação" (data que o sistema importou, sem significado nenhum pro
+chão de fábrica).
+
+**Decisões tomadas com o Raphael antes de implementar:**
+- Item coberto pela feira continua visível na Esteira, esmaecido/riscado
+  com "✓ já tem em estoque" — não some.
+- Backlog de itens antigos "pendente" (antes de hoje) foi arquivado
+  agora — não é `DELETE`, é um novo status `arquivado`, reversível, dado
+  continua no banco.
+
+**Implementado** (`supabase/fase40-producao-reconciliacao-feira.sql`,
+aplicada em produção):
+- Novos status em `production_order_items`: `coberto_estoque` (achado na
+  feira) e `arquivado` (backlog antigo).
+- RPC `reconcile_stock_found(p_sku, p_found_qty)` — idempotente (recebe
+  o total encontrado, não um delta), casa por SKU contra `pendente`/
+  `coberto_estoque` numa janela estreita (ontem/hoje, protege o backlog
+  arquivado de ser mexido por engano), ordena por mais antigo primeiro.
+  Chamada em `useCombinedGathering.js` e `usePicklistGathering.js`
+  (os dois fluxos de feira) toda vez que o "achei X" muda.
+- **Bug de sintaxe encontrado e corrigido durante o teste ao vivo**:
+  escrevi `await supabase.rpc(...).catch(() => {})` — nessa versão do
+  supabase-js, `.rpc()` não devolve uma Promise comum encadeável direto
+  com `.catch`, isso jogava um erro síncrono que a própria função
+  engolia silenciosamente (a chamada real nunca acontecia, sem nenhum
+  aviso). Corrigido pra `try { await supabase.rpc(...) } catch {}` nos
+  dois arquivos. Só descobri porque testei clicando de verdade na
+  interface e conferindo o banco depois — não bastava só o build passar.
+- Statement de limpeza rodado uma vez: arquivou os 3.105 itens pendente
+  de antes de hoje (os 68 já pendentes de hoje ficaram intactos).
+
+**Redesign de `ProductionPage.jsx`** (com a skill `ui-ux-pro-max`):
+- Esteira agora é "hoje por padrão" (navegação por dia, mesmo padrão já
+  usado na Expedição) em vez de listar todo o histórico.
+- Agrupada por plataforma primeiro (🛒 ML, 🛍️ Shopee, ✍️ Avulso — era
+  "Manual"), depois por produto dentro de cada uma (soma a quantidade
+  entre pedidos/lotes diferentes do mesmo dia) — não mais por "lote de
+  importação". Avançar o status de um produto avança todas as linhas por
+  trás juntas, cada uma pro seu PRÓPRIO próximo status
+  (`advanceStatusBulk` em `useProduction.js`).
+- Aviso de urgência quando é antes das 11h e tem pendência de ML.
+- KPIs viraram 3 números diretos: Precisa produzir hoje / Em produção /
+  Pronto pra despachar.
+- Modal "Novo Lote" virou "Lançar produção avulsa" — default de
+  plataforma trocado pra "Avulso" (era Shopee), com aviso pra não
+  reimportar XLSX do ML por engano (o webhook já cria sozinho).
+
+**Testado ao vivo de ponta a ponta** com dado real: cliquei em "+" na
+Feira Combinada de hoje pra um item real, confirmei no banco que o
+`production_order_items` correspondente virou `coberto_estoque`, voltei
+pra `/producao` e vi o produto aparecer esmaecido com "já tem em
+estoque" e a quantidade cair a zero — fechou o ciclo completo do bug,
+não só a lógica isolada. Testado também "Avançar etapa" (com modal de
+confirmação mostrando a transição exata) e os KPIs atualizando
+corretamente. **Todos os dados de teste foram revertidos** depois
+(3 itens marcados como cobertos de teste voltaram pra `pendente`, 1 item
+avançado de teste voltou também, linhas de teste em
+`picklist_gathering_combined` apagadas) — a fila de hoje está limpa pra
+uso real.
+
+**Fora de escopo, confirmado durante a investigação**: `BaixaDiariaPage.jsx`
+(baixa de matéria-prima), `PassagemTurnoPage.jsx` (recados de turno) e
+`ProductionEntriesPage.jsx` (apontamento por horista, fica em Diretoria)
+são telas completamente separadas, sem nenhuma relação com
+`production_order_items` — não foram tocadas.
 
 ---
 

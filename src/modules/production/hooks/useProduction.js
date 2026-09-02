@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
 import toast from 'react-hot-toast'
 
@@ -21,15 +21,32 @@ async function auditLog(action, tableName, recordId, description) {
   } catch {}
 }
 
-
+const NEXT_STATUS = {
+  pendente:    'em_producao',
+  em_producao: 'embalagem',
+  embalagem:   'pronto',
+  pronto:      'enviado',
+}
 
 export function useProduction() {
   const [orders,  setOrders]  = useState([])
   const [loading, setLoading] = useState(true)
+  // Guarda a última data buscada — as ações (avançar status, excluir...)
+  // recarregam ESSA data, não sempre "hoje", senão quem estivesse
+  // olhando o histórico de outro dia voltava pra hoje sem querer a cada
+  // clique.
+  const currentDateRef = useRef(new Date().toISOString().split('T')[0])
 
-  // ── Busca todos os lotes com itens ───────────────────────────────
-  const fetchOrders = useCallback(async () => {
+  // ── Busca os lotes com itens de UM dia (Fase 40: antes buscava TODO
+  //    o histórico já criado, sem filtro — 3.173 itens acumulados desde
+  //    maio/2026 e nunca operados, um despejo sem sentido pro chão de
+  //    fábrica. `date` default = a última usada; passa outra data pra
+  //    ver o histórico daquele dia especificamente). Itens 'arquivado'
+  //    (backlog antigo já resolvido) nunca aparecem, em nenhuma data.
+  const fetchOrders = useCallback(async (date) => {
     setLoading(true)
+    const targetDate = date || currentDateRef.current
+    currentDateRef.current = targetDate
     const { data, error } = await supabase
       .from('production_orders')
       .select(`
@@ -40,10 +57,11 @@ export function useProduction() {
           product:products(id, name, sku, photo_url)
         )
       `)
+      .eq('date', targetDate)
       .order('created_at', { ascending: false })
 
     if (error) { toast.error('Erro ao carregar esteira.'); console.error(error) }
-    else setOrders(data ?? [])
+    else setOrders((data ?? []).map(o => ({ ...o, items: (o.items ?? []).filter(i => i.status !== 'arquivado') })))
     setLoading(false)
   }, [])
 
@@ -89,13 +107,7 @@ export function useProduction() {
 
   // ── Avança status de um item ─────────────────────────────────────
   async function advanceStatus(item) {
-    const NEXT = {
-      pendente:    'em_producao',
-      em_producao: 'embalagem',
-      embalagem:   'pronto',
-      pronto:      'enviado',
-    }
-    const next = NEXT[item.status]
+    const next = NEXT_STATUS[item.status]
     if (!next) return
 
     const timestamps = {}
@@ -110,6 +122,31 @@ export function useProduction() {
       .eq('id', item.id)
 
     if (error) { toast.error('Erro ao atualizar status.'); throw error }
+    await fetchOrders()
+  }
+
+  // ── Avança status de VÁRIOS itens juntos — usado quando a tela
+  //    agrupa por produto (ex: "8 rodinhas pretas" viraram 1 cartão só,
+  //    mas continuam sendo linhas separadas no banco). Só avança quem
+  //    de fato está no status de origem esperado — evita empurrar um
+  //    item que outra pessoa já tinha adiantado sozinho.
+  async function advanceStatusBulk(items) {
+    const byStatus = {}
+    items.forEach(it => {
+      const next = NEXT_STATUS[it.status]
+      if (!next) return
+      ;(byStatus[next] ??= []).push(it.id)
+    })
+    const now = new Date().toISOString()
+    const TS_FIELD = { em_producao: 'started_at', embalagem: 'packed_at', pronto: 'ready_at', enviado: 'shipped_at' }
+
+    for (const [next, ids] of Object.entries(byStatus)) {
+      const { error } = await supabase
+        .from('production_order_items')
+        .update({ status: next, [TS_FIELD[next]]: now })
+        .in('id', ids)
+      if (error) { toast.error('Erro ao atualizar status.'); throw error }
+    }
     await fetchOrders()
   }
 
@@ -149,7 +186,7 @@ export function useProduction() {
   return {
     orders, loading,
     fetchOrders, createOrder,
-    advanceStatus, confirmStock,
+    advanceStatus, advanceStatusBulk, confirmStock,
     updateNotes, deleteOrder,
   }
 }

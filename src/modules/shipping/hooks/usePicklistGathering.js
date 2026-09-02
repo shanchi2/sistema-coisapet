@@ -17,14 +17,22 @@ export async function fetchGathering(batchId, targetDate) {
   return map
 }
 
-// Salva (upsert) a quantidade encontrada de um item — chamado a cada +/-
-export async function saveGatheringItem(batchId, itemKey, foundQty, targetDate) {
+// Salva (upsert) a quantidade encontrada de um item — chamado a cada +/-.
+// `sku` é opcional — só quando vem preenchido é que a reconciliação com
+// a Esteira de Produção roda (Fase 40: `reconcile_stock_found` casa por
+// SKU; sem SKU, de propósito não mexe em nada, mais seguro do que
+// arriscar casar errado). Mesmo padrão do lado combinado
+// (`useCombinedGathering.js`).
+export async function saveGatheringItem(batchId, itemKey, foundQty, targetDate, sku) {
   const { id: uid } = getSession()
   const { error } = await supabase.from('picklist_gathering').upsert({
     batch_id: batchId, item_key: itemKey, found_qty: foundQty, target_date: targetDate,
     updated_at: new Date().toISOString(), updated_by: uid || null,
   }, { onConflict: 'batch_id,item_key,target_date' })
   if (error) throw error
+  if (sku) {
+    try { await supabase.rpc('reconcile_stock_found', { p_sku: sku, p_found_qty: foundQty }) } catch { /* não derruba o save principal */ }
+  }
 }
 
 // Envia o relatório do que faltou pra Produção — um registro por item incompleto

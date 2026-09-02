@@ -54,11 +54,11 @@ export function FeiraCombinadaModal({ open, onClose, batchIds, targetDate, dayLa
     return Object.values(map).sort((a, b) => a.titulo.localeCompare(b.titulo))
   })()
 
-  function adjustFound(key, delta, max) {
+  function adjustFound(key, delta, max, sku) {
     setFound(prev => {
       const current = prev[key] ?? 0
       const next = Math.max(0, Math.min(max, current + delta))
-      saveCombinedGatheringItem(targetDate, key, next).catch(() => {})
+      saveCombinedGatheringItem(targetDate, key, next, sku).catch(() => {})
       return { ...prev, [key]: next }
     })
   }
@@ -123,12 +123,12 @@ export function FeiraCombinadaModal({ open, onClose, batchIds, targetDate, dayLa
                 </div>
                 <div className="flex flex-col items-center gap-1 shrink-0">
                   <div className="flex items-center gap-1.5">
-                    <button onClick={() => adjustFound(it.key, -1, it.qty)}
+                    <button onClick={() => adjustFound(it.key, -1, it.qty, it.sku)}
                       className="w-8 h-8 rounded-xl bg-white border-2 border-slate-200 flex items-center justify-center text-slate-500"><Minus size={14} strokeWidth={3} /></button>
                     <span className={`w-14 text-center text-lg font-black ${isComplete ? 'text-emerald-600' : isPartial ? 'text-amber-600' : 'text-slate-400'}`}>
                       {foundQty}/{it.qty}
                     </span>
-                    <button onClick={() => adjustFound(it.key, 1, it.qty)}
+                    <button onClick={() => adjustFound(it.key, 1, it.qty, it.sku)}
                       className="w-8 h-8 rounded-xl bg-white border-2 border-slate-200 flex items-center justify-center text-slate-500"><Plus size={14} strokeWidth={3} /></button>
                   </div>
                   {isComplete && <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600"><Check size={11} strokeWidth={3} /> Completo</span>}

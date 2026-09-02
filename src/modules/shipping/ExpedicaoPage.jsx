@@ -303,12 +303,12 @@ export function ExpedicaoPage() {
     )
   }
 
-  function adjustFound(key, delta, max) {
+  function adjustFound(key, delta, max, sku) {
     if (!activeBatchId) return
     setFound(prev => {
       const current = prev[key] ?? 0
       const next = Math.max(0, Math.min(max, current + delta))
-      saveGatheringItem(activeBatchId, key, next, viewDate).catch(() => {}) // salva em segundo plano
+      saveGatheringItem(activeBatchId, key, next, viewDate, sku).catch(() => {}) // salva em segundo plano
       return { ...prev, [key]: next }
     })
   }
@@ -462,14 +462,14 @@ export function ExpedicaoPage() {
                 </div>
                 <div className="flex flex-col items-center gap-1.5 shrink-0">
                   <div className="flex items-center gap-1.5">
-                    <button onClick={() => adjustFound(it.key, -1, it.qty)}
+                    <button onClick={() => adjustFound(it.key, -1, it.qty, it.sku)}
                       className="w-9 h-9 rounded-xl bg-white border-2 border-slate-200 flex items-center justify-center text-slate-500">
                       <Minus size={16} strokeWidth={3} />
                     </button>
                     <span className={`w-14 text-center text-xl font-black ${isComplete ? 'text-emerald-600' : isPartial ? 'text-amber-600' : 'text-slate-400'}`}>
                       {foundQty}/{it.qty}
                     </span>
-                    <button onClick={() => adjustFound(it.key, 1, it.qty)}
+                    <button onClick={() => adjustFound(it.key, 1, it.qty, it.sku)}
                       className="w-9 h-9 rounded-xl bg-white border-2 border-slate-200 flex items-center justify-center text-slate-500">
                       <Plus size={16} strokeWidth={3} />
                     </button>

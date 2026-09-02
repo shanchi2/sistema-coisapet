@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import {
-  Factory, Plus, Upload, ShoppingBag, Search,
-  ChevronDown, ChevronUp, Package, Truck, CheckCircle2,
-  Clock, Play, Box, Send, Trash2, AlertTriangle,
-  RefreshCw, ClipboardList, X, Check, FileText,
+  Factory, Plus, Upload, Search,
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Package, PackageCheck, CheckCircle2,
+  Clock, Play, Box, Send, AlertTriangle, Calendar,
+  RefreshCw, ClipboardList, X, Check,
 } from 'lucide-react'
 import { useProduction }    from './hooks/useProduction'
 import { fetchShortageReports, markShortageResolved } from './hooks/useShortageReports'
@@ -13,9 +13,19 @@ import { EmptyState }       from '../../components/ui/EmptyState'
 import { useAuth }          from '../../contexts/AuthContext'
 
 // ─── Helpers ─────────────────────────────────────────────────────
+function todayISO() { return new Date().toISOString().split('T')[0] }
+function addDays(iso, n) {
+  const d = new Date(iso + 'T12:00:00')
+  d.setDate(d.getDate() + n)
+  return d.toISOString().split('T')[0]
+}
 function fmtDate(d) {
   if (!d) return '—'
   return new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+function fmtDayLong(d) {
+  if (!d) return '—'
+  return new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
 }
 function fmtDateTime(d) {
   if (!d) return null
@@ -23,19 +33,22 @@ function fmtDateTime(d) {
 }
 
 // ─── Config de status ─────────────────────────────────────────────
+const NEXT_STATUS = { pendente: 'em_producao', em_producao: 'embalagem', embalagem: 'pronto', pronto: 'enviado' }
 const STATUS_CONFIG = {
-  pendente:    { label: 'Pendente',          color: 'bg-slate-100 text-slate-600',    dot: 'bg-slate-400',    icon: Clock,        next: 'Iniciar produção' },
-  em_producao: { label: 'Em Produção',       color: 'bg-amber-50 text-amber-700',     dot: 'bg-amber-400',    icon: Factory,      next: 'Mover p/ Embalagem' },
-  embalagem:   { label: 'Embalagem',         color: 'bg-sky-50 text-sky-700',         dot: 'bg-sky-400',      icon: Box,          next: 'Pronto p/ Expedição' },
-  pronto:      { label: 'Pronto p/ Envio',   color: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-400',  icon: CheckCircle2, next: 'Marcar como Enviado' },
-  enviado:     { label: 'Enviado',           color: 'bg-purple-50 text-purple-700',   dot: 'bg-purple-400',   icon: Send,         next: null },
+  pendente:        { label: 'Pendente',            color: 'bg-slate-100 text-slate-600',    dot: 'bg-slate-400',    icon: Clock,        next: 'Iniciar produção' },
+  em_producao:     { label: 'Em Produção',         color: 'bg-amber-50 text-amber-700',     dot: 'bg-amber-400',    icon: Factory,      next: 'Mover p/ Embalagem' },
+  embalagem:       { label: 'Embalagem',           color: 'bg-sky-50 text-sky-700',         dot: 'bg-sky-400',      icon: Box,          next: 'Pronto p/ Expedição' },
+  pronto:          { label: 'Pronto p/ Envio',     color: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-400',  icon: CheckCircle2, next: 'Marcar como Enviado' },
+  enviado:         { label: 'Enviado',             color: 'bg-purple-50 text-purple-700',   dot: 'bg-purple-400',   icon: Send,         next: null },
+  coberto_estoque: { label: 'Já tem em estoque',   color: 'bg-teal-50 text-teal-700',       dot: 'bg-teal-400',     icon: PackageCheck, next: null },
 }
 
 const SOURCE_CONFIG = {
-  ml:      { label: 'Mercado Livre', color: 'bg-yellow-400 text-blue-800',  emoji: '🛒' },
-  shopee:  { label: 'Shopee',        color: 'bg-orange-500 text-white',      emoji: '🛍️' },
-  manual:  { label: 'Manual',        color: 'bg-slate-200 text-slate-700',   emoji: '✍️' },
+  ml:      { label: 'Mercado Livre', color: 'bg-yellow-400 text-blue-800', emoji: '🛒' },
+  shopee:  { label: 'Shopee',        color: 'bg-orange-500 text-white',    emoji: '🛍️' },
+  manual:  { label: 'Avulso',        color: 'bg-slate-200 text-slate-700', emoji: '✍️' },
 }
+const SOURCE_ORDER = ['ml', 'shopee', 'manual']
 
 function StatusBadge({ status }) {
   const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.pendente
@@ -47,10 +60,10 @@ function StatusBadge({ status }) {
   )
 }
 
-// ─── Modal: Novo Lote ─────────────────────────────────────────────
+// ─── Modal: Novo lote avulso ──────────────────────────────────────
 function NewOrderModal({ open, onClose, onSave, products }) {
-  const [source,   setSource]   = useState('shopee')
-  const [date,     setDate]     = useState(new Date().toISOString().split('T')[0])
+  const [source,   setSource]   = useState('manual')
+  const [date,     setDate]     = useState(todayISO())
   const [notes,    setNotes]    = useState('')
   const [items,    setItems]    = useState([])
   const [search,   setSearch]   = useState('')
@@ -62,7 +75,7 @@ function NewOrderModal({ open, onClose, onSave, products }) {
 
   // Reset ao abrir
   useEffect(() => {
-    if (open) { setItems([]); setSearch(''); setNotes(''); setCsvFile(null); setMlParsed(null); setMlError(''); setSource('shopee') }
+    if (open) { setItems([]); setSearch(''); setNotes(''); setCsvFile(null); setMlParsed(null); setMlError(''); setSource('manual'); setDate(todayISO()) }
   }, [open])
 
   // Parser do XLSX do ML — lê com SheetJS via FileReader
@@ -210,8 +223,8 @@ function NewOrderModal({ open, onClose, onSave, products }) {
         <div className="flex items-center justify-between p-6 border-b border-slate-100">
           <div>
             <h2 style={{ fontFamily: 'Nunito, sans-serif', fontWeight: 700, fontSize: '18px' }}
-                className="text-slate-800">Novo Lote de Produção</h2>
-            <p className="text-sm text-slate-400 mt-0.5">Lance os pedidos a produzir ou embalar</p>
+                className="text-slate-800">Lançar produção avulsa</h2>
+            <p className="text-sm text-slate-400 mt-0.5">Pra pedir algo que não veio de ML/Shopee automaticamente — ex: repor estoque de um produto parado. Entra na fila DEPOIS da prioridade de ML e Shopee.</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 transition-all">
             <X size={18} />
@@ -225,7 +238,7 @@ function NewOrderModal({ open, onClose, onSave, products }) {
             <div>
               <label className="form-label">Plataforma</label>
               <div className="flex gap-2">
-                {['shopee','ml','manual'].map(s => (
+                {['manual','shopee','ml'].map(s => (
                   <button key={s} type="button"
                     onClick={() => setSource(s)}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold border-2 transition-all ${
@@ -249,6 +262,9 @@ function NewOrderModal({ open, onClose, onSave, products }) {
           {source === 'ml' && (
             <div>
               <label className="form-label">Importar planilha do Mercado Livre (.xlsx)</label>
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+                ⚠ Pedidos do ML já entram sozinhos na Esteira quando sincronizam — só use isso pra reprocessar algo que não entrou automaticamente, pra não duplicar.
+              </p>
               {!mlParsed ? (
                 <div
                   className="border-2 border-dashed border-yellow-300 rounded-xl p-6 text-center bg-yellow-50 cursor-pointer hover:border-yellow-400 hover:bg-yellow-100 transition-all"
@@ -369,7 +385,7 @@ function NewOrderModal({ open, onClose, onSave, products }) {
           <div>
             <label className="form-label">Observações (opcional)</label>
             <textarea className="textarea" rows={2}
-              placeholder="Ex: Urgente, pedido especial, cliente aguardando..."
+              placeholder="Ex: baixo estoque, pedido especial, cliente aguardando..."
               value={notes} onChange={e => setNotes(e.target.value)} />
           </div>
 
@@ -389,7 +405,7 @@ function NewOrderModal({ open, onClose, onSave, products }) {
               disabled={saving || items.length === 0}>
               {saving
                 ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                : <><ClipboardList size={16} /> Criar lote</>
+                : <><ClipboardList size={16} /> Lançar</>
               }
             </button>
           </div>
@@ -399,7 +415,7 @@ function NewOrderModal({ open, onClose, onSave, products }) {
   )
 }
 
-// ─── Card de item da esteira ──────────────────────────────────────
+// ─── Card de item individual (visão expandida de um grupo) ────────
 function ItemRow({ item, onAdvance, onConfirmStock, canEdit }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [stockOpen,   setStockOpen]   = useState(false)
@@ -407,9 +423,11 @@ function ItemRow({ item, onAdvance, onConfirmStock, canEdit }) {
   const Icon = cfg.icon
 
   return (
-    <div className={`flex items-center gap-4 px-5 py-4 rounded-xl border transition-all ${
+    <div className={`flex items-center gap-4 px-5 py-3.5 rounded-xl border transition-all ${
       item.status === 'enviado'
         ? 'bg-purple-50/50 border-purple-100'
+        : item.status === 'coberto_estoque'
+        ? 'bg-teal-50/40 border-teal-100'
         : item.status === 'pronto'
         ? 'bg-emerald-50/50 border-emerald-100'
         : item.status === 'em_producao'
@@ -422,6 +440,7 @@ function ItemRow({ item, onAdvance, onConfirmStock, canEdit }) {
       {/* Ícone de status */}
       <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
         item.status === 'enviado'     ? 'bg-purple-100'
+        : item.status === 'coberto_estoque' ? 'bg-teal-100'
         : item.status === 'pronto'   ? 'bg-emerald-100'
         : item.status === 'embalagem'? 'bg-sky-100'
         : item.status === 'em_producao'? 'bg-amber-100'
@@ -429,6 +448,7 @@ function ItemRow({ item, onAdvance, onConfirmStock, canEdit }) {
       }`}>
         <Icon size={16} className={
           item.status === 'enviado'      ? 'text-purple-500'
+          : item.status === 'coberto_estoque' ? 'text-teal-500'
           : item.status === 'pronto'    ? 'text-emerald-500'
           : item.status === 'embalagem' ? 'text-sky-500'
           : item.status === 'em_producao' ? 'text-amber-500'
@@ -438,22 +458,14 @@ function ItemRow({ item, onAdvance, onConfirmStock, canEdit }) {
 
       {/* Info do produto */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-sm font-semibold text-slate-800 truncate">{item.product_name}</p>
-          {item.sku && (
-            <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
-              {item.sku}
-            </span>
-          )}
-          {item.has_stock && !item.stock_confirmed && (
+        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+          <span className={`text-xs font-bold ${item.status === 'coberto_estoque' ? 'text-slate-400 line-through' : 'text-slate-600'}`}>{item.qty_ordered} un.</span>
+          <StatusBadge status={item.status} />
+          {item.has_stock && !item.stock_confirmed && item.status !== 'coberto_estoque' && (
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1">
               <Package size={9} /> Tem estoque
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-3 mt-1 flex-wrap">
-          <span className="text-xs font-bold text-slate-600">{item.qty_ordered} un.</span>
-          <StatusBadge status={item.status} />
           {item.notes && (
             <span className="text-xs text-slate-400 italic truncate max-w-[180px]">{item.notes}</span>
           )}
@@ -468,7 +480,7 @@ function ItemRow({ item, onAdvance, onConfirmStock, canEdit }) {
       </div>
 
       {/* Ações */}
-      {canEdit && item.status !== 'enviado' && (
+      {canEdit && item.status !== 'enviado' && item.status !== 'coberto_estoque' && (
         <div className="flex items-center gap-2 shrink-0">
           {/* Tem estoque → confirmar antes de mover */}
           {item.has_stock && !item.stock_confirmed && item.status === 'pendente' && (
@@ -495,10 +507,7 @@ function ItemRow({ item, onAdvance, onConfirmStock, canEdit }) {
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         onConfirm={() => { onAdvance(item); setConfirmOpen(false) }}
-        title={`Mover para "${STATUS_CONFIG[{
-          pendente: 'em_producao', em_producao: 'embalagem',
-          embalagem: 'pronto', pronto: 'enviado'
-        }[item.status]]?.label}"`}
+        title={`Mover para "${STATUS_CONFIG[NEXT_STATUS[item.status]]?.label}"`}
         description={`${item.product_name} (${item.qty_ordered} un.) será movido para o próximo estágio.`}
         confirmLabel="Confirmar"
       />
@@ -515,105 +524,107 @@ function ItemRow({ item, onAdvance, onConfirmStock, canEdit }) {
   )
 }
 
-// ─── Card de lote ─────────────────────────────────────────────────
-function OrderCard({ order, onAdvance, onConfirmStock, onDelete, canEdit }) {
-  const [expanded, setExpanded] = useState(true)
-  const [delOpen,  setDelOpen]  = useState(false)
-  const src = SOURCE_CONFIG[order.source] ?? SOURCE_CONFIG.manual
+// ─── Card de produto agrupado — a unidade principal da Esteira agora ─
+// Junta todas as linhas do MESMO produto, na MESMA plataforma, no dia
+// visto (podem vir de pedidos/lotes diferentes) — o chão de fábrica
+// pensa "preciso fazer 8 rodinhas pretas hoje", não "lote tal tem 3,
+// lote tal tem 5". Cada linha continua existindo separada no banco;
+// "avançar etapa" empurra todas de uma vez, cada uma pro PRÓPRIO
+// próximo status (uma linha já em produção não pula pra embalagem
+// junto com uma que ainda nem começou).
+function ProductGroupCard({ group, onAdvanceBulk, onConfirmStock, canEdit }) {
+  const [expanded, setExpanded] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
-  const stats = useMemo(() => {
-    const items = order.items ?? []
-    return {
-      total:   items.length,
-      units:   items.reduce((a, i) => a + i.qty_ordered, 0),
-      done:    items.filter(i => i.status === 'enviado').length,
-      pronto:  items.filter(i => i.status === 'pronto').length,
-      embala:  items.filter(i => i.status === 'embalagem').length,
-      prod:    items.filter(i => i.status === 'em_producao').length,
-      pend:    items.filter(i => i.status === 'pendente').length,
-    }
-  }, [order.items])
+  const active  = group.items.filter(i => i.status !== 'coberto_estoque')
+  const covered = group.items.filter(i => i.status === 'coberto_estoque')
+  const neededQty  = active.reduce((s, i) => s + i.qty_ordered, 0)
+  const coveredQty = covered.reduce((s, i) => s + i.qty_ordered, 0)
 
-  const allDone = stats.done === stats.total && stats.total > 0
-  const progress = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0
+  const counts = {}
+  active.forEach(i => { counts[i.status] = (counts[i.status] || 0) + 1 })
+
+  const advanceable = group.items.filter(i => NEXT_STATUS[i.status])
+  const transitions = [...new Set(advanceable.map(i => `${STATUS_CONFIG[i.status].label} → ${STATUS_CONFIG[NEXT_STATUS[i.status]].label}`))]
+
+  const doneRatio = neededQty === 0 ? 1 : (counts.pronto ?? 0) + (counts.enviado ?? 0)
 
   return (
     <div className="card overflow-hidden">
-      {/* Header do lote */}
-      <div className="flex items-center gap-4 cursor-pointer" onClick={() => setExpanded(e => !e)}>
-        {/* Badge plataforma */}
-        <span className={`text-xs font-bold px-3 py-1.5 rounded-xl shrink-0 ${src.color}`}>
-          {src.emoji} {src.label}
-        </span>
-
-        {/* Data */}
-        <div className="shrink-0">
-          <p className="text-sm font-bold text-slate-700">{fmtDate(order.date)}</p>
-          <p className="text-xs text-slate-400">
-            por {order.created_by_user?.name ?? 'Sistema'}
-          </p>
+      <div className="flex items-center gap-3.5">
+        <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden">
+          {group.photo_url
+            ? <img src={group.photo_url} alt="" className="w-full h-full object-cover" />
+            : <Package size={18} className="text-slate-300" />}
         </div>
 
-        {/* Resumo */}
-        <div className="flex-1 flex items-center gap-3 flex-wrap">
-          <span className="text-xs text-slate-500">{stats.total} produto(s) · {stats.units} un.</span>
-          {/* Mini barra de progresso */}
-          <div className="flex-1 max-w-[160px] h-1.5 bg-slate-100 rounded-full overflow-hidden">
-            <div className="h-full bg-emerald-400 rounded-full transition-all"
-              style={{ width: `${progress}%` }} />
+        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setExpanded(e => !e)}>
+          <p className="text-sm font-bold text-slate-800 truncate">{group.product_name}</p>
+          <div className="flex items-center gap-2 flex-wrap mt-1">
+            {group.sku && <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{group.sku}</span>}
+            {Object.entries(counts).map(([st, n]) => (
+              <span key={st} className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${STATUS_CONFIG[st].color}`}>{n}× {STATUS_CONFIG[st].label}</span>
+            ))}
+            {coveredQty > 0 && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-600 flex items-center gap-1">
+                <PackageCheck size={10} /> {coveredQty}× já tem em estoque (feira)
+              </span>
+            )}
           </div>
-          <span className="text-xs font-bold text-slate-500">{progress}%</span>
-          {/* Status pills */}
-          {stats.pend   > 0 && <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{stats.pend} pendente</span>}
-          {stats.prod   > 0 && <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">{stats.prod} em prod.</span>}
-          {stats.embala > 0 && <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">{stats.embala} embalagem</span>}
-          {stats.pronto > 0 && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{stats.pronto} pronto</span>}
-          {stats.done   > 0 && <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full">{stats.done} enviado</span>}
-          {allDone && <span className="text-[10px] font-bold text-emerald-700">✓ Concluído</span>}
         </div>
 
-        {/* Ações lote */}
-        <div className="flex items-center gap-1 shrink-0">
-          {canEdit && (
-            <button onClick={e => { e.stopPropagation(); setDelOpen(true) }}
-              className="p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors">
-              <Trash2 size={14} />
+        <div className="text-right shrink-0">
+          <p className="text-2xl font-black text-slate-800 leading-none" style={{ fontFamily: 'Nunito, sans-serif' }}>{neededQty}</p>
+          <p className="text-[10px] text-slate-400 font-semibold uppercase">{neededQty === 1 ? 'unidade' : 'unidades'}</p>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {canEdit && advanceable.length > 0 && (
+            <button onClick={() => setConfirmOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-slate-800 text-white hover:bg-slate-700 transition-colors">
+              <Play size={12} /> Avançar etapa
             </button>
           )}
-          {expanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+          <button onClick={() => setExpanded(e => !e)} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100">
+            {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
         </div>
       </div>
 
-      {/* Notas do lote */}
-      {order.notes && expanded && (
-        <div className="mt-3 px-1">
-          <p className="text-xs text-slate-400 italic">📝 {order.notes}</p>
-        </div>
-      )}
-
-      {/* Itens */}
       {expanded && (
         <div className="mt-4 flex flex-col gap-2">
-          {(order.items ?? []).map(item => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              onAdvance={onAdvance}
-              onConfirmStock={onConfirmStock}
-              canEdit={canEdit}
-            />
+          {group.items.map(item => (
+            <ItemRow key={item.id} item={item} onAdvance={i => onAdvanceBulk([i])} onConfirmStock={onConfirmStock} canEdit={canEdit} />
           ))}
         </div>
       )}
 
       <ConfirmDialog
-        open={delOpen}
-        onClose={() => setDelOpen(false)}
-        onConfirm={() => { onDelete(order.id); setDelOpen(false) }}
-        title="Excluir lote?"
-        description="Todos os itens deste lote serão removidos permanentemente."
-        confirmLabel="Excluir lote"
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => { onAdvanceBulk(advanceable); setConfirmOpen(false) }}
+        title={`Avançar "${group.product_name}"`}
+        description={`Vai mover: ${transitions.join(' · ')}.`}
+        confirmLabel="Confirmar"
       />
+    </div>
+  )
+}
+
+// ─── Faixa de uma plataforma (ML / Shopee / Avulso) ────────────────
+function PlatformLane({ sourceKey, groups, ...actions }) {
+  const cfg = SOURCE_CONFIG[sourceKey]
+  const totalUnits = groups.reduce((s, g) => s + g.items.reduce((a, i) => a + i.qty_ordered, 0), 0)
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <span className={`text-xs font-bold px-3 py-1.5 rounded-xl ${cfg.color}`}>{cfg.emoji} {cfg.label}</span>
+        <span className="text-xs text-slate-400">{groups.length} produto(s) · {totalUnits} un.</span>
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        {groups.map(g => <ProductGroupCard key={g.key} group={g} {...actions} />)}
+      </div>
     </div>
   )
 }
@@ -683,7 +694,7 @@ function ShortageReportsPanel() {
                   </span>
                   {r.target_date && (
                     <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${
-                      r.target_date === new Date().toISOString().slice(0, 10) ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500'
+                      r.target_date === todayISO() ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500'
                     }`}>
                       Precisa até {new Date(r.target_date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
                     </span>
@@ -714,37 +725,55 @@ export function ProductionPage() {
   const {
     orders, loading,
     fetchOrders, createOrder,
-    advanceStatus, confirmStock, deleteOrder,
+    advanceStatusBulk, confirmStock,
   } = useProduction()
   const { products } = useProducts()
 
-  const [modalOpen,  setModalOpen]  = useState(false)
-  const [filterSrc,  setFilterSrc]  = useState('')
-  const [filterDate, setFilterDate] = useState('')
-  const [tab,        setTab]        = useState('esteira') // 'esteira' | 'faltando'
+  const [modalOpen, setModalOpen] = useState(false)
+  const [viewDate,  setViewDate]  = useState(todayISO())
+  const [tab,       setTab]       = useState('esteira') // 'esteira' | 'faltando'
 
-  useEffect(() => { fetchOrders() }, [fetchOrders])
+  useEffect(() => { fetchOrders(viewDate) }, [viewDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Apenas produção, admin e administrativo podem editar
   const canEdit = ['admin','administrativo','producao'].includes(user?.role)
+  const isToday = viewDate === todayISO()
 
-  const filtered = useMemo(() => {
-    return orders.filter(o => {
-      if (filterSrc  && o.source !== filterSrc)  return false
-      if (filterDate && o.date   !== filterDate)  return false
-      return true
-    })
-  }, [orders, filterSrc, filterDate])
+  // Agrupa por plataforma → produto (Fase 40: era por "lote de
+  // importação", que só reflete quando o sistema recebeu o pedido, sem
+  // significado nenhum pro chão de fábrica).
+  const lanes = useMemo(() => {
+    const flat = orders.flatMap(o => (o.items ?? []).map(it => ({ ...it, source: o.source, photo_url: it.product?.photo_url })))
+    const bySource = { ml: [], shopee: [], manual: [] }
+    flat.forEach(it => { (bySource[it.source] ?? bySource.manual).push(it) })
 
-  // Estatísticas gerais
-  const allItems = useMemo(() => orders.flatMap(o => o.items ?? []), [orders])
-  const stats = {
-    pendente:    allItems.filter(i => i.status === 'pendente').length,
-    em_producao: allItems.filter(i => i.status === 'em_producao').length,
-    embalagem:   allItems.filter(i => i.status === 'embalagem').length,
-    pronto:      allItems.filter(i => i.status === 'pronto').length,
-    enviado:     allItems.filter(i => i.status === 'enviado').length,
+    const groupByProduct = items => {
+      const map = {}
+      items.forEach(it => {
+        const key = it.sku || it.product_name
+        if (!map[key]) map[key] = { key, product_name: it.product_name, sku: it.sku, photo_url: it.photo_url, items: [] }
+        map[key].items.push(it)
+      })
+      return Object.values(map).sort((a, b) => a.product_name.localeCompare(b.product_name))
+    }
+
+    return {
+      ml:     groupByProduct(bySource.ml),
+      shopee: groupByProduct(bySource.shopee),
+      manual: groupByProduct(bySource.manual),
+    }
+  }, [orders])
+
+  const allActiveItems = useMemo(() => orders.flatMap(o => o.items ?? []).filter(i => i.status !== 'coberto_estoque'), [orders])
+  const kpis = {
+    precisaProduzir: allActiveItems.filter(i => i.status === 'pendente').reduce((s, i) => s + i.qty_ordered, 0),
+    emProducao:      allActiveItems.filter(i => i.status === 'em_producao' || i.status === 'embalagem').reduce((s, i) => s + i.qty_ordered, 0),
+    prontoDespachar: allActiveItems.filter(i => i.status === 'pronto').reduce((s, i) => s + i.qty_ordered, 0),
   }
+
+  const mlHasPending = lanes.ml.some(g => g.items.some(i => i.status === 'pendente'))
+  const beforeCutoff = new Date().getHours() < 11
+  const totalGroups = lanes.ml.length + lanes.shopee.length + lanes.manual.length
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
@@ -752,12 +781,12 @@ export function ProductionPage() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h2 className="page-title">Esteira de Produção</h2>
-          <p className="page-subtitle">Controle de pedidos por plataforma e status de produção</p>
+          <h2 className="page-title">Produção</h2>
+          <p className="page-subtitle">O que precisa ser feito hoje, por plataforma — ML, Shopee e avulso</p>
         </div>
         {canEdit && (
           <button onClick={() => setModalOpen(true)} className="btn-primary">
-            <Plus size={16} /> Novo lote
+            <Plus size={16} /> Lançar avulso
           </button>
         )}
       </div>
@@ -776,99 +805,86 @@ export function ProductionPage() {
         <ShortageReportsPanel />
       ) : (
         <>
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
-          const Icon = cfg.icon
-          return (
-            <div key={key} className="card py-4 flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                key === 'pendente'    ? 'bg-slate-100' :
-                key === 'em_producao'? 'bg-amber-50'  :
-                key === 'embalagem'  ? 'bg-sky-50'    :
-                key === 'pronto'     ? 'bg-emerald-50':
-                'bg-purple-50'
-              }`}>
-                <Icon size={16} className={
-                  key === 'pendente'    ? 'text-slate-400'   :
-                  key === 'em_producao'? 'text-amber-500'   :
-                  key === 'embalagem'  ? 'text-sky-500'     :
-                  key === 'pronto'     ? 'text-emerald-500' :
-                  'text-purple-500'
-                } />
-              </div>
+          {/* Navegação de dia */}
+          <div className="card py-3 flex items-center gap-2">
+            <Calendar size={15} className={isToday ? 'text-slate-400' : 'text-amber-500'} />
+            <p className={`text-sm font-bold capitalize flex-1 ${isToday ? 'text-slate-700' : 'text-amber-700'}`}>{fmtDayLong(viewDate)}</p>
+            <button onClick={() => setViewDate(addDays(viewDate, -1))} className="p-2 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"><ChevronLeft size={15} /></button>
+            <button onClick={() => setViewDate(todayISO())} disabled={isToday}
+              className={`px-3 py-2 rounded-xl text-xs font-bold ${isToday ? 'bg-slate-100 text-slate-300' : 'bg-amber-100 text-amber-700'}`}>Hoje</button>
+            <input type="date" value={viewDate} onChange={e => setViewDate(e.target.value)}
+              className="text-xs px-2.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-600" />
+            <button onClick={() => setViewDate(addDays(viewDate, 1))} className="p-2 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"><ChevronRight size={15} /></button>
+            <button onClick={() => fetchOrders(viewDate)} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 font-semibold transition-colors ml-1">
+              <RefreshCw size={13} />
+            </button>
+          </div>
+
+          {/* Urgência ML — fecha o dia às 11h */}
+          {isToday && mlHasPending && beforeCutoff && (
+            <div className="flex items-center gap-2.5 bg-yellow-50 border border-yellow-300 rounded-2xl px-4 py-3">
+              <span className="text-lg">⏰</span>
+              <p className="text-sm font-bold text-yellow-800">Mercado Livre fecha o dia às 11h — prioridade máxima até lá.</p>
+            </div>
+          )}
+
+          {/* KPIs */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="card py-5 flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center shrink-0"><Factory size={20} className="text-amber-500" /></div>
               <div>
-                <p className="text-xs text-slate-400 font-semibold">{cfg.label}</p>
-                <p className="text-xl font-black text-slate-800" style={{ fontFamily: 'Nunito, sans-serif' }}>
-                  {stats[key]}
-                </p>
+                <p className="text-xs text-slate-400 font-semibold">Precisa produzir hoje</p>
+                <p className="text-2xl font-black text-slate-800" style={{ fontFamily: 'Nunito, sans-serif' }}>{kpis.precisaProduzir}</p>
               </div>
             </div>
-          )
-        })}
-      </div>
-
-      {/* Filtros */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <select className="select w-auto min-w-[160px]" value={filterSrc}
-          onChange={e => setFilterSrc(e.target.value)}>
-          <option value="">Todas as plataformas</option>
-          <option value="shopee">🛍️ Shopee</option>
-          <option value="ml">🛒 Mercado Livre</option>
-          <option value="manual">✍️ Manual</option>
-        </select>
-        <input type="date" className="input w-auto" value={filterDate}
-          onChange={e => setFilterDate(e.target.value)}
-          placeholder="Filtrar por data" />
-        {(filterSrc || filterDate) && (
-          <button onClick={() => { setFilterSrc(''); setFilterDate('') }}
-            className="text-xs text-rose-500 font-semibold hover:text-rose-600">
-            Limpar filtros
-          </button>
-        )}
-        <button onClick={fetchOrders} className="ml-auto flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 font-semibold transition-colors">
-          <RefreshCw size={13} /> Atualizar
-        </button>
-      </div>
-
-      {/* Lista de lotes */}
-      {loading ? (
-        <div className="card flex justify-center py-16">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 rounded-full border-4 border-rose-100 border-t-rose-400 animate-spin" />
-            <p className="text-sm text-slate-400">Carregando esteira...</p>
+            <div className="card py-5 flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-sky-50 flex items-center justify-center shrink-0"><Box size={20} className="text-sky-500" /></div>
+              <div>
+                <p className="text-xs text-slate-400 font-semibold">Em produção / embalagem</p>
+                <p className="text-2xl font-black text-slate-800" style={{ fontFamily: 'Nunito, sans-serif' }}>{kpis.emProducao}</p>
+              </div>
+            </div>
+            <div className="card py-5 flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0"><CheckCircle2 size={20} className="text-emerald-500" /></div>
+              <div>
+                <p className="text-xs text-slate-400 font-semibold">Pronto pra despachar</p>
+                <p className="text-2xl font-black text-slate-800" style={{ fontFamily: 'Nunito, sans-serif' }}>{kpis.prontoDespachar}</p>
+              </div>
+            </div>
           </div>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="card">
-          <EmptyState
-            icon={Factory}
-            title={orders.length === 0 ? 'Nenhum lote lançado ainda' : 'Nenhum resultado'}
-            description={orders.length === 0
-              ? 'Crie o primeiro lote de produção importando os pedidos do dia.'
-              : 'Ajuste os filtros para ver outros lotes.'}
-            action={canEdit && orders.length === 0 && (
-              <button onClick={() => setModalOpen(true)} className="btn-primary">
-                <Plus size={16} /> Criar primeiro lote
-              </button>
-            )}
-          />
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {filtered.map(order => (
-            <OrderCard
-              key={order.id}
-              order={order}
-              onAdvance={advanceStatus}
-              onConfirmStock={confirmStock}
-              onDelete={deleteOrder}
-              canEdit={canEdit}
-            />
-          ))}
-        </div>
-      )}
-      </>
+
+          {/* Faixas por plataforma */}
+          {loading ? (
+            <div className="card flex justify-center py-16">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 rounded-full border-4 border-rose-100 border-t-rose-400 animate-spin" />
+                <p className="text-sm text-slate-400">Carregando esteira...</p>
+              </div>
+            </div>
+          ) : totalGroups === 0 ? (
+            <div className="card">
+              <EmptyState
+                icon={Factory}
+                title={isToday ? 'Nada pendente hoje' : 'Nenhum item nesse dia'}
+                description={isToday
+                  ? 'Os pedidos de ML e Shopee entram aqui sozinhos quando sincronizam. Pode lançar algo avulso se precisar.'
+                  : 'Escolha outro dia ou volte pra hoje.'}
+                action={canEdit && (
+                  <button onClick={() => setModalOpen(true)} className="btn-primary">
+                    <Plus size={16} /> Lançar avulso
+                  </button>
+                )}
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-6">
+              {SOURCE_ORDER.filter(s => lanes[s].length > 0).map(s => (
+                <PlatformLane key={s} sourceKey={s} groups={lanes[s]}
+                  onAdvanceBulk={advanceStatusBulk} onConfirmStock={confirmStock} canEdit={canEdit} />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {/* Modal novo lote */}

@@ -31,13 +31,20 @@ export async function fetchCombinedGathering(targetDate) {
   return map
 }
 
-export async function saveCombinedGatheringItem(targetDate, itemKey, foundQty) {
+// `sku` é opcional (nem todo item tem SKU cadastrado) — só quando vem
+// preenchido é que a reconciliação com a Esteira de Produção roda
+// (Fase 40: `reconcile_stock_found` casa por SKU; sem SKU, de propósito
+// não mexe em nada, mais seguro do que arriscar casar errado).
+export async function saveCombinedGatheringItem(targetDate, itemKey, foundQty, sku) {
   const { id: uid } = getSession()
   const { error } = await supabase.from('picklist_gathering_combined').upsert({
     target_date: targetDate, item_key: itemKey, found_qty: foundQty,
     updated_at: new Date().toISOString(), updated_by: uid || null,
   }, { onConflict: 'target_date,item_key' })
   if (error) throw error
+  if (sku) {
+    try { await supabase.rpc('reconcile_stock_found', { p_sku: sku, p_found_qty: foundQty }) } catch { /* não derruba o save principal */ }
+  }
 }
 
 export async function sendCombinedShortageReport(targetDate, missingItems) {
