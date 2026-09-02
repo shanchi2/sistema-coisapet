@@ -4,7 +4,7 @@ import {
   ArrowLeft, Loader2, AlertTriangle, ExternalLink, Save, DollarSign,
   Type, Image as ImageIcon, TrendingUp, Package, Star, HeartPulse,
   ClipboardList, Megaphone, CheckCircle2, XCircle, ChevronDown, Sparkles, Wand2, Truck,
-  Zap, Play, Pause, History, LayoutGrid, ImageOff,
+  Zap, Play, Pause, History, LayoutGrid, ImageOff, ArrowRight,
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -46,9 +46,9 @@ function secureThumb(url) {
   return url ? url.replace(/^http:\/\//, 'https://') : null
 }
 
-function Card({ icon: Icon, title, caption, help, children }) {
+function Card({ icon: Icon, title, caption, help, children, id, highlight }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-5">
+    <div id={id} className={`bg-white border rounded-2xl p-5 transition-colors ${highlight ? 'border-emerald-400 ring-2 ring-emerald-200' : 'border-slate-200'}`}>
       <div className="flex items-center gap-1.5 mb-1">
         <Icon size={15} className="text-slate-400"/>
         <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">{title}</p>
@@ -59,6 +59,27 @@ function Card({ icon: Icon, title, caption, help, children }) {
       {children}
     </div>
   )
+}
+
+// Mapeamento de pendências reais do indicador de qualidade do ML pro
+// lugar onde dá pra resolver dentro do NOSSO sistema — confirmado ao
+// vivo em 2026-09-02 escaneando os 223 anúncios da conta (22 chaves
+// distintas encontradas; o ML usa às vezes um prefixo "UP_" e às vezes
+// não pro mesmo conceito, por isso normaliza removendo o prefixo antes
+// de comparar). Metade dos tipos reais (frete grátis, Envios Flex,
+// vídeo, parcelamento, dados fiscais, Ads) são configuração de conta ou
+// logística que a API do ML nem deixa a gente gravar — pra esses, o
+// link manda pro próprio anúncio no Mercado Livre em vez de fingir um
+// botão que não resolveria nada.
+const PENDING_ACTIONS = {
+  TECHNICAL_SPECIFICATIONS_MAIN: { label: 'Corrigir na Ficha Técnica', tab: 'attributes' },
+  PYMES:                          { label: 'Ajustar medidas na Ficha Técnica', tab: 'attributes' },
+  PRICE:                           { label: 'Ajustar preço', scrollTo: 'acoes-rapidas' },
+  STOCK_DEPOSITO:                  { label: 'Ajustar estoque', scrollTo: 'acoes-rapidas' },
+  PROMOTIONS:                      { label: 'Ver campanhas disponíveis', href: '/ml/promocoes' },
+}
+function pendingAction(key) {
+  return PENDING_ACTIONS[String(key || '').replace(/^UP_/, '')] || null
 }
 
 function CustomTooltip({ active, payload, label }) {
@@ -123,6 +144,21 @@ export function MlItemDetailPage() {
   const [showRawAds, setShowRawAds] = useState(false)
   const [showRawPerf, setShowRawPerf] = useState(false)
   const [confirmModal, setConfirmModal] = useState(null) // null | 'attributes' | 'content' | 'quick'
+  const [highlightQuick, setHighlightQuick] = useState(false)
+
+  // Leva o usuário direto pro lugar do PRÓPRIO sistema que resolve essa
+  // pendência — troca de aba (fica na mesma página) ou rola até Ações
+  // Rápidas (que fica fora das abas, sempre visível) com um destaque
+  // temporário pra não passar batido.
+  function goToFix(action) {
+    if (action.href) { navigate(action.href); return }
+    if (action.tab) { setTab(action.tab); return }
+    if (action.scrollTo) {
+      document.getElementById(action.scrollTo)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setHighlightQuick(true)
+      setTimeout(() => setHighlightQuick(false), 1800)
+    }
+  }
 
   function refreshHistory() {
     fetchItemUpdateHistory(itemId).then(setUpdateHistory).catch(() => {})
@@ -379,7 +415,7 @@ export function MlItemDetailPage() {
         )}
 
         {/* Ações rápidas — sempre visível, é a ação mais frequente */}
-        <Card icon={Zap} title="Ações rápidas"
+        <Card id="acoes-rapidas" highlight={highlightQuick} icon={Zap} title="Ações rápidas"
           help="Muda preço, estoque e ativa/pausa o anúncio direto no Mercado Livre. Nada é gravado sozinho — só abre a confirmação depois de clicar em 'Salvar alterações', mostrando exatamente o que vai mudar.">
           <div className="flex flex-wrap items-end gap-4">
             <div>
@@ -496,13 +532,29 @@ export function MlItemDetailPage() {
               {detail.performance ? (
                 <>
                   {detail.performance.pending?.length > 0 ? (
-                    <ul className="text-sm text-amber-700 space-y-1.5 mb-2">
-                      {detail.performance.pending.map((p, i) => (
-                        <li key={i} className="flex items-start gap-1.5">
-                          <XCircle size={13} className="mt-0.5 shrink-0"/>
-                          {p?.title || p?.description || p?.message || JSON.stringify(p)}
-                        </li>
-                      ))}
+                    <ul className="text-sm space-y-2 mb-2">
+                      {detail.performance.pending.map((p, i) => {
+                        const action = pendingAction(p?.key)
+                        const text = p?.title || p?.description || p?.message || JSON.stringify(p)
+                        return (
+                          <li key={i} className="flex items-start justify-between gap-3 flex-wrap">
+                            <span className="flex items-start gap-1.5 text-amber-700 min-w-0">
+                              <XCircle size={13} className="mt-0.5 shrink-0"/> {text}
+                            </span>
+                            {action ? (
+                              <button onClick={() => goToFix(action)}
+                                className="shrink-0 text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
+                                {action.label} <ArrowRight size={11}/>
+                              </button>
+                            ) : (
+                              <a href={detail.item.permalink || `https://produto.mercadolivre.com.br/${detail.item.id}`} target="_blank" rel="noreferrer"
+                                className="shrink-0 text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1">
+                                Ajustar no Mercado Livre <ExternalLink size={11}/>
+                              </a>
+                            )}
+                          </li>
+                        )
+                      })}
                     </ul>
                   ) : (
                     <p className="text-sm text-emerald-600 flex items-center gap-1.5"><CheckCircle2 size={14}/> Nenhuma pendência apontada pelo ML.</p>

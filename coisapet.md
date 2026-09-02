@@ -132,6 +132,41 @@ genéricos empilhados numa coluna só — não preenchiam bem telas largas.
 
 ---
 
+### 2026-09-02 (8ª parte) — Pendências do ML viram links de ação, não só texto
+
+Raphael perguntou sobre custo/limite da API do ML e da OpenAI (respondido
+sem mexer em código — API do ML é grátis com limite de 1.500 req/min por
+vendedor, sem cache hoje então cada "Atualizar" busca tudo de novo; só a
+OpenAI custa de verdade, e só quando clica em "Gerar sugestão" ou na
+1ª vez de cada categoria pro hint de campo, que fica em cache). Isso
+levou à ideia boa: cada pendência da "Qualidade do anúncio" virar um
+link direto pro lugar que resolve, em vez de só texto.
+
+**Investigação ao vivo** (console do navegador, varredura dos 223
+anúncios): existem **22 chaves distintas** de pendência na resposta real
+da API (`raw.buckets[].variables[].key`, às vezes com prefixo `UP_`,
+às vezes sem, pro mesmo conceito). Cruzando com o que o sistema
+consegue de fato gravar hoje:
+- **5 mapeadas pro nosso sistema**: ficha técnica
+  (`TECHNICAL_SPECIFICATIONS_MAIN`, `PYMES` — medidas/peso da embalagem)
+  → troca pra aba Ficha Técnica; preço e estoque (`PRICE`,
+  `STOCK_DEPOSITO`) → rola até Ações Rápidas com destaque temporário
+  (`ring` verde, 1.8s); campanhas (`PROMOTIONS`) → navega pra
+  `/ml/promocoes`.
+- **As outras 8** (frete grátis, Envios Flex, vídeo, parcelamento, dados
+  fiscais, disponibilidade de estoque, Ads) são configuração de conta ou
+  logística que a API do ML nem deixa a gente gravar — pra essas, o
+  botão vira "Ajustar no Mercado Livre ↗" (link pro `permalink` real do
+  anúncio, mesmo padrão já usado no resto do app) em vez de fingir uma
+  ação que não funcionaria.
+
+Testado ao vivo nos 3 tipos de ação (troca de aba, scroll+destaque,
+navegação entre telas) com anúncios reais que tinham cada tipo de
+pendência. `npm run build` limpo, sem erro de console. Nenhuma edge
+function mudou (só o mapeamento no frontend).
+
+---
+
 ### 2026-09-02 (7ª parte) — Redesign completo do Detalhe do Anúncio (hero + abas)
 
 Raphael pediu pra caprichar nessa — é a maior tela do módulo (692 linhas,
