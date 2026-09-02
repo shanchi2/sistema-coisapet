@@ -132,6 +132,43 @@ genéricos empilhados numa coluna só — não preenchiam bem telas largas.
 
 ---
 
+### 2026-09-02 (6ª parte) — Redesign das 3 últimas telas do módulo (lista completa)
+
+Raphael pediu pra seguir até terminar o módulo. Aplicado o mesmo padrão
+largo (`max-w-[1600px]`, header com badge gradiente, `rounded-2xl`) nas
+3 telas restantes que tinham layout de lista/gallery:
+
+- **Perguntas & Reputação** (`MlQuestionsReputationPage.jsx`): virou
+  split 2/3 (perguntas sem resposta, coluna única — texto de pergunta
+  não combina com grid, cada card tem altura bem diferente) + 1/3
+  (Reputação + Impacto de responder rápido, antes soltos lado a lado no
+  topo). Testado ao vivo com pergunta real (inclusive uma pergunta-spam
+  de golpe que apareceu na lista — é conteúdo real do comprador vindo da
+  API, a tela só mostra como texto puro, sem risco).
+- **Campanhas & Promoções** (`MlPromotionsPage.jsx`): convites +
+  candidatos a relâmpago viraram 2 colunas lado a lado (antes
+  empilhados). A visão de "dentro de uma campanha" (checkbox + preço
+  editável por item) ficou como estava — é fluxo de seleção/tabela, não
+  galeria, não fazia sentido virar grid de card.
+- **Oportunidades de Venda** (`MlOpportunitiesPage.jsx`): as 5 abas
+  (Impulsionar/Frete grátis/Baixa conversão/Parado/Preço) + Combos
+  viraram grid de 2 colunas — `ItemRow` ganhou visual de card
+  (`bg-white border rounded-xl`, antes era linha cinza chapada
+  `bg-slate-50`). Testado ao vivo: 15 candidatos a impulsionar, 15 sem
+  frete grátis, 2 perdendo buy box.
+
+Todas testadas com dado real da conta, sem erro de console. `npm run
+build` limpo. Nenhuma edge function mudou nessas 3 (só frontend).
+
+**Módulo Otimização ML: todas as 7 telas de lista redesenhadas** no
+padrão largo. Únicas duas que ainda ficaram no formato antigo (`max-w-
+5xl`) são as duas telas grandes e muito mais complexas — detalhe do
+anúncio (`MlItemDetailPage.jsx`) e criação de anúncio
+(`MlCreateListingPage.jsx`, 535 linhas, wizard de várias etapas) — essas
+merecem uma sessão dedicada só pra elas.
+
+---
+
 ### 2026-09-02 (5ª parte) — Redesign da tela Tráfego & Conversão
 
 Mesmo padrão largo (`max-w-[1600px]`) em `MlTrafficPage.jsx`: os 3
