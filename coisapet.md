@@ -94,6 +94,47 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-09-02 (2ª parte) — Redesign de Visão Geral e Saúde dos Anúncios (skill UI/UX Pro Max)
+
+**Motivação:** Raphael instalou a skill `ui-ux-pro-max` (globalmente, via
+`npx ui-ux-pro-max-cli init --ai claude --global` — não sincroniza pelo
+OneDrive, precisa repetir nas outras máquinas) e pediu pra redesenhar as
+duas telas, que usavam um container estreito (`max-w-5xl`) com cards
+genéricos empilhados numa coluna só — não preenchiam bem telas largas.
+
+**O que foi feito:**
+- Container mais largo (`max-w-[1600px]`) nas duas telas, com layout em
+  grid de verdade em vez de coluna única — mantida a paleta existente
+  (emerald do módulo ML + slate/rose/âmbar semânticos, nada de cor nova).
+- **Visão Geral** (`MlAccountDashboardPage.jsx`): narrativa em destaque
+  (fundo gradiente emerald sutil), faixa de 5 KPIs lado a lado, e um
+  grid principal de 3 colunas — 2/3 pra tendências (gráfico de receita
+  maior, vendas por dia, frequência, top produtos, reclamações) e 1/3
+  numa coluna lateral fixa pra Reputação ML + link pra Saúde dos
+  Anúncios.
+- **Saúde dos Anúncios** (`MlHealthPage.jsx`): nova barra de proporção
+  (`unhealthy/warning/healthy`) dando visão instantânea do catálogo
+  inteiro, tiles de status com ícone colorido, lista de anúncios virou
+  grid de 2 colunas (era 1 coluna cheia, desperdiçava espaço em tela
+  larga) com **foto real do produto** em cada card.
+- **Fotos dos produtos**: `attributesAudit` (`ml-insights/index.ts`)
+  agora pede `thumbnail` na chamada que já fazia pra cada item — campo
+  novo, sem custo extra de chamada. Frontend corrige `http://` pra
+  `https://` (a API do ML às vezes devolve sem TLS, viraria mixed
+  content bloqueado pelo navegador).
+- Testado ao vivo (dev server + Chrome, sessão já logada como Raphael)
+  em 1920×1080 — as duas telas renderizam com dado real da conta, sem
+  erro de console. `npm run build` limpo. Deploy feito
+  (`supabase functions deploy ml-insights`).
+
+**Achado à parte (não é bug do redesign, não mexido):** o diagnóstico de
+saúde por anúncio (`itemsHealth`/`/item/{id}/performance`) está voltando
+"Não informado" pra todos os 223 anúncios ativos no scan ao vivo — parece
+problema de dados/formato da API, não visual. Fica pra próxima sessão
+investigar se o Raphael quiser.
+
+---
+
 ### 2026-09-02 — Fase 39: corrige corrida entre webhooks que duplicava order_items
 
 **Motivação:** Raphael reportou pedido com item duplicado (01/09). Causa

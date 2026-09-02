@@ -100,7 +100,7 @@ async function attributesAudit(integration: any, offset: number, limit: number) 
   const categoryCache = new Map<string, any[]>()
   const results = await mapWithConcurrency(ids, 6, async (id) => {
     try {
-      const item = await mlFetch(`/items/${id}?attributes=id,title,category_id,attributes,shipping,permalink`, integration.access_token)
+      const item = await mlFetch(`/items/${id}?attributes=id,title,category_id,attributes,shipping,permalink,thumbnail`, integration.access_token)
       const categoryId = item.category_id
       let catAttrs = categoryCache.get(categoryId)
       if (!catAttrs) {
@@ -116,7 +116,7 @@ async function attributesAudit(integration: any, offset: number, limit: number) 
       const missing = required.filter((a: any) => !filledIds.has(a.id)).map((a: any) => ({ id: a.id, name: a.name }))
       return {
         item_id: id, title: item.title, category_id: categoryId, missing_count: missing.length, missing,
-        shipping: extractShippingInfo(item), permalink: item.permalink || null,
+        shipping: extractShippingInfo(item), permalink: item.permalink || null, thumbnail: item.thumbnail || null,
       }
     } catch (err) {
       return { item_id: id, error: String(err) }

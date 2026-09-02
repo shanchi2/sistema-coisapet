@@ -1,7 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { HeartPulse, RefreshCw, Loader2, AlertTriangle, CheckCircle2, AlertCircle, HelpCircle, ExternalLink, DollarSign, Megaphone, Truck, Package } from 'lucide-react'
+import { HeartPulse, RefreshCw, Loader2, AlertTriangle, CheckCircle2, AlertCircle, HelpCircle, ExternalLink, DollarSign, Megaphone, Truck, Package, ImageOff } from 'lucide-react'
 import { useMlInsights } from './hooks/useMlInsights'
+
+// A API do ML às vezes devolve o thumbnail em http:// puro — o site roda
+// em https, então isso vira mixed content bloqueado pelo navegador.
+function secureThumb(url) {
+  return url ? url.replace(/^http:\/\//, 'https://') : null
+}
 
 const SHIPPING_FILTERS = [
   { key: 'all',        label: 'Todos' },
@@ -24,11 +30,11 @@ function fmtMoney(v) {
 }
 
 const STATUS_INFO = {
-  unhealthy: { label: 'Perdendo exposição', rank: 0, icon: AlertTriangle, text: 'text-rose-700',   bg: 'bg-rose-50 border-rose-200'   },
-  warning:   { label: 'Atenção',            rank: 1, icon: AlertCircle,   text: 'text-amber-700',  bg: 'bg-amber-50 border-amber-200' },
-  healthy:   { label: 'Saudável',           rank: 2, icon: CheckCircle2, text: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+  unhealthy: { label: 'Perdendo exposição', rank: 0, icon: AlertTriangle, text: 'text-rose-700',   bg: 'bg-rose-50 border-rose-200',   solid: 'bg-rose-500'    },
+  warning:   { label: 'Atenção',            rank: 1, icon: AlertCircle,   text: 'text-amber-700',  bg: 'bg-amber-50 border-amber-200', solid: 'bg-amber-500'   },
+  healthy:   { label: 'Saudável',           rank: 2, icon: CheckCircle2, text: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200', solid: 'bg-emerald-500' },
 }
-const UNKNOWN_STATUS = { label: 'Não informado', rank: 3, icon: HelpCircle, text: 'text-slate-500', bg: 'bg-slate-50 border-slate-200' }
+const UNKNOWN_STATUS = { label: 'Não informado', rank: 3, icon: HelpCircle, text: 'text-slate-500', bg: 'bg-slate-50 border-slate-200', solid: 'bg-slate-300' }
 
 function StatusBadge({ status }) {
   const info = STATUS_INFO[status] ?? UNKNOWN_STATUS
@@ -61,6 +67,7 @@ export function MlHealthPage() {
         pending:       h.pending ?? [],
         title:         a?.title ?? h.raw?.item_title ?? null,
         permalink:     a?.permalink ?? null,
+        thumbnail:     secureThumb(a?.thumbnail),
         missing_count: a?.missing_count ?? 0,
         missing:       a?.missing ?? [],
         shipping:      a?.shipping ?? null,
@@ -104,24 +111,26 @@ export function MlHealthPage() {
     return [...filtered].sort((a, b) => (adsSet.has(b.item_id) ? 1 : 0) - (adsSet.has(a.item_id) ? 1 : 0))
   }, [rows, adsSet, shippingFilter])
 
+  const total = rows?.length || 0
+
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
+      <div className="max-w-[1600px] mx-auto space-y-6">
 
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shrink-0">
-              <HeartPulse size={20} strokeWidth={1.5} className="text-white"/>
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center shrink-0 shadow-sm shadow-emerald-200">
+              <HeartPulse size={22} strokeWidth={1.5} className="text-white"/>
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-slate-800">Saúde dos Anúncios</h1>
+              <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Saúde dos Anúncios</h1>
               <p className="text-sm text-slate-500">Diagnóstico da API do ML + ficha técnica obrigatória, anúncio por anúncio</p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={scan} disabled={loading}
-              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors">
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors shadow-sm">
               {loading ? <Loader2 size={15} className="animate-spin"/> : <RefreshCw size={15}/>}
               {loading ? (progress ? `Analisando ${progress.done}/${progress.total}...` : 'Analisando...') : 'Atualizar'}
             </button>
@@ -137,7 +146,7 @@ export function MlHealthPage() {
         </div>
 
         {adsSet && (
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-500 -mt-3">
             {adsSet.size > 0
               ? `${adsSet.size} anúncio(s) com campanha ativa — subidos pro topo da lista, com o selo 📢.`
               : 'Nenhum anúncio com campanha ativa encontrado.'}
@@ -150,24 +159,49 @@ export function MlHealthPage() {
           </div>
         )}
 
-        {/* Stats */}
-        {counts && (
-          <div className="grid grid-cols-4 gap-3">
-            <div className="bg-white border border-rose-200 rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold text-rose-600">{counts.unhealthy}</p>
-              <p className="text-xs text-slate-500 mt-0.5">Perdendo exposição</p>
+        {/* Panorama de saúde: barra de proporção + tiles */}
+        {counts && total > 0 && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 lg:p-6">
+            <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Panorama do catálogo</p>
+              <p className="text-xs text-slate-400">{total} anúncio{total > 1 ? 's' : ''} ativo{total > 1 ? 's' : ''} analisado{total > 1 ? 's' : ''}</p>
             </div>
-            <div className="bg-white border border-amber-200 rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold text-amber-600">{counts.warning}</p>
-              <p className="text-xs text-slate-500 mt-0.5">Em atenção</p>
+
+            {/* Barra de proporção — visão instantânea do catálogo inteiro */}
+            <div className="flex h-3 w-full rounded-full overflow-hidden bg-slate-100 mb-5">
+              {counts.unhealthy > 0 && <div className={STATUS_INFO.unhealthy.solid} style={{ width: `${(counts.unhealthy / total) * 100}%` }} title={`${counts.unhealthy} perdendo exposição`}/>}
+              {counts.warning > 0   && <div className={STATUS_INFO.warning.solid}   style={{ width: `${(counts.warning   / total) * 100}%` }} title={`${counts.warning} em atenção`}/>}
+              {counts.healthy > 0   && <div className={STATUS_INFO.healthy.solid}   style={{ width: `${(counts.healthy   / total) * 100}%` }} title={`${counts.healthy} saudáveis`}/>}
             </div>
-            <div className="bg-white border border-emerald-200 rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold text-emerald-600">{counts.healthy}</p>
-              <p className="text-xs text-slate-500 mt-0.5">Saudáveis</p>
-            </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold text-slate-800">{counts.missing}</p>
-              <p className="text-xs text-slate-500 mt-0.5">Com ficha incompleta</p>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { key: 'unhealthy', label: 'Perdendo exposição', value: counts.unhealthy, ...STATUS_INFO.unhealthy },
+                { key: 'warning',   label: 'Em atenção',         value: counts.warning,   ...STATUS_INFO.warning },
+                { key: 'healthy',   label: 'Saudáveis',          value: counts.healthy,   ...STATUS_INFO.healthy },
+              ].map(s => {
+                const Icon = s.icon
+                return (
+                  <div key={s.key} className={`flex items-center gap-3 rounded-xl border p-3.5 ${s.bg}`}>
+                    <div className={`w-9 h-9 rounded-lg ${s.solid} flex items-center justify-center shrink-0`}>
+                      <Icon size={16} strokeWidth={2} className="text-white"/>
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-xl font-bold leading-none ${s.text}`}>{s.value}</p>
+                      <p className="text-xs text-slate-500 mt-1 truncate">{s.label}</p>
+                    </div>
+                  </div>
+                )
+              })}
+              <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                <div className="w-9 h-9 rounded-lg bg-slate-400 flex items-center justify-center shrink-0">
+                  <ImageOff size={16} strokeWidth={2} className="text-white"/>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xl font-bold leading-none text-slate-800">{counts.missing}</p>
+                  <p className="text-xs text-slate-500 mt-1 truncate">Ficha incompleta</p>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -186,7 +220,7 @@ export function MlHealthPage() {
                 {f.label}
               </button>
             ))}
-            <span className="text-xs text-slate-400">{displayRows.length} de {rows.length} anúncio{rows.length > 1 ? 's' : ''}</span>
+            <span className="text-xs text-slate-400 ml-auto">{displayRows.length} de {rows.length} anúncio{rows.length > 1 ? 's' : ''}</span>
           </div>
         )}
 
@@ -208,69 +242,82 @@ export function MlHealthPage() {
             <p className="text-slate-400">Nenhum anúncio bate com esse filtro de frete</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
             {displayRows.map(r => {
               const price = priceMap?.get(r.item_id)
               const hasAds = adsSet?.has(r.item_id)
+              const statusInfo = STATUS_INFO[r.status] ?? UNKNOWN_STATUS
               return (
               <div key={r.item_id} onClick={() => navigate(`/ml/saude/${r.item_id}`)}
-                className={`bg-white border rounded-xl p-5 cursor-pointer hover:border-emerald-300 hover:shadow-sm transition-all ${hasAds ? 'border-violet-200' : 'border-slate-200'}`}>
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2.5 flex-wrap mb-2">
-                      {hasAds && (
-                        <span className="text-xs font-semibold text-violet-700 bg-violet-50 border border-violet-200 px-2.5 py-1 rounded-full flex items-center gap-1">
-                          <Megaphone size={11}/> Campanha ativa
-                        </span>
-                      )}
-                      <StatusBadge status={r.status}/>
-                      {r.shipping?.is_full && (
-                        <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full flex items-center gap-1">
-                          <Package size={11}/> Full
-                        </span>
-                      )}
-                      {r.shipping?.free_shipping && !r.shipping?.is_full && (
-                        <span className="text-xs font-semibold text-sky-700 bg-sky-50 border border-sky-200 px-2.5 py-1 rounded-full flex items-center gap-1">
-                          <Truck size={11}/> Frete grátis
-                        </span>
-                      )}
-                      {r.missing_count > 0 && (
-                        <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full">
-                          {r.missing_count} atributo{r.missing_count > 1 ? 's' : ''} obrigatório{r.missing_count > 1 ? 's' : ''} faltando
-                        </span>
-                      )}
-                      {price?.price_to_win_status === 'competing' && (
-                        <span className="text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-full">
-                          Perdendo buy box
-                        </span>
-                      )}
-                      {price?.suggested_price != null && (
-                        <span className="text-xs font-semibold text-sky-700 bg-sky-50 border border-sky-200 px-2.5 py-1 rounded-full">
-                          Sugerido: {fmtMoney(price.suggested_price)}
-                        </span>
-                      )}
-                      {r.error && (
-                        <span className="text-xs font-semibold text-slate-400">falha ao consultar</span>
-                      )}
-                    </div>
-                    <a href={r.permalink || `https://produto.mercadolivre.com.br/${r.item_id}`} target="_blank" rel="noreferrer"
-                      onClick={e => e.stopPropagation()}
-                      className="text-sm font-medium text-slate-800 hover:text-emerald-600 inline-flex items-center gap-1.5">
-                      {r.title || r.item_id}
-                      <ExternalLink size={12} className="text-slate-300"/>
-                    </a>
-                    <p className="text-xs font-mono text-slate-400 mt-0.5">{r.item_id}</p>
+                className={`group flex gap-4 bg-white border rounded-2xl p-4 cursor-pointer hover:border-emerald-300 hover:shadow-md hover:shadow-slate-100 transition-all ${hasAds ? 'border-violet-200' : 'border-slate-200'}`}>
 
-                    {r.missing.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-3">
-                        {r.missing.map(m => (
-                          <span key={m.id} className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-                            {m.name}
-                          </span>
-                        ))}
-                      </div>
+                {/* Barra de status + thumbnail */}
+                <div className="flex items-stretch gap-3 shrink-0">
+                  <div className={`w-1 rounded-full ${statusInfo.solid}`}/>
+                  <div className="w-16 h-16 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center">
+                    {r.thumbnail
+                      ? <img src={r.thumbnail} alt="" className="w-full h-full object-cover" loading="lazy"/>
+                      : <ImageOff size={18} className="text-slate-300"/>}
+                  </div>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                    {hasAds && (
+                      <span className="text-xs font-semibold text-violet-700 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Megaphone size={10}/> Campanha
+                      </span>
+                    )}
+                    <StatusBadge status={r.status}/>
+                    {r.shipping?.is_full && (
+                      <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Package size={10}/> Full
+                      </span>
+                    )}
+                    {r.shipping?.free_shipping && !r.shipping?.is_full && (
+                      <span className="text-xs font-semibold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Truck size={10}/> Frete grátis
+                      </span>
+                    )}
+                    {price?.price_to_win_status === 'competing' && (
+                      <span className="text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                        Perdendo buy box
+                      </span>
                     )}
                   </div>
+
+                  <a href={r.permalink || `https://produto.mercadolivre.com.br/${r.item_id}`} target="_blank" rel="noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="text-sm font-medium text-slate-800 group-hover:text-emerald-600 inline-flex items-start gap-1.5">
+                    <span className="line-clamp-2">{r.title || r.item_id}</span>
+                    <ExternalLink size={12} className="text-slate-300 mt-0.5 shrink-0"/>
+                  </a>
+
+                  <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                    <p className="text-xs font-mono text-slate-400">{r.item_id}</p>
+                    {price?.suggested_price != null && (
+                      <span className="text-xs font-semibold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full">
+                        Sugerido: {fmtMoney(price.suggested_price)}
+                      </span>
+                    )}
+                    {r.error && <span className="text-xs font-semibold text-slate-400">falha ao consultar</span>}
+                  </div>
+
+                  {r.missing_count > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2.5">
+                      <span className="text-xs font-semibold text-slate-500">
+                        {r.missing_count} faltando:
+                      </span>
+                      {r.missing.slice(0, 4).map(m => (
+                        <span key={m.id} className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                          {m.name}
+                        </span>
+                      ))}
+                      {r.missing.length > 4 && (
+                        <span className="text-xs text-slate-400">+{r.missing.length - 4}</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               )
