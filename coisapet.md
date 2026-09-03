@@ -68,6 +68,11 @@ reconstruir o raciocínio do zero.
   diferente do ML, não precisou de correção de código). 723 pedidos
   antigos arquivados (`ship_date < 15/08/2026`); badge de Atrasados caiu
   de ~673+ pra 34 no total (7 Shopee + 23 ML + 4 manual).
+- **Estoque Full (03/09)**: tela nova `/ml/full` — consulta (só leitura)
+  do estoque físico no centro de distribuição do ML por produto/
+  variação. Confirmado ao vivo: **não existe API pra agendar/enviar
+  reposição** pro Full, isso é sempre manual no painel do vendedor —
+  a tela só avisa cedo quando algo tá acabando lá.
 - **Produção (02/09, Fase 40)**: módulo redesenhado do zero — a equipe
   de produção começa a usar de verdade a partir de agora. Bug real
   corrigido: achar item na "Feira" (`FeiraCombinadaModal` ou a feira
@@ -101,6 +106,42 @@ reconstruir o raciocínio do zero.
    Ações destrutivas (`DELETE`) são sempre bloqueadas pelo classificador
    de segurança do Claude Code, mesmo com esse acesso — precisa ser
    manual ou aprovado explicitamente na hora.
+
+---
+
+### 2026-09-03 — Nova tela: Estoque Full (consulta, investigação ao vivo primeiro)
+
+Raphael pediu pra investigar se a API do ML dava acesso a informação
+sobre "Envios Full" (agendamento, datas, produtos). Os docs oficiais do
+ML bloqueiam fetch direto (mesmo problema já visto antes), então testei
+direto contra a API real usando o token já conectado (extraído do banco
+sem nunca aparecer no meu output — só usado dentro de um comando bash,
+nunca impresso). Achados confirmados ao vivo:
+
+- **`GET /users/{seller}/items/search?logistic_type=fulfillment`** —
+  lista os anúncios que estão no Full (13 hoje).
+- Item **sem** variação: o `available_quantity` do próprio anúncio já É
+  o estoque real no Full.
+- Item **com** variação: cada uma tem um `inventory_id` próprio, e só
+  dá pra saber o estoque de cada uma via
+  **`GET /inventories/{inventory_id}/stock/fulfillment`** (devolve
+  total/disponível/indisponível, com motivo quando indisponível).
+- **Não existe** endpoint de agendamento/envio de reposição pro centro
+  de distribuição — testei vários caminhos prováveis, todos 404. Isso
+  é 100% manual, só pelo painel do vendedor do próprio ML.
+
+**Implementado:** nova tela `/ml/full` — "Estoque Full", mesmo padrão
+visual do módulo (`fulfillmentStock()` em `ml-insights/index.ts`, ação
+`fulfillment_stock`). Lista ordenada do menor estoque pro maior, cor por
+nível (crítico ≤5, atenção ≤15, ok acima disso — limites informais,
+fáceis de ajustar depois se quiserem outro corte), aviso fixo no topo
+deixando claro que é só consulta (reposição continua manual). Item com
+variação expande mostrando o estoque de cada uma. Testado ao vivo com
+os 13 produtos reais da conta (258 unidades ao todo, 6 em estado
+crítico) — achei e corrigi 2 bugs de pluralização em português
+("variaçãoões", "indisponívelis") durante o teste visual antes de
+fechar. Sem erro de console. Item novo no menu (`Sidebar.jsx`) e rota
+(`App.jsx`), mesmo gate `ml-insights` das outras telas do módulo.
 
 ---
 

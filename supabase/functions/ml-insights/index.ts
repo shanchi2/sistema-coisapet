@@ -1022,6 +1022,67 @@ async function activeListings(integration: any) {
   return { results }
 }
 
+// Estoque Full — confirmado ao vivo em 2026-09-03 contra a API real
+// (a doc oficial bloqueia fetch direto na pesquisa, então testei os
+// caminhos possíveis um por um): `logistic_type=fulfillment` no filtro
+// de busca devolve só os anúncios no Full; `available_quantity` do
+// próprio item já É o estoque real no Full pra item SEM variação; item
+// COM variação (cor/tamanho no mesmo anúncio) tem um `inventory_id` por
+// variação, e só dá pra saber o estoque de cada uma via
+// `/inventories/{inventory_id}/stock/fulfillment` (devolve total/
+// disponível/indisponível, com motivo quando indisponível). NÃO existe
+// endpoint de agendamento/envio de reposição pro centro de distribuição
+// — confirmado testando vários caminhos prováveis, todos 404 — isso só
+// é feito manualmente no painel do vendedor do próprio Mercado Livre.
+async function fulfillmentStock(integration: any) {
+  const search = await mlFetch(
+    `/users/${integration.ml_user_id}/items/search?status=active&logistic_type=fulfillment&limit=100`,
+    integration.access_token,
+  )
+  const ids: string[] = search.results || []
+  if (!ids.length) return { results: [] }
+
+  const results: any[] = []
+  for (const group of chunk(ids, 20)) {
+    try {
+      const multi = await mlFetch(`/items?ids=${group.join(',')}&attributes=id,title,thumbnail,permalink,available_quantity,variations`, integration.access_token)
+      for (const entry of (multi || [])) {
+        const item = entry?.body
+        if (!item?.id) continue
+
+        if (item.variations?.length) {
+          const variations = await mapWithConcurrency(item.variations, 5, async (v: any) => {
+            const label = (v.attribute_combinations || []).map((a: any) => a.value_name).filter(Boolean).join(' / ') || `Variação ${v.id}`
+            if (!v.inventory_id) return { variation_id: v.id, label, inventory_id: null, available: v.available_quantity ?? null, total: null, not_available: null, not_available_detail: [] }
+            try {
+              const stock = await mlFetch(`/inventories/${v.inventory_id}/stock/fulfillment`, integration.access_token)
+              return {
+                variation_id: v.id, label, inventory_id: v.inventory_id,
+                total: stock.total ?? null, available: stock.available_quantity ?? null,
+                not_available: stock.not_available_quantity ?? null, not_available_detail: stock.not_available_detail ?? [],
+              }
+            } catch (err) {
+              return { variation_id: v.id, label, inventory_id: v.inventory_id, available: null, total: null, not_available: null, not_available_detail: [], error: String(err) }
+            }
+          })
+          results.push({
+            item_id: item.id, title: item.title, thumbnail: item.thumbnail, permalink: item.permalink || null,
+            available_quantity: variations.reduce((s: number, v: any) => s + (v.available ?? 0), 0),
+            variations,
+          })
+        } else {
+          results.push({
+            item_id: item.id, title: item.title, thumbnail: item.thumbnail, permalink: item.permalink || null,
+            available_quantity: item.available_quantity ?? 0,
+            variations: null,
+          })
+        }
+      }
+    } catch { /* lote falho não derruba os outros */ }
+  }
+  return { results }
+}
+
 // Pausar/reativar, editar preço, editar estoque — os 3 casos viram 1
 // PUT só, mandando SÓ os campos que o usuário realmente mudou (mesmo
 // espírito de `updateItemAttributes`, que também só manda o que foi
@@ -1576,6 +1637,8 @@ serve(async (req) => {
         return json(await applyContent(integration, db, body.item_id, body.title, body.description))
       case 'active_listings':
         return json(await activeListings(integration))
+      case 'fulfillment_stock':
+        return json(await fulfillmentStock(integration))
       case 'update_item_fields':
         if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
         return json(await updateItemFields(integration, db, body.item_id, body.fields || {}))

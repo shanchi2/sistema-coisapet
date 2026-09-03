@@ -238,6 +238,12 @@ export function useMlInsights() {
     [run],
   )
 
+  // ── Estoque Full ──────────────────────────────────────────────────
+  const fetchFulfillmentStock = useCallback(
+    () => run(async () => (await callMlInsights({ action: 'fulfillment_stock' })).results || []),
+    [run],
+  )
+
   return {
     loading, progress, error,
     fetchItemsHealth, fetchAttributesAudit,
@@ -253,5 +259,6 @@ export function useMlInsights() {
     fetchActiveListings, updateItemFields,
     predictCategory, fetchCategoryAttributesForCreate,
     uploadPicture, fetchStructuralDefaults, createItem,
+    fetchFulfillmentStock,
   }
 }

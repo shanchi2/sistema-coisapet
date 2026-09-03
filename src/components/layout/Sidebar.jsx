@@ -6,7 +6,7 @@ import {
   TrendingUp, Calendar, FileSpreadsheet, MessageSquare, MessagesSquare,
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
   PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, PackageSearch, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
-  HeartPulse, MessageCircleQuestion, Tag, Rocket, Store,
+  HeartPulse, MessageCircleQuestion, Tag, Rocket, Store, Warehouse,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
@@ -31,6 +31,7 @@ const NAV_SECTIONS = [
       { to: '/ml/perguntas',  moduleKey: 'ml-insights', icon: MessageCircleQuestion, label: 'Perguntas & Reputação', roles: ['admin','marketplace'] },
       { to: '/ml/promocoes',  moduleKey: 'ml-insights', icon: Tag,                   label: 'Promoções',             roles: ['admin','marketplace'] },
       { to: '/ml/oportunidades', moduleKey: 'ml-insights', icon: Rocket,             label: 'Oportunidades de Venda', roles: ['admin','marketplace'] },
+      { to: '/ml/full',       moduleKey: 'ml-insights', icon: Warehouse,             label: 'Estoque Full',          roles: ['admin','marketplace'] },
     ],
   },
   {

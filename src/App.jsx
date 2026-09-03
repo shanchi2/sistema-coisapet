@@ -63,6 +63,7 @@ import { MlItemDetailPage } from './modules/ml-insights/MlItemDetailPage'
 import { MlQuestionsReputationPage } from './modules/ml-insights/MlQuestionsReputationPage'
 import { MlPromotionsPage } from './modules/ml-insights/MlPromotionsPage'
 import { MlOpportunitiesPage } from './modules/ml-insights/MlOpportunitiesPage'
+import { MlFullStockPage } from './modules/ml-insights/MlFullStockPage'
 import { MlActiveListingsPage } from './modules/ml-insights/MlActiveListingsPage'
 import { MlCreateListingPage } from './modules/ml-insights/MlCreateListingPage'
 
@@ -140,6 +141,7 @@ export default function App() {
                 <Route path="/ml/perguntas"      element={<GuardedRoute moduleKey="ml-insights"><MlQuestionsReputationPage /></GuardedRoute>} />
                 <Route path="/ml/promocoes"      element={<GuardedRoute moduleKey="ml-insights"><MlPromotionsPage /></GuardedRoute>} />
                 <Route path="/ml/oportunidades"  element={<GuardedRoute moduleKey="ml-insights"><MlOpportunitiesPage /></GuardedRoute>} />
+                <Route path="/ml/full"           element={<GuardedRoute moduleKey="ml-insights"><MlFullStockPage /></GuardedRoute>} />
                 <Route path="/ml/anuncios"       element={<GuardedRoute moduleKey="ml-insights"><MlActiveListingsPage /></GuardedRoute>} />
                 <Route path="/ml/anuncios/novo"  element={<GuardedRoute moduleKey="ml-insights"><MlCreateListingPage /></GuardedRoute>} />
 
