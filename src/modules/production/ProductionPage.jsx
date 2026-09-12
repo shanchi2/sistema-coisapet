@@ -740,6 +740,7 @@ export function ProductionPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [viewDate,  setViewDate]  = useState(todayISO())
   const [tab,       setTab]       = useState('esteira') // 'esteira' | 'faltando'
+  const [platformFilter, setPlatformFilter] = useState('') // '' | 'ml' | 'shopee' | 'manual'
 
   useEffect(() => { fetchOrders(viewDate) }, [viewDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -782,6 +783,8 @@ export function ProductionPage() {
   const mlHasPending = lanes.ml.some(g => g.items.some(i => i.status === 'pendente'))
   const beforeCutoff = new Date().getHours() < 11
   const totalGroups = lanes.ml.length + lanes.shopee.length + lanes.manual.length
+  const visibleSources = SOURCE_ORDER.filter(s => lanes[s].length > 0 && (!platformFilter || platformFilter === s))
+  const visibleGroups  = visibleSources.reduce((s, k) => s + lanes[k].length, 0)
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
@@ -861,6 +864,31 @@ export function ProductionPage() {
             </div>
           </div>
 
+          {/* Abas por plataforma — separação visual, mesmo padrão da tela de Pedidos */}
+          {!loading && totalGroups > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {[
+                { key: '',       label: '🏭 Todas',                    count: totalGroups,        activeCls: 'bg-rose-100 text-rose-700 border-rose-300' },
+                { key: 'ml',     label: SOURCE_CONFIG.ml.emoji + ' ' + SOURCE_CONFIG.ml.label,     count: lanes.ml.length,     activeCls: 'bg-yellow-100 text-blue-900 border-yellow-400' },
+                { key: 'shopee', label: SOURCE_CONFIG.shopee.emoji + ' ' + SOURCE_CONFIG.shopee.label, count: lanes.shopee.length, activeCls: 'bg-orange-100 text-orange-700 border-orange-300' },
+                { key: 'manual', label: SOURCE_CONFIG.manual.emoji + ' ' + SOURCE_CONFIG.manual.label, count: lanes.manual.length, activeCls: 'bg-slate-200 text-slate-700 border-slate-400' },
+              ].map(opt => {
+                const active = platformFilter === opt.key
+                return (
+                  <button key={opt.key || 'all'} onClick={() => setPlatformFilter(opt.key)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${
+                      active ? opt.activeCls : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300 hover:text-slate-600'
+                    }`}>
+                    {opt.label}
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? 'bg-white/70' : 'bg-slate-100 text-slate-400'}`}>
+                      {opt.count}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           {/* Faixas por plataforma */}
           {loading ? (
             <div className="card flex justify-center py-16">
@@ -884,9 +912,17 @@ export function ProductionPage() {
                 )}
               />
             </div>
+          ) : visibleGroups === 0 ? (
+            <div className="card">
+              <EmptyState
+                icon={Factory}
+                title="Nada por aqui"
+                description="Essa plataforma não tem produtos pendentes nesse dia."
+              />
+            </div>
           ) : (
             <div className="flex flex-col gap-6">
-              {SOURCE_ORDER.filter(s => lanes[s].length > 0).map(s => (
+              {visibleSources.map(s => (
                 <PlatformLane key={s} sourceKey={s} groups={lanes[s]}
                   onAdvanceBulk={advanceStatusBulk} onConfirmStock={confirmStock} canEdit={canEdit} />
               ))}
