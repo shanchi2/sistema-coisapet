@@ -22,6 +22,8 @@ import { UsersPage }             from './modules/users/UsersPage'
 import { SuppliersPage }         from './modules/suppliers/SuppliersPage'
 import { AuditPage }             from './modules/audit/AuditPage'
 import { ProductionPage }        from './modules/production/ProductionPage'
+import { ChapasPage }            from './modules/production/ChapasPage'
+import { MediaControlPage }      from './modules/production/MediaControlPage'
 import { OrdersPage }            from './modules/orders/OrdersPage'
 import PickListShopee            from './modules/orders/PickListShopee'
 import { ExpedicaoPage }         from './modules/shipping/ExpedicaoPage'
@@ -59,13 +61,20 @@ import { ReviewsPage } from './modules/reviews/ReviewsPage'
 import { MlAccountDashboardPage } from './modules/ml-insights/MlAccountDashboardPage'
 import { MlTrafficPage } from './modules/ml-insights/MlTrafficPage'
 import { MlHealthPage } from './modules/ml-insights/MlHealthPage'
+import { MlUpdatesHistoryPage } from './modules/ml-insights/MlUpdatesHistoryPage'
 import { MlItemDetailPage } from './modules/ml-insights/MlItemDetailPage'
 import { MlQuestionsReputationPage } from './modules/ml-insights/MlQuestionsReputationPage'
 import { MlPromotionsPage } from './modules/ml-insights/MlPromotionsPage'
+import { MlAdsPage } from './modules/ml-insights/MlAdsPage'
 import { MlOpportunitiesPage } from './modules/ml-insights/MlOpportunitiesPage'
 import { MlFullStockPage } from './modules/ml-insights/MlFullStockPage'
+import { MlFullShipmentsPage } from './modules/ml-insights/MlFullShipmentsPage'
+import { MlCouponsPage } from './modules/ml-insights/MlCouponsPage'
 import { MlActiveListingsPage } from './modules/ml-insights/MlActiveListingsPage'
 import { MlCreateListingPage } from './modules/ml-insights/MlCreateListingPage'
+import { BlogPage } from './modules/blog/BlogPage'
+import { BlogPostEditorPage } from './modules/blog/BlogPostEditorPage'
+import { BlogBulkGeneratePage } from './modules/blog/BlogBulkGeneratePage'
 
 
 
@@ -122,6 +131,8 @@ export default function App() {
 
                 {/* Produção */}
                 <Route path="/producao"       element={<GuardedRoute moduleKey="producao"><ProductionPage /></GuardedRoute>} />
+                <Route path="/producao/chapas" element={<GuardedRoute moduleKey="producao"><ChapasPage /></GuardedRoute>} />
+                <Route path="/producao/midia"  element={<GuardedRoute moduleKey="controle-midia"><MediaControlPage /></GuardedRoute>} />
                 <Route path="/baixa-diaria"   element={<GuardedRoute moduleKey="baixa-diaria"><BaixaDiariaPage /></GuardedRoute>} />
                 <Route path="/passagem-turno" element={<GuardedRoute moduleKey="producao"><PassagemTurnoPage /></GuardedRoute>} />
                 <Route path="/manutencao"     element={<GuardedRoute moduleKey="manutencao"><MaintenancePage /></GuardedRoute>} />
@@ -138,12 +149,22 @@ export default function App() {
                 <Route path="/ml/trafego"        element={<GuardedRoute moduleKey="ml-insights"><MlTrafficPage /></GuardedRoute>} />
                 <Route path="/ml/saude"          element={<GuardedRoute moduleKey="ml-insights"><MlHealthPage /></GuardedRoute>} />
                 <Route path="/ml/saude/:itemId"  element={<GuardedRoute moduleKey="ml-insights"><MlItemDetailPage /></GuardedRoute>} />
+                <Route path="/ml/historico"      element={<GuardedRoute moduleKey="ml-historico"><MlUpdatesHistoryPage /></GuardedRoute>} />
                 <Route path="/ml/perguntas"      element={<GuardedRoute moduleKey="ml-insights"><MlQuestionsReputationPage /></GuardedRoute>} />
                 <Route path="/ml/promocoes"      element={<GuardedRoute moduleKey="ml-insights"><MlPromotionsPage /></GuardedRoute>} />
+                <Route path="/ml/publicidade"    element={<GuardedRoute moduleKey="ml-insights"><MlAdsPage /></GuardedRoute>} />
                 <Route path="/ml/oportunidades"  element={<GuardedRoute moduleKey="ml-insights"><MlOpportunitiesPage /></GuardedRoute>} />
                 <Route path="/ml/full"           element={<GuardedRoute moduleKey="ml-insights"><MlFullStockPage /></GuardedRoute>} />
+                <Route path="/ml/full/envios"    element={<GuardedRoute moduleKey="ml-insights"><MlFullShipmentsPage /></GuardedRoute>} />
+                <Route path="/ml/cupons"         element={<GuardedRoute moduleKey="ml-insights"><MlCouponsPage /></GuardedRoute>} />
                 <Route path="/ml/anuncios"       element={<GuardedRoute moduleKey="ml-insights"><MlActiveListingsPage /></GuardedRoute>} />
                 <Route path="/ml/anuncios/novo"  element={<GuardedRoute moduleKey="ml-insights"><MlCreateListingPage /></GuardedRoute>} />
+
+                {/* Blog */}
+                <Route path="/blog"             element={<GuardedRoute moduleKey="blog"><BlogPage /></GuardedRoute>} />
+                <Route path="/blog/novo"        element={<GuardedRoute moduleKey="blog"><BlogPostEditorPage /></GuardedRoute>} />
+                <Route path="/blog/gerar-lote"  element={<GuardedRoute moduleKey="blog"><BlogBulkGeneratePage /></GuardedRoute>} />
+                <Route path="/blog/:id"         element={<GuardedRoute moduleKey="blog"><BlogPostEditorPage /></GuardedRoute>} />
 
                 {/* Catálogo */}
                 <Route path="/materia-prima"  element={<GuardedRoute moduleKey="materiais"><MaterialsPage /></GuardedRoute>} />

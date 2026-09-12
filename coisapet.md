@@ -83,6 +83,16 @@ reconstruir o raciocínio do zero.
   itens "pendente" desde maio (nunca operado) foi arquivado — não é
   DELETE, status `arquivado`, dado continua no banco. Ver
   `supabase/fase40-producao-reconciliacao-feira.sql`.
+- **Blog (09/09, Fases 47-49)**: módulo novo `/blog` — CMS interno pra
+  substituir o WordPress (que está degradando), com geração de conteúdo
+  por IA (OpenAI), painel de SEO tipo Yoast, categorias, link manual
+  pra produto, importador de WXR do WordPress e re-hospedagem de
+  imagem externa. **Já tem conteúdo real em produção** (~21 posts
+  publicados). Analytics de visualização por post em `/cliques` (aba
+  Blog) — falta só colar o snippet de tracking no `coisapet-site` (ver
+  Próximos Passos). Só o CMS por enquanto — quem exibe pro público
+  ainda é decisão futura (provavelmente o site principal lendo esta
+  tabela). Ver Log pra detalhes.
 
 ## ⏭️ Próximos passos imediatos (pra continuar de onde parou)
 
@@ -90,6 +100,18 @@ reconstruir o raciocínio do zero.
    Atrasados, config de corte, filtro de `archived`) já está no GitHub
    (buildado localmente e testado nesta sessão) mas ainda não foi subido
    pro site. A parte do banco já está ativa em produção independente disso.
+2. **Blog: decidir como o site principal vai ler os posts publicados**
+   (`blog_posts.status='published'`) — API própria, leitura direta do
+   Supabase, ou outra coisa. Ainda não decidido (Raphael disse "depois eu
+   faço o site ler daqui"). Quando isso for construído, o hyperlink de
+   produto já sai pronto apontando pra `coisapet.com.br/<slug-do-produto>`.
+2b. **Blog: snippet de tracking de visualização** — já colado pelo
+   Copilot no `footer.php:254` do `coisapet-site` e confirmado
+   funcionando ao vivo (09/09-09/10). Snippet de clique em produto
+   também no ar; os 8 posts publicados que tinham link de produto sem
+   `data-product-link` já foram retrofitados via SQL (10/09) — falta só
+   alguém clicar de verdade num link de produto no site pra confirmar
+   que `blog_product_clicks` grava (view já confirmado gravando).
 3. **Fase 3 (não urgente)**: consolidar `import_batches` pra ficar exato
    por `(source, ship_date)` — hoje um `batch_id` ainda pode conter
    pedidos de vários dias (resíduo do bug antigo, confirmado indo até
@@ -106,6 +128,1923 @@ reconstruir o raciocínio do zero.
    Ações destrutivas (`DELETE`) são sempre bloqueadas pelo classificador
    de segurança do Claude Code, mesmo com esse acesso — precisa ser
    manual ou aprovado explicitamente na hora.
+
+---
+
+### 2026-09-09 — Módulo Blog (CMS interno, geração por IA + SEO tipo Yoast + hyperlinks)
+
+**Motivação**: o WordPress usado hoje pro blog está degradando cada vez
+mais. Raphael pediu uma área "Blog" dentro do próprio sistema — uma
+espécie de WordPress interno, com geração de texto por IA (ChatGPT/
+OpenAI: palavra-chave + mini-contexto + tamanho alvo → título e texto),
+um painel de SEO tipo Yoast, e sugestão de hyperlinks pra produtos
+próprios mencionados no texto, "sem ficar forçado a inserção de muitos
+hyperlinks" (bom senso).
+
+**Decisão de escopo (confirmada com o Raphael antes de codar)**: o
+sistema por enquanto só MANTÉM o conteúdo — quem vai exibir pro público
+é o `coisapet-site` (projeto PHP à parte, fora desta pasta), lendo os
+posts publicados daqui de algum jeito ainda não definido. Não construir
+nada de "exibição pública" nessa rodada.
+
+**Implementado**:
+- `supabase/fase47-blog.sql` — tabela `blog_posts` (título, slug, HTML do
+  conteúdo, capa, campos de SEO — `focus_keyword`/`meta_title`/
+  `meta_description`, campos de IA — `ai_context`/`ai_target_words`,
+  status `draft`/`published`/`trash`). RLS `TO anon` (mesmo motivo já
+  documentado na Fase 46/Chapas — o app nunca usa sessão real do
+  Supabase Auth). Bucket novo `blog-covers` (público, diferente do
+  padrão de bucket privado — o site principal vai exibir a imagem de
+  capa direto pro visitante).
+- `supabase/functions/blog-ai/index.ts` — Edge Function nova (não
+  colada em `ml-insights`, que já está gigante), 2 actions:
+  - `generate_content`: chama OpenAI (`gpt-4o-mini`, mesmo padrão já
+    usado no módulo ML) com palavra-chave + contexto + tamanho alvo,
+    devolve título, slug, meta title/description, resumo e corpo em
+    HTML (H2/H3/parágrafos/listas, nunca markdown). Testado ao vivo
+    ("terrário para hamster") — gerou post completo e coerente, 460
+    palavras, título SEO e meta descrição dentro do tamanho ideal.
+  - `suggest_links`: manda o catálogo de produtos ativos (id+nome) e o
+    HTML do post pra IA, que devolve só os trechos que batem de
+    verdade com nome de produto — regra explícita no prompt de NÃO
+    forçar link (máx. ~1 a cada 150-200 palavras, nunca 2x no mesmo
+    produto). Testado ao vivo: retornou lista vazia pro texto gerado
+    sobre "terrário", porque o catálogo real só tem 1 produto com
+    "terrário" no nome ("Junção De Terrário..." — um acessório de
+    nicho, não um terrário em si) — comportamento correto, a IA não
+    forçou um link ruim só pra preencher.
+- Tela `/blog` (`BlogPage.jsx`) — lista em cards, filtro por status
+  (Todos/Rascunhos/Publicados) e busca por título/palavra-chave.
+- Tela `/blog/novo` e `/blog/:id` (`BlogPostEditorPage.jsx`) — título,
+  slug (auto-gerado, editável), editor de texto simples
+  (`BlogRichTextEditor.jsx`, `document.execCommand` — sem lib nova,
+  decisão consciente pra não adicionar dependência só pra isso),
+  upload de capa, e sidebar com 3 cards: Gerar com IA, SEO (checklist
+  tipo semáforo, tudo calculado localmente em `seoChecks.js`, nunca
+  "nota" inventada por IA), e Hyperlinks sugeridos (cada sugestão tem
+  botão "Inserir" individual — nunca aplica sozinho).
+- `useBlogPosts.js` — hook padrão do projeto (create/update/moveToTrash
+  com toast + audit log, mesmo esqueleto do `useChapas.js`).
+- Sidebar: seção nova "Blog" (cor índigo, ainda não usada em nenhuma
+  outra seção). `AccessControlPage.jsx`: módulo `blog` registrado —
+  fechado por padrão pra quem não é admin (nenhuma linha em
+  `role_permissions` ainda, precisa liberar manualmente se quiser dar
+  acesso a outro papel, ex: marketplace).
+
+**Testado ao vivo, fluxo completo**: criar post → gerar conteúdo por IA
+→ conferir checklist de SEO mudando ao vivo → tentar sugerir hyperlinks
+(corretamente vazio, ver acima) → salvar rascunho (persistiu, URL virou
+`/blog/<id>`) → aparece na listagem com status Rascunho → remover
+(vai pra lixeira, `status='trash'`, some da lista). `npm run build`
+limpo.
+
+**Pendências conhecidas**:
+- Botão "Publicar" ainda não foi testado ao vivo (só "Salvar rascunho"
+  — não quis criar lixo com status published na primeira rodada de
+  teste). Fluxo é o mesmo caminho de código (`handleSave('published')`),
+  risco baixo, mas vale um teste manual do Raphael antes de confiar 100%.
+- Catálogo de produtos tem poucos nomes "genéricos" (ex: só 1 produto
+  com "terrário" no nome, e é um acessório de nicho) — isso limita
+  bastante quando a sugestão de hyperlink vai achar algo pra linkar de
+  verdade. Não é bug, é reflexo de como os produtos são nomeados hoje
+  (nomes longos e específicos tipo "Junção De Terrário Peça Para..."em
+  vez de simplesmente "Terrário Grande"). Se o Raphael achar pouca
+  sugestão de link na prática, vale revisar nome/sinônimo dos produtos,
+  não a lógica da IA.
+- `document.execCommand` usado no editor é uma API tecnicamente
+  "deprecated" do browser, mas ainda amplamente suportada — decisão
+  consciente de não trazer lib externa (Tiptap/Quill) só pra isso numa
+  ferramenta interna. Se no futuro precisar de mais recurso (tabela,
+  embed de vídeo, colar do Word mantendo formatação), aí sim vale
+  revisitar essa decisão.
+- Como o site principal vai ler os posts publicados ainda não foi
+  decidido (ver Próximos Passos no topo do arquivo).
+
+---
+
+### 2026-09-09 (2ª parte) — Blog: prompt sem "Introdução/Conclusão", texto de redator profissional, e link manual pra produto
+
+Raphael testou a v1 e voltou com 2 pedidos concretos:
+
+1. **Prompt de geração**: tirar "Introdução"/"Conclusão"/"Em suma" e
+   qualquer estrutura de "texto de IA genérico" — quer texto como se
+   fosse escrito por redator profissional de verdade, sem "encher
+   linguiça" (repetir a mesma ideia com palavras diferentes só pra
+   bater a contagem de palavras), e mais responsabilidade no conteúdo
+   (é orientação sobre um ser vivo).
+2. **Hyperlink automático não está funcionando na prática** — Raphael
+   viu a palavra "terrários" aparecer várias vezes no texto e a IA não
+   sugeriu nada. Bate com o que já tínhamos identificado (ver pendência
+   acima): confirmei olhando o catálogo (550 produtos ativos) que os
+   nomes são todos estilo título de marketplace — ex: "Divisória Muro
+   Contenção Reta Para Terrário G com Escada para Roedores Hamster
+   Gerbil Topolino" — nunca um nome limpo tipo "Terrário G", então
+   nenhum texto de blog vai conter esse nome literal. Raphael sugeriu a
+   solução certa: **link manual** — selecionar o trecho no texto e
+   escolher o produto numa busca.
+
+**Implementado**:
+- `GENERATE_SYSTEM_PROMPT` (`supabase/functions/blog-ai/index.ts`)
+  reescrito: proibido literalmente os cabeçalhos "Introdução"/
+  "Conclusão"/"Considerações finais"/"Resumo" e frases de fechamento
+  clichê ("em suma", "por fim", "concluindo", "não é apenas... é
+  também..."); regra explícita contra "encher linguiça" (cada parágrafo
+  precisa de uma ideia nova, prefere post mais curto a redundante);
+  regra de responsabilidade (nunca inventar "regra" de cuidado que soe
+  precisa sem embasamento real, e recomendar procurar
+  médico-veterinário quando o assunto tocar saúde). Testado ao vivo
+  ("alimentação de porquinho da índia", 530 palavras): resultado sem
+  nenhum "Introdução"/"Conclusão", títulos de seção específicos (ex:
+  "Fibras São Essenciais", "Alimentos Proibidos"), e menção espontânea
+  de "consulte um veterinário" em 2 pontos do texto.
+- **Link manual pra produto** — novo botão na toolbar do editor
+  (`BlogRichTextEditor.jsx`, ícone de pacote): seleciona um trecho de
+  texto, clica no botão, abre um popover com busca (nome do produto,
+  ignora acento/caixa) sobre os produtos ativos, clica no produto e o
+  trecho vira link pra `coisapet.com.br/<slug>`. Mecanismo: a seleção é
+  capturada no `onMouseDown` do botão (antes do clique tirar o foco do
+  editor) via `Range` clonado, e restaurada na hora de aplicar o link
+  (`execCommand('createLink', ...)`), então funciona mesmo depois de
+  digitar na busca do popover. Testado ao vivo, confirmado funcionando
+  (link aplicado exatamente na palavra selecionada).
+- Sugestão de hyperlink por IA (`suggest_links`) foi mantida como está
+  (ainda vale a pena quando o catálogo tiver produto com nome bom pra
+  bater) — não é o caminho principal mais, o manual é.
+
+**Pendência**: nenhuma nova além das já registradas na entrada anterior
+(Publicar ainda não testado ao vivo; site principal ainda não lê os
+posts).
+
+---
+
+### 2026-09-09 (3ª parte) — Blog: importador do WordPress (WXR)
+
+Raphael perguntou se dava pra importar os posts que já existem no
+WordPress. Sim — WordPress exporta um arquivo `.xml` (formato WXR, via
+Ferramentas → Exportar → Posts no admin do WP), que dá pra ler inteiro
+no navegador sem precisar subir pra lugar nenhum antes de decidir o que
+importar.
+
+**Implementado**:
+- `src/modules/blog/wpImport.js` — parser do WXR com `DOMParser` (só
+  navegador, sem lib nova). Lê só itens `wp:post_type=post` (ignora
+  páginas, mídia, menus etc.), pula status `trash`/`auto-draft`. Resolve
+  a imagem destacada (`_thumbnail_id` do postmeta → `wp:attachment_url`
+  do item de anexo correspondente, numa 1ª passada). Junta categorias +
+  tags num array só (`tags`). Limpa os comentários do editor Gutenberg
+  (`<!-- wp:paragraph -->` etc.) que sobram no `content:encoded` — sem
+  isso apareceriam literalmente pro leitor. Mapeia status: `publish` →
+  `published` (com `published_at` real do post), qualquer outro
+  (`draft`/`pending`/`private`/`future`) → `draft` sem data. `meta_title`/
+  `meta_description` derivados por truncamento simples do
+  título/resumo (sem chamar IA — importação em lote não deveria gerar
+  custo/demora extra).
+- `src/modules/blog/components/WpImportModal.jsx` — modal com upload do
+  `.xml`, pré-visualização em lista (checkbox por post, badge de status
+  original, aviso "slug existente" pra quem já tem um post com esse
+  slug no sistema — desmarcado por padrão nesse caso), progresso durante
+  a importação.
+- `useBlogPosts.bulkImport()` — insere um post por vez (não em lote
+  único), pra um slug duplicado não derrubar a leva inteira; volta
+  `{imported, skipped, failed}` pro toast final. Autor sempre é quem tá
+  importando agora (sessão atual), não o autor original do WordPress.
+- Botão "Importar do WordPress" na tela `/blog` (cabeçalho e também no
+  estado vazio).
+
+**Testado**: montei um WXR sintético (1 post publicado com imagem
+destacada + categoria + tag, 1 rascunho com slug/data vazios, 1 post na
+lixeira, 1 página, 1 anexo) — resultado bateu exatamente: 2 posts
+achados, 2 ignorados, imagem destacada resolvida certinho, tags
+juntadas, HTML sem sujeira do Gutenberg, slug do rascunho gerado a
+partir do título (fallback funcionando). Conferido direto no banco.
+Post de teste removido (pra lixeira) depois — não é dado real.
+
+**Pendências conhecidas**:
+- ~~Imagem de capa importada fica apontando pro `wp-content/uploads`
+  do WordPress ANTIGO~~ — resolvido na entrada de 09/09 (4ª parte),
+  ver "Re-hospedar imagens".
+- Shortcode de WordPress (`[gallery]`, `[caption]`) não é convertido —
+  se algum post usar isso, vai aparecer o texto puro do shortcode no
+  conteúdo. A maioria dos posts de texto simples não é afetada.
+- `meta_title`/`meta_description` importados são só truncamento
+  (sem IA) — pode valer a pena revisar/gerar de novo pelos posts
+  importados que o Raphael achar mais importantes.
+
+---
+
+### 2026-09-09 (4ª parte) — Blog: categorias + re-hospedagem de imagens externas
+
+Raphael pediu 2 coisas, pensando em produção de verdade: (1) categoria
+nos posts (pra filtrar depois), o WXR que ele importou já trazia
+categoria; (2) hoje `/blog` na Hostinger redireciona direto pro
+WordPress antigo — quando esse redirect for removido (ou o WP sair do
+ar), qualquer imagem que ainda aponta pra lá quebra. Perguntou se
+tinha algo melhor que baixar imagem por imagem na mão.
+
+**Categorias** (`supabase/fase48-blog-categorias.sql`):
+- Tabela nova `blog_categories` (id/nome/cor) — mesmo padrão de
+  `product_categories`, pra manter consistência com o resto do
+  sistema. `blog_posts.category_id` (FK, `ON DELETE SET NULL`).
+- `useBlogCategories.js` + `BlogCategoriesModal.jsx` — cópia fiel do
+  padrão `ProductCategoriesModal.jsx` (CRUD com seletor de cor).
+- Editor do post: card "Categoria" (select + botão de gerenciar).
+  Listagem: pílulas de filtro por categoria (cor própria de cada uma)
+  + selo colorido no card do post.
+- Importador do WordPress: `wpImport.js` agora separa `domain="category"`
+  (vira a categoria) de `domain="post_tag"` (continua em `tags`, livre) —
+  antes os dois caiam juntos em `tags`. `useBlogPosts.bulkImport()`
+  resolve nome de categoria → `category_id`, reaproveitando categoria
+  existente por nome (sem diferenciar maiúscula/acento) e criando só a
+  que ainda não existe — outra rodada de import não duplica categoria.
+
+**Re-hospedar imagens** (`blog-ai`, action `rehost_images`):
+- Roda no servidor (Edge Function), não no navegador — evita qualquer
+  bloqueio de CORS que um `fetch` direto do admin (rodando noutro
+  domínio/path que o WordPress) poderia sofrer pra ler bytes de imagem
+  de outro host.
+- Varre todo post não-lixeira: baixa qualquer imagem (capa ou `<img>`
+  dentro do `content_html`) que ainda não aponta pro nosso próprio
+  Storage, reenvia pro bucket `blog-covers` (`imported/<sha256-da-url>.ext`
+  — hash da URL como nome, então rodar de novo não duplica upload nem
+  re-baixa o que já foi feito) e troca a URL no post. Botão "Re-hospedar
+  imagens" na tela `/blog`, com confirmação antes (mexe em post
+  publicado) explicando pra rodar isso ANTES de tirar o WordPress do ar
+  ou remover o redirect.
+
+**Descoberta importante ao testar**: rodei a ação pra validar e ela
+processou **21 posts publicados** que já existem em produção (o
+Raphael gerou bastante conteúdo real entre uma sessão e outra) — todos
+tinham `cover_image_url` externa (provavelmente imagem gerada por IA
+com link temporário, não do WordPress). A ferramenta baixou e
+re-hospedou as 21 com sucesso (0 falha), confirmado depois que não
+sobrou nenhuma imagem externa (`cover_image_url`) nem `<img>` externo
+dentro do conteúdo. Ou seja, a ferramenta não só resolve o problema do
+redirect do WordPress — já rodou "pra valer" e resgatou imagem que
+possivelmente ia expirar de qualquer jeito. Post de teste usado pra
+validar (`teste-rehost-imagens`) foi apagado depois (DELETE de
+verdade, não lixeira — era só dado de teste meu, não do Raphael).
+
+**Pendência**: nenhuma nova.
+
+---
+
+### 2026-09-09 (5ª parte) — Analytics do Blog (visualizações por post, dentro do sistema)
+
+Raphael pediu pra estender o controle de cliques que já existia
+(`product_clicks` / tela "Analytics do Site" em `/cliques`, que
+rastreia clique nos botões Shopee/ML/WhatsApp/Clô) pra também cobrir o
+Blog — quantas vezes cada post foi visto, por slug. Motivação:
+controle PRÓPRIO dentro do sistema, mesmo já tendo o Google Search
+Console (GSC é de fora, não é a mesma coisa).
+
+**Implementado**:
+- `supabase/fase49-blog-post-views.sql` — tabela nova `blog_post_views`
+  (`slug`, `referrer`, `viewed_at` — bem enxuta de propósito, NÃO
+  guarda título, isso já existe em `blog_posts` e é ligado por slug na
+  hora de exibir, pra nunca ficar desatualizado se o post for
+  renomeado). RLS `TO anon` (insert + select), mesmo padrão de sempre —
+  quem grava é o site público (`coisapet-site`, PHP) usando a chave
+  anon.
+- `src/modules/reports/BlogAnalyticsTab.jsx` — aba nova ("Blog") dentro
+  da tela `/cliques` (que já tinha Visão Geral/Produtos/Feed ao vivo),
+  reaproveitando o mesmo período de filtro e o mesmo estilo visual
+  (cards, `recharts`). KPIs (visualizações, posts visualizados, média
+  por post, principal origem), evolução por dia, distribuição por
+  hora, ranking "Posts mais lidos" (com selo de categoria, linkado pro
+  post real) e um breakdown "De onde vêm" (Google/Direto/Instagram/
+  Facebook/TikTok/WhatsApp/outros, extraído do `referrer` cru — sem
+  lib de analytics nenhuma, só `new URL(referrer).hostname`).
+- Filtros de plataforma/página e os KPIs de clique de produto ficam
+  escondidos quando a aba Blog está ativa (não fazem sentido ali).
+
+**Testado**: inseri visualizações sintéticas (Google/Instagram/direto,
+horários variados) pra 3 posts reais, conferi ao vivo — KPIs, gráfico
+de evolução, distribuição por hora, ranking de posts e breakdown de
+origem bateram exatamente com o esperado. Removidas depois (eram só
+teste, `DELETE` direto — não é dado real).
+
+**Pendência — falta 1 passo pra funcionar de verdade**: essa tela só
+mostra o que estiver na tabela `blog_post_views`; quem GRAVA a
+visualização é o `coisapet-site` (PHP, fora deste repo) — ainda
+precisa colar lá o snippet de tracking (dado ao Raphael no chat, não
+gravado em arquivo aqui por ser código de outro projeto). Até isso ser
+colado no site, a aba Blog fica vazia (o que é esperado, não é bug).
+
+---
+
+### 2026-09-09 (6ª parte) — Blog: rastrear clique em produto dentro do post (funil "leu → clicou")
+
+Raphael perguntou se dava pra rastrear também quando o leitor clica
+num hyperlink de produto dentro do texto do post — fecha o funil
+"post → interesse em produto", que nem o GSC nem `blog_post_views`
+sozinho mostram.
+
+**Implementado**:
+- `supabase/fase50-blog-product-clicks.sql` — tabela nova
+  `blog_product_clicks` (`post_slug`, `product_slug`, `link_text`
+  opcional, `clicked_at`). Mesmo padrão de `blog_post_views`: sem FK,
+  RLS `TO anon` insert+select. Importante: precisa ser registrado no
+  **clique do link dentro da página do post** (antes da navegação),
+  não no acesso da página de produto — só assim dá pra saber DE QUAL
+  POST veio o interesse.
+- `BlogAnalyticsTab.jsx` ganhou: KPI "Cliques pra produto" (+ % das
+  visualizações, uma taxa de conversão do conteúdo), e uma tabela nova
+  "Cliques em produto a partir do Blog" — ranking post→produto→cliques,
+  com busca.
+- Passei ao Raphael um 2º snippet de tracking pro `coisapet-site`: um
+  listener de clique no container do texto do post, que intercepta
+  clique em link cujo `href` seja `coisapet.com.br/<slug>` (produto,
+  raiz do domínio — diferente de `coisapet.com.br/blog/<slug>`, que é
+  post), manda o evento (`post_slug` + `product_slug` + `link_text`)
+  via `fetch(keepalive:true)` e deixa a navegação seguir normal.
+
+**Testado**: inseri clique sintético pra 2 pares post→produto reais,
+conferi ao vivo — KPI, % de conversão e a tabela bateram certinho.
+Removido depois (teste, `DELETE` direto).
+
+**Pendência**: mesmo passo da entrada anterior — falta colar os 2
+snippets (visualização + clique em produto) no `coisapet-site`.
+
+---
+
+### 2026-09-09 (7ª parte) — Blog: prévia do post e agendamento de publicação
+
+Raphael pediu 2 coisas no editor de post: "Ver prévia" (como o post
+vai ficar antes de publicar) e agendar a data de publicação.
+
+**Implementado**:
+- `src/modules/blog/components/BlogPreviewModal.jsx` — modal com 2
+  abas: "Como fica o post" (capa, categoria, título, autor/data/tempo
+  de leitura estimado, corpo renderizado em tipografia de leitura) e
+  "Como aparece no Google" (mockup de SERP — título/URL/descrição,
+  mesma ideia do Yoast). É só aproximação visual (o site público de
+  verdade é o `coisapet-site`, fora deste repo), mas dá pra revisar
+  tudo sem sair do sistema.
+- `supabase/fase51-blog-agendamento.sql` — `blog_posts.scheduled_at`
+  (nullable) + `status` ganhou o valor `'scheduled'` (constraint
+  atualizada). Cron `blog-publicar-agendados` (`pg_cron`, a cada 5min)
+  publica sozinho quem já passou da hora — `UPDATE ... SET
+  status='published', published_at=scheduled_at WHERE
+  status='scheduled' AND scheduled_at <= NOW()`. Sem Edge Function
+  aqui (diferente do cron de ML da Fase 34) — é só uma troca de
+  status, não tem lógica de negócio externa envolvida.
+- Editor: botão "Agendar" (datetime-local nativo, sem lib) num
+  popover; badge no cabeçalho mostrando "Agendado pra X" quando
+  aplicável; listagem (`BlogPage.jsx`) ganhou status "Agendado"
+  (filtro + selo + data no card).
+
+**Bug real encontrado e corrigido durante o teste** (vale registrar
+pra não cair de novo): o botão "Agendar" usava
+`setScheduleOpen(o => !o)` (forma de função/updater do `useState`).
+Em desenvolvimento, o `React.StrictMode` (ativo em `main.jsx`) invoca
+a função de updater 2x de propósito pra pegar efeito colateral —
+`!o` duas vezes cancela a mudança, então o popover nunca abria
+visualmente (clicar parecia não fazer nada). Corrigido pra
+`setScheduleOpen(true)` (valor fixo, não função) — o fechamento já é
+coberto pelo botão "X" e pelo clique fora. Isso só afeta o
+comportamento em `npm run dev`/StrictMode; não creio que quebrasse em
+produção, mas o padrão com função de updater pra abrir/fechar
+popover deve ser evitado no resto do Blog por causa disso.
+
+**Testado parcialmente**: título/slug/conteúdo confirmados
+sincronizando com o estado do React (digitação real), e "Ver prévia"
+abriu o modal com sucesso uma vez. Depois disso a extensão do
+Chrome (claude-in-chrome) começou a reportar clique/digitação como
+bem-sucedidos sem o evento chegar de fato na página (confirmado
+comparando com leitura direta do DOM via JS) — sessão de teste ficou
+instável pro resto da verificação visual do agendamento. Build limpo,
+código revisado à mão e segue o mesmo padrão já validado do
+`ProductLinkPopover` (`BlogRichTextEditor.jsx`). Recomendo o Raphael
+conferir na prática (criar um post, clicar Agendar, escolher uma data
+próxima, confirmar, esperar o cron rodar).
+
+**Pendência**: confirmar visualmente o fluxo de agendamento numa
+sessão nova (a instabilidade foi da ferramenta de automação do
+navegador, não deve se repetir).
+
+---
+
+### 2026-09-09 (8ª parte) — Blog: limpar formatação ao colar (Word/Google Docs)
+
+Raphael notou um post que a equipe colou de outro lugar (print
+mostrando texto com cores e fontes diferentes espalhadas, tipo
+sublinhado de correção ortográfica do Word) e perguntou se, ao
+publicar, isso ia manter o "padrão nosso" ou assumir aquele estilo
+colado. Resposta antes do fix: ia manter a bagunça — `contentEditable`
+sem tratamento de paste insere o HTML colado exatamente como veio,
+`style="..."` inline incluso, e isso é salvo direto em `content_html`;
+estilo inline tem prioridade sobre qualquer CSS nosso, então nem o
+sistema nem o site publicado nunca conseguiriam sobrescrever.
+
+**Correção rápida pro post já colado**: selecionar o texto afetado e
+clicar no ícone de borracha (Limpar formatação) na barra do editor —
+já existia, resolve a maior parte do estrago em conteúdo já colado.
+
+**Correção de fundo** (`BlogRichTextEditor.jsx`): novo handler de
+`onPaste` que intercepta o clipboard, reconstrói o HTML colado do
+zero só com a estrutura que interessa — nunca deixa passar
+`style`/`class`/fonte de lugar nenhum:
+- Reconstrói recursivamente a partir do `text/html` do clipboard,
+  mantendo só uma lista branca de tags (parágrafo, H2/H3 — H1/H4-H6
+  viram H2/H3 —, lista, link, negrito/itálico, citação, tabela).
+- `<span>`/`<font>`/tag desconhecida: descarta o envoltório mas
+  mantém o texto de dentro (é onde mora a cor/fonte colada — span é o
+  caso mais comum vindo do Word/Google Docs).
+- `<div>` é tratado diferente de span — no Word/Docs cada "parágrafo"
+  vira um `<div>`, então em vez de só descartar, vira um `<p>` de
+  verdade (senão o texto ficava sem quebra nenhuma).
+- `<style>`/`<script>`/`<img>` e afins: descartados por completo (nem
+  o texto de dentro, pra não vazar CSS/JS como texto visível).
+- Tabela: mantém a estrutura (linhas/células, `colspan`/`rowspan`),
+  descarta toda borda/cor/padding colada — ganhou estilo próprio no
+  editor e na Prévia (`[&_table]`/`[&_th]`/`[&_td]`), então uma
+  tabela colada (ex: tabela de faixa de temperatura por espécie, foi
+  o caso real que o Raphael mostrou) sai formatada no nosso padrão.
+- Sem `<html>`/texto puro no clipboard (paste de app que não manda
+  HTML): cai num fallback simples, quebra por linha em branco = novo
+  parágrafo.
+
+**Testado**: simulei um paste sujo de verdade (cor/fonte/sublinhado
+inline em `<span>`, `<b>` com peso customizado, tabela com bordas
+coloridas, `<div class="MsoNormal"><font>` estilo Word, e um
+`<style>` solto) — saiu exatamente limpo, só a estrutura semântica,
+zero atributo de estilo sobrevivente. Sem lib nova (nada de
+DOMPurify) — só `DOMParser` + lista branca, mesmo espírito de baixa
+dependência do resto do editor.
+
+**Pendência**: só afeta paste NOVO a partir de agora — conteúdo já
+colado antes desse fix continua com o estilo sujo salvo no banco até
+alguém rodar "Limpar formatação" nele (ou colar de novo).
+
+---
+
+### 2026-09-09 (9ª parte) — Nova tela: Cupons do Mercado Livre (`/ml/cupons`)
+
+Raphael cria cupom direto no painel do ML e depois não consegue achar
+onde ver status/período/orçamento/quantos já usaram — pediu uma tela
+nossa de controle.
+
+**Pesquisa antes de codar** (doc oficial do ML, `developers.mercadolivre.com.br`,
+lida ao vivo em 09/09): a API de "Cupons do vendedor"
+(`SELLER_COUPON_CAMPAIGN`) existe e é rica (criar/atualizar/excluir/
+detalhe/itens), mas **não tem endpoint de "listar meus cupons"** — só
+dá pra consultar detalhe se você já souber o ID. Isso bate exatamente
+com a reclamação do Raphael (nem o painel do ML facilita achar). A
+saída: `GET /seller-promotions/users/{ml_user_id}` — o MESMO endpoint
+que `promotionInvites` já usa desde a Fase 37 pra convites de campanha
+— devolve TODOS os tipos de promoção/convite do vendedor misturados
+(paginado). Filtramos por `type === 'SELLER_COUPON_CAMPAIGN'` e, pra
+cada um, buscamos o detalhe completo por ID (só ali vem
+`budget`/`remaining_budget`/`used_coupons`/`coupon_code` — a listagem
+resumida não traz isso).
+
+**Implementado**:
+- `couponsList()` nova em `ml-insights/index.ts` (action `coupons_list`)
+  — reaproveita `mlFetch`, sem Edge Function nova nem tabela nova (é
+  tudo consulta em tempo real na API do ML, nada fica salvo aqui).
+- `useMlInsights.fetchCoupons()` + reaproveitado `fetchPromotionCandidates`
+  (já existia, genérico por `promotion_id`+`promotion_type`) pra listar
+  produtos participantes de cada cupom.
+- Tela nova `MlCouponsPage.jsx` (`/ml/cupons`, mesmo `moduleKey`
+  `ml-insights` — não é módulo novo, é mais uma tela dentro de
+  Otimização ML): 1 card por cupom com nome, status (Agendado/Ativo/
+  Encerrado/Excluído — direto da API, sem estado inventado), desconto
+  (% ou R$ fixo), compra mínima, período com "começa em/termina em/
+  encerrado há N dias", código do cupom (ou "sem código — automático"
+  quando a campanha não tem `partial_coupon_code`), barra de orçamento
+  usado, número de cupons usados em destaque, e uma seção expansível
+  com os produtos participantes (link direto pro anúncio no ML).
+
+**Testado ao vivo, funcionou de primeira**: a conta real da CoisaPet
+já tem 1 cupom criado no painel do ML ("COISA10", 10%, agendado pra
+10/09, R$710 de orçamento) — apareceu certinho na tela, incluindo os
+produtos participantes (todos "Candidato", já que o cupom ainda não
+começou).
+
+**Pendência**: nenhuma — só consulta, sem escrita, não precisa de
+`ConfirmWriteModal`. Se um dia quiserem CRIAR cupom por aqui também
+(não só consultar), a doc já documentada dá pra isso, mas não foi
+pedido agora.
+
+---
+
+### 2026-09-09 (10ª parte) — Nova tela: Controle de Atualização dos Produtos (vídeo/foto/montagem)
+
+Raphael mandou print de uma planilha ("CONTROLE DE ATUALIZAÇÃO DOS
+PRODUTOS" — 321 produtos cadastrados na planilha) que o time usa pra
+acompanhar vídeo/foto atualizados por produto e feedback de montagem,
+e pediu pra trazer isso pro sistema, com acesso de EDIÇÃO completa pro
+Atendimento.
+
+**2 decisões confirmadas com o Raphael antes de codar** (perguntei
+porque não dava pra adivinhar com segurança):
+1. **"Status geral"** (última coluna) — é campo MANUAL, dropdown
+   próprio (Pendente/Em andamento/Concluído/Refazer), não é calculado
+   a partir de vídeo/foto/feedback.
+2. **Atendimento edita tudo** — não é só visualização, é a mesma
+   permissão de admin/administrativo pra essa tela específica.
+
+**Implementado**:
+- `supabase/fase52-controle-midia-produtos.sql` — tabela nova
+  `product_media_status`, **1 linha por produto só depois que alguém
+  muda algo pela primeira vez** (não precisa popular ~550 linhas na
+  migração nem manter sincronizado quando produto novo entra — a tela
+  faz LEFT JOIN com `products` e usa default "Não iniciada"/"Pendente"
+  pra quem ainda não tem linha). Campos: `video_status`/`photo_status`
+  (Não iniciada/Em produção/Atualizada/Refazer), `video_forecast`
+  (data), `feedback_montagem` (boolean, NULL=ainda não avaliado),
+  `feedback_details`, `observations`, `overall_status` (Pendente/Em
+  andamento/Concluído/Refazer). RLS `TO anon`. Liberado pro
+  `role_permissions` do Atendimento (`module = 'controle-midia'`).
+- `useProductMediaStatus.js` — busca todo produto ATIVO com
+  `LEFT JOIN` pro status (embed do PostgREST, pega `media[0]` ou usa
+  default), e grava por `upsert` a cada campo mudado — sem botão
+  "Salvar" por linha, igual planilha. Campo de texto (Detalhes do
+  feedback/Observações) salva no `blur`, não a cada tecla, pra não sair
+  gravando request no meio da digitação; os selects/data salvam na
+  hora.
+- `MediaControlPage.jsx` (`/producao/midia`) — tabela com miniatura+nome
+  do produto, SKU, os 2 status coloridos (mesma paleta de sempre:
+  slate/âmbar/emerald/rosa), previsão do vídeo, última atualização
+  (automática, é o `updated_at` da linha), feedback de montagem
+  (Sim/Não/—), detalhes, observações e status geral. KPIs no topo
+  (produtos cadastrados, vídeos atualizados, fotos atualizadas, com
+  feedback) — os mesmos 4 números que a planilha já mostrava.
+- Sidebar: item novo "Atualização de Mídia" dentro de Produção, com
+  `atendimento` explícito nos `roles` (os outros itens de Produção não
+  incluem atendimento — esse é o único, de propósito).
+
+**Divergência notada, não é bug**: a planilha falava 321 produtos
+cadastrados, o sistema tem 550 produtos ativos (inclui variação como
+linha própria, ex: Alfafa 250g/500g/1kg = 3 linhas). Pode ser que a
+planilha estivesse desatualizada ou contasse diferente — vale o
+Raphael confirmar se 550 faz sentido ou se precisa filtrar algo.
+
+**Testado ao vivo**: mudei o vídeo de 1 produto pra "Atualizada" (KPI
+subiu de 0→1 na hora, confirmado gravado no banco), digitei um texto
+em "Detalhes do feedback" e confirmei que salva só ao saber do campo
+(blur), não a cada letra. Removido depois (era só teste, `DELETE`
+direto — tabela ficou vazia de novo, do jeito que a planilha real vai
+começar).
+
+---
+
+### 2026-09-09 (11ª parte) — Controle de Mídia: tirar o scroll horizontal
+
+Raphael viu a tela e pediu 2 ajustes: remover a coluna SKU, e virar
+"Feedback montagem?"/"Detalhes do feedback"/"Observações" em botão
+(popup) — só aparece cheio quando tem conteúdo, senão fica discreto —
+com o objetivo de caber tudo sem precisar rolar a tabela pro lado.
+
+**Implementado**:
+- Coluna SKU removida — o SKU não sumiu, virou subtítulo pequeno
+  embaixo do nome do produto na mesma coluna "Produto" (sem isso, as
+  variações do mesmo produto — ex: Alfafa 250g/500g/1kg — ficariam
+  idênticas na tela, já que o nome é igual e só o SKU diferencia).
+- "Feedback montagem?" + "Detalhes do feedback" viraram 1 coluna só
+  ("Feedback"), com um botão que abre modal (`FeedbackModal`): sem
+  feedback registrado ainda → só um "+" discreto cinza; com feedback →
+  selo colorido clicável ("Sim" verde / "Não" cinza) que abre o modal
+  de novo já preenchido pra editar.
+- "Observações" virou botão + modal (`NoteModal`) no mesmo espírito —
+  "+" discreto quando vazio, selo âmbar "Ver" quando tem texto.
+- Usei o componente `Modal` já existente no sistema (não um popover
+  ancorado) de propósito — a tabela tem `overflow-x-auto`/scroll
+  vertical próprio, um popover posicionado `absolute` correria risco
+  de ficar cortado pelas bordas do scroll em linhas perto do fim.
+- Resultado: de 10 colunas caiu pra 8, e as 2 mais largas (texto livre)
+  viraram botão compacto — a tabela cabe inteira sem scroll horizontal
+  na resolução testada.
+
+**Testado ao vivo**: abri o modal de Feedback, marquei "Sim" +
+escrevi um texto de teste, salvei — o botão virou o selo verde "Sim"
+na hora e o KPI "Com feedback" subiu de 0→1, confirmado no banco.
+Removido depois (teste).
+
+---
+
+### 2026-09-10 — Diagnóstico: contador de cliques do Blog "não funciona" (era só o snippet)
+
+Raphael reportou que testou o blog ontem e nada apareceu em
+`/cliques` → aba Blog. Investiguei ao vivo (`blog_post_views`/
+`blog_product_clicks` com 0 linhas, insert manual direto na API
+funcionou — 201 — confirmando que o banco/RLS/chave estão OK; abri o
+post real em `coisapet.com.br/blog/...` e conferi a network: só tem
+`GET` de leitura dos posts, nenhum `POST` de tracking, e o HTML da
+página nem contém a string `blog_post_views`). Conclusão: **os
+snippets nunca foram colados no `coisapet-site`** — não é bug nosso,
+é só a última etapa que ficou faltando. Boa notícia no caminho: o site
+já lê os posts do Supabase perfeitamente (capa, conteúdo, tudo certo).
+
+**Melhoria feita antes de reenviar os snippets**: os links de produto
+inseridos pelo editor (manual — `BlogRichTextEditor.jsx` — e pela
+sugestão da IA — `insertFirstLink` em `BlogPostEditorPage.jsx`) agora
+saem com o atributo `data-product-link="true"`. Antes, o plano era o
+site reconhecer link de produto por regex de URL (`coisapet.com.br/`),
+mas isso pegaria QUALQUER link interno do site (menu, "sobre" etc.),
+não só produto. Com o atributo, o snippet do site fica muito mais
+simples e confiável — só verifica se o link tem esse atributo, sem
+adivinhar por padrão de URL. Só afeta link inserido DAQUI EM DIANTE
+(link de produto já publicado antes não tem o atributo).
+
+**Também simplifiquei o snippet de visualização** — em vez de depender
+de uma variável PHP com o slug (que eu não sei o nome real no
+template deles), agora pega o slug direto da URL no navegador
+(`window.location.pathname`) — funciona em QUALQUER lugar do site sem
+precisar saber nome de variável do backend, só precisa estar carregado
+em toda página (ex: incluído no rodapé/footer comum).
+
+**Pendência**: aguardando o Raphael colar os 2 snippets (dados de novo
+no chat) no `coisapet-site`.
+
+---
+
+### 2026-09-11 (8ª parte) — Fidelidade das imagens: virada de estratégia (texto rico > imagem de referência)
+
+Raphael testou a foto de referência (item anterior) e não gostou —
+"o Higgsfield pega ela e gera uma cópia dela, não é isso... queria que
+ele usasse como base, não como cópia fiel". Confirma exatamente o que
+o teste ao vivo já tinha mostrado (ver 7ª parte): `soul/reference`
+recria o objeto da foto, não usa "espírito"/estilo livre.
+
+**Pesquisei mais fundo** (schema oficial via assistente da doc):
+`image_reference_url` é OBRIGATÓRIO nesse endpoint (não é só uma opção
+de estilo), e `style_id` é um preset FECHADO deles — não existe jeito
+de criar um "estilo CoisaPet" customizado a partir das nossas fotos.
+Ou seja, essa API não tem o recurso "inspiração solta" que o Raphael
+queria — conclusão real, não suposição.
+
+**Virada de estratégia**: em vez de imagem de referência, fui olhar
+fotos reais de 2 categorias bem diferentes (caixa de feno = madeira
+escura; terrário = MDF pintado claro) pra escrever uma descrição de
+ESTILO bem mais precisa no prompt de texto (sempre em
+`IMAGE_PROMPT_SYSTEM`, `blog-ai/index.ts`): peça cortada a laser,
+bordas de corte visíveis, encaixe geométrico, acabamento fosco (varia
+por tipo de item, nunca uma cor fixa), fundo de estúdio branco/cinza-
+claro, luz suave, ângulo 3/4 — e uma regra explícita "terrário da
+CoisaPet NUNCA é vidro/aquário, é sempre madeira/MDF cortado a laser"
+(1º teste ainda saiu com vidro; reforcei a regra e o 2º teste já saiu
+certo).
+
+**Testado ao vivo, 2 gerações reais** com o mesmo tema (terrário pra
+hamster sírio), sem nenhuma imagem de referência:
+1. Resultado ficou bonito e livre, mas assumiu vidro (chutou "glass
+   terrarium" apesar da instrução).
+2. Depois de reforçar a regra anti-vidro: resultado ficou muito
+   próximo da nossa realidade (MDF laminado com bordas de corte
+   visíveis, acabamento fosco, caixa com abertura recortada, furos de
+   ventilação, fundo de estúdio) — E continua sendo uma composição
+   NOVA a cada geração, não uma cópia de uma foto específica. É
+   exatamente o "usar como base, mudando bastante coisa" que o Raphael
+   pediu.
+
+**Ficou assim**: o seletor de produto de referência (7ª parte)
+continua disponível (útil se algum dia quiser variação de um produto
+EXATO), mas o caminho padrão/recomendado agora é gerar só por texto —
+o prompt já embute o estilo real da marca, sem precisar escolher nada.
+
+---
+
+### 2026-09-11 (7ª parte) — Fidelidade das imagens geradas: foto de referência real (opcional)
+
+Raphael reclamou que as imagens da Higgsfield ficam bonitas mas fora
+do nosso contexto real (exemplo dado: gerou um rato num caixote de
+madeira genérico, nada a ver com nossos produtos). Pediu ideia de
+"explicar" pra IA com o que a gente trabalha, inclusive com imagens
+reais dos produtos.
+
+**Pesquisa + teste ao vivo contra a API real** (não assumi nada, testei
+3 gerações completas comparando com a foto original):
+- Achei o endpoint `soul/reference` da Higgsfield (aceita
+  `image_reference_url` + `style_strength`, além do `prompt`) — confirmado
+  via assistente de busca da própria doc deles, e validado batendo
+  direto na API com uma foto real de produto (`product-photos`, bucket
+  privado — usei signed URL).
+- **Teste 1** (prompt pedindo o mesmo produto da referência): resultado
+  quase idêntico à foto real (mesma madeira, corte, feno, fundo de
+  estúdio) — só errou a logo gravada, virou texto ilegível genérico.
+- **Teste 2 e 3** (prompt pedindo uma cena BEM diferente — hamster em
+  terrário de tela com rodinha —, com `style_strength` 0.6 e depois
+  0.25): mesmo assim voltou a mesma caixa de feno da referência,
+  ignorando quase tudo do prompt nas duas tentativas.
+- **Conclusão**: `soul/reference` funciona muito bem, mas o CONTEÚDO da
+  foto de referência domina o resultado independente do prompt — não é
+  um "estilo geral" aplicável a qualquer cena. Só faz sentido escolher
+  uma referência que já seja do mesmo assunto/categoria do post.
+
+**Decisão** (perguntei ao Raphael: automático por categoria vs manual —
+escolheu manual): a escolha da foto de referência é sempre feita pelo
+usuário na hora de gerar, nunca automática.
+
+**Implementado**:
+- `supabase/functions/blog-ai/index.ts` — `generateImage()` e
+  `callHiggsfield()` aceitam `reference_photo_path` opcional; quando
+  presente, usa `soul/reference` (gera signed URL do
+  `product-photos` na hora); sem isso, continua no `soul/v2/standard`
+  de sempre. Prompt de imagem reforçado pra evitar a IA "inventar"
+  gravação/marca na madeira.
+- `src/modules/blog/components/ProductReferencePicker.jsx` novo —
+  busca produto ativo com foto, mostra miniatura depois de escolhido.
+  Reaproveitado nos dois lugares: card de capa
+  (`BlogPostEditorPage.jsx`) e popover de inserir imagem no corpo
+  (`BlogRichTextEditor.jsx`), sempre opcional.
+
+**Debug temporário**: adicionei e depois REMOVI duas actions de teste
+(`_test_reference`, `_test_status`) no `blog-ai` só pra rodar os 3
+testes acima direto contra a API real sem esperar a UI — não sobrou
+nada disso no código final.
+
+**Pendência de verificação**: o fluxo de ponta a ponta (escolher
+produto → gerar → aprovar) foi testado por código/build/backend, mas
+a extensão do navegador ficou instável demais pra confirmar o clique
+na tela dessa vez (erros repetidos de CDP/timeout, já reportado como
+bug da ferramenta) — vale um teste manual rápido do Raphael assim que
+possível.
+
+---
+
+### 2026-09-11 (6ª parte) — Higgsfield instável hoje: retry em 5xx, erro amigável, contexto mais leve
+
+Raphael pegou um erro 504 "Gateway time-out" da Cloudflare (na frente
+da API da Higgsfield) — o toast mostrou a página HTML de erro inteira
+(gigantesca) em vez de uma mensagem curta. Ele também sugeriu deixar
+o prompt de imagem mais leve, usando só o resumo do post.
+
+**Investigado**: reproduzi o teste direto e bati no MEU PRÓPRIO limite
+de espera (100s) — a geração que antes levava ~45s passou de 100s.
+Confirma: não é bug nosso, é a Higgsfield mesmo lenta/instável nesse
+momento (mesma causa do 504 que ele viu).
+
+**Corrigido** (`supabase/functions/blog-ai/index.ts`):
+- `fetchRetrying5xx()` novo — re-tenta até 2x só em erro 5xx (502/503/
+  504 = problema deles/rede, vale tentar de novo); erro 4xx (credencial,
+  sem crédito) não tenta de novo, é erro real.
+- Mensagem de erro virou curta e em português ("Higgsfield indisponível
+  no momento — tente de novo em alguns segundos") em vez de despejar o
+  HTML de erro inteiro no toast.
+- Deadline do polling subiu de 100s pra 130s, dando mais margem pros
+  dias em que a geração está mais lenta que o normal, sem passar do
+  limite de execução da Edge Function (~150s).
+
+**Também simplificado** (`BlogPostEditorPage.jsx`): `buildImageContext()`
+da capa agora usa só o campo Resumo como base do prompt (cai pra
+título/palavra-chave só se o resumo ainda não foi escrito) — mais
+leve e previsível, como o Raphael sugeriu. (O texto que chega na
+Higgsfield já era só a frase visual curta que o GPT gera antes, nunca
+o post inteiro — a lentidão não vinha do tamanho do contexto, mas a
+simplificação continua sendo uma boa ideia por conta própria.)
+
+---
+
+### 2026-09-11 (5ª parte) — Blog: correção do erro genérico + prévia/aprovação de capa gerada por IA
+
+Raphael reportou toast genérico "Edge Function returned a non-2xx
+status code" ao gerar capa, e pediu pra poder ver a imagem em tamanho
+grande e decidir se aceita antes de trocar a capa que já tinha (hoje
+trocava direto, sem chance de recusar).
+
+**Causa raiz do erro genérico**: `supabase.functions.invoke()` não
+devolve a mensagem real do erro no campo `error` por padrão — ela fica
+em `error.context` (precisa `await error.context.json()`), e nenhum
+dos 5 pontos que chamam o `blog-ai` no frontend fazia essa leitura
+(só existia esse cuidado em `useMlInsights.js`, feito antes). Corrigi
+de vez: `src/modules/blog/blogAi.js` novo — um `callBlogAi(action,
+params)` único com a extração correta do erro — e troquei as 5
+chamadas (`BlogPage.jsx`, `BlogPostEditorPage.jsx` ×3,
+`BlogRichTextEditor.jsx`) pra usar ele. Agora qualquer erro real da
+Higgsfield/OpenAI aparece de verdade no toast, não só "non-2xx".
+
+**Fluxo de capa por IA agora tem aprovação**: gerar não troca mais a
+capa direto — a imagem nova fica num painel "Nova capa gerada — usar
+essa?" com botões "Usar essa" / "Descartar", e um clique na miniatura
+(tanto da capa atual quanto da candidata) abre em tela cheia
+(lightbox simples, fecha clicando fora ou no X). Testado ao vivo:
+geração real (~45s), prévia apareceu certinho, zoom em tela cheia
+funcionou, "Descartar" confirmado que não mexe na capa que já estava.
+
+---
+
+### 2026-09-11 (4ª parte) — Novo padrão editorial fixo pro gerador de conteúdo (único + em massa)
+
+Raphael trouxe um padrão editorial próprio, já validado, que ele
+"sempre" usa (veio de um prompt do ChatGPT que ele já testava manual)
+e pediu pra virar o padrão do `GENERATE_SYSTEM_PROMPT` — vale pros
+DOIS geradores (editor único e o em massa), porque os dois chamam a
+mesma action `generate_content` do `blog-ai`.
+
+**Reescrito** (`supabase/functions/blog-ai/index.ts`):
+- **Escopo de espécie fechado**: hamster Sírio e Anão Russo, nunca
+  Chinês nem Roborowski; porquinho-da-índia só quando o tema pedir.
+- **Estrutura obrigatória, nessa ordem**: subtítulo em itálico →
+  índice âncora rotulado "Encontre neste artigo:" (com `<h2 id="ancora-
+  N">` correspondente em cada seção) → parágrafo de abertura citável
+  (sem metáfora) → contexto/importância → seções com subtítulo
+  específico (nunca "Introdução"/"Conclusão") → listas/tabelas de
+  DADOS (nunca "X vs Y") → 1-2 frases em `<blockquote>` (vira borda
+  lateral no nosso layout) → passo a passo numerado → FAQ real (3-5
+  pares) → fechamento com título autoral próprio (nunca repetido) +
+  CTA ligado ao tema (nunca genérico).
+- **Regras de escrita**: proibido travessão (—), proibida 1ª pessoa
+  ("eu"/"nós" — voz é "a CoisaPet" ou 3ª pessoa), proibida comparação
+  em formato confronto, categorias de produto mencionadas ao longo do
+  corpo (não só no fim) pra dar ancoragem pro passo de sugerir link
+  depois.
+- **Verificação de fatos**: instrução pra responder como se tivesse
+  checado contra fonte veterinária primária (Merck Veterinary Manual,
+  PetMD) e sinalizar/optar pela versão cautelosa quando não há
+  consenso. **Importante ficar registrado**: isso é uma instrução de
+  postura pro modelo (gpt-4o-mini via Chat Completions) — NÃO é busca
+  na internet de verdade em tempo real. Se quiser essa garantia mais
+  forte (grounding com busca real), é uma integração maior, separada,
+  ainda não construída.
+- **Pacote de SEO**: adicionado `secondary_keywords` (3-5 palavras-
+  chave secundárias) na resposta — guardado no campo `tags` (existia
+  no schema desde a fase47, nunca tinha UI). `BlogPostEditorPage.jsx`
+  ganhou um mini editor de chips (adicionar com Enter, remover com X)
+  no card de SEO; `bulkGenerate` (useBlogPosts.js) salva automático.
+
+**Testado ao vivo, 2 gerações reais completas** contra o modelo em
+produção — confirmado item por item: rótulo do índice presente, zero
+travessão, `<blockquote>` presente, lista numerada presente, zero
+menção a Roborowski/Chinês, fechamento com título autoral único +
+CTA temático citando categoria de produto (não modelo específico).
+Na 1ª tentativa o índice saiu sem o rótulo "Encontre neste artigo" —
+corrigido no prompt (deixei explícito que o rótulo é obrigatório, não
+só a lista) e reconfirmado na 2ª geração.
+
+---
+
+### 2026-09-11 (3ª parte) — Assistente de IA pra Perguntas do ML (sugestão, não envio automático)
+
+Raphael trouxe um brainstorm do ChatGPT sobre um bot pra responder
+perguntas repetitivas no Mercado Livre ("serve pra hamster sírio?",
+"vem montado?", "acompanha rodinha?" etc), pedindo explicitamente pra
+eu VALIDAR a integração/API real antes de supor qualquer endpoint.
+
+**Pesquisa feita antes de codar** (docs oficiais + código já existente):
+- `GET /questions/search` e `POST /answers` **já estavam** implementados
+  em `ml-insights/index.ts` (fase anterior) e em uso real na tela
+  "Perguntas & Reputação" — só que 100% manual até agora, zero IA.
+- Existe tópico de webhook `questions` (real-time) na doc oficial, mas
+  o `ml-webhook` de hoje só escuta `orders_v2` e ignora o resto — não
+  mexi nisso ainda (funcionalidade nova roda por polling, igual a tela
+  já funciona; virar tempo real é upgrade futuro, não bloqueador).
+- Cruzamento anúncio → produto interno já existe em outro lugar do
+  código via `SELLER_SKU` do anúncio batendo com `products.sku` —
+  reaproveitado aqui do mesmo jeito.
+- **Gargalo real encontrado**: metade das perguntas de exemplo dependem
+  de saber a espécie compatível, e isso não existia como campo
+  estruturado — só descrição em texto livre. Decisão do Raphael
+  (confirmada antes de codar): criar os campos antes, não deixar a IA
+  adivinhar por texto solto.
+
+**Duas decisões de segurança confirmadas com o Raphael antes de
+construir**: (1) IA só SUGERE, nunca envia sozinha — sempre passa por
+aprovação humana antes de publicar no Mercado Livre; (2) criar campos
+próprios na ficha do produto em vez de depender só da descrição solta.
+
+**Implementado**:
+- `supabase/fase54-produtos-dados-atendimento.sql` — campos novos em
+  `products`: `compatible_species` (lista fixa de espécies, não texto
+  livre — pra IA comparar com segurança), `comes_assembled`,
+  `includes_wheel` + `wheel_diameter_cm`, `accessories_included`.
+  Booleans usam `NULL` = "não preenchido ainda", diferente de `false`
+  — importante pra IA saber quando não tem certeza.
+- `ProductFormModal.jsx` — seção nova "Dados pra atendimento" na ficha
+  do produto (chips de espécie, toggle sim/não/não-preenchido, campo
+  de rodinha condicional, acessórios inclusos).
+- `ml-insights/index.ts` — action nova `draft_answer`: pega o item no
+  ML, acha o `SELLER_SKU`, cruza com `products`, manda pra IA (mesmo
+  `callOpenAI` já usado noutras partes do módulo ML) com um prompt que
+  **proíbe explicitamente inventar dado que não está na ficha** — se
+  faltar informação, a resposta vem com `confidence:"low"` e explica o
+  que falta, em vez de chutar.
+- `MlQuestionsReputationPage.jsx` — botão "Sugerir resposta com IA" no
+  modal de responder pergunta (já existente): preenche o campo de
+  texto com a sugestão, mostra um aviso se a confiança for baixa. O
+  fluxo de enviar continua exatamente igual (sempre manual, sempre com
+  aviso "isso publica de verdade").
+
+**Testado ao vivo contra a API real do Mercado Livre** (2 cenários):
+1. Item sem `SELLER_SKU` configurado no ML → resposta veio com
+   `confidence:"low"`, sem inventar nada, explicando que não achou o
+   produto — comportamento certo.
+2. Item com SKU batendo (`FORR-PAP-NEUT`, "Forração Papel Neutro pra
+   Terrário Hamster") → resposta certa, citando fatos reais da
+   descrição cadastrada ("atóxico", "não emite odores"),
+   `confidence:"high"`, `matched_product_name` correto.
+
+**Pendente pro Raphael**: preencher os campos novos (espécie
+compatível, vem montado, rodinha) nos produtos reais — hoje estão
+todos vazios, então toda pergunta de compatibilidade ainda vai cair em
+"confiança baixa" até alguém preencher a ficha. Real-time via webhook
+`questions` fica como próximo passo opcional (hoje funciona por
+polling, igual a tela já usava).
+
+---
+
+### 2026-09-11 (2ª parte) — Blog: geração de imagem por IA (Higgsfield)
+
+Raphael trouxe uma chave de API da Higgsfield (geração de imagem) pra
+usar nas capas/imagens do blog, a partir do conteúdo do post.
+
+**Credenciais**: guardadas como secrets do Supabase
+(`HIGGSFIELD_API_KEY_ID` / `HIGGSFIELD_API_KEY_SECRET`, mesmo padrão do
+`OPENAI_API_KEY`) — nunca ficaram no código nem no git.
+
+**Pesquisa da API antes de codar** (docs.higgsfield.ai): autenticação
+por par de chave (`Authorization: Key {ID}:{SECRET}`), geração é
+assíncrona — POST em `.../soul/v2/standard` com `{"prompt": "..."}`
+devolve `status_url`, faz polling com backoff (2s→10s) até
+`completed`/`failed`/`nsfw`/`cancelled`; imagem final vem em
+`images[0].url`.
+
+**Implementado** (`supabase/functions/blog-ai/index.ts`, action nova
+`generate_image`):
+1. GPT (gpt-4o-mini) transforma o contexto em português (título/
+   trecho do post) num prompt visual em inglês — regra explícita de
+   nunca inventar produto específico nem colocar texto/logo na imagem,
+   estilo fotografia editorial/lifestyle.
+2. Chama a Higgsfield com esse prompt, faz o polling.
+3. Re-hospeda a imagem gerada no nosso bucket `blog-covers`
+   (`ai-generated/`) em vez de depender do CDN deles direto — mesmo
+   motivo do `rehost_images` já existente (link externo pode quebrar).
+   Refatorei o `rehostOne` interno em função reutilizável
+   `downloadAndHost()`, usada pelos dois fluxos agora.
+
+**Frontend**:
+- `BlogPostEditorPage.jsx` — botão "Gerar capa com IA" no card de
+  capa, usa título+resumo+palavra-chave+trecho do corpo como contexto.
+- `BlogRichTextEditor.jsx` — botão novo na barra de ferramentas
+  "Inserir imagem com IA": clica no texto (define o ponto de inserção,
+  igual ao link de produto), abre popover com prompt pré-preenchido a
+  partir do parágrafo mais próximo do cursor (editável antes de
+  gerar), insere a imagem exatamente na posição via DOM Range.
+
+**Testado ao vivo, parcialmente**: confirmei a chamada real end-to-end
+contra a Higgsfield direto via curl — autenticação e formato
+corretos, chegou no servidor deles, só bloqueado por
+`"not_enough_credits"` (conta sem crédito — Raphael precisa resolver
+isso direto com eles, não é algo que dá pra contornar por aqui).
+Também confirmei visualmente que o botão de capa aparece, e que o
+popover de inserir imagem no corpo abre com o prompt pré-preenchido
+certinho. A inserção da imagem em si (depois de uma geração
+bem-sucedida) não pôde ser testada de ponta a ponta por falta de
+crédito na conta — revisão de código confirma a lógica (mesmo padrão
+já comprovado do link de produto, com `Range.insertNode`).
+
+---
+
+### 2026-09-11 — Blog: Geração de Conteúdo em Massa
+
+Raphael pediu uma tela pra gerar vários posts de uma vez: lista de
+linhas (palavra-chave + mini-contexto), botão "+" pra adicionar mais,
+"Gerar" dispara a IA pra cada linha e cada post já nasce como
+`rascunho`, aguardando revisão/agendamento manual — igual ele descreveu.
+
+**Implementado, sem mexer no edge function** — a geração em massa só
+chama a mesma action `generate_content` do `blog-ai` já existente
+(usada pelo editor único), um item de cada vez, sequencial (não em
+paralelo, pra não estourar rate limit da OpenAI nem perder o
+acompanhamento de progresso por item). Todo post sai com
+`ai_target_words: 800` fixo (a "média de 800 palavras" pedida), regras
+de conteúdo herdadas do mesmo prompt já ajustado em 09/09 (sem
+introdução/conclusão/em suma, sem encher linguiça, responsabilidade
+com bem-estar animal).
+
+- `src/modules/blog/hooks/useBlogPosts.js` — `bulkGenerate(items,
+  onProgress)` novo: gera + insere cada post (`status: 'draft'`),
+  reporta progresso item a item, continua mesmo se um item falhar
+  (não derruba o lote inteiro), slug duplicado ganha sufixo numérico
+  em vez de falhar.
+- `src/modules/blog/BlogBulkGeneratePage.jsx` — tela nova, 3 fases:
+  entrada (linhas com palavra-chave + contexto, "+" pra adicionar,
+  remover linha) → progresso (checklist ao vivo, um ícone por item:
+  pendente/gerando/pronto/erro) → resultado (link "Editar" direto pro
+  post gerado, botão "Tentar de novo" só no item que falhou, sem
+  precisar regenerar o lote inteiro).
+- Rota `/blog/gerar-lote` (`App.jsx`) + item novo no sidebar dentro do
+  grupo Blog ("Geração em Massa").
+
+Testado ao vivo com geração real (1 post de teste, keyword marcada
+"ignorar") — confirmado no banco: `status: draft`, `ai_generated:
+true`, `ai_target_words: 800`, conteúdo real gerado. Removido depois
+(era só teste).
+
+---
+
+### 2026-09-10 (4ª parte) — Sidebar: grupos recolhíveis, favoritos por usuário e reorganização
+
+Raphael achou o menu lateral "imenso" pra quem (diretoria) vê o
+sistema inteiro. Três pedidos em sequência, todos em
+`src/components/layout/Sidebar.jsx`:
+
+**1. Grupos recolhíveis** — cada seção (Otimização ML, Blog, Produção,
+RH, Gestão, Diretoria) virou acordeão com seta, ícone próprio por
+grupo e selo com a quantidade de itens quando fechado. Preferência
+salva no `localStorage` (por navegador — é só conveniência visual,
+não por conta), padrão inicial só com "Favoritos" (ver item 3) aberto.
+Se a página atual pertence a um grupo fechado, ele abre sozinho pra
+mostrar onde você está.
+
+**2. Fecha o grupo antigo ao trocar de módulo** — navegar pra um
+módulo de outro grupo fecha sozinho o grupo que você acabou de sair
+(só esse — qualquer outro que você tenha aberto de propósito, tipo
+referência, continua do jeito que estava). Testado ao vivo trocando
+Produção → RH → Blog com um terceiro grupo fixado aberto no meio —
+comportamento bateu certinho nas 3 trocas.
+
+**3. "Principal" virou "Favoritos" (bandeirinha por usuário)** — igual
+o Mercado Livre faz no painel deles. Só o Dashboard fica fixo ali; o
+resto do grupo é montado na hora a partir do que cada usuário marcar
+com a bandeirinha (ícone de `Bookmark`, aparece no hover de cada item,
+fica sempre visível se já favoritado). O item favoritado continua
+aparecendo no lugar original também — é um atalho fixado no topo, não
+uma mudança de lugar. Salvo **por usuário** (não por navegador, ao
+contrário do item 1) — tabela nova `user_sidebar_favorites`
+(`supabase/fase53-favoritos-sidebar.sql`, RLS `TO anon` de novo, mesmo
+motivo de sempre: login 100% custom, nunca sessão real do Supabase
+Auth). Testado ao vivo: favoritar grava na tabela na hora, aparece nos
+dois lugares, sobrevive a reload (vem do banco, não do localStorage),
+desfavoritar remove a linha.
+
+**Reorganização pedida junto**:
+- `Pedidos` e `Orçamentos` saíram de "Favoritos"/Principal e foram pro
+  topo da seção **Produção** (fica junto do fluxo real de trabalho,
+  pedido → produção).
+- `Pick List` **removido do menu** — já é acessível de dentro da tela
+  de Pedidos, não precisa de entrada própria. A rota `/pick-list`
+  continua funcionando normalmente (só não aparece mais no sidebar).
+- `Produção Horistas` saiu de "Diretoria" e foi pra **Produção**
+  também (fica perto de Passagem de Turno/Baixa Diária, que são do
+  mesmo tipo de controle).
+
+Build limpo (`npm run build`), tudo testado ao vivo no navegador antes
+de reportar pronto. Só local até agora — falta subir junto no próximo
+`npm run build` + deploy pro Hostinger, e rodar a migration
+`fase53-favoritos-sidebar.sql` (já aplicada no banco de produção via
+`supabase db query --linked`, então essa parte já está no ar).
+
+---
+
+### 2026-09-10 (3ª parte) — Retrofit: marcado `data-product-link` nos posts antigos
+
+Raphael perguntou "não dá pra inserir este link nos antigos?" — os
+posts publicados **antes** da correção do editor (que passou a marcar
+todo link de produto novo com `data-product-link="true"`) tinham links
+reais de produto no HTML, mas sem o atributo, então o clique nunca
+seria contado em `blog_product_clicks`.
+
+**Solução**: UPDATE direto no banco em vez de reeditar cada post na UI,
+com regex que pega qualquer `href="https://coisapet.com.br/..."` que
+NÃO seja link interno de blog (`(?!blog/)`, lookahead) e insere o
+atributo:
+
+```sql
+UPDATE blog_posts
+SET content_html = regexp_replace(
+  content_html,
+  'href="(https://coisapet\.com\.br/(?!blog/)[^"]+)">',
+  'href="\1" data-product-link="true">',
+  'g'
+)
+WHERE content_html ~ 'coisapet\.com\.br/(?!blog/)'
+RETURNING slug;
+```
+
+**8 posts atualizados** (todos os publicados que tinham link de produto
+sem marcação). Verificado depois: 0 posts publicados restaram sem
+marcação, e o HTML da tag continua válido (spot-check no post do
+hamster/gaiola — `<a href="..." data-product-link="true">` certinho,
+sem quebra).
+
+Isso destrava o "Clique em produto ainda não testável" que ficou
+pendente na entrada anterior — agora existem links reais e marcados em
+posts já publicados, dá pra clicar de verdade no site e conferir se
+cai em `blog_product_clicks`.
+
+---
+
+### 2026-09-10 (2ª parte) — Confirmado: snippet de visualização funcionando de verdade
+
+Raphael pediu pro Copilot colar o snippet — ele inseriu certinho no
+`footer.php:254` (antes do `</body>`, include global). Fui conferir ao
+vivo na página real do post.
+
+**Diagnóstico curioso pelo caminho**: primeiras 2-3 tentativas não
+gravaram nada no banco, mesmo com o script presente e sintaticamente
+correto no HTML (confirmei: sem aspas curvas, IIFE fechada certinho,
+sem CSP bloqueando). Só quando li a lista de rede SEM filtro
+(`read_network_requests` sem `urlPattern`) apareceu a explicação real:
+o `POST` pra `blog_post_views` estava acontecendo, só que voltando
+**503** — erro temporário do lado do Supabase/Cloudflare (mesma
+instabilidade "Bad gateway" que já tinha pego uma query minha mais
+cedo no dia). Nada a ver com o script ou com o `footer.php` — só
+timing infeliz de testar bem na hora de uma instabilidade pontual.
+Recarreguei mais uma vez e gravou normal.
+
+**Confirmado ao vivo**: recarreguei a página do post real
+(`coisapet.com.br/blog/frutas-legumes-...`) e apareceu a linha certa
+em `blog_post_views` (slug correto, `referrer: null` por ter entrado
+direto). Removida depois (era só teste).
+
+**Clique em produto ainda não testável**: nenhum post publicado antes
+de 09/09 tem o atributo `data-product-link` (só link inserido daqui
+pra frente tem). Not a bug — só falta gerar/inserir um link de produto
+novo em algum post publicado pra ter o que clicar e testar de verdade.
+
+---
+
+### 2026-09-08 — "Criar anúncio novo" completo: SEO, campos ocultos do ML, variações e vídeo
+
+Raphael perguntou se dava pra fazer o "anúncio perfeito" pelo nosso
+sistema, com tudo que o ML deixa preencher — inclusive coisas que o
+próprio painel deles esconde. Antes de construir, pesquisei o que já
+existia: a tela `/ml/anuncios/novo` (assistente de 7 passos) já tinha
+todo o "cano difícil" funcionando (sugestão de categoria por IA, ficha
+técnica dinâmica por categoria, upload de foto, valores padrão copiados
+de anúncio real). Em vez de reconstruir, estendi ela.
+
+**Descoberta real, testada ao vivo contra a API antes de codar**:
+puxei o anúncio real "Placa de Identificação" e comparei com a lista de
+atributos da categoria — `SELLER_PACKAGE_WIDTH/LENGTH/HEIGHT/WEIGHT`
+(dimensão/peso da embalagem) vêm com `tags.hidden: true` na API do ML:
+o formulário de criação DELES não mostra esse campo pro vendedor, mas
+ele existe de verdade e entra no cálculo de frete — o anúncio real
+testado tinha os 4 preenchidos (25cm/8cm/18cm/175g). Isso é literalmente
+"o que o ML não mostra" que o Raphael pediu.
+
+Implementado:
+- Backend: `buildFullAttributes` agora marca `hidden: !!a.tags?.hidden`
+  em cada atributo (`ml-insights/index.ts`).
+- Ficha técnica (Step 3) ganhou uma 3ª seção separada "Ocultos no ML",
+  só com esses campos, com aviso explicando por que preencher isso é
+  uma vantagem que o próprio ML não dá pro vendedor.
+- SEO do título (Step 1): contador de caracteres ao vivo (ideal 20–60,
+  limite real do ML), aviso de tudo-maiúsculo, aviso de palavra de
+  propaganda ("grátis", "promoção"...) que a política do ML rejeita —
+  tudo regra real, nada de nota inventada por IA.
+- Variações (Step 4 novo, opcional): detecta os atributos que a
+  categoria permite variar (`is_variation_attribute`), deixa escolher 1
+  (ex: cor), adicionar valores (de lista fechada ou texto livre) com
+  preço/estoque próprio de cada um. Sem variação, segue exatamente como
+  antes.
+- Vídeo do produto (Step 7, campo simples de ID do YouTube).
+- Revisão (Step 8): checklist de qualidade calculado na hora (título,
+  quantidade de fotos, atributos obrigatórios, campos ocultos
+  preenchidos, descrição, vídeo) — nada de nota mágica, só comparação
+  direta com o que já sabemos que o ML valoriza.
+
+**Não implementado nessa rodada** (avaliado e descartado por enquanto):
+garantia (`sale_terms` — formato incerto, a categoria testada nem
+oferecia isso como atributo, arriscado demais pra "chutar" numa escrita
+real) e correspondência com catálogo do ML (`catalog_product_id` — feature
+grande e arriscada por si só, GTIN já preenchido nos atributos ajuda o ML
+a achar o catálogo sozinho, sem precisar construir isso agora).
+
+Testado ao vivo do início ao fim (categoria real "Casas", 9 campos
+ocultos confirmados aparecendo, variação por SKU com preço/estoque,
+foto real enviada pro ML, checklist final batendo) — **parei antes do
+botão "Publicar"** pra não criar um anúncio de teste de verdade na
+loja.
+
+---
+
+### 2026-09-08 — Módulo "Chapas" (`/producao/chapas`)
+
+Raphael explicou como a Produção funciona na prática: eles não produzem
+peça por peça, produzem por CHAPA de corte a laser — uma chapa pode
+render várias unidades do MESMO produto (ex: 14x Toca Luxo) ou uma
+combinação de produtos DIFERENTES (ex: 1x Terrário Grande + 1x Toca
+Luxo + 1x Banheira). Pediu um "gerador de chapas" — primeira versão,
+"depois vamos lapidando".
+
+Implementado (v1, só cadastro — ainda não integra com a fila de
+Produção existente):
+- Tabelas `chapas` (nome, observações) e `chapa_items` (chapa × produto
+  × quantidade, `UNIQUE(chapa_id, product_id)`) — `supabase/fase46-chapas.sql`.
+- Hook `useChapas.js` (padrão idêntico ao `useProducts.js`: create/
+  update/remove com toast + audit log) e página `ChapasPage.jsx`,
+  reaproveitando o mesmo padrão de busca+adicionar produto do
+  `NewOrderModal` da Produção (busca por nome/SKU, lista de itens com
+  +/- de quantidade). Editar reconstrói os itens do zero (mais simples
+  que diff). Remover é soft-delete (`active=false`), não apaga produtos.
+- Rota `/producao/chapas`, item no sidebar logo abaixo de "Produção"
+  (mesmo `moduleKey: 'producao'`, sem permissão nova).
+
+**Bug real encontrado e corrigido nesse processo, importante pra
+qualquer tabela nova daqui pra frente**: segui o texto do migration
+antigo (`fase2-materiais-produtos.sql`) e criei `chapas`/`chapa_items`
+com RLS `TO authenticated` — só que esse app **nunca estabelece sessão
+real do Supabase Auth** (login é 100% custom via RPC, ver
+`AuthContext.jsx`), então toda chamada sai com a ANON key, papel `anon`
+de verdade. `TO authenticated` bloqueou 100% dos inserts (401 "new row
+violates row-level security policy"), sem travar a tela, só falhando
+silencioso. Descobri comparando com o estado REAL de `products`/
+`raw_materials` em produção: o RLS delas está **desativado**
+(`relrowsecurity=false`), apesar do texto da migração antiga dizer
+`TO authenticated` — foi alterado depois sem atualizar o arquivo.
+Corrigido com policy explícita `TO anon` nas tabelas novas. Registrado
+em memória (`coisapet_rls_anon_only_auth`) pra não cair nessa de novo.
+
+Testado ao vivo: criar chapa com 2 produtos diferentes, editar (recarrega
+itens certinho), remover (com confirmação) — tudo funcionando, dado real
+gravado e conferido direto no banco.
+
+---
+
+### 2026-09-08 — Histórico de Atualizações: agrupar por anúncio + acesso do Atendimento + check de sincronização Shopee
+
+Follow-up da tela de ontem, 3 pedidos do Raphael:
+
+1. **Não repetir produto** — se o mesmo anúncio teve 2+ gravações (ex:
+   ficha técnica E título/descrição), antes aparecia 1 linha por
+   gravação; agora `allItemUpdates()` agrupa por `item_id`, juntando as
+   ações distintas num card só (com todos os badges de tipo de ação +
+   resumo de cada uma), usando o `updated_at` mais recente do grupo pra
+   ordenar. Como isso muda a paginação (agora pagina ANÚNCIOS, não
+   linhas cruas do log), a função busca até 1000 linhas recentes do log,
+   agrupa em memória e só depois pagina os grupos — teto de segurança
+   bem acima do volume atual (53 linhas / 39 anúncios hoje).
+2. **Paginação de 15 em 15** — trocado o "Carregar mais" (infinito) por
+   páginas de verdade (Anterior/Próxima, "Página X de Y"), 15 anúncios
+   por página.
+3. **Check de sincronização Shopee** — o time de Atendimento vai olhar
+   essa tela, replicar manualmente cada mudança na Shopee, e marcar um
+   check quando terminar. Nova tabela `ml_item_sync_checks` (Fase 45,
+   `item_id` PK + `checked_at` + `checked_by` texto livre) + ação
+   `set_item_sync_check`. Importante: o check **não é permanente** — ao
+   exibir a lista, comparamos `checked_at` do check com o `updated_at`
+   mais recente do grupo; se surgir uma mudança NOVA depois do check, o
+   item volta a aparecer como pendente sozinho, sem precisar de nenhuma
+   lógica extra pra "resetar" (é só comparação de timestamp).
+4. **Acesso liberado pro Atendimento, só nessa tela** — antes tudo de
+   "Otimização ML" usava o mesmo `moduleKey` (`ml-insights`), que o
+   Atendimento não tem. Criado um `moduleKey` novo e exclusivo,
+   `ml-historico`, só pra essa rota (`/ml/historico`) — as outras telas
+   de ML continuam fechadas pro Atendimento. Registrado em
+   `role_permissions` (`atendimento` → `true`, demais roles não-admin →
+   `false`, mesmo padrão restritivo que `ml-insights` já tinha) e
+   adicionado em `AccessControlPage.jsx` (`MODULES`) pra aparecer no
+   painel de Controle de Acesso caso precise ajustar depois.
+
+Testado ao vivo: agrupamento confirmado (53 linhas → 39 anúncios, sem
+repetição), check/uncheck persistindo entre reloads com nome de quem
+marcou, paginação 15/página funcionando ("Página 1 de 3").
+
+---
+
+### 2026-09-08 — Tela "Histórico de Atualizações" (`/ml/historico`)
+
+Raphael pediu uma tela mostrando TODAS as atualizações feitas na saúde
+dos anúncios, mais recente primeiro — a tabela `ml_item_updates` (Fase
+38) já registrava isso, mas só existia visão por item (widget dentro do
+detalhe de cada anúncio, últimas 10). Implementado:
+- `allItemUpdates()` + `case 'all_item_updates'` em `ml-insights/index.ts`
+  — lê `ml_item_updates` inteiro (não só 1 item), pagina por offset/
+  limit (50 por vez), enriquece com título/thumbnail/permalink do item
+  via multiget na API do ML.
+- Página nova `MlUpdatesHistoryPage.jsx`, rota `/ml/historico`, item no
+  sidebar logo depois de "Saúde dos Anúncios". Cada linha resume o
+  `detail` salvo de um jeito legível por tipo de ação (ficha técnica:
+  quantos campos; conteúdo: título e/ou descrição; preço/estoque/status:
+  campo e valor; campanha: tipo + preço promo; pergunta respondida: o
+  texto da resposta). Botão "Carregar mais" pagina o resto.
+- Testado ao vivo: 53 atualizações reais carregaram certinho, ordem
+  decrescente confirmada, "Carregar mais" trouxe o resto até acabar.
+  Bônus: apareceu ali a resposta que o Raphael mandou ontem pra pergunta
+  antiga da Rodinha 30cm — confirma que aquele fluxo (`/ml/perguntas`)
+  também está funcionando de ponta a ponta.
+
+---
+
+### 2026-09-07 — Responder pergunta antiga direto pelo sistema (`/ml/perguntas`)
+
+Raphael tinha uma pergunta de comprador muito antiga (04/05/2026, ~125
+dias) sem resposta e não conseguia achar ela pra responder. Investigado
+ao vivo navegando no próprio painel do ML:
+- A tela nova de Perguntas (`vendedores.mercadolivre.com.br/perguntas/vendedor`)
+  **só tem filtro de data até 30 dias** (confirmado inspecionando o
+  dropdown pelo DOM — só existem as opções "Últimos 15 dias" e "Últimos
+  30 dias", nada de período customizado nem "todos").
+- O painel clássico (`myaccount.mercadolivre.com.br/questions`) não
+  existe mais (404).
+- A página pública do anúncio ("Ver todas as perguntas") só mostra as
+  já respondidas, não as pendentes.
+- Ou seja: **não existe, hoje, link nenhum dentro do ML pra achar/
+  responder uma pergunta com mais de 30 dias** — é uma limitação real da
+  interface deles, não falta de procurar.
+
+A API do ML não tem essa limitação (`/questions/search?status=UNANSWERED`
+devolve a pergunta certinha, sem filtro de data) e tem endpoint de
+escrita documentado (`POST /answers`). Implementado:
+- `answerQuestion()` + `case 'answer_question'` em `ml-insights/index.ts`
+  (mesmo padrão de toda escrita no ML: log em `ml_item_updates`, erro
+  amigável via `friendlyMlError`).
+- Botão "Responder" em cada card de `/ml/perguntas`, abre modal com a
+  pergunta + textarea + aviso de que é publicação real e imediata —
+  nunca 1 clique só grava.
+- Testado ao vivo: modal abre certinho com a pergunta de maio
+  carregada. **Não testei o envio de verdade** (postar uma resposta é
+  irreversível e pública — isso fica pro Raphael escrever e confirmar).
+
+---
+
+### 2026-09-07 — Tela "Publicidade" (`/ml/publicidade`): campanhas e anúncios patrocinados do ML (Ads)
+
+Raphael pediu uma tela completa de Publicidade/Ads do Mercado Livre:
+campanhas ativas/inativas, anúncios patrocinados (parados, com gasto,
+completos), valores investidos, ROAS — "tudo tudo tudo" que der pra
+puxar pela API, com links diretos pro ML pro que não der.
+
+- Diferente de "Promoções" (`MlPromotionsPage.jsx`, campanhas de
+  desconto tipo 9.9/DEAL) — essa tela é sobre **Product Ads**
+  (publicidade paga por clique), que antes só aparecia como 1 cartão
+  isolado no Dashboard da conta.
+- Boa parte da infraestrutura de backend pra falar com a API de Ads do
+  ML já existia (`findMlAdvertiser`, `fetchAdsMetrics`, `adsCoverage`,
+  `fetchAccountAdsSummary`) — faltava só uma ação que buscasse TUDO de
+  uma vez (todas as campanhas + todos os anúncios, com métricas) e
+  cruzasse anúncio → nome da campanha. Nova função `adsDashboard` +
+  ação `ads_dashboard` em `supabase/functions/ml-insights/index.ts`.
+- Página nova `src/modules/ml-insights/MlAdsPage.jsx`, rota
+  `/ml/publicidade`, item novo no sidebar (entre Promoções e
+  Oportunidades de Venda). Cartões de resumo (investido, receita, ROAS
+  médio, cliques, impressões, CTR médio), lista de campanhas com meta
+  vs. real de ACOS/ROAS, tabela de anúncios patrocinados com busca +
+  filtro por status (ativo/idle/pausado/hold) + ordenação, seção
+  separada dos anúncios pausados fora do Ads (cruzando com
+  `active_listings`), e botão "Ver no Mercado Livre" apontando pro hub
+  de Publicidade do vendedor (não existe link profundo confirmado por
+  campanha/anúncio individual — pausar campanha, mudar orçamento etc.
+  continua só manual no painel deles, sem API pública pra isso).
+- **Testado ao vivo** contra a API real da CoisaPet antes de considerar
+  pronto: 5 campanhas ativas, 90 anúncios patrocinados (45 ativos / 37
+  idle / 6 pausados / 2 hold), R$760,76 investidos e R$17.329,47 de
+  receita de Ads nos últimos 30 dias (ROAS médio 22,78x) — e depois
+  conferido visualmente na tela renderizada, batendo com esses números.
+
+**Follow-ups no mesmo dia, pedidos pelo Raphael depois de ver a tela:**
+- Balões de "?" explicando Custo/Receita/ACOS/ROAS/CTR em todo canto que
+  aparecem (cartões de resumo, cada campanha, cabeçalho da tabela de
+  anúncios — não repetido linha a linha, só uma vez no topo da tabela,
+  pra não poluir com 90 linhas × 5 tooltips). Deixa claro que Custo é só
+  do período selecionado (não é total histórico nem orçamento diário) e
+  Receita é só o atribuído àquele anúncio (direta + indireta), não a
+  receita geral da loja.
+- Modal de produtos por campanha: clicar no nome da campanha (ou no
+  contador "N produtos") abre modal com cada anúncio daquela campanha e
+  seus dados individuais (custo/receita/cliques/ACOS/ROAS), ordenado por
+  custo. Testado ao vivo, abre certinho.
+- **Bug corrigido**: o toggle "Anúncios parados fora do Ads" era um
+  `<button>` com um `InfoTooltip` (que também renderiza um `<button>`)
+  dentro — `<button>` dentro de `<button>` é HTML inválido, o navegador
+  corrige sozinho e quebra a estrutura. Trocado o toggle externo pra
+  `<div role="button" tabIndex={0}>` com `onKeyDown` pro Enter/Espaço, e
+  o clique no "?" agora leva `stopPropagation()` pra não also-togglear o
+  card ao explicar o termo. Vale ficar de olho: **nunca aninhar
+  `InfoTooltip` dentro de um `<button>`** — usar `<div role="button">`
+  quando precisar de clique + tooltip juntos.
+- Próximo pedido do Raphael, ainda não implementado: um "analisador" de
+  campanha (regras sobre os números reais — orçamento batendo teto,
+  ACOS estourando meta, anúncio gastando sem vender, anúncio com ROAS
+  bom mas pouco explorado — nunca IA "inventando", só cálculo em cima
+  do que já vem da API). Combinado formato por campanha (não resumo
+  geral).
+
+---
+
+### 2026-09-06 — Site novo (`site-novo/`): hero de scroll "andar no terrário"
+
+Raphael pediu um site institucional novo pra CoisaPet, padrão "melhores
+UI/UX do mundo": primeira dobra com efeito de zoom/andar dentro de um
+terrário ambientado ao rolar a página, antes de cair nas seções normais
+(história, produtos, diferenciais, equipe, comunidade). Projeto vive
+isolado em `site-novo/` (HTML/CSS/JS puro, sem build, mesmo espírito de
+`site/`) — não mexe no site atual.
+
+**Plano alinhado com o Raphael antes de codar** (`AskUserQuestion`, todas
+as recomendadas): paralaxe 2D em camadas (não WebGL/3D), evoluir a
+identidade visual já existente (cobre/creme/marrom + Playfair Display +
+DM Sans, mesma de `site/quemsomos.html`), HTML/CSS/JS puro, fotos de
+produto reais curadas e baixadas localmente (não busca ao vivo).
+
+**Achado importante**: a skill de geração de imagem (`design`, Gemini)
+precisa de Python + `GEMINI_API_KEY` — nenhum dos dois está disponível
+nesta máquina, e a skill instrui explicitamente a NÃO instalar Python
+sozinho. Pivotei pra uma solução melhor pro caso: a cena inteira do
+terrário é **SVG desenhado à mão** (camadas por profundidade: parede,
+vidro, substrato, planta, roda, casinha), animado com GSAP ScrollTrigger
+— zero dependência externa, nítido em qualquer resolução, e sem risco de
+inconsistência entre "cenas" (é a mesma ilustração, a câmera avança).
+
+**Bug real encontrado e corrigido**: passar `transformOrigin` em
+coordenadas do viewBox (ex: `'800px 520px'`) pro GSAP quebra a origem de
+escala, porque o SVG renderizado tem sua própria escala de tela
+(viewBox 1600x900 esticado pro viewport real) — os elementos incham na
+direção errada. Corrigido usando a origem padrão do GSAP (`50% 50%`,
+relativo à própria caixa de cada elemento). Escalas também foram
+reduzidas (de até 2.4x pra no máximo ~1.45x) pra composição não ficar
+"quebrada" visualmente.
+
+Fotos reais de 12 produtos (bebedouro, labirinto, plataforma, etc.)
+baixadas via `scripts/fetch-site-novo-products.mjs` (gera signed URL do
+bucket privado `product-photos` com a anon key, baixa os bytes — não
+expira porque vira arquivo local em `site-novo/assets/products/`).
+Conteúdo institucional (história, pilares, equipe) reaproveitado de
+`site/quemsomos.html` e `site/index.html`, adaptado.
+
+Testado ao vivo (servidor estático local + Claude in Chrome): mecânica
+do hero funcionando (rolei em ~6 pontos diferentes, composição limpa em
+cada um); fallback de `prefers-reduced-motion` também testado (esta
+máquina tem a preferência ativada no SO) — mostra cena estática, sem
+scroll-jacking, como devia. Todas as seções institucionais conferidas
+(história, produtos com fotos reais, diferenciais, equipe, comunidade,
+footer).
+
+**Atualização no mesmo dia — trocado por fotos reais**: o Raphael viu a
+versão em SVG e pediu fotos de verdade, "bem mais realista". Resolvido
+assim:
+1. Máquina não tinha Python nem `GEMINI_API_KEY` — Raphael instalou os
+   dois na sessão (Python 3.12 via `winget install Python.Python.3.12`;
+   chave em aistudio.google.com/apikey). **Detalhe que custou tempo**: o
+   projeto sincroniza via OneDrive entre PCs do Raphael, mas cada sessão
+   do Claude Code fica presa na máquina onde foi aberta — o primeiro
+   Python instalado foi numa máquina errada (`Zeus`) e só apareceu depois
+   de instalar de novo na máquina certa (`DESKTOP-VI61O97`, a desta
+   sessão). Depois do install, o Python só ficou visível via caminho
+   absoluto (`AppData/Local/Programs/Python/Python312/python.exe`) — o
+   processo do Claude Code já estava rodando antes do install e não
+   pega o PATH atualizado sem reiniciar.
+2. **A API do Gemini (`google-genai`) devolveu 429 cota-zero** pros
+   modelos de imagem (`gemini-3-pro-image-preview` e
+   `gemini-2.5-flash-image`) mesmo com a chave válida — o nível grátis
+   da API exige faturamento ativado no Google Cloud pra liberar QUALQUER
+   cota de geração de imagem (script ficou salvo em
+   `scripts/generate-hero-scenes.py`, funcional se um dia ativarem
+   faturamento).
+3. **Solução que funcionou**: gerar pelo **app de chat do Gemini**
+   (gemini.google.com, mesma conta Google "Coisa Pet" já logada no
+   Chrome conectado) em vez da API — o free tier do app permite geração
+   de imagem normalmente. Pedi as 3 cenas na MESMA conversa (uma
+   seguindo a outra, "essa mesma cena, câmera moveu mais perto...") pra
+   manter continuidade visual real entre elas, baixei cada uma e salvei
+   em `site-novo/assets/hero/scene-{1-wide,2-mid,3-close}.jpg`.
+4. Reescrito `hero.js`/`index.html`/`style.css`: as 3 fotos reais
+   substituem o SVG, em crossfade + zoom contínuo (Ken Burns) via GSAP
+   — mesma timeline por scroll de antes, só trocando "camadas
+   desenhadas" por "3 `<img>` empilhadas com opacity cruzando". Testado
+   de novo em vários pontos do scroll — resultado ficou bem mais
+   convincente que o SVG.
+
+**2ª atualização no mesmo dia — 3 fotos não bastava, virou sequência de 7**:
+Raphael lembrou que o pedido original era tipo vídeo quebrado em frames
+(scroll = frame, andando de verdade), não só 3 fotos alternando. Tentei
+gerar vídeo de verdade (Veo) — **exige assinatura paga do Gemini**,
+confirmado testando direto no chat ("Video Generation Requires
+Subscription"). Sem assinar, resolvido assim: gerei mais 4 fotos
+intermediárias na MESMA conversa do Gemini (mesma técnica de
+continuidade), ficando com 7 pontos de parada ao todo (de fora →
+próximo do vidro → substrato/galho com a roda ao fundo → roda em foco →
+passando a roda com a casinha aparecendo → casinha meio-perto → close
+final). Reescrito `hero.js`/`index.html` pra loop genérico sobre N
+quadros (`data-frame="0..6"`) em vez de 3 fixos — cada quadro ocupa 1/7
+do scroll, com crossfade curto entre um e outro. Com mais pontos de
+parada mais próximos entre si, o efeito lembra bem mais "andar quadro a
+quadro" do que as 3 fotos anteriores. Bug de teste encontrado no
+caminho (não é bug do site): ao testar via console forçando o modo
+animado, esqueci de restaurar `.hero-stage` pra `position:sticky` (o
+CSS real desliga isso via `prefers-reduced-motion`, que está ativo
+nesta máquina) — sem isso as fotos pareciam "sumir" porque a seção
+inteira rolava normal em vez de ficar fixa. `#hero` aumentado pra 480vh
+(desktop) / 280vh (mobile) pra dar espaço aos 7 quadros.
+
+**3ª atualização — hero não animava pro Raphael**: ele testou e reportou
+"nada muda, mesmo rolando". Causa: o `hero.js` desligava a animação
+inteira quando `prefers-reduced-motion: reduce` estava ativo (decisão
+minha, de acessibilidade) — e o Windows dele tinha "Efeitos de
+animação" desligado (Configurações → Acessibilidade → Efeitos visuais),
+o que ativa essa preferência no Chrome. Raphael questionou (com razão)
+por que a dobra principal do site dependia de uma configuração de
+sistema tão pouco conhecida, já tendo visto outros sites com scroll
+assim funcionarem mesmo com essa opção desligada. **Removida a trava**:
+o hero agora anima pra todo mundo, independente de
+`prefers-reduced-motion` — decisão consciente de tratar essa dobra como
+conteúdo principal (não efeito decorativo por cima de conteúdo já
+legível), igual a maioria dos sites com esse tipo de scrollytelling.
+Tirado tanto do `hero.js` (early return) quanto do `style.css` (media
+query que forçava `#hero` a 100vh / `.hero-stage` a `position:relative`).
+Testado com scroll de mouse de verdade (não só JS) depois da correção,
+funcionando em todos os 7 quadros.
+
+**Pendências**: nenhuma; projeto funcional com sequência de 7 fotos
+reais, animação sem trava de reduced-motion. Falta decidir com o
+Raphael quando/se substitui `site/` em produção, e se algum dia quiser
+vídeo de verdade (Veo) precisa assinar o Gemini pago.
+
+---
+
+### 2026-09-05 — Gestão de Envios Full (`/ml/full/envios`) + múltiplos holerites por funcionário/mês
+
+Duas entregas nessa sessão:
+
+**1. Múltiplos holerites por funcionário/mês** (fase43): Marlon (CLT +
+fim de semana) e Diovani (pagamento semanal) recebem mais de um holerite
+no mesmo mês. **Bug real encontrado**: o botão "Enviar" do modal
+`PayModal` (`RHPages.jsx`) chamava `onClick={save}` direto — o React
+passa o evento do clique como argumento, que virava o `forceOverwrite`
+(sempre truthy!), pulando a checagem de conflito. Ou seja, **o sistema
+já vinha sobrescrevendo holerites em silêncio**, sem nunca perguntar.
+Corrigido: campo `label` novo em `payslips` (coluna, migration
+`fase43-payslips-multiplos.sql`), modal agora detecta os já existentes e
+oferece "Adicionar mais um" ou "Substituir" um específico da lista.
+Storage também ajustado pra não um arquivo apagar o outro (sufixo por
+rótulo ou timestamp quando há mais de um no mês).
+
+**2. Gestão de Envios Full**: Raphael queria acompanhar dentro do
+CoisaPet a tela "Gestão de envios Full" do painel do Mercado Livre
+(`vendedores.mercadolivre.com.br/shipping/inbounds` — onde ele cria/
+acompanha envios de estoque pro CD). **Confirmado por pesquisa (e pela
+doc oficial do ML)**: essa tela não tem API pública — só dá pra
+consultar "estoque Full" e "operações de estoque" via API, a gestão de
+envios em si só existe no painel logado no navegador (o endpoint que a
+tela usa devolve 401 sem os cookies de sessão). Por isso virou um
+**snapshot sincronizado via automação de navegador** (Claude in Chrome,
+perfil "login coisapet"), não uma tela ao vivo tipo o resto do módulo
+ML: tabelas novas `ml_full_inbound_shipments` + `ml_full_inbound_items`
+(migration `fase44-full-inbound-shipments.sql`), populadas rodando um
+script no console da própria página do ML (fetch da lista + parse do
+HTML de cada detalhe, grava direto no Supabase via REST com a anon key).
+29 envios / 387 itens sincronizados nesta sessão. Pra atualizar: pedir
+"sincroniza a gestão de envios Full" (só o Claude com esse navegador
+conectado consegue rodar de novo, não tem botão dentro do app que
+funcione sozinho). Tela em `/ml/full/envios`, sidebar dentro de "Estoque
+Full", com tooltips explicativos (`InfoTooltip`) e abas por status
+(pendentes/aguardando/finalizados/cancelados).
+
+**Achado à parte, útil pra sessões futuras**: a CLI do Supabase local
+está logada e linkada ao projeto CoisaPet (`supabase db query --linked`
+funciona direto, sem precisar copiar SQL pro dashboard) — usado pra
+aplicar as duas migrations acima nesta sessão.
+
+---
+
+### 2026-09-04 (9ª parte) — Campo de observação no holerite
+
+Pedido simples do Raphael: um campo curto no modal "Enviar holerite"
+(`/rh/holerites`) pra anotar algo sobre o pagamento daquele mês (ex:
+adiantamento já descontado, bônus incluso).
+
+- Migration `supabase/fase42-payslips-notes.sql`: coluna `notes text`
+  em `payslips`.
+- `PayModal` (`RHPages.jsx`): campo de texto único "Observação do mês"
+  (opcional, até 200 caracteres), incluído no payload de save
+  automaticamente (já usa `{...form}`). No fluxo de conflito
+  (sobrescrever holerite existente do mesmo mês), pré-preenche a
+  observação já cadastrada pra não sumir sozinha se a pessoa só estiver
+  reenviando o PDF.
+- Aparece em dois lugares: na lista do admin (`RHHoleritesPage`, abaixo
+  do nome do funcionário) e no app da equipe (`equipe/index.html`,
+  função `loadMais()`, abaixo da referência do holerite) — decidi
+  mostrar pro funcionário também porque "informação sobre o pagamento
+  do mês" só faz sentido documentado se ele consegue ver.
+
+Testado ao vivo (via SQL direto pra não precisar simular upload de PDF
+verdadeiro): nota aparece certinho na lista do admin, build limpo, sem
+erros. Não cheguei a testar visualmente no app da equipe (precisaria de
+login de funcionário), mas o código segue o mesmo padrão de leitura já
+usado ali pros outros campos do holerite.
+
+---
+
+### 2026-09-04 (8ª parte) — Atestados médicos: aprovação + reflexo automático no Relatório de Ponto
+
+Raphael queria o mesmo fluxo das férias pros atestados que a equipe já
+envia pelo app (`equipe/index.html` → `medical_certificates`): hoje
+entrava direto sem aprovação nenhuma, e o Relatório de Ponto não sabia
+que aquele dia tinha atestado (virava falta, ou só as horas parciais
+contavam se a pessoa trabalhou parte do dia antes de passar mal).
+
+**Descoberta importante durante a implementação**: o Raphael pediu pra
+mexer no "Timesheet" pra isso, e existe de fato um
+`src/modules/timesheet/TimesheetPage.jsx` com exatamente esse padrão de
+aprovação de férias — só que **esse arquivo não está importado em
+lugar nenhum, não tem rota, é código morto**. A tela de verdade,
+roteada em `/rh/ferias` e `/rh/atestados`, é `RHFeriasPage` e
+`RHAtestadosPage`, dentro de `src/modules/rh/RHPages.jsx` (plural,
+diferente de `RHPage.jsx` singular, que também parece não-roteado).
+Cheguei a implementar a aprovação em `TimesheetPage.jsx` primeiro (por
+causa do nome "Timesheet"), percebi o engano ao tentar abrir a rota, e
+refiz a mesma coisa no lugar certo (`RHAtestadosPage`). Deixei as
+mudanças em `TimesheetPage.jsx` como estão (inofensivo por estar morto,
+não vale o esforço de reverter) — **mas se algum dia esse arquivo for
+resgatado/roteado, ele já vem com atestados também**, e se for
+definitivamente lixo, dá pra apagar os dois (`TimesheetPage.jsx` e
+`RHPage.jsx`) numa faxina futura.
+
+**O que foi feito, no lugar certo:**
+
+1. **Banco** (`supabase/fase41-atestados-aprovacao.sql`): adiciona
+   `status`/`reviewed_by`/`reviewed_at`/`reject_reason` em
+   `medical_certificates` (mesmas colunas que `vacation_requests` já
+   tinha). Atestados enviados ANTES dessa feature (16 registros) viraram
+   `aprovado` automaticamente — não é revisão retroativa, é reconhecer
+   que já tinham sido aceitos na prática.
+2. **Aprovação** (`RHAtestadosPage`, `RHPages.jsx`): reescrita pra
+   espelhar `RHFeriasPage` linha por linha — filtro Pendentes/Aprovados/
+   Rejeitados/Todos, badge de status, botões Aprovar/Rejeitar, modal de
+   confirmação com motivo opcional de rejeição, função `review()` fazendo
+   o update. Contador de pendentes no menu igual férias.
+3. **Relatório de Ponto** (`RHRelatorioPage.jsx`): mesmo padrão do home
+   office da Isabelly — nova função `isAtestadoDay(empId, dateStr)`,
+   fetch de `medical_certificates` aprovados (com `date_end` calculado
+   no cliente a partir de `date + days_off`, já que a tabela não tem
+   coluna de fim), aplicado em `calcEmpStats`, `totalDays`, no extrato
+   impresso/exportado e no `DayRow` da tela. **Diferença importante do
+   home office**: no atestado os registros REAIS de ponto daquele dia
+   continuam aparecendo nas colunas Entrada/Almoço/Retorno/Saída (só o
+   Total e o Saldo são sobrescritos pra meta cheia) — cobre exatamente o
+   caso que o Raphael descreveu (trabalhou 3h, passou mal, atestado pro
+   resto do dia).
+4. **Fix descoberto testando com dado real**: a Ana Carolina tinha
+   férias aprovadas justamente no dia em que testei um atestado —
+   sem tratamento, o dia mostrava os dois selos (Férias + Atestado) com
+   Total "0h" porque a meta do dia já tinha sido zerada pela férias,
+   ficando visualmente contraditório ("atestado médico" ao lado de
+   "0h"/"em dia" sem crédito nenhum). Corrigido: férias tem prioridade —
+   `isAtestado` só é considerado quando o dia NÃO é dia de férias
+   (`!isVacationDay(...) && isAtestadoDay(...)`), nos dois pontos do
+   `DayRow` e no extrato impresso.
+
+Testado ao vivo com um atestado de teste real (inserido e removido via
+SQL): fluxo pendente → aprovar no `/rh/atestados` → reflexo automático
+no Relatório de Ponto sem nenhum passo manual extra, badge "🩺
+Atestado", ponto parcial real preservado, saldo neutro, e o caso de
+sobreposição com férias corrigido. Build limpo, sem erros no console.
+
+**Fora de escopo** (mencionado ao Raphael): Ponto Semanal e Horas Fim de
+Semana não recebem esse tratamento, só o Relatório de Ponto.
+
+Plano completo em `C:\Users\User\.claude\plans\curried-coalescing-shamir.md`.
+
+---
+
+### 2026-09-04 (7ª parte) — Horas de fim de semana do Marlon somem do Relatório de Ponto geral
+
+Raphael notou que as horas de fim de semana do Marlon (que já têm tela
+própria — "Horas Fim de Semana", filtrada por `system_users.
+weekend_hours_separate = true`) continuavam contando E aparecendo no
+Relatório de Ponto geral, inflando o saldo dele artificialmente (ex:
+Agosto foi de "+16h60m" pra "-15h25m" depois do fix — a diferença toda
+era hora de fim de semana já contabilizada em outro lugar).
+
+Já existia o flag certo no banco (`weekend_hours_separate`, só o Marlon
+tem `true` hoje) — só faltava o Relatório de Ponto respeitar ele. Antes
+esse flag só era lido pela própria tela de Horas Fim de Semana.
+
+**Fix, todo em `RHRelatorioPage.jsx`**: adicionei `weekend_hours_separate`
+no select de `system_users` (não vinha antes) e, em todo lugar que lê os
+registros de um dia de fim de semana pra esse funcionário, troco pra uma
+lista vazia — `calcEmpStats` (não soma no total nem na meta),
+`totalDays` (não conta como dia trabalhado), o extrato impresso/
+exportado, e a tabela on-screen (`DayRow`, via a prop `records`). Como o
+resto do código já trata "sem registro em fim de semana" como uma
+célula neutra `—`, não precisei inventar um estado novo — o dia
+simplesmente fica em branco, como se não tivesse acontecido nada ali
+(porque, pra fins deste relatório, não aconteceu — já está na tela
+certa).
+
+Só toquei no Relatório de Ponto — Ponto Semanal e outras telas que
+também possam somar hora de fim de semana não foram tocadas; avisar se
+precisar do mesmo tratamento lá.
+
+Testado ao vivo: Agosto do Marlon caiu de 167h59m pra bater com só os
+dias úteis, sábado/domingo aparecem 100% em branco na tabela (antes
+mostravam os horários batidos). Build limpo, sem erros no console.
+
+---
+
+### 2026-09-04 (6ª parte) — Home office fixo da Isabelly (quinta/sexta) no Relatório de Ponto
+
+Combinado com o Raphael: a partir de agosto/2026, Isabelly Vitoria
+Asensio (id `b6a29004-dc27-4fb1-b481-905f0acdaf53`) trabalha remoto toda
+quinta e sexta — não bate ponto nesses dias. Antes, isso aparecia como
+falta (débito de meta) no Relatório de Ponto, distorcendo o saldo dela
+pra muito mais negativo do que a realidade.
+
+**Regra implementada** (só pra ela, é uma exceção nomeada — ver
+comentário no código, mesmo espírito do caso do Eduardo com salário
+fixo): quinta/sexta a partir de 2026-08-01, SE não for feriado, o dia
+conta como 100% batido — total = meta do dia, saldo = 0 — com um selo
+"🏠 Home office" na linha, em vez de olhar os registros reais de ponto
+(que não existem nesses dias, de propósito). Feriado nesses dias
+continua sem contar normalmente (não é dia útil). Dia futuro (ainda não
+aconteceu) não mostra o selo nem soma — só quando o dia realmente chega,
+igual qualquer outro dia do calendário.
+
+Função nova `isHomeOfficeDay(empId, dateStr, isHoliday)` em
+`RHRelatorioPage.jsx`, aplicada em TODOS os lugares que calculam
+horas/meta pra ela nessa tela: `calcEmpStats` (total do mês, usado nos
+cards e na barra de resumo do extrato), o loop de dias do extrato
+impresso/exportado, e o `DayRow` da tabela on-screen (badge + total +
+saldo). Aproveitei pra eliminar 2 cálculos de `totalDays` duplicados que
+já existiam soltos no arquivo (agora usam o retorno de `calcEmpStats`
+direto, ao invés de recalcular igual).
+
+**Fora de escopo por enquanto**: só mexi no Relatório de Ponto
+(`RHRelatorioPage.jsx`) — Ponto Semanal e Horas Fim de Semana não foram
+tocados; se o Raphael usar aqueles pra tirar o horário dela também, a
+mesma regra precisa ser replicada lá.
+
+Testado ao vivo: Setembro (mês corrente) mostra Qui 03 e Sex 04 com o
+selo "Home office" e saldo "em dia", dia futuro (Qui 10) sem o selo
+ainda; Agosto mostra o saldo bem menor que antes (5h29m ao invés do
+salto que a falta de quinta/sexta inteira geraria). Build limpo, sem
+erros no console.
+
+Arquivo: `src/modules/rh/RHRelatorioPage.jsx`.
+
+---
+
+### 2026-09-04 (5ª parte) — Fix: rodapé do Extrato de Ponto mostrava saldo negativo errado
+
+Raphael reportou que Ana Carolina e Isabelly apareciam com o mês "não
+batendo" no Relatório de Ponto — o card "Saldo do mês" no topo do
+extrato mostrava um número (ex: 4h17m faltando) e o rodapé da tabela
+("Meta do período: ... / saldo") mostrava outro completamente diferente
+(ex: -5h43m). Ele suspeitava (corretamente) que a conta de cima
+("Saldo do mês") era a certa.
+
+**Causa raiz**: `fmtH()` (`rhHelpers.jsx`) usa `Math.floor()` pra
+separar as horas inteiras — funciona bem pra números positivos, mas
+`Math.floor()` de um negativo arredonda pra baixo (mais negativo), não
+trunca. Em todo `RHRelatorioPage.jsx` isso é contornado corretamente
+chamando sempre `fmtH(Math.abs(saldo))` e colocando o sinal (+/-) por
+fora manualmente — só o rodapé do extrato impresso/exportado
+(`saldoFinal`, linha ~1148) passava o `saldoH` já negativo direto pro
+`fmtH()`, sem `Math.abs`. Pra -4h17m (-4.2833), isso dava
+`Math.floor(-4.2833) = -5`, sobrando 0.7167h = 43min → "-5h43m", o
+número errado que apareceu pro Raphael.
+
+Corrigido pra usar o mesmo padrão do resto do arquivo (`Math.abs` +
+sinal manual). Verifiquei a conta isolada em Node reproduzindo o bug
+antigo (-5h43m) e confirmando o resultado novo (-4h17m, batendo com o
+card do topo) — não consegui tirar screenshot do extrato em si porque
+ele abre numa aba via `window.open` + `document.write` (URL
+`about:blank`), que a automação de navegador não consegue inspecionar;
+mas a causa raiz e a matemática do fix estão confirmadas.
+
+Arquivo: `src/modules/rh/RHRelatorioPage.jsx` (linha ~1150).
+
+---
+
+### 2026-09-04 (4ª parte) — Pedidos: navegação por dia (setas), não lista com todos os dias juntos
+
+O Raphael corrigiu o rumo do ajuste anterior: o que ele queria de volta
+não era uma lista com TODOS os dias empilhados com cabeçalho — era o
+navegador de dia horizontal mesmo (igual Produção/Expedição): mostra só
+UM dia por vez, seta pra voltar/avançar, botão "Hoje". Troquei.
+
+`OrdersPage.jsx` ganhou `viewDate` (mesmo padrão `todayISO`/`addDays` já
+usado em `ProductionPage.jsx`) e a barra de navegação (Calendar + label
+Hoje/Ontem/data + ‹ Hoje › + date-input + refresh), no mesmo lugar onde
+fica em Produção (acima dos KPIs). A lista principal agora mostra só
+`dayFiltered` (pedidos do `viewDate`).
+
+Detalhe importante: busca (`search`) e os chips de "precisa de atenção"
+(`filterAtt`) **escapam do recorte do dia de propósito** — procurar um
+pedido específico ou revisar "Sem SKU"/"Cancelados" cruzando todos os
+dias é mais útil do que ficar preso ao dia selecionado. Nesse caso
+(`escapeDayView`) a lista volta a mostrar todos os dias agrupados (o
+comportamento que eu tinha feito na tentativa anterior, que acabou
+sendo reaproveitado só para esse caso), com um aviso discreto "busca/
+filtro mostrando todos os dias" ao lado do navegador, que fica com as
+setas desabilitadas nesse modo. O filtro de plataforma (aba ML/Shopee/
+Manual) continua combinando normalmente com o dia selecionado.
+
+KPIs (Pedidos/Itens/A caminho/Entregues) passaram a refletir sempre o
+recorte visível no momento (`visibleOrders` = dia selecionado, ou todos
+os dias quando busca/atenção escapam) — antes um mostrava 200 no topo
+enquanto a lista só tinha 14 do dia, inconsistente.
+
+Testado ao vivo: Hoje/Ontem navegam certo, contagens batem, busca
+escapa e agrupa por dia com o aviso, "Manual + Hoje" (0 itens) mostra o
+empty-state "Nada nesse dia" corretamente. Build limpo, sem erros.
+
+Arquivo: `src/modules/orders/OrdersPage.jsx`.
+
+---
+
+### 2026-09-04 (3ª parte) — Ajustes nas abas (Pedidos + Produção) e Pedidos voltou a agrupar por dia
+
+Três ajustes pedidos pelo Raphael depois das entregas anteriores do dia:
+
+1. **Fundo colorido nas abas**: o estilo anterior (sublinhado colorido
+   embaixo do texto, `border-b-2 overflow-x-auto`) trocado por um
+   segmented control de verdade — cada aba vira uma pílula com
+   fundo/borda na cor da plataforma quando ativa (rose=Todas,
+   amber=ML em Pedidos / amarelo-azul em Produção — mantendo a cor de
+   marca real do ML que já existia lá, laranja=Shopee, slate=Manual/
+   Avulso). Mesmo padrão nas duas telas.
+2. **Overflow/altura**: o `overflow-x-auto` + margem negativa
+   (`-mb-0.5`, truque pro sublinhado colar na borda) causava barra de
+   rolagem horizontal e altura inconsistente. Trocado por
+   `flex flex-wrap gap-2` sem borda inferior nem overflow — quebra
+   linha em vez de rolar, altura sempre igual (mesmo padding em todas
+   as pílulas).
+3. **Pedidos voltou a agrupar por dia**: o Raphael lembrou que a lista
+   principal de Pedidos era organizada por dia (Hoje/Ontem/etc, como já
+   é a aba Histórico) — a versão que eu tinha montado nesta sessão
+   usava paginação numérica solta (10 por página), sem contexto de dia.
+   Troquei a paginação por seções por dia (`groupedByDay`, reaproveitando
+   `dayGroupLabel()`), cada uma com cabeçalho "Hoje/Ontem/data · N
+   pedidos · N itens" — sem paginação numérica, a lista inteira (até
+   200 pedidos mais recentes) renderiza agrupada.
+
+Testado ao vivo nas duas telas: abas com fundo colorido, sem scroll,
+altura uniforme; Pedidos mostra "Hoje" e "Ontem" corretamente ao rolar.
+Build limpo, sem erros no console.
+
+Arquivos: `src/modules/orders/OrdersPage.jsx` (removida paginação
+numérica, `groupedByDay`, novo estilo de abas),
+`src/modules/production/ProductionPage.jsx` (novo estilo de abas).
+
+---
+
+### 2026-09-04 (2ª parte) — Produção: mesmo padrão de abas por plataforma
+
+Raphael pediu pra replicar na Esteira (Produção) o mesmo estilo de abas
+que acabou de entrar em Pedidos. Antes, as 3 faixas (ML/Shopee/Avulso)
+apareciam todas juntas, empilhadas, sem separação de verdade — só um
+rótulo colorido no topo de cada uma. Agora tem uma barra de abas de
+verdade acima das faixas ("Todas | 🛒 Mercado Livre | 🛍️ Shopee | ✍️
+Avulso", com contagem de produtos por aba e sublinhado colorido),
+reaproveitando as cores já usadas nesta própria tela (`SOURCE_CONFIG`:
+amarelo/azul=ML, laranja=Shopee, slate=Avulso — cores de marca, já
+estabelecidas desde a Fase 40, mantive em vez de importar o âmbar de
+Pedidos). Clicar numa aba filtra pra mostrar só aquela faixa; "Todas"
+volta a empilhar como antes. Empty-state próprio quando a aba
+selecionada não tem nada pendente no dia.
+
+A produção já tinha bastante cor de estado por item desde a Fase 40
+(`StatusBadge`/`STATUS_CONFIG` — pendente/em produção/embalagem/pronto/
+enviado/coberto por estoque), então essa parte não precisou de mudança,
+só a separação por aba mesmo.
+
+Testado ao vivo: build limpo, sem erros no console, todas as 3 abas +
+"Todas" alternam corretamente, empty-state da aba "Avulso" (0 hoje)
+confirmado.
+
+Arquivo: `src/modules/production/ProductionPage.jsx` (novo estado
+`platformFilter`, barra de abas, `visibleSources`/`visibleGroups`).
+
+---
+
+### 2026-09-04 — Pedidos: abas por plataforma + estado visual do item no pipeline
+
+Sugestão do Vini (repassada pelo Raphael): separar visualmente Mercado
+Livre / Shopee / Manuais na tela de Pedidos (não só filtro misturado), e
+colorir cada item do pedido pelo estado real dele (aguardando produção /
+em produção / na expedição).
+
+**Parte A — abas de plataforma**: o filtro que já existia (`filterSrc`)
+virou uma barra de abas de verdade, acima dos KPIs, reaproveitando as
+cores já estabelecidas em `platformStyle()` (âmbar=ML, laranja=Shopee,
+slate=Manual) — sublinhado colorido na aba ativa. Risco baixo, é só
+apresentação do que já existia.
+
+**Parte B — estado do item**: aqui tem uma limitação real do modelo de
+dados que vale registrar. **Não existe (e não dá pra ter de forma
+simples) um vínculo 1:1 entre `order_items` e `production_order_items`**
+— na importação em lote do XLSX (`useOrders.js`, função de import),
+várias unidades do MESMO sku vindas de PEDIDOS DIFERENTES do mesmo lote
+viram UMA linha agregada só na esteira (isso é proposital, é assim que a
+produção pensa: "preciso fazer X rodinhas hoje", não por pedido). Then,
+adicionar uma FK exigiria uma tabela de junção (produção ↔ vários
+order_items), complexidade desnecessária pro que foi pedido.
+
+Solução adotada: sinal **por SKU, não por pedido individual**. Nova
+função `fetchProductionStatus()` em `useOrders.js` busca
+`production_order_items` com status ativo (exclui `arquivado` e
+`coberto_estoque`) e monta um mapa sku → "rank" mais avançado
+(pendente=1, em_producao=2, embalagem=3, pronto=4, enviado=5). Na tela,
+cada item do pedido mostra:
+- **"Na expedição"** (azul) se `order_items.picked = true` — sinal 100%
+  confiável, já existia.
+- **"Em produção"** (âmbar) se o sku tem rank ≥ 2 na esteira ativa —
+  ou seja, "esse produto está sendo feito hoje", não necessariamente
+  ESSA unidade específica.
+- **"Aguardando produção"** (slate) caso contrário (inclui sku sem
+  match, ou só `pendente`/`coberto_estoque`).
+
+Testado ao vivo: os 3 estados renderizam certo (confirmado com pedido
+real `#4V0KF0YH` que tinha um item em `embalagem` → mostrou "Em
+produção"). Full e cancelado não mostram selo (não entram em produção).
+
+Arquivos: `src/modules/orders/hooks/useOrders.js` (nova
+`fetchProductionStatus`/`productionStatusBySku`),
+`src/modules/orders/OrdersPage.jsx` (`itemPipelineState()`, abas,
+`OrderCard` recebe `prodBySku`).
 
 ---
 

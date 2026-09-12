@@ -6,9 +6,10 @@ import {
 } from 'recharts'
 import {
   MousePointerClick, TrendingUp, RefreshCw, Search, X,
-  ShoppingBag, Calendar, Clock, BarChart2, Activity,
+  ShoppingBag, Calendar, Clock, BarChart2, Activity, Newspaper,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { BlogAnalyticsTab } from './BlogAnalyticsTab'
 
 // ── Config ────────────────────────────────────────────────────
 const PLATFORM_CFG = {
@@ -66,11 +67,17 @@ export function ProductClicksPage() {
   const [searchProd,setSearchProd] = useState('')
   const [searchFeed,setSearchFeed] = useState('')
   const [activeTab, setActiveTab] = useState('overview') // overview | produtos | feed
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     if (period === -99 && !customFrom && !customTo) return // espera datas
     loadClicks()
   }, [period, customFrom, customTo]) // eslint-disable-line
+
+  function refreshAll() {
+    loadClicks()
+    setRefreshKey(k => k + 1)
+  }
 
   async function loadClicks() {
     setLoading(true)
@@ -196,6 +203,7 @@ export function ProductClicksPage() {
   const tabs = [
     { id:'overview',  label:'Visão Geral', icon: Activity },
     { id:'produtos',  label:'Produtos',    icon: TrendingUp },
+    { id:'blog',      label:'Blog',        icon: Newspaper },
     { id:'feed',      label:'Feed ao vivo',icon: ShoppingBag },
   ]
 
@@ -213,7 +221,7 @@ export function ProductClicksPage() {
             <p className="page-subtitle">{total.toLocaleString('pt-BR')} cliques registrados</p>
           </div>
         </div>
-        <button onClick={loadClicks} disabled={loading}
+        <button onClick={refreshAll} disabled={loading}
           className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50">
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Atualizar
         </button>
@@ -240,43 +248,49 @@ export function ProductClicksPage() {
               onChange={e => setCustomTo(e.target.value)} placeholder="Até"/>
           </div>
         )}
-        <select className="select text-sm w-auto" value={platform} onChange={e => setPlatform(e.target.value)}>
-          <option value="">Todas as plataformas</option>
-          {Object.entries(PLATFORM_CFG).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
-        </select>
-        <select className="select text-sm w-auto" value={page} onChange={e => setPage(e.target.value)}>
-          <option value="">Todas as páginas</option>
-          {Object.entries(PAGE_CFG).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
-        </select>
-        {(platform || page) && (
-          <button onClick={() => { setPlatform(''); setPage('') }}
-            className="text-xs text-rose-500 font-semibold flex items-center gap-1">
-            <X size={11}/> Limpar
-          </button>
+        {activeTab !== 'blog' && (
+          <>
+            <select className="select text-sm w-auto" value={platform} onChange={e => setPlatform(e.target.value)}>
+              <option value="">Todas as plataformas</option>
+              {Object.entries(PLATFORM_CFG).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+            </select>
+            <select className="select text-sm w-auto" value={page} onChange={e => setPage(e.target.value)}>
+              <option value="">Todas as páginas</option>
+              {Object.entries(PAGE_CFG).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+            {(platform || page) && (
+              <button onClick={() => { setPlatform(''); setPage('') }}
+                className="text-xs text-rose-500 font-semibold flex items-center gap-1">
+                <X size={11}/> Limpar
+              </button>
+            )}
+          </>
         )}
       </div>
 
       {/* ── KPIs ────────────────────────────────────────────── */}
-      <div className="grid grid-cols-5 gap-4">
-        <div className="card p-5 flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-violet-50 flex items-center justify-center text-2xl">👆</div>
-          <div>
-            <p className="text-xs text-slate-400 font-semibold">Total</p>
-            <p className="text-3xl font-black text-slate-800">{total.toLocaleString('pt-BR')}</p>
-          </div>
-        </div>
-        {Object.entries(PLATFORM_CFG).map(([k, v]) => (
-          <div key={k} className="card p-5 flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
-              style={{ background: v.color + '18' }}>{v.emoji}</div>
+      {activeTab !== 'blog' && (
+        <div className="grid grid-cols-5 gap-4">
+          <div className="card p-5 flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-violet-50 flex items-center justify-center text-2xl">👆</div>
             <div>
-              <p className="text-xs text-slate-400 font-semibold">{v.label}</p>
-              <p className="text-3xl font-black text-slate-800">{byPlat[k]||0}</p>
-              {total > 0 && <p className="text-[10px] text-slate-400">{Math.round((byPlat[k]||0)/total*100)}%</p>}
+              <p className="text-xs text-slate-400 font-semibold">Total</p>
+              <p className="text-3xl font-black text-slate-800">{total.toLocaleString('pt-BR')}</p>
             </div>
           </div>
-        ))}
-      </div>
+          {Object.entries(PLATFORM_CFG).map(([k, v]) => (
+            <div key={k} className="card p-5 flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+                style={{ background: v.color + '18' }}>{v.emoji}</div>
+              <div>
+                <p className="text-xs text-slate-400 font-semibold">{v.label}</p>
+                <p className="text-3xl font-black text-slate-800">{byPlat[k]||0}</p>
+                {total > 0 && <p className="text-[10px] text-slate-400">{Math.round((byPlat[k]||0)/total*100)}%</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Abas ────────────────────────────────────────────── */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
@@ -513,6 +527,11 @@ export function ProductClicksPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ══ ABA: BLOG ══════════════════════════════════════════ */}
+      {activeTab === 'blog' && (
+        <BlogAnalyticsTab period={period} customFrom={customFrom} customTo={customTo} refreshKey={refreshKey} />
       )}
 
       {/* ══ ABA: PRODUTOS ═════════════════════════════════════ */}
