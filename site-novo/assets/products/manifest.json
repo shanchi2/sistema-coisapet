@@ -1,0 +1,98 @@
+[
+  {
+    "slug": "alimentador-interativo",
+    "category": "Acessórios",
+    "photo_url": "products/1777460700819-aphsl3l49dd.webp",
+    "name": "Alimentador Interativo",
+    "price": 46.9,
+    "file": "alimentador-interativo.webp"
+  },
+  {
+    "slug": "banheira-banho-areia",
+    "category": "Acessórios",
+    "photo_url": "products/1777461276355-mucz68iukw.webp",
+    "name": "Banheira de Banho de Areia",
+    "price": 39.9,
+    "file": "banheira-banho-areia.webp"
+  },
+  {
+    "slug": "bebedouro-ceramica",
+    "category": "Acessórios",
+    "photo_url": "products/1777463344478-12gf5krcqib.webp",
+    "name": "Bebedouro Comedouro Cerâmica",
+    "price": 14.9,
+    "file": "bebedouro-ceramica.webp"
+  },
+  {
+    "slug": "labirinto-playground",
+    "category": "Brinquedos",
+    "photo_url": "products/1777461392157-bkjajpob31c.webp",
+    "name": "Brinquedo Labirinto Playground",
+    "price": 29.9,
+    "file": "labirinto-playground.webp"
+  },
+  {
+    "slug": "caixa-escavacao-dig-box",
+    "category": "Brinquedos",
+    "photo_url": "products/1777461707319-uh9goiwc7ej.webp",
+    "name": "Caixa de Escavação Dig Box",
+    "price": 44.9,
+    "file": "caixa-escavacao-dig-box.webp"
+  },
+  {
+    "slug": "comedouro-interativo",
+    "category": "Acessórios",
+    "photo_url": "products/1777463431864-zzxvxghazz.webp",
+    "name": "Comedouro Interativo",
+    "price": 26.9,
+    "file": "comedouro-interativo.webp"
+  },
+  {
+    "slug": "divisoria-terrario",
+    "category": "Terrários",
+    "photo_url": "products/1777463539133-7m8i9p2vbi5.webp",
+    "name": "Divisória Muro de Contenção",
+    "price": 39.9,
+    "file": "divisoria-terrario.webp"
+  },
+  {
+    "slug": "enriquecimento-fibra-coco",
+    "category": "Insumos Naturais",
+    "photo_url": "products/1777561362825-tfvj7z8y0ug.webp",
+    "name": "Enriquecimento Ambiental — Fibra de Côco",
+    "price": 19.9,
+    "file": "enriquecimento-fibra-coco.webp"
+  },
+  {
+    "slug": "escada-com-esconderijo",
+    "category": "Tocas",
+    "photo_url": "products/1777464513146-c1b2vrvc7gl.webp",
+    "name": "Escada Especial com Esconderijo",
+    "price": 24.9,
+    "file": "escada-com-esconderijo.webp"
+  },
+  {
+    "slug": "labirinto-com-visor",
+    "category": "Tocas",
+    "photo_url": "products/1777465118232-mhzwzf4w3n.webp",
+    "name": "Labirinto Esconderijo com Visor",
+    "price": 109.9,
+    "file": "labirinto-com-visor.webp"
+  },
+  {
+    "slug": "pedras-seixo-de-rio",
+    "category": "Insumos Naturais",
+    "photo_url": "products/1777466469354-jfxw0vn1vah.webp",
+    "name": "Pedras Seixo de Rio",
+    "price": 21.9,
+    "file": "pedras-seixo-de-rio.webp"
+  },
+  {
+    "slug": "plataforma-elevada-dupla",
+    "category": "Brinquedos",
+    "photo_url": "products/1777467464816-lrhy80tukj.webp",
+    "name": "Plataforma Elevada Dupla",
+    "price": 49.9,
+    "file": "plataforma-elevada-dupla.webp"
+  }
+]

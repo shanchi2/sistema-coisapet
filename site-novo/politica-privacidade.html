@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="description" content="Política de Privacidade da Coisa Pet. Saiba como coletamos, usamos e protegemos seus dados pessoais em conformidade com a LGPD."/>
+<title>CoisaPet — Política de Privacidade | LGPD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+/* ── RESET & VARS (mesmo DNA da Coisa Pet) ──────────────────────── */
+:root{
+  --bg:      #3D1F0D;
+  --bg2:     #2e1609;
+  --bg3:     #4a2714;
+  --mid:     #6B3A1F;
+  --copper:  #C4956A;
+  --copper-d:#a87a52;
+  --cream:   #F5ECD7;
+  --cream2:  #ede0c4;
+  --cream3:  rgba(245,236,215,.08);
+  --txt:     #F5ECD7;
+  --txt2:    rgba(245,236,215,.7);
+  --txt3:    rgba(245,236,215,.45);
+  --serif:   'Playfair Display', Georgia, serif;
+  --sans:    'DM Sans', sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;overflow-x:hidden}
+body{
+  font-family:var(--sans);
+  background:var(--bg);
+  color:var(--txt);
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+
+/* scrollbar */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--copper);border-radius:3px}
+
+/* cursor personalizado */
+.cursor{
+  position:fixed;width:10px;height:10px;border-radius:50%;
+  background:var(--copper);pointer-events:none;z-index:9999;
+  transform:translate(-50%,-50%);transition:transform .15s ease,opacity .3s;
+  mix-blend-mode:difference;
+}
+.cursor-ring{
+  position:fixed;width:36px;height:36px;border-radius:50%;
+  border:1.5px solid var(--copper);pointer-events:none;z-index:9998;
+  transform:translate(-50%,-50%);opacity:.5;
+  transition:transform .35s cubic-bezier(.25,.46,.45,.94),width .2s,height .2s,opacity .3s;
+}
+.cursor-ring.hovered{width:52px;height:52px;opacity:.8}
+
+/* nav (igual ao original) */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 108px;
+  transition:background .4s,backdrop-filter .4s,padding .3s;
+}
+nav.scrolled{
+  background:rgba(46,22,9,.92);backdrop-filter:blur(24px);
+  padding:14px 48px;
+  border-bottom:1px solid rgba(196,149,106,.12);
+}
+.nav-logo{display:flex;align-items:center;gap:10px}
+.nav-logo img{height:68px;}
+.nav-logo span{font-family:var(--serif);font-size:18px;font-weight:700;letter-spacing:-.3px}
+.nav-links{display:flex;align-items:center;gap:36px;list-style:none}
+.nav-links a{font-size:13px;font-weight:500;color:var(--txt2);letter-spacing:.3px;transition:color .2s;position:relative}
+.nav-links a::after{content:'';position:absolute;bottom:-4px;left:0;width:0;height:1px;background:var(--copper);transition:width .3s}
+.nav-links a:hover{color:var(--cream)}
+.nav-links a:hover::after{width:100%}
+.nav-links a.nav-active{color:var(--cream)}
+.nav-links a.nav-active::after{width:100%;background:var(--copper)}
+.nav-cta{
+  padding:10px 22px;background:var(--copper);color:var(--bg2);
+  border:none;border-radius:100px;font-family:var(--sans);font-size:13px;font-weight:600;
+  cursor:pointer;transition:all .22s;letter-spacing:.2px;
+}
+.nav-cta:hover{background:var(--cream);transform:translateY(-1px)}
+.nav-burger{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:4px}
+.nav-burger span{display:block;width:24px;height:2px;background:var(--cream);border-radius:2px;transition:all .3s}
+
+/* reveal animations */
+.reveal{opacity:0;transform:translateY(36px);transition:opacity .7s ease,transform .7s ease}
+.reveal.up{opacity:1;transform:none}
+.reveal-l{opacity:0;transform:translateX(-36px);transition:opacity .7s ease,transform .7s ease}
+.reveal-l.up{opacity:1;transform:none}
+.reveal-r{opacity:0;transform:translateX(36px);transition:opacity .7s ease,transform .7s ease}
+.reveal-r.up{opacity:1;transform:none}
+
+/* secoes comuns */
+section{padding:100px 48px}
+.sec-inner{max-width:1200px;margin:0 auto}
+.sec-tag{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:11px;font-weight:600;letter-spacing:2px;
+  text-transform:uppercase;color:var(--copper);margin-bottom:20px;
+}
+.sec-tag::before{content:'';width:24px;height:1px;background:var(--copper)}
+.sec-headline{
+  font-family:var(--serif);
+  font-size:clamp(32px,4vw,54px);
+  font-weight:900;line-height:1.1;
+  letter-spacing:-1px;color:var(--cream);
+  margin-bottom:16px;
+}
+.sec-headline em{font-style:italic;color:var(--copper)}
+.sec-sub{font-size:16px;font-weight:300;color:var(--txt2);line-height:1.7;max-width:540px}
+
+/* hero especifico para politica de privacidade */
+#hero-politica{
+  min-height:65vh;
+  position:relative;
+  display:flex;align-items:center;
+  background:radial-gradient(ellipse at 30% 40%, #5a2d14 0%, var(--bg) 70%);
+  overflow:hidden;
+}
+.hero-politica-inner{
+  max-width:1200px;margin:0 auto;padding:0 48px;
+  position:relative;z-index:2;
+}
+.hero-grain{
+  position:absolute;inset:0;opacity:.04;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:200px;
+}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:6px 16px;
+  border:1px solid rgba(196,149,106,.3);border-radius:100px;
+  font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;
+  color:var(--copper);margin-bottom:28px;
+  opacity:0;animation:fadeUp .6s .2s ease forwards;
+}
+.hero-badge::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--copper)}
+.hero-headline-politica{
+  font-family:var(--serif);
+  font-size:clamp(42px,6vw,70px);
+  font-weight:900;line-height:1.1;
+  letter-spacing:-1.5px;color:var(--cream);
+  margin-bottom:24px;
+  max-width:800px;
+}
+.hero-headline-politica em{font-style:italic;color:var(--copper);}
+.hero-desc{
+  font-size:18px;font-weight:300;color:var(--txt2);line-height:1.65;
+  max-width:580px;margin-bottom:40px;
+  opacity:0;animation:fadeUp .6s .7s ease forwards;
+}
+.hero-data{
+  font-size:13px;color:var(--txt3);margin-top:16px;
+  opacity:0;animation:fadeUp .6s .9s ease forwards;
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+
+/* conteudo da politica */
+.politica-conteudo{
+  background:var(--bg2);
+}
+.politica-card{
+  background:rgba(196,149,106,.04);
+  border:1px solid rgba(196,149,106,.1);
+  border-radius:28px;
+  padding:48px;
+  margin-bottom:32px;
+}
+.politica-card:last-child{margin-bottom:0}
+.politica-card h3{
+  font-family:var(--serif);
+  font-size:24px;
+  font-weight:700;
+  color:var(--cream);
+  margin-bottom:16px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+.politica-card h3 span{
+  width:32px;
+  height:32px;
+  background:rgba(196,149,106,.15);
+  border-radius:50%;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:16px;
+  font-weight:600;
+  color:var(--copper);
+}
+.politica-card p{
+  font-size:15px;
+  font-weight:300;
+  color:var(--txt2);
+  line-height:1.75;
+  margin-bottom:16px;
+}
+.politica-card p:last-child{margin-bottom:0}
+.politica-card ul{
+  margin:16px 0 8px 24px;
+  color:var(--txt2);
+  font-size:15px;
+  line-height:1.75;
+}
+.politica-card li{margin-bottom:8px}
+.politica-card strong{
+  color:var(--cream);
+  font-weight:500;
+}
+.politica-card a{
+  color:var(--copper);
+  text-decoration:underline;
+  transition:color .2s;
+}
+.politica-card a:hover{color:var(--cream);}
+.atualizacao{
+  background:rgba(196,149,106,.08);
+  border-left:3px solid var(--copper);
+  padding:20px 24px;
+  border-radius:16px;
+  margin-top:48px;
+  text-align:center;
+}
+.atualizacao p{
+  font-size:13px;
+  color:var(--txt3);
+  margin-bottom:8px;
+}
+.atualizacao p:last-child{margin-bottom:0}
+.atualizacao a{
+  color:var(--copper);
+  text-decoration:underline;
+}
+
+/* contato card */
+.contato-card{
+  background:linear-gradient(135deg,var(--bg3) 0%, var(--bg) 100%);
+  border-radius:28px;
+  padding:40px;
+  text-align:center;
+  margin-top:48px;
+}
+.contato-card h4{
+  font-family:var(--serif);
+  font-size:22px;
+  margin-bottom:12px;
+}
+.contato-card .email{
+  font-size:18px;
+  font-weight:500;
+  color:var(--copper);
+  margin:16px 0;
+}
+.contato-card .email a{text-decoration:none;}
+.contato-card .email a:hover{text-decoration:underline;}
+
+.btn-voltar{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  background:var(--copper);
+  color:var(--bg2);
+  border:none;
+  border-radius:100px;
+  padding:12px 28px;
+  font-family:var(--sans);
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all .22s;
+  margin-top:24px;
+}
+.btn-voltar:hover{
+  background:var(--cream);
+  transform:translateY(-2px);
+}
+
+/* footer (identico ao original) */
+footer{
+  background:var(--bg2);
+  border-top:1px solid rgba(196,149,106,.1);
+  padding:72px 48px 40px;
+}
+.footer-top{
+  max-width:1200px;margin:0 auto;
+  display:grid;grid-template-columns:1.8fr 1fr 1fr 1fr;gap:48px;
+  padding-bottom:48px;
+  border-bottom:1px solid rgba(196,149,106,.1);
+}
+.footer-brand img{height:44px;margin-bottom:16px}
+.footer-tagline{
+  font-family:var(--serif);font-style:italic;
+  font-size:17px;color:var(--copper);line-height:1.4;margin-bottom:12px;
+}
+.footer-about{font-size:13px;font-weight:300;color:var(--txt3);line-height:1.7}
+.footer-col h4{font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--copper);margin-bottom:16px}
+.footer-col ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+.footer-col ul a{font-size:13px;font-weight:300;color:var(--txt2);transition:color .2s}
+.footer-col ul a:hover{color:var(--cream)}
+.footer-bottom{
+  max-width:1200px;margin:24px auto 0;
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+}
+.footer-copy{font-size:12px;color:var(--txt3)}
+.footer-site{font-size:12px;color:var(--copper)}
+
+/* mobile */
+@media(max-width:900px){
+  nav{padding:16px 24px}
+  nav.scrolled{padding:12px 24px}
+  .nav-links,.nav-cta{display:none}
+  .nav-burger{display:flex}
+  section{padding:72px 24px}
+  .hero-politica-inner{padding:0 24px}
+  .hero-headline-politica{font-size:clamp(36px,8vw,56px);}
+  .politica-card{padding:28px 20px;}
+  .footer-top{grid-template-columns:1fr 1fr;gap:32px}
+}
+@media(max-width:540px){
+  .footer-top{grid-template-columns:1fr}
+  .politica-card h3{font-size:20px;}
+}
+.mob-menu{
+  position:fixed;inset:0;z-index:99;
+  background:rgba(30,10,3,.98);backdrop-filter:blur(24px);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;
+  opacity:0;pointer-events:none;transition:opacity .3s;
+}
+.mob-menu.open{opacity:1;pointer-events:all}
+.mob-menu a{font-family:var(--serif);font-size:28px;font-weight:700;color:var(--cream);transition:color .2s}
+.mob-menu a:hover{color:var(--copper)}
+.mob-close{position:absolute;top:24px;right:24px;font-size:28px;color:var(--txt2);cursor:pointer}
+</style>
+</head>
+<body>
+
+<div class="cursor" id="cur"></div>
+<div class="cursor-ring" id="curR"></div>
+
+<nav id="nav">
+  <div class="nav-logo">
+    <img src="logo-coisapet.webp" alt="CoisaPet" onerror="this.src='https://placehold.co/38x38?text=CP'"/>
+  </div>
+  <ul class="nav-links">
+    <li><a href="quemsomos.html">Quem Somos</a></li>
+    <li><a href="index.html#produtos">Produtos</a></li>
+    <li><a href="index.html#diferenciais">Diferenciais</a></li>
+    <li><a href="index.html#comunidade">Comunidade</a></li>
+  </ul>
+  <button class="nav-cta" onclick="window.location.href='index.html#produtos'">Ver Produtos</button>
+  <div class="nav-burger" id="burger" onclick="toggleMob()">
+    <span></span><span></span><span></span>
+  </div>
+</nav>
+
+<div class="mob-menu" id="mobMenu">
+  <div class="mob-close" onclick="toggleMob()">✕</div>
+  <a href="quemsomos.html" onclick="toggleMob()">Quem Somos</a>
+  <a href="index.html#produtos" onclick="toggleMob()">Produtos</a>
+  <a href="index.html#diferenciais" onclick="toggleMob()">Diferenciais</a>
+  <a href="index.html#comunidade" onclick="toggleMob()">Comunidade</a>
+  <button class="btn-voltar" onclick="toggleMob();window.location.href='index.html#produtos'">Ver Produtos</button>
+</div>
+
+<!-- HERO DA PÁGINA POLÍTICA DE PRIVACIDADE -->
+<section id="hero-politica">
+  <div class="hero-grain"></div>
+  <div class="hero-politica-inner">
+    <div class="hero-badge">LGPD · Transparência</div>
+    <h1 class="hero-headline-politica">Seus dados, <em>nosso compromisso.</em></h1>
+    <p class="hero-desc">Na Coisa Pet, acreditamos que transparência não é opcional. Por isso, detalhamos abaixo como coletamos, usamos e protegemos suas informações pessoais.</p>
+    <div class="hero-data">Última atualização: 12 de maio de 2026</div>
+  </div>
+</section>
+
+<!-- CONTEÚDO PRINCIPAL DA POLÍTICA -->
+<section class="politica-conteudo">
+  <div class="sec-inner">
+
+    <!-- Card 1: Informações coletadas -->
+    <div class="politica-card reveal">
+      <h3><span>1</span> Quais informações coletamos</h3>
+      <p>A Coisa Pet coleta apenas as informações necessárias para processar seus pedidos, melhorar sua experiência e cumprir obrigações legais:</p>
+      <ul>
+        <li><strong>Dados de identificação</strong> — Nome, e-mail, CPF (para emissão de nota fiscal), telefone e endereço de entrega.</li>
+        <li><strong>Dados de navegação</strong> — Cookies de desempenho e funcionalidade, como preferências de idioma e itens no carrinho. <strong>Não utilizamos cookies de rastreamento para anúncios sem seu consentimento explícito.</strong></li>
+        <li><strong>Dados de pagamento</strong> — As informações do seu cartão de crédito ou dados bancários <strong>nunca são armazenadas por nós</strong>. Elas são processadas diretamente por intermediários financeiros com certificação PCI.</li>
+        <li><strong>Interações com a marca</strong> — Mensagens enviadas pelo WhatsApp, e-mail ou redes sociais, para que possamos atendê-lo adequadamente.</li>
+      </ul>
+      <p>Importante: Não coletamos dados sensíveis (como saúde, origem racial ou convicções religiosas) sem seu consentimento expresso e específico.</p>
+    </div>
+
+    <!-- Card 2: Como usamos seus dados -->
+    <div class="politica-card reveal">
+      <h3><span>2</span> Como utilizamos suas informações</h3>
+      <p>Seus dados são utilizados exclusivamente para finalidades legítimas e transparentes:</p>
+      <ul>
+        <li><strong>Processar e entregar seus pedidos</strong> — incluindo emissão de nota fiscal e comunicação sobre o status do envio.</li>
+        <li><strong>Atendimento ao cliente</strong> — responder dúvidas, resolver problemas e oferecer suporte pós-venda.</li>
+        <li><strong>Melhorar nossos produtos e serviços</strong> — analisando padrões de uso (sempre de forma anonimizada) para tornar a experiência cada vez melhor.</li>
+        <li><strong>Obrigações legais e fiscais</strong> — cumprimento da legislação brasileira, como armazenamento de notas fiscais por 5 anos.</li>
+        <li><strong>Marketing (apenas com seu consentimento)</strong> — envio de novidades, promoções ou conteúdos relevantes. Você pode cancelar a qualquer momento.</li>
+      </ul>
+      <p><strong>Não vendemos, alugamos ou compartilhamos seus dados pessoais com terceiros para fins de marketing sem seu consentimento explícito.</strong></p>
+    </div>
+
+    <!-- Card 3: Compartilhamento de dados -->
+    <div class="politica-card reveal">
+      <h3><span>3</span> Com quem compartilhamos dados</h3>
+      <p>Para que possamos operar, alguns serviços terceirizados acessam seus dados de forma controlada e segura:</p>
+      <ul>
+        <li><strong>Transportadoras e Correios</strong> — para entregar seu pedido (nome, endereço e telefone).</li>
+        <li><strong>Gateways de pagamento (ex: Stripe, PagSeguro, Mercado Pago)</strong> — para processar transações financeiras. Seus dados de cartão não passam pelos nossos servidores.</li>
+        <li><strong>Plataformas de e-mail marketing (ex: Klaviyo, RD Station)</strong> — apenas se você tiver consentido em receber nossas comunicações.</li>
+        <li><strong>Autoridades judiciais ou regulatórias</strong> — quando exigido por lei ou ordem judicial.</li>
+      </ul>
+      <p>Todos os nossos parceiros são contratualmente obrigados a respeitar a LGPD e manter seus dados protegidos.</p>
+    </div>
+
+    <!-- Card 4: Seus direitos como titular (LGPD) -->
+    <div class="politica-card reveal">
+      <h3><span>4</span> Seus direitos (LGPD - Lei 13.709/2018)</h3>
+      <p>Como titular dos dados, você tem garantidos os seguintes direitos — e pode exercê-los a qualquer momento, gratuitamente:</p>
+      <ul>
+        <li><strong>Confirmação e acesso</strong> — saber se tratamos seus dados e solicitar uma cópia.</li>
+        <li><strong>Correção</strong> — atualizar informações incompletas, inexatas ou desatualizadas.</li>
+        <li><strong>Anonimização, bloqueio ou eliminação</strong> — quando os dados forem desnecessários, excessivos ou tratados em desconformidade.</li>
+        <li><strong>Portabilidade</strong> — solicitar a transferência de seus dados a outro fornecedor de serviço.</li>
+        <li><strong>Revogação do consentimento</strong> — a qualquer momento, para tratamentos que dependem de sua autorização (como marketing).</li>
+        <li><strong>Oposição</strong> — caso não concorde com alguma finalidade específica.</li>
+      </ul>
+      <p>Para exercer qualquer um desses direitos, basta enviar um e-mail para <strong>privacidade@coisapet.com.br</strong> com o assunto "LGPD - Solicitação de Titular". Responderemos em até <strong>15 dias corridos</strong>.</p>
+    </div>
+
+    <!-- Card 5: Cookies e tecnologias de rastreamento -->
+    <div class="politica-card reveal">
+      <h3><span>5</span> Uso de cookies e tecnologias semelhantes</h3>
+      <p>Nosso site utiliza cookies para garantir o funcionamento adequado e melhorar sua experiência. Classificamos os cookies da seguinte forma:</p>
+      <ul>
+        <li><strong>Estritamente necessários</strong> — essenciais para navegação e uso do carrinho/compras. Não exigem consentimento.</li>
+        <li><strong>Desempenho e análise</strong> — coletam dados anônimos sobre como você usa o site (ex: páginas mais visitadas). Utilizamos apenas com seu consentimento.</li>
+        <li><strong>Funcionalidade</strong> — lembram suas preferências (idioma, região). Podem exigir consentimento dependendo do contexto.</li>
+        <li><strong>Marketing e publicidade</strong> — NÃO utilizamos cookies de terceiros para anúncios sem seu consentimento explícito no banner de cookies.</li>
+      </ul>
+      <p>Você pode configurar ou revogar seu consentimento a qualquer momento através do banner de cookies no rodapé do site ou limpando os cookies do seu navegador.</p>
+    </div>
+
+    <!-- Card 6: Segurança e armazenamento -->
+    <div class="politica-card reveal">
+      <h3><span>6</span> Como protegemos seus dados</h3>
+      <p>Adotamos medidas técnicas e organizacionais para proteger suas informações contra acessos não autorizados, perda ou destruição:</p>
+      <ul>
+        <li><strong>Criptografia SSL/TLS</strong> — toda a comunicação entre seu navegador e nosso site é criptografada (cadeado no endereço).</li>
+        <li><strong>Acesso restrito</strong> — apenas colaboradores diretamente envolvidos nas operações autorizadas têm acesso aos dados.</li>
+        <li><strong>Backups e redundância</strong> — seus dados são armazenados em servidores seguros, com redundância geográfica.</li>
+        <li><strong>Planos de resposta a incidentes</strong> — caso ocorra algum vazamento, notificaremos a ANPD e os titulares afetados conforme previsto em lei.</li>
+      </ul>
+      <p>Os dados são mantidos pelo tempo necessário para cumprir as finalidades descritas ou cumprir obrigações legais (ex: notas fiscais por 5 anos, conforme Código Tributário Nacional).</p>
+    </div>
+
+    <!-- Card 7: Dados de menores -->
+    <div class="politica-card reveal">
+      <h3><span>7</span> Informações de crianças e adolescentes</h3>
+      <p>A Coisa Pet não coleta intencionalmente dados pessoais de crianças com menos de 13 anos. Caso você seja responsável por um menor e descubra que ele nos forneceu informações sem seu consentimento, entre em contato imediatamente para que possamos remover os dados.</p>
+      <p>Para adolescentes entre 13 e 18 anos, recomendamos que utilizem o site com o acompanhamento dos pais ou responsáveis.</p>
+    </div>
+
+    <!-- Card 8: Encarregado (DPO) -->
+    <div class="politica-card reveal">
+      <h3><span>8</span> Encarregado de Proteção de Dados (DPO)</h3>
+      <p>Para questões relacionadas à privacidade, você pode contatar nosso Encarregado diretamente:</p>
+      <p><strong>Nome:</strong> Clara Alves Alvarenga<br/>
+      <strong>E-mail:</strong> <a href="mailto:dpo@coisapet.com.br">dpo@coisapet.com.br</a><br/>
+      <strong>Assunto recomendado:</strong> "LGPD - DPO"</p>
+      <p>Este canal é específico para temas de privacidade, proteção de dados e exercício de direitos como titular.</p>
+    </div>
+
+    <!-- Card de atualização / versão -->
+    <div class="atualizacao reveal">
+      <p><strong>Versão 1.0 — 12 de maio de 2026</strong></p>
+      <p>Esta Política de Privacidade pode ser atualizada periodicamente. Recomendamos sua consulta regular. Em caso de alterações substanciais, avisaremos em destaque no site ou por e-mail.</p>
+      <p><a href="quemsomos.html">← Voltar para página "Quem Somos"</a></p>
+    </div>
+
+    <!-- Botão de contato rápido -->
+    <div class="contato-card reveal">
+      <h4>Ainda tem dúvidas sobre seus dados?</h4>
+      <p>Estamos à disposição para esclarecer qualquer questão sobre privacidade e proteção de dados.</p>
+      <div class="email"><a href="mailto:privacidade@coisapet.com.br">privacidade@coisapet.com.br</a></div>
+      <button class="btn-voltar" onclick="window.location.href='quemsomos.html'">← Voltar para Quem Somos</button>
+    </div>
+
+  </div>
+</section>
+
+<footer>
+  <div class="footer-top">
+    <div class="footer-brand">
+      <img src="logo-coisapet.webp" alt="CoisaPet" onerror="this.src='https://placehold.co/44x44?text=CP'"/>
+      <div class="footer-tagline">"Todo tipo de coisa<br/>para todo tipo de pet."</div>
+      <p class="footer-about">A Coisa Pet é uma marca especializada em produtos próprios para mini pets, desenvolvidos com cuidado e conhecimento em Cafelândia, São Paulo.</p>
+    </div>
+    <div class="footer-col"><h4>Loja</h4><ul><li><a href="index.html">Início</a></li><li><a href="quemsomos.html">Quem Somos</a></li><li><a href="index.html#produtos">Produtos</a></li><li><a href="index.html#diferenciais">Diferenciais</a></li><li><a href="index.html#comunidade">Comunidade</a></li></ul></div>
+    <div class="footer-col"><h4>Produtos</h4><ul><li><a href="index.html#produtos">Terrários</a></li><li><a href="index.html#produtos">Tocas</a></li><li><a href="index.html#produtos">Acessórios</a></li><li><a href="index.html#produtos">Insumos Naturais</a></li></ul></div>
+    <div class="footer-col"><h4>Social</h4><ul><li><a href="https://instagram.com/coisapet" target="_blank">Instagram</a></li><li><a href="https://tiktok.com/@coisapet" target="_blank">TikTok</a></li><li><a href="https://youtube.com/@coisapet" target="_blank">YouTube</a></li><li><a href="https://wa.me/5514999081057" target="_blank">WhatsApp</a></li></ul></div>
+  </div>
+  <div class="footer-bottom">
+    <span class="footer-copy">© 2026 CoisaPet. Todos os direitos reservados.</span>
+    <span class="footer-site"><a href="politica-privacidade.html">Política de Privacidade</a> | coisapet.com.br</span>  </div>
+</footer>
+
+<script>
+  // cursor e nav
+  const cur = document.getElementById('cur');
+  const curR = document.getElementById('curR');
+  let mx=0,my=0,rx=0,ry=0;
+  document.addEventListener('mousemove', e=>{ mx=e.clientX; my=e.clientY; });
+  function animCursor(){
+    cur.style.left = mx+'px'; cur.style.top = my+'px';
+    rx += (mx-rx)*0.12; ry += (my-ry)*0.12;
+    curR.style.left = rx+'px'; curR.style.top = ry+'px';
+    requestAnimationFrame(animCursor);
+  }
+  animCursor();
+  document.querySelectorAll('a,button,.politica-card,.btn-voltar,.contato-card').forEach(el=>{
+    el.addEventListener('mouseenter',()=>curR.classList.add('hovered'));
+    el.addEventListener('mouseleave',()=>curR.classList.remove('hovered'));
+  });
+  window.addEventListener('scroll',()=>{
+    document.getElementById('nav').classList.toggle('scrolled',window.scrollY>60);
+  });
+  function toggleMob(){
+    document.getElementById('mobMenu').classList.toggle('open');
+  }
+  const observer = new IntersectionObserver(entries=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){ e.target.classList.add('up'); observer.unobserve(e.target); }
+    });
+  },{threshold:0.1});
+  document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+</script>
+</body>
+</html>
