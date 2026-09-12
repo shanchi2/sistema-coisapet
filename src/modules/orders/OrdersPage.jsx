@@ -2,10 +2,10 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ShoppingBag, Upload, Package, User, MapPin, Plus,
-  ChevronDown, ChevronUp, ChevronRight, Search, X, Check,
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Search, X, Check,
   Truck, CheckCircle2, Clock, AlertCircle, FileText,
   RefreshCw, ExternalLink, History, Filter, Pencil, Trash2, XCircle,
-  Radio, PackageX, PackageSearch, PackageCheck, Settings,
+  Radio, PackageX, PackageSearch, PackageCheck, Settings, Factory, Calendar,
 } from 'lucide-react'
 import { useOrders, fetchImportEvents, fetchBatchShipDates, fetchBatchesByIds, checkBatchBeforeDelete, deleteBatchOrders } from './hooks/useOrders'
 import { FeiraCombinadaModal } from './FeiraCombinadaModal'
@@ -33,6 +33,12 @@ function fmtTimeOnly(d) {
   return new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
+function todayISO() { return new Date().toISOString().split('T')[0] }
+function addDays(iso, n) {
+  const d = new Date(iso + 'T12:00:00')
+  d.setDate(d.getDate() + n)
+  return d.toISOString().split('T')[0]
+}
 function dayGroupLabel(dateStr) {
   const d = new Date(dateStr + 'T12:00:00')
   const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -268,8 +274,19 @@ function platformStyle(source) {
   }
 }
 
+// Estado visual do item no pipeline (aguardando produção → em produção →
+// na expedição). "Em produção" é um sinal por SKU, não por item exato —
+// ver nota em fetchProductionStatus (useOrders.js), a esteira agrupa
+// unidades do mesmo sku vindas de pedidos diferentes numa linha só.
+function itemPipelineState(it, { isFull, isCancelled, prodBySku }) {
+  if (isFull || isCancelled) return null
+  if (it.picked) return { label: 'Na expedição', cls: 'bg-sky-50 text-sky-700 border border-sky-200', Icon: Truck }
+  if (it.sku && (prodBySku[it.sku] || 0) >= 2) return { label: 'Em produção', cls: 'bg-amber-50 text-amber-700 border border-amber-200', Icon: Factory }
+  return { label: 'Aguardando produção', cls: 'bg-slate-100 text-slate-500 border border-slate-200', Icon: Clock }
+}
+
 // ─── Card de pedido ───────────────────────────────────────────────
-function OrderCard({ order, idx, onEdit, canSeeValues, isNew }) {
+function OrderCard({ order, idx, onEdit, canSeeValues, isNew, prodBySku }) {
   const [open, setOpen] = useState(false)
   const items       = order.items ?? []
   const totalUnits  = items.reduce((a, it) => a + (it.qty || 1), 0)
@@ -339,7 +356,9 @@ function OrderCard({ order, idx, onEdit, canSeeValues, isNew }) {
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Itens do pedido</p>
             </div>
             <div className="max-h-56 overflow-y-auto">
-            {items.map((it, j) => (
+            {items.map((it, j) => {
+              const pipe = itemPipelineState(it, { isFull, isCancelled, prodBySku })
+              return (
               <div key={j} className={`flex items-center gap-3 px-4 py-3 ${j < items.length-1 ? 'border-b border-slate-50' : ''}`}>
                 <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center shrink-0 text-sm">📦</div>
                 <div className="flex-1 min-w-0">
@@ -347,6 +366,11 @@ function OrderCard({ order, idx, onEdit, canSeeValues, isNew }) {
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     {it.sku && <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{it.sku}</span>}
                     {it.variacao && <span className="text-[10px] text-slate-400">{it.variacao.replace(/^[^:]+:\s*/, '')}</span>}
+                    {pipe && (
+                      <span className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded ${pipe.cls}`}>
+                        <pipe.Icon size={10}/> {pipe.label}
+                      </span>
+                    )}
                     {it.sku_encontrado === false && (
                       <span className="flex items-center gap-1 text-[10px] font-bold bg-red-50 text-red-600 px-1.5 py-0.5 rounded" title="Este SKU não foi encontrado no sistema — confira o cadastro do produto">
                         <AlertCircle size={10}/> SKU não encontrado
@@ -364,7 +388,8 @@ function OrderCard({ order, idx, onEdit, canSeeValues, isNew }) {
                   {it.preco_unit > 0 && <p className="text-xs text-slate-400">{fmtPreco(it.preco_unit)}</p>}
                 </div>
               </div>
-            ))}
+              )
+            })}
             </div>
           </div>
 
@@ -406,7 +431,7 @@ export function OrdersPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const canSeeValues = user?.role === 'admin'
-  const { orders, batches, loading, importing, newOrderIds, live, fetchOrders, fetchBatches, importAuto, createManualOrder } = useOrders()
+  const { orders, batches, loading, importing, newOrderIds, live, productionStatusBySku, fetchProductionStatus, fetchOrders, fetchBatches, importAuto, createManualOrder } = useOrders()
   const [importEvents, setImportEvents] = useState([])
   const [loadingEvents, setLoadingEvents] = useState(false)
   const [batchShipDates, setBatchShipDates] = useState({}) // { batch_id: ship_date } — dia real de cada lote
@@ -512,9 +537,10 @@ export function OrdersPage() {
   const [search,        setSearch]        = useState('')
   const [filterSrc,     setFilterSrc]     = useState('')
   const [filterAtt,     setFilterAtt]     = useState('') // '' | 'cancelado' | 'sem_sku' | 'pendente'
+  const [viewDate,      setViewDate]      = useState(todayISO())
   const fileRef = useRef()
 
-  useEffect(() => { fetchOrders(); fetchBatches() }, [])
+  useEffect(() => { fetchOrders(); fetchBatches(); fetchProductionStatus() }, [])
 
   const [duplicateInfo, setDuplicateInfo] = useState(null) // { existingBatch, file }
 
@@ -567,16 +593,35 @@ export function OrdersPage() {
 
   const hasActiveFilter = !!(search || filterSrc || filterAtt)
 
-  // KPIs sempre refletem o recorte atual (filtro de plataforma + busca)
-  const totalUnits = filtered.reduce((a, o) => a + (o.items||[]).reduce((b, it) => b + (it.qty||1), 0), 0)
+  // ── Navegação por dia — um dia de cada vez, seta pra voltar/avançar,
+  //    do jeito que sempre foi (mesmo padrão da Produção/Expedição).
+  //    Busca e os chips de "precisa de atenção" escapam desse recorte
+  //    de propósito — quem está procurando um pedido específico ou
+  //    revisando cancelados/sem SKU quer ver isso em qualquer dia, não
+  //    só no dia selecionado.
+  const escapeDayView = !!(search || filterAtt)
+  const isToday = viewDate === todayISO()
 
-  // ── Paginação client-side ─────────────────────────────────────────
-  const PAGE_SIZE = 10
-  const [page, setPage] = useState(1)
-  useEffect(() => { setPage(1) }, [search, filterSrc, filterAtt])
-  const pageCount  = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const pageSafe   = Math.min(page, pageCount)
-  const paginated  = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE)
+  const dayFiltered = useMemo(
+    () => filtered.filter(o => (o.data_venda || '').slice(0, 10) === viewDate),
+    [filtered, viewDate]
+  )
+
+  const groupedByDay = useMemo(() => {
+    const map = {}
+    filtered.forEach(o => {
+      const key = (o.data_venda || '').slice(0, 10) || 'sem-data'
+      if (!map[key]) map[key] = []
+      map[key].push(o)
+    })
+    return Object.keys(map).sort((a, b) => b.localeCompare(a)).map(day => ({ day, dayOrders: map[day] }))
+  }, [filtered])
+
+  const visibleOrders = escapeDayView ? filtered : dayFiltered
+
+  // KPIs refletem o recorte visível no momento (dia selecionado, ou
+  // todos os dias quando busca/atenção escapam do dia)
+  const totalUnits = visibleOrders.reduce((a, o) => a + (o.items||[]).reduce((b, it) => b + (it.qty||1), 0), 0)
 
   const platformCounts = {
     ml:     orders.filter(o => o.source === 'ml').length,
@@ -664,6 +709,26 @@ export function OrdersPage() {
             )
           })()}
 
+          {/* Navegação de dia — um dia por vez, seta pra voltar/avançar */}
+          {orders.length > 0 && (
+            <div className="card py-3 flex items-center gap-2">
+              <Calendar size={15} className={isToday ? 'text-slate-400' : 'text-rose-500'} />
+              <p className={`text-sm font-bold capitalize flex-1 ${isToday ? 'text-slate-700' : 'text-rose-700'}`}>{dayGroupLabel(viewDate)}</p>
+              {escapeDayView && (
+                <span className="text-[11px] text-slate-400 italic">busca/filtro mostrando todos os dias</span>
+              )}
+              <button onClick={() => setViewDate(addDays(viewDate, -1))} className="p-2 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"><ChevronLeft size={15} /></button>
+              <button onClick={() => setViewDate(todayISO())} disabled={isToday}
+                className={`px-3 py-2 rounded-xl text-xs font-bold ${isToday ? 'bg-slate-100 text-slate-300' : 'bg-rose-100 text-rose-700'}`}>Hoje</button>
+              <input type="date" value={viewDate} onChange={e => setViewDate(e.target.value)}
+                className="text-xs px-2.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-600" />
+              <button onClick={() => setViewDate(addDays(viewDate, 1))} className="p-2 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"><ChevronRight size={15} /></button>
+              <button onClick={() => fetchOrders()} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 font-semibold transition-colors ml-1">
+                <RefreshCw size={13} />
+              </button>
+            </div>
+          )}
+
           {/* KPIs */}
           {orders.length > 0 && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -673,7 +738,7 @@ export function OrdersPage() {
                   <p className="text-xs text-slate-400 font-semibold flex items-center gap-1.5">
                     Pedidos{hasActiveFilter && <span className="text-[9px] font-bold text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded-full">filtrado</span>}
                   </p>
-                  <p className="text-2xl font-black text-slate-800" style={{ fontFamily:'Nunito,sans-serif' }}>{filtered.length}</p>
+                  <p className="text-2xl font-black text-slate-800" style={{ fontFamily:'Nunito,sans-serif' }}>{visibleOrders.length}</p>
                 </div>
               </div>
               <div className="card py-4 flex items-center gap-3">
@@ -692,7 +757,7 @@ export function OrdersPage() {
                 <div>
                   <p className="text-xs text-slate-400 font-semibold">A caminho</p>
                   <p className="text-2xl font-black text-slate-800" style={{ fontFamily:'Nunito,sans-serif' }}>
-                    {filtered.filter(o => (o.status_ml||'').toLowerCase().includes('caminho')).length}
+                    {visibleOrders.filter(o => (o.status_ml||'').toLowerCase().includes('caminho')).length}
                   </p>
                 </div>
               </div>
@@ -703,7 +768,7 @@ export function OrdersPage() {
                 <div>
                   <p className="text-xs text-slate-400 font-semibold">Entregues</p>
                   <p className="text-2xl font-black text-slate-800" style={{ fontFamily:'Nunito,sans-serif' }}>
-                    {filtered.filter(o => (o.status_ml||'').toLowerCase().includes('entregue')).length}
+                    {visibleOrders.filter(o => (o.status_ml||'').toLowerCase().includes('entregue')).length}
                   </p>
                 </div>
               </div>
@@ -713,11 +778,36 @@ export function OrdersPage() {
                   <div>
                     <p className="text-xs text-slate-400 font-semibold">Faturamento declarado</p>
                     <p className="text-lg font-black text-emerald-700" style={{ fontFamily:'Nunito,sans-serif' }}>
-                      {fmtPreco(filtered.reduce((a, o) => a + (parseFloat(o.total_value) || 0), 0))}
+                      {fmtPreco(visibleOrders.reduce((a, o) => a + (parseFloat(o.total_value) || 0), 0))}
                     </p>
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Abas por plataforma — separação visual, não só filtro */}
+          {orders.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {[
+                { key: '',       label: '📋 Todas',                    count: orders.length,          activeCls: 'bg-rose-100 text-rose-700 border-rose-300' },
+                { key: 'ml',     label: platformStyle('ml').label,     count: platformCounts.ml,      activeCls: 'bg-amber-100 text-amber-800 border-amber-300' },
+                { key: 'shopee', label: platformStyle('shopee').label, count: platformCounts.shopee,  activeCls: 'bg-orange-100 text-orange-700 border-orange-300' },
+                { key: 'manual', label: platformStyle('manual').label, count: platformCounts.manual,  activeCls: 'bg-slate-200 text-slate-700 border-slate-400' },
+              ].map(opt => {
+                const active = filterSrc === opt.key
+                return (
+                  <button key={opt.key || 'all'} onClick={() => setFilterSrc(opt.key)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${
+                      active ? opt.activeCls : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300 hover:text-slate-600'
+                    }`}>
+                    {opt.label}
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? 'bg-white/70' : 'bg-slate-100 text-slate-400'}`}>
+                      {opt.count}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           )}
 
@@ -729,24 +819,6 @@ export function OrdersPage() {
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input className="input pl-8" placeholder="Buscar por comprador, nº pedido ou produto..."
                     value={search} onChange={e => setSearch(e.target.value)} />
-                </div>
-                <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
-                  {[
-                    { key: '',       label: 'Todas',       count: orders.length },
-                    { key: 'ml',     label: '🛒 ML',        count: platformCounts.ml },
-                    { key: 'shopee', label: '🛍️ Shopee',    count: platformCounts.shopee },
-                    { key: 'manual', label: '✍️ Manual',    count: platformCounts.manual },
-                  ].map(opt => (
-                    <button key={opt.key || 'all'} onClick={() => setFilterSrc(opt.key)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                        filterSrc === opt.key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                      }`}>
-                      {opt.label}
-                      <span className={`text-[10px] px-1.5 rounded-full ${filterSrc === opt.key ? 'bg-slate-100 text-slate-500' : 'bg-white/60 text-slate-400'}`}>
-                        {opt.count}
-                      </span>
-                    </button>
-                  ))}
                 </div>
                 {hasActiveFilter && (
                   <button onClick={() => { setSearch(''); setFilterSrc(''); setFilterAtt('') }}
@@ -775,8 +847,8 @@ export function OrdersPage() {
               )}
 
               <p className="text-xs text-slate-400">
-                {filtered.length} pedido(s) encontrado(s)
-                {pageCount > 1 && <> — página {pageSafe} de {pageCount}</>}
+                {visibleOrders.length} pedido(s) encontrado(s)
+                {escapeDayView && groupedByDay.length > 1 && <> — em {groupedByDay.length} dias</>}
               </p>
             </div>
           )}
@@ -800,51 +872,40 @@ export function OrdersPage() {
               <p className="text-sm text-slate-400 mb-4">Clique ou arraste o arquivo .xlsx exportado do painel do ML ou da Shopee — a plataforma é detectada automaticamente</p>
               <p className="text-xs text-slate-400">Ou use "+ Pedido manual" para lançar manualmente</p>
             </div>
-          ) : (
-            <>
-              <div className="flex flex-col gap-3">
-                {paginated.map((order, idx) => (
-                  <OrderCard key={order.id} order={order} idx={(pageSafe - 1) * PAGE_SIZE + idx}
-                    onEdit={o => { setEditingOrder(o); setEditOpen(true) }} canSeeValues={canSeeValues}
-                    isNew={newOrderIds.has(order.id)} />
-                ))}
-              </div>
-
-              {/* Paginação */}
-              {pageCount > 1 && (
-                <div className="flex items-center justify-center gap-1.5 pt-2">
-                  <button
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={pageSafe === 1}
-                    className="w-8 h-8 rounded-lg text-sm font-semibold text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                  >‹</button>
-
-                  {Array.from({ length: pageCount }, (_, i) => i + 1)
-                    .filter(n => n === 1 || n === pageCount || Math.abs(n - pageSafe) <= 1)
-                    .reduce((acc, n) => {
-                      if (acc.length > 0 && n - acc[acc.length - 1] > 1) acc.push('…')
-                      acc.push(n)
-                      return acc
-                    }, [])
-                    .map((n, i) => n === '…' ? (
-                      <span key={`gap-${i}`} className="w-8 h-8 flex items-center justify-center text-xs text-slate-300">…</span>
-                    ) : (
-                      <button key={n} onClick={() => setPage(n)}
-                        className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${
-                          n === pageSafe ? 'bg-rose-400 text-white' : 'text-slate-500 hover:bg-slate-100'
-                        }`}>
-                        {n}
-                      </button>
+          ) : escapeDayView ? (
+            /* Busca/atenção ativa — cruza todos os dias, agrupado pra manter contexto */
+            <div className="flex flex-col gap-6">
+              {groupedByDay.map(({ day, dayOrders }) => (
+                <div key={day} className="flex flex-col gap-3">
+                  <div className="flex items-center gap-3 px-1">
+                    <p className="text-xs font-black text-slate-500 uppercase tracking-wide capitalize">{dayGroupLabel(day)}</p>
+                    <span className="text-[11px] text-slate-400">
+                      {dayOrders.length} {dayOrders.length === 1 ? 'pedido' : 'pedidos'} · {dayOrders.reduce((a, o) => a + (o.items||[]).reduce((b, it) => b + (it.qty||1), 0), 0)} itens
+                    </span>
+                    <div className="flex-1 h-px bg-slate-100" />
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    {dayOrders.map(order => (
+                      <OrderCard key={order.id} order={order}
+                        onEdit={o => { setEditingOrder(o); setEditOpen(true) }} canSeeValues={canSeeValues}
+                        isNew={newOrderIds.has(order.id)} prodBySku={productionStatusBySku} />
                     ))}
-
-                  <button
-                    onClick={() => setPage(p => Math.min(pageCount, p + 1))}
-                    disabled={pageSafe === pageCount}
-                    className="w-8 h-8 rounded-lg text-sm font-semibold text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                  >›</button>
+                  </div>
                 </div>
-              )}
-            </>
+              ))}
+            </div>
+          ) : dayFiltered.length === 0 ? (
+            <div className="card">
+              <EmptyState icon={Calendar} title="Nada nesse dia" description="Escolha outro dia ali em cima, ou volte pra hoje." />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {dayFiltered.map(order => (
+                <OrderCard key={order.id} order={order}
+                  onEdit={o => { setEditingOrder(o); setEditOpen(true) }} canSeeValues={canSeeValues}
+                  isNew={newOrderIds.has(order.id)} prodBySku={productionStatusBySku} />
+              ))}
+            </div>
           )}
         </>
       ) : (

@@ -325,6 +325,32 @@ export function useOrders() {
     return () => { supabase.removeChannel(channel) }
   }, [fetchOrders])
 
+  // ── Status de produção por SKU ─────────────────────────────────────
+  // Não existe (ainda) um vínculo 1:1 entre order_items e
+  // production_order_items — na importação em lote (XLSX), várias
+  // unidades do MESMO sku vindas de pedidos diferentes viram UMA linha
+  // agregada na esteira (ver useOrders.js `prodGroup`). Por isso este
+  // sinal é por SKU, não por pedido: "existe produção em andamento pra
+  // esse sku hoje" — não "essa unidade específica está em produção".
+  // Suficiente pro que a tela de Pedidos precisa mostrar (visão geral
+  // do pipeline), sem inventar uma precisão que o modelo de dados não tem.
+  const [productionStatusBySku, setProductionStatusBySku] = useState({})
+  const fetchProductionStatus = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('production_order_items')
+      .select('sku, status')
+      .not('status', 'in', '(arquivado,coberto_estoque)')
+      .not('sku', 'is', null)
+    if (error) { console.error(error); return }
+    const RANK = { pendente: 1, em_producao: 2, embalagem: 3, pronto: 4, enviado: 5 }
+    const bySku = {}
+    for (const row of data ?? []) {
+      const r = RANK[row.status] || 0
+      if (!bySku[row.sku] || r > bySku[row.sku]) bySku[row.sku] = r
+    }
+    setProductionStatusBySku(bySku)
+  }, [])
+
   // ── Busca histórico de importações ───────────────────────────────
   const fetchBatches = useCallback(async () => {
     const { data } = await supabase
@@ -773,6 +799,7 @@ export function useOrders() {
   return {
     orders, batches, loading, importing,
     newOrderIds, live,
+    productionStatusBySku, fetchProductionStatus,
     fetchOrders, fetchBatches,
     importML, importShopee, importAuto, createManualOrder,
   }
