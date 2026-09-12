@@ -34,6 +34,7 @@ const UPDATE_ACTION_LABEL = {
   create: 'Anúncio criado',
   promotion_join: 'Indicado pra campanha',
   promotion_leave: 'Removido de campanha',
+  question_answer: 'Pergunta respondida',
 }
 function scoreColor(score) {
   if (score >= 80) return { text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' }

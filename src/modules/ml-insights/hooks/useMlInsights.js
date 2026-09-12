@@ -98,6 +98,21 @@ export function useMlInsights() {
     [run],
   )
 
+  // Sempre chamado depois de confirmação explícita na tela — igual toda
+  // outra escrita no Mercado Livre.
+  const answerQuestion = useCallback(
+    (questionId, text) => run(() => callMlInsights({ action: 'answer_question', question_id: questionId, text })),
+    [run],
+  )
+
+  // Só SUGERE a resposta (nunca envia) — usa `callMlInsights` direto,
+  // sem passar por `run`, pra ter loading próprio por pergunta em vez
+  // de travar a tela inteira enquanto gera.
+  const draftAnswer = useCallback(
+    (questionId, text, itemId) => callMlInsights({ action: 'draft_answer', question_id: questionId, text, item_id: itemId }),
+    [],
+  )
+
   const fetchResponseTime = useCallback(
     () => run(() => callMlInsights({ action: 'response_time' })),
     [run],
@@ -115,6 +130,20 @@ export function useMlInsights() {
 
   const fetchItemUpdateHistory = useCallback(
     (itemId) => run(async () => (await callMlInsights({ action: 'item_update_history', item_id: itemId })).results || []),
+    [run],
+  )
+
+  // Histórico completo (todos os itens, não só 1) — agrupado por
+  // anúncio, pagina por offset/limit (em nº de anúncios), mais recente
+  // primeiro.
+  const fetchAllItemUpdates = useCallback(
+    (offset = 0, limit = 15) => run(() => callMlInsights({ action: 'all_item_updates', offset, limit })),
+    [run],
+  )
+
+  // Check manual do Atendimento ("já sincronizei isso na Shopee").
+  const setItemSyncCheck = useCallback(
+    (itemId, checked, checkedBy) => run(() => callMlInsights({ action: 'set_item_sync_check', item_id: itemId, checked, checked_by: checkedBy })),
     [run],
   )
 
@@ -152,8 +181,19 @@ export function useMlInsights() {
     [run],
   )
 
+  // ── Publicidade (Product Ads / campanhas) ────────────────────────
+  const fetchAdsDashboard = useCallback(
+    (days = 30) => run(() => callMlInsights({ action: 'ads_dashboard', days })),
+    [run],
+  )
+
   const fetchPromotionInvites = useCallback(
     () => run(async () => (await callMlInsights({ action: 'promotion_invites' })).results || []),
+    [run],
+  )
+
+  const fetchCoupons = useCallback(
+    () => run(async () => (await callMlInsights({ action: 'coupons_list' })).results || []),
     [run],
   )
 
@@ -249,12 +289,14 @@ export function useMlInsights() {
     fetchItemsHealth, fetchAttributesAudit,
     fetchTrafficAudit, fetchPriceScan,
     fetchQuestions, fetchResponseTime, fetchReputation,
-    fetchItemDetail, applyAttributes, fetchItemUpdateHistory,
+    fetchItemDetail, applyAttributes, fetchItemUpdateHistory, fetchAllItemUpdates, setItemSyncCheck,
+    answerQuestion,
+    draftAnswer,
     fetchAccountDashboard,
     suggestContent, applyContent,
     fetchClaimsByProduct,
-    fetchAdsCoverage,
-    fetchPromotionInvites, fetchPromotionCandidates, promotionJoinItem, promotionLeaveItem,
+    fetchAdsCoverage, fetchAdsDashboard,
+    fetchPromotionInvites, fetchPromotionCandidates, promotionJoinItem, promotionLeaveItem, fetchCoupons,
     fetchComboSuggestions,
     fetchActiveListings, updateItemFields,
     predictCategory, fetchCategoryAttributesForCreate,

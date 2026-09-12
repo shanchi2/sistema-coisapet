@@ -38,6 +38,100 @@ async function itemUpdateHistory(db: ReturnType<typeof adminClient>, itemId: str
   return { results: data || [] }
 }
 
+// Tela "Histórico de Atualizações" (pedido do Raphael em 2026-09-08) —
+// TODAS as gravações que o sistema já fez em QUALQUER anúncio, mais
+// recente primeiro, não só de 1 item por vez (isso já existia via
+// `itemUpdateHistory`, usado no detalhe de cada anúncio). Enriquece com
+// título/thumbnail/permalink do item pra ficar legível — item pode ter
+// sido excluído/pausado depois, então a busca em lote nunca derruba a
+// página inteira (each catch isolado).
+//
+// Agrupado por anúncio (Fase 45) — se o mesmo item teve 2+ gravações
+// (ex: ficha técnica E título/descrição), aparece 1 vez só, juntando as
+// ações distintas. `offset`/`limit` paginam ANÚNCIOS (grupos), não
+// linhas cruas do log — busca até 1000 linhas recentes do log (teto de
+// segurança bem acima do volume atual) pra poder agrupar antes de
+// paginar; se um dia passar disso, os itens mais antigos somem da
+// lista, mas o volume atual está longe disso.
+async function allItemUpdates(integration: any, db: ReturnType<typeof adminClient>, offset: number, limit: number) {
+  const { data, error } = await db.from('ml_item_updates')
+    .select('id, item_id, action, detail, updated_at')
+    .order('updated_at', { ascending: false })
+    .limit(1000)
+  if (error) throw error
+  const rows = data || []
+
+  type Group = { item_id: string; updated_at: string; actions: Map<string, unknown> }
+  const groups = new Map<string, Group>()
+  for (const r of rows) {
+    if (!r.item_id) continue
+    let g = groups.get(r.item_id)
+    if (!g) {
+      g = { item_id: r.item_id, updated_at: r.updated_at, actions: new Map() }
+      groups.set(r.item_id, g)
+    }
+    // rows já vêm DESC — a primeira ocorrência de cada tipo de ação
+    // pra este item já é a mais recente daquele tipo.
+    if (!g.actions.has(r.action)) g.actions.set(r.action, r.detail)
+  }
+  const allGroups = [...groups.values()].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+  const total = allGroups.length
+  const page = allGroups.slice(offset, offset + limit)
+
+  const itemIds = page.map((g) => g.item_id)
+  const titles = new Map<string, string>()
+  const thumbs = new Map<string, string>()
+  const permalinks = new Map<string, string>()
+  for (const group of chunk(itemIds, 20)) {
+    try {
+      const multi = await mlFetch(`/items?ids=${group.join(',')}&attributes=id,title,thumbnail,permalink`, integration.access_token)
+      ;(multi || []).forEach((entry: any) => {
+        const item = entry?.body
+        if (!item?.id) return
+        titles.set(item.id, item.title)
+        if (item.thumbnail) thumbs.set(item.id, item.thumbnail)
+        if (item.permalink) permalinks.set(item.id, item.permalink)
+      })
+    } catch { /* lote falho não derruba os outros — fica só sem título/foto */ }
+  }
+
+  const { data: checks } = await db.from('ml_item_sync_checks')
+    .select('item_id, checked_at, checked_by')
+    .in('item_id', itemIds.length ? itemIds : [''])
+  const checkByItem = new Map((checks || []).map((c: any) => [c.item_id, c]))
+
+  const results = page.map((g) => {
+    const check = checkByItem.get(g.item_id) as any
+    // "checado" só vale se não surgiu NENHUMA mudança nova depois do
+    // check — senão volta a aparecer como pendente sozinho.
+    const checked = !!check && new Date(check.checked_at).getTime() >= new Date(g.updated_at).getTime()
+    return {
+      item_id: g.item_id,
+      item_title: titles.get(g.item_id) || null,
+      item_thumbnail: thumbs.get(g.item_id) || null,
+      permalink: permalinks.get(g.item_id) || null,
+      updated_at: g.updated_at,
+      actions: [...g.actions.entries()].map(([action, detail]) => ({ action, detail })),
+      checked,
+      checked_at: check?.checked_at ?? null,
+      checked_by: check?.checked_by ?? null,
+    }
+  })
+  return { results, total, offset, limit }
+}
+
+// Escrita simples — sem confirmação explícita porque não muda NADA no
+// Mercado Livre nem é visível pro comprador; é só um "já fiz isso"
+// interno do Atendimento marcando que replicou a mudança na Shopee.
+async function setItemSyncCheck(db: ReturnType<typeof adminClient>, itemId: string, checked: boolean, checkedBy?: string) {
+  if (checked) {
+    await db.from('ml_item_sync_checks').upsert({ item_id: itemId, checked_at: new Date().toISOString(), checked_by: checkedBy ?? null })
+  } else {
+    await db.from('ml_item_sync_checks').delete().eq('item_id', itemId)
+  }
+  return { ok: true, item_id: itemId, checked }
+}
+
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length)
   let cursor = 0
@@ -530,7 +624,12 @@ function buildFullAttributes(item: any, catAttrs: any[], aiHints: Map<string, st
     .map((a: any) => {
       const filled = filledById.get(a.id)
       const hasValue = !!filled && (filled.value_id != null || (filled.value_name && String(filled.value_name).trim()))
-      const hasClosedList = a.value_type === 'list' || a.value_type === 'boolean'
+      // COLOR (e outros) vêm com `value_type: "string"` mesmo tendo uma
+      // lista real de ~50 opções em `values` — confirmado ao vivo em
+      // 2026-09-08 (categoria MLB270687). Se não olhasse `a.values`
+      // também, a Cor caía no campo de texto livre em vez de mostrar as
+      // opções de verdade.
+      const hasClosedList = a.value_type === 'list' || a.value_type === 'boolean' || (a.values && a.values.length > 0)
       const values = hasClosedList ? (a.values || []).map((v: any) => ({ id: v.id, name: v.name })) : null
 
       const officialHint = a.hint || null
@@ -542,7 +641,23 @@ function buildFullAttributes(item: any, catAttrs: any[], aiHints: Map<string, st
         name:       a.name,
         value_type: a.value_type,
         required:   !!a.tags?.required,
-        is_variation_attribute: varAttrIds.has(a.id) || !!a.tags?.variation_attribute,
+        // Confirmado ao vivo em 2026-09-08: atributos como
+        // SELLER_PACKAGE_WIDTH/LENGTH/HEIGHT/WEIGHT vêm com
+        // `tags.hidden: true` na API — o próprio painel do Mercado
+        // Livre NÃO mostra esses campos pro vendedor preencher, mas
+        // eles existem de verdade (afetam cálculo de frete) e um
+        // anúncio real da loja tinha os 4 preenchidos. Marcamos aqui
+        // pra render juntar isso numa seção separada, em vez de
+        // enterrar no meio dos "Extras" comuns.
+        hidden:     !!a.tags?.hidden,
+        // Confirmado ao vivo em 2026-09-08 (categoria MLB270687): a API
+        // do ML usa DUAS tags diferentes pra "isso pode variar" —
+        // `variation_attribute` (GTIN, dimensão, SKU...) E
+        // `allow_variations` (COLOR, provavelmente SIZE também) — a Cor
+        // NUNCA aparecia como opção de variação porque só olhávamos a
+        // primeira. Faltava essa segunda tag pro caso mais comum de
+        // todos (variar por cor).
+        is_variation_attribute: varAttrIds.has(a.id) || !!a.tags?.variation_attribute || !!a.tags?.allow_variations,
         current_value:    hasValue ? (filled.value_name ?? filled.value_id) : null,
         current_value_id: filled?.value_id ?? null,
         values,
@@ -1491,6 +1606,32 @@ async function promotionCandidates(integration: any, promotionId: string, promot
   return { results }
 }
 
+// Cupons do vendedor (SELLER_COUPON_CAMPAIGN) — pedido do Raphael
+// (09/09): ele cria cupom direto no painel do ML e depois não acha
+// mais onde ver status/orçamento/quantos já usaram. Confirmado na doc
+// oficial (2026-09-09): a API NÃO tem endpoint de "listar meus
+// cupons" — só `/seller-promotions/users/{id}` (o mesmo que já
+// usamos em `promotionInvites`, devolve todo tipo de convite/campanha
+// misturado) e depois o detalhe por ID um por um. Aqui filtramos por
+// tipo e enriquecemos cada um com o detalhe completo — é o detalhe
+// (não a listagem resumida) que traz `budget`/`remaining_budget`/
+// `used_coupons`/`coupon_code`.
+async function couponsList(integration: any) {
+  const listRes = await mlFetch(`/seller-promotions/users/${integration.ml_user_id}?app_version=v2`, integration.access_token)
+  const coupons = (listRes?.results ?? []).filter((p: any) => p.type === 'SELLER_COUPON_CAMPAIGN')
+
+  const detailed = await Promise.all(coupons.map(async (c: any) => {
+    try {
+      const detail = await mlFetch(`/seller-promotions/promotions/${c.id}?promotion_type=SELLER_COUPON_CAMPAIGN&app_version=v2`, integration.access_token)
+      return { ...c, ...detail }
+    } catch (err) {
+      return { ...c, detail_error: String(err) }
+    }
+  }))
+
+  return { results: detailed }
+}
+
 // Escrita — SEMPRE atrás de confirmação explícita na tela. Indica 1
 // item pra campanha tradicional (v1 só cobre `promotion_type: 'DEAL'`,
 // o único com o fluxo de escrita 100% confirmado na doc oficial).
@@ -1512,6 +1653,75 @@ async function promotionLeaveItem(integration: any, db: ReturnType<typeof adminC
   if (!res.ok) throw new Error(friendlyMlError(`${res.status} ${await res.text()}`))
   await logItemUpdate(db, itemId, 'promotion_leave', { promotion_id: promotionId, promotion_type: promotionType })
   return { ok: true, item_id: itemId }
+}
+
+// Escrita — SEMPRE atrás de confirmação explícita na tela (mesmo padrão
+// de `promotionJoinItem`). Endpoint documentado da API pública do ML:
+// POST /answers, body { question_id, text }. Existe pra resolver o caso
+// de perguntas antigas — o painel do próprio ML só deixa filtrar até 30
+// dias (confirmado ao vivo em 2026-09-07), então uma pergunta de meses
+// atrás fica "presa" sem UI pra responder; a API não tem essa limitação.
+async function answerQuestion(integration: any, db: ReturnType<typeof adminClient>, questionId: number, text: string) {
+  try {
+    const res = await mlWrite(`/answers`, integration.access_token, 'POST', { question_id: questionId, text })
+    if (res?.item_id) await logItemUpdate(db, String(res.item_id), 'question_answer', { question_id: questionId, text })
+    return { ok: true, question_id: questionId, ...res }
+  } catch (err) {
+    throw new Error(friendlyMlError(String(err)))
+  }
+}
+
+// ── Rascunho de resposta por IA (Perguntas do ML) ────────────────
+// Pedido do Raphael (11/09): perguntas repetitivas ("serve pra
+// hamster sírio?", "vem montado?", "acompanha rodinha?") consomem
+// tempo do atendimento. A IA SUGERE a resposta — quem manda de
+// verdade continua sendo `answerQuestion` acima, clicado por um
+// humano depois de revisar (decisão explícita do Raphael: nunca
+// enviar sozinha, sempre com aprovação).
+//
+// Fonte da verdade é SEMPRE a ficha do produto (tabela `products`,
+// campos de fase54) — nunca o modelo "sabendo" por conta própria.
+// Cruza o item do ML com nosso produto pelo SELLER_SKU, mesmo padrão
+// já usado em `buildContentSuggestions` (linha ~525).
+const QUESTION_ANSWER_SYSTEM_PROMPT = `Você ajuda a responder perguntas de clientes feitas em anúncios do Mercado Livre da CoisaPet — fabricante de produtos personalizados pra pets pequenos (hamster, gerbil, porquinho-da-índia, coelho, chinchila, tartaruga).
+
+REGRAS OBRIGATÓRIAS (segurança antes de tudo — é resposta pública pra cliente real):
+- Responda SÓ com base nos dados da ficha do produto fornecidos abaixo. NUNCA invente medida, compatibilidade, material, prazo ou qualquer informação que não esteja nos dados.
+- Se o dado que a pergunta pede não estiver preenchido na ficha (campo vazio/null), NÃO chute — diga isso com "confidence":"low" e explique em "missing_data" o que falta, pra um humano completar antes de enviar.
+- Pergunta de compatibilidade de espécie: se a espécie perguntada NÃO estiver na lista "compatible_species" da ficha, responda que não é indicado pra essa espécie (a lista é o que testamos/garantimos) — não invente justificativa técnica que não está nos dados.
+- Tom cordial e direto, como atendente de verdade — sem saudação institucional longa, sem assinatura, sem emoji em excesso.
+- Português do Brasil, resposta curta (o padrão de resposta do Mercado Livre é curto, até uns 500 caracteres).
+
+FORMATO DA RESPOSTA — JSON válido, exatamente:
+{"answer": "...", "confidence": "high" | "low", "missing_data": "o que falta preencher na ficha pra ter certeza, ou null se confidence for high"}`
+
+async function draftQuestionAnswer(integration: any, db: ReturnType<typeof adminClient>, questionId: number, questionText: string, itemId: string) {
+  const item = await mlFetch(`/items/${itemId}?attributes=id,title,attributes`, integration.access_token)
+  const sellerSku = (item.attributes || []).find((a: any) => a.id === 'SELLER_SKU')?.value_name ?? null
+
+  let product: any = null
+  if (sellerSku) {
+    const { data } = await db.from('products')
+      .select('name, description, short_description, width_cm, height_cm, depth_cm, weight_g, compatible_species, comes_assembled, includes_wheel, wheel_diameter_cm, accessories_included')
+      .eq('sku', sellerSku).maybeSingle()
+    product = data
+  }
+
+  const productContext = product
+    ? JSON.stringify(product)
+    : 'Produto não encontrado no catálogo interno (SKU do anúncio não bateu com nenhum produto cadastrado) — não há ficha confiável, responda só com "confidence":"low" e "missing_data" explicando isso.'
+
+  const prompt = `Pergunta do cliente: "${questionText}"\n\nTítulo do anúncio: ${item.title}\n\nFicha do produto (nosso banco, fonte da verdade):\n${productContext}`
+  const result = await callOpenAI(prompt, QUESTION_ANSWER_SYSTEM_PROMPT)
+
+  return {
+    question_id: questionId,
+    answer: result.answer,
+    confidence: result.confidence,
+    missing_data: result.missing_data ?? null,
+    matched_sku: sellerSku,
+    matched_product_name: product?.name ?? null,
+  }
 }
 
 async function responseTime(integration: any) {
@@ -1555,6 +1765,155 @@ async function adsCampaignsDebug(accessToken: string, path: string, method = 'GE
   }
 }
 
+// Tela "Publicidade" (Fase 45, pedido do Raphael em 2026-09-07) — painel
+// completo de Product Ads: TODAS as campanhas + TODOS os anúncios
+// patrocinados da conta, com métricas do período, cruzando anúncio →
+// nome da campanha. Formato de campanha/anúncio confirmado ao vivo hoje
+// via `ads_campaigns_debug` (`roas` já vem pronto da API, não precisa
+// calcular). Paginação de anúncios com o mesmo teto de segurança de
+// `adsCoverage` (máx. 1000). Nunca derruba a tela — cada bloco
+// (campanhas / anúncios / anúncios pausados fora do Ads) é isolado via
+// `Promise.allSettled`.
+async function adsDashboard(integration: any, days: number) {
+  const accessToken = integration.access_token
+  const advertiser = await findMlAdvertiser(accessToken)
+  if (!advertiser) {
+    return {
+      available: false,
+      reason: 'Nenhum advertiser de Product Ads encontrado — verifique se a permissão "Publicidade de um produto" foi habilitada e o Mercado Livre foi reconectado.',
+    }
+  }
+
+  const today = new Date().toISOString().slice(0, 10)
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+  const metricsParam = 'metrics=cost,direct_amount,indirect_amount,direct_units_quantity,indirect_units_quantity,organic_units_quantity,clicks,prints,ctr,cpc,acos,roas,cvr'
+
+  const [campaignsResult, adsResult, listingsResult] = await Promise.allSettled([
+    mlFetch(
+      `/marketplace/advertising/MLB/advertisers/${advertiser.advertiser_id}/product_ads/campaigns/search`
+      + `?date_from=${since}&date_to=${today}&${metricsParam}`,
+      accessToken,
+      { 'Api-Version': '2' },
+    ),
+    (async () => {
+      const results: any[] = []
+      let offset = 0
+      const limit = 50
+      for (let i = 0; i < 20; i++) { // teto de segurança — no máx. 1000 anúncios
+        const res = await mlFetch(
+          `/marketplace/advertising/MLB/advertisers/${advertiser.advertiser_id}/product_ads/ads/search`
+          + `?limit=${limit}&offset=${offset}&date_from=${since}&date_to=${today}&${metricsParam}`,
+          accessToken,
+          { 'Api-Version': '2' },
+        )
+        const list = res.results ?? res.ads ?? (Array.isArray(res) ? res : [])
+        if (!list.length) break
+        results.push(...list)
+        if (list.length < limit) break
+        offset += limit
+      }
+      return results
+    })(),
+    activeListings(integration),
+  ])
+
+  const campaignsRaw = campaignsResult.status === 'fulfilled'
+    ? (campaignsResult.value.results || campaignsResult.value.campaigns || (Array.isArray(campaignsResult.value) ? campaignsResult.value : []))
+    : []
+  const adsRaw = adsResult.status === 'fulfilled' ? adsResult.value : []
+  const listings = listingsResult.status === 'fulfilled' ? (listingsResult.value.results || []) : []
+
+  const num = (v: any) => Number(v ?? 0) || 0
+  const campaignNameById = new Map<string, string>()
+
+  const campaigns = campaignsRaw.map((c: any) => {
+    const m = c.metrics || {}
+    campaignNameById.set(String(c.id ?? c.campaign_id), c.name || `Campanha ${c.id ?? c.campaign_id}`)
+    return {
+      id: c.id ?? c.campaign_id,
+      name: c.name || null,
+      status: String(c.status ?? '').toLowerCase(),
+      strategy: c.strategy ?? null,
+      acos_target: c.acos_target ?? null,
+      roas_target: c.roas_target ?? null,
+      budget: c.budget ?? null,
+      daily_budget: c.daily_budget ?? null,
+      cost: num(m.cost),
+      revenue: num(m.direct_amount) + num(m.indirect_amount),
+      units: num(m.direct_units_quantity) + num(m.indirect_units_quantity),
+      clicks: num(m.clicks),
+      prints: num(m.prints),
+      ctr: m.ctr != null ? Number(m.ctr) : null,
+      cpc: m.cpc != null ? Number(m.cpc) : null,
+      acos: m.acos != null ? Number(m.acos) : null,
+      roas: m.roas != null ? Number(m.roas) : null,
+    }
+  })
+
+  const ads = adsRaw.map((a: any) => {
+    const m = a.metrics || {}
+    const campaignId = String(a.campaign_id ?? '')
+    return {
+      item_id: a.item_id ?? a.id ?? null,
+      title: a.title ?? null,
+      thumbnail: a.thumbnail ?? a.picture_id ?? null,
+      permalink: a.permalink ?? null,
+      price: a.price ?? null,
+      status: String(a.status ?? '').toLowerCase(),
+      current_level: a.current_level ?? null,
+      buy_box_winner: a.buy_box_winner ?? null,
+      campaign_id: a.campaign_id ?? null,
+      campaign_name: campaignNameById.get(campaignId) ?? null,
+      cost: num(m.cost),
+      revenue: num(m.direct_amount) + num(m.indirect_amount),
+      direct_units: num(m.direct_units_quantity),
+      indirect_units: num(m.indirect_units_quantity),
+      organic_units: num(m.organic_units_quantity),
+      clicks: num(m.clicks),
+      prints: num(m.prints),
+      ctr: m.ctr != null ? Number(m.ctr) : null,
+      cpc: m.cpc != null ? Number(m.cpc) : null,
+      acos: m.acos != null ? Number(m.acos) : null,
+      roas: m.roas != null ? Number(m.roas) : null,
+      cvr: m.cvr != null ? Number(m.cvr) : null,
+    }
+  })
+
+  const adsItemIds = new Set(ads.map((a) => String(a.item_id)))
+  const pausedWithoutAds = listings.filter((l: any) => String(l.status).toLowerCase() === 'paused' && !adsItemIds.has(String(l.item_id)))
+
+  const summary = {
+    cost: campaigns.reduce((s, c) => s + c.cost, 0),
+    revenue: campaigns.reduce((s, c) => s + c.revenue, 0),
+    clicks: campaigns.reduce((s, c) => s + c.clicks, 0),
+    prints: campaigns.reduce((s, c) => s + c.prints, 0),
+    campaigns_active: campaigns.filter((c) => c.status === 'active').length,
+    campaigns_total: campaigns.length,
+    ads_active: ads.filter((a) => a.status === 'active').length,
+    ads_idle: ads.filter((a) => a.status === 'idle').length,
+    ads_paused: ads.filter((a) => a.status === 'paused').length,
+    ads_with_spend: ads.filter((a) => a.cost > 0).length,
+    ads_total: ads.length,
+  }
+  const ctrAvg = summary.prints > 0 ? summary.clicks / summary.prints : null
+  const roasAvg = summary.cost > 0 ? summary.revenue / summary.cost : null
+
+  return {
+    available: true,
+    period_days: days,
+    advertiser_id: advertiser.advertiser_id,
+    summary: { ...summary, ctr_avg: ctrAvg, roas_avg: roasAvg },
+    campaigns,
+    ads,
+    paused_without_ads: pausedWithoutAds,
+    errors: {
+      campaigns: campaignsResult.status === 'rejected' ? String(campaignsResult.reason) : null,
+      ads: adsResult.status === 'rejected' ? String(adsResult.reason) : null,
+      listings: listingsResult.status === 'rejected' ? String(listingsResult.reason) : null,
+    },
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
@@ -1573,6 +1932,14 @@ serve(async (req) => {
       case 'items_health':      return json(await itemsHealth(integration, offset, limit))
       case 'attributes_audit':  return json(await attributesAudit(integration, offset, limit))
       case 'questions':         return json(await unansweredQuestions(integration))
+      case 'answer_question': {
+        if (!body.question_id || !body.text) return json({ error: 'question_id e text obrigatórios' }, 400)
+        return json(await answerQuestion(integration, db, Number(body.question_id), String(body.text)))
+      }
+      case 'draft_answer': {
+        if (!body.question_id || !body.text || !body.item_id) return json({ error: 'question_id, text e item_id obrigatórios' }, 400)
+        return json(await draftQuestionAnswer(integration, db, Number(body.question_id), String(body.text), String(body.item_id)))
+      }
       case 'response_time':     return json(await responseTime(integration))
       case 'reputation':        return json(await reputation(integration))
       case 'order_shipment_debug': {
@@ -1603,6 +1970,12 @@ serve(async (req) => {
       case 'item_update_history':
         if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
         return json(await itemUpdateHistory(db, body.item_id))
+      case 'all_item_updates':
+        return json(await allItemUpdates(integration, db, offset, limit))
+      case 'set_item_sync_check': {
+        if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
+        return json(await setItemSyncCheck(db, body.item_id, !!body.checked, body.checked_by))
+      }
       case 'update_item_attributes':
         if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
         return json(await updateItemAttributes(integration, db, body.item_id, body.attributes))
@@ -1616,8 +1989,12 @@ serve(async (req) => {
         return json(await claimsByProduct(integration, db))
       case 'ads_coverage':
         return json(await adsCoverage(integration.access_token))
+      case 'ads_dashboard':
+        return json(await adsDashboard(integration, Number(body.days ?? 30)))
       case 'promotion_invites':
         return json(await promotionInvites(integration))
+      case 'coupons_list':
+        return json(await couponsList(integration))
       case 'promotion_candidates':
         if (!body.promotion_id || !body.promotion_type) return json({ error: 'promotion_id e promotion_type obrigatórios' }, 400)
         return json(await promotionCandidates(integration, body.promotion_id, body.promotion_type))

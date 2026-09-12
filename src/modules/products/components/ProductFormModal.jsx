@@ -1,7 +1,23 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Upload, Trash2, Package, Tag, DollarSign, Ruler, FileText, Link, Check, Loader2, RefreshCw, Layers, Plus, Palette, Images } from 'lucide-react'
+import { X, Upload, Trash2, Package, Tag, DollarSign, Ruler, FileText, Link, Check, Loader2, RefreshCw, Layers, Plus, Palette, Images, HelpCircle, CircleDot } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import toast from 'react-hot-toast'
+
+// Lista fixa de espécies — usada pra responder com segurança perguntas
+// de compatibilidade no Mercado Livre ("serve pra hamster sírio?").
+// Fixa de propósito (não é um cadastro livre): mantém o dado
+// consistente pra IA comparar, em vez de virar texto livre variando
+// grafia post a post.
+const SPECIES_OPTIONS = [
+  { value: 'hamster_sirio',      label: 'Hamster sírio' },
+  { value: 'hamster_anao',       label: 'Hamster anão' },
+  { value: 'gerbil',             label: 'Gerbil' },
+  { value: 'porquinho_da_india', label: 'Porquinho-da-índia' },
+  { value: 'coelho',             label: 'Coelho' },
+  { value: 'chinchila',          label: 'Chinchila' },
+  { value: 'rato',               label: 'Rato/camundongo' },
+  { value: 'tartaruga',          label: 'Tartaruga/jabuti' },
+]
 
 // ── Helpers ────────────────────────────────────────────────────────
 function slugify(str) {
@@ -21,6 +37,26 @@ function Field({ label, required, hint, error, children }) {
       {children}
       {hint  && !error && <p className="text-[11px] text-slate-400">{hint}</p>}
       {error && <p className="text-[11px] text-rose-500">{error}</p>}
+    </div>
+  )
+}
+
+// Sim/Não com estado neutro (null = "ainda não preenchido") — não dá
+// pra usar checkbox simples aqui porque "não marcado" precisaria
+// significar "não sei" pra IA, não "não" — os dois são respostas bem
+// diferentes numa pergunta de cliente real.
+function TriToggle({ value, onChange, labelYes = 'Sim', labelNo = 'Não' }) {
+  return (
+    <div className="flex gap-1.5 items-center">
+      <button type="button" onClick={() => onChange(value === true ? null : true)}
+        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${value === true ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+        {labelYes}
+      </button>
+      <button type="button" onClick={() => onChange(value === false ? null : false)}
+        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${value === false ? 'bg-slate-500 border-slate-500 text-white' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+        {labelNo}
+      </button>
+      {value === null && <span className="text-[11px] text-amber-500 font-medium">não preenchido</span>}
     </div>
   )
 }
@@ -47,6 +83,7 @@ export function ProductFormModal({ open, onClose, product, initial, categories =
     price_shopee: '', price_ml: '', sale_price: '',
     url_shopee: '', url_ml: '',
     width_cm: '', height_cm: '', depth_cm: '', weight_g: '',
+    compatible_species: [], comes_assembled: null, includes_wheel: null, wheel_diameter_cm: '', accessories_included: '',
     active: true,
     is_kit: false,
   }
@@ -141,6 +178,11 @@ export function ProductFormModal({ open, onClose, product, initial, categories =
         height_cm:         prod.height_cm        ?? '',
         depth_cm:          prod.depth_cm         ?? '',
         weight_g:          prod.weight_g         ?? '',
+        compatible_species: prod.compatible_species ?? [],
+        comes_assembled:    prod.comes_assembled    ?? null,
+        includes_wheel:     prod.includes_wheel     ?? null,
+        wheel_diameter_cm:  prod.wheel_diameter_cm  ?? '',
+        accessories_included: prod.accessories_included ?? '',
         notes:             prod.notes            ?? '',
         active:            prod.active           ?? true,
         is_kit:            prod.is_kit           ?? false,
@@ -259,6 +301,15 @@ export function ProductFormModal({ open, onClose, product, initial, categories =
     if (errors[key]) setErrors(e => ({ ...e, [key]: null }))
   }
 
+  function toggleSpecies(value) {
+    setForm(f => ({
+      ...f,
+      compatible_species: f.compatible_species.includes(value)
+        ? f.compatible_species.filter(v => v !== value)
+        : [...f.compatible_species, value],
+    }))
+  }
+
   // ── Upload de foto ─────────────────────────────────────────────
   async function handlePhoto(e) {
     const file = e.target.files?.[0]
@@ -366,6 +417,11 @@ export function ProductFormModal({ open, onClose, product, initial, categories =
         height_cm:          form.height_cm !== '' ? parseFloat(form.height_cm) : null,
         depth_cm:           form.depth_cm  !== '' ? parseFloat(form.depth_cm)  : null,
         weight_g:           form.weight_g  !== '' ? parseFloat(form.weight_g)  : null,
+        compatible_species:  form.compatible_species.length ? form.compatible_species : null,
+        comes_assembled:     form.comes_assembled,
+        includes_wheel:      form.includes_wheel,
+        wheel_diameter_cm:   form.includes_wheel && form.wheel_diameter_cm !== '' ? parseFloat(form.wheel_diameter_cm) : null,
+        accessories_included: form.accessories_included.trim() || null,
         photo_url:          photoUrl || null,
         notes:              form.notes.trim() || null,
         active:             form.active,
@@ -589,6 +645,46 @@ export function ProductFormModal({ open, onClose, product, initial, categories =
                 </span>
               </div>
             )}
+          </Section>
+          )}
+
+          {/* ── 3b. DADOS PRA ATENDIMENTO / IA ────────────────── */}
+          {!form.is_kit && (
+          <Section icon={HelpCircle} title="Dados pra atendimento (respostas no Mercado Livre)">
+            <Field label="Espécies compatíveis" hint="Usado pra responder perguntas tipo 'serve pra hamster sírio?' com segurança — sem isso a IA não confirma compatibilidade.">
+              <div className="flex flex-wrap gap-1.5">
+                {SPECIES_OPTIONS.map(opt => {
+                  const checked = form.compatible_species.includes(opt.value)
+                  return (
+                    <button key={opt.value} type="button" onClick={() => toggleSpecies(opt.value)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                        checked ? 'bg-rose-500 border-rose-500 text-white' : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                      }`}>
+                      {checked ? <Check size={11}/> : <CircleDot size={11} className="opacity-0"/>}
+                      {opt.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Vem montado?">
+                <TriToggle value={form.comes_assembled} onChange={v => set('comes_assembled', v)}/>
+              </Field>
+              <Field label="Acompanha rodinha?">
+                <TriToggle value={form.includes_wheel} onChange={v => set('includes_wheel', v)}/>
+              </Field>
+            </div>
+            {form.includes_wheel === true && (
+              <Field label="Diâmetro da rodinha (cm)">
+                <input type="number" step="0.1" min="0" className="input max-w-[160px]"
+                  placeholder="12" value={form.wheel_diameter_cm} onChange={e => set('wheel_diameter_cm', e.target.value)}/>
+              </Field>
+            )}
+            <Field label="Acessórios inclusos" hint="Lista curta — ex: 1 rodinha 12cm, 1 casinha, 1 comedouro">
+              <input className="input" placeholder="Ex: 1 rodinha 12cm, 1 casinha, 1 comedouro"
+                value={form.accessories_included} onChange={e => set('accessories_included', e.target.value)}/>
+            </Field>
           </Section>
           )}
 
