@@ -1,26 +1,26 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, ClipboardList, Boxes, Package,
   Factory, DollarSign, Users, BarChart2, LogOut,
-  ChevronRight, Truck, History,
+  ChevronRight, ChevronDown, Truck, History,
   TrendingUp, Calendar, FileSpreadsheet, MessageSquare, MessagesSquare,
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
-  PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, PackageSearch, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
-  HeartPulse, MessageCircleQuestion, Tag, Rocket, Store, Warehouse,
+  PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
+  HeartPulse, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film,
+  Briefcase, Crown, Bookmark,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
+import { supabase }       from '../../lib/supabase'
+
+// Único item fixo do grupo "Favoritos" — o resto do grupo é montado na
+// hora, por usuário, a partir do que a pessoa marcar com a bandeirinha
+// (ver toggleFavorite). Não faz parte de NAV_SECTIONS de propósito:
+// não tem "lugar de origem" pra voltar quando não está favoritado.
+const DASHBOARD_ITEM = { to: '/dashboard', moduleKey: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin','administrativo','atendimento','producao','marketplace'] }
 
 const NAV_SECTIONS = [
-  {
-    label: 'Principal',
-    items: [
-      { to: '/dashboard',  moduleKey: 'dashboard', icon: LayoutDashboard, label: 'Dashboard',  roles: ['admin','administrativo','atendimento','producao','marketplace'] },
-      { to: '/pedidos',    moduleKey: 'pedidos',    icon: ClipboardList,   label: 'Pedidos',    roles: ['admin','administrativo','atendimento'] },
-      { to: '/pick-list',  moduleKey: 'pedidos',    icon: PackageSearch,   label: 'Pick List',  roles: ['admin','administrativo','atendimento'] },
-      { to: '/orcamentos', moduleKey: 'orcamentos', icon: Receipt,         label: 'Orçamentos', roles: ['admin','administrativo','atendimento'] },
-    ],
-  },
   {
     label: 'Otimização ML',
     items: [
@@ -28,21 +28,36 @@ const NAV_SECTIONS = [
       { to: '/ml/anuncios',   moduleKey: 'ml-insights', icon: Store,                 label: 'Anúncios',              roles: ['admin','marketplace'] },
       { to: '/ml/trafego',    moduleKey: 'ml-insights', icon: TrendingUp,            label: 'Tráfego & Conversão',   roles: ['admin','marketplace'] },
       { to: '/ml/saude',      moduleKey: 'ml-insights', icon: HeartPulse,            label: 'Saúde dos Anúncios',    roles: ['admin','marketplace'] },
+      { to: '/ml/historico',  moduleKey: 'ml-historico', icon: History,              label: 'Histórico de Atualizações', roles: ['admin','marketplace','atendimento'] },
       { to: '/ml/perguntas',  moduleKey: 'ml-insights', icon: MessageCircleQuestion, label: 'Perguntas & Reputação', roles: ['admin','marketplace'] },
       { to: '/ml/promocoes',  moduleKey: 'ml-insights', icon: Tag,                   label: 'Promoções',             roles: ['admin','marketplace'] },
+      { to: '/ml/cupons',     moduleKey: 'ml-insights', icon: Ticket,                label: 'Cupons',                roles: ['admin','marketplace'] },
+      { to: '/ml/publicidade', moduleKey: 'ml-insights', icon: Megaphone,            label: 'Publicidade',           roles: ['admin','marketplace'] },
       { to: '/ml/oportunidades', moduleKey: 'ml-insights', icon: Rocket,             label: 'Oportunidades de Venda', roles: ['admin','marketplace'] },
       { to: '/ml/full',       moduleKey: 'ml-insights', icon: Warehouse,             label: 'Estoque Full',          roles: ['admin','marketplace'] },
+      { to: '/ml/full/envios', moduleKey: 'ml-insights', icon: Truck,                label: 'Gestão de Envios Full', roles: ['admin','marketplace'] },
+    ],
+  },
+  {
+    label: 'Blog',
+    items: [
+      { to: '/blog', moduleKey: 'blog', icon: Newspaper, label: 'Posts', roles: ['admin','marketplace'] },
+      { to: '/blog/gerar-lote', moduleKey: 'blog', icon: Layers, label: 'Geração em Massa', roles: ['admin','marketplace'] },
     ],
   },
   {
     label: 'Produção',
     items: [
+      { to: '/pedidos',        moduleKey: 'pedidos',      icon: ClipboardList,  label: 'Pedidos',            roles: ['admin','administrativo','atendimento'] },
+      { to: '/orcamentos',     moduleKey: 'orcamentos',   icon: Receipt,        label: 'Orçamentos',         roles: ['admin','administrativo','atendimento'] },
       { to: '/kanban-op',      moduleKey: 'kanban-op',    icon: Kanban,         label: 'Kanban Operacional', roles: ['admin','administrativo','atendimento','producao','marketplace'] },
       { to: '/materia-prima',  moduleKey: 'materiais',    icon: Boxes,          label: 'Matéria-Prima',     roles: ['admin','administrativo','producao','marketplace'] },
       { to: '/packaging',      moduleKey: 'packaging',    icon: Package,        label: 'Embalagem',         roles: ['admin','administrativo','producao'] },
       { to: '/produtos',       moduleKey: 'produtos',     icon: Package,        label: 'Produtos',          roles: ['admin','administrativo','producao','marketplace'] },
       { to: '/variacoes',      moduleKey: 'produtos',     icon: Layers,         label: 'Variações',         roles: ['admin','administrativo','marketplace'] },
       { to: '/producao',       moduleKey: 'producao',     icon: Factory,        label: 'Produção',          roles: ['admin','administrativo','producao'] },
+      { to: '/producao/chapas', moduleKey: 'producao',    icon: Layers,         label: 'Chapas',            roles: ['admin','administrativo','producao'] },
+      { to: '/producao/midia',  moduleKey: 'controle-midia', icon: Film,        label: 'Atualização de Mídia', roles: ['admin','administrativo','atendimento'] },
       { to: '/checklist',      moduleKey: 'checklist',    icon: ClipboardCheck, label: 'Checklist Diário',  roles: ['admin','administrativo','atendimento'] },
       { to: '/manuais',        moduleKey: 'manuais',      icon: BookOpen,       label: 'Manuais',           roles: ['admin','administrativo','producao'] },
       { to: '/qrcode',        moduleKey: 'qrcode',       icon: QrCode,         label: 'QR Code',           roles: ['admin','administrativo','atendimento','producao'] },
@@ -50,6 +65,7 @@ const NAV_SECTIONS = [
       { to: '/servicos',        moduleKey: 'manutencao',   icon: ShoppingCart,   label: 'Serviços', roles: ['admin','administrativo','producao'] },
       { to: '/baixa-diaria',   moduleKey: 'baixa-diaria', icon: PackageMinus,   label: 'Baixa Diária',      roles: ['admin','administrativo','producao'] },
       { to: '/compra-lousa',   moduleKey: 'compra-lousa', icon: ShoppingBag,    label: 'Compra da Lousa',   roles: ['admin','administrativo','producao'] },
+      { to: '/producao-horistas', moduleKey: 'producao-horistas', icon: Clock, label: 'Produção Horistas', roles: ['admin'] },
       { to: '/passagem-turno', moduleKey: 'producao',     icon: ClipboardList,  label: 'Passagem de Turno', roles: ['admin','administrativo','producao'] },
       { to: '/avaliacoes', moduleKey: 'avaliacoes', icon: Star, label: 'Avaliações', roles: ['admin','administrativo','atendimento'] },
     ],
@@ -91,13 +107,27 @@ const NAV_SECTIONS = [
       { to: '/cofre',                moduleKey: 'cofre',           icon: Lock,       label: 'Cofre de Senhas',   roles: ['admin'] },
       { to: '/grupos-chat',          moduleKey: 'grupos-chat',     icon: MessagesSquare, label: 'Grupos de Chat', roles: ['admin'] },
       { to: '/bio-links',            moduleKey: 'bio-links',       icon: Link2,          label: 'Links da Bio',       roles: ['admin'] },
-      { to: '/producao-horistas',    moduleKey: 'producao-horistas', icon: ClipboardList,  label: 'Produção Horistas',  roles: ['admin'] },
       { to: '/historico',            moduleKey: 'historico',       icon: History,    label: 'Histórico',          roles: ['admin'] },
       { to: '/acesso',               moduleKey: 'acesso',          icon: Shield,              label: 'Controle de Acesso', roles: ['admin'] },
       { to: '/cliques',              moduleKey: 'acesso',          icon: MousePointerClick,   label: 'Cliques no Site',    roles: ['admin'] },
     ],
   },
 ]
+
+// Rotas que têm outra rota do menu "aninhada" embaixo delas (ex: '/ml'
+// e '/ml/anuncios', ou '/producao' e '/producao/chapas') — precisam de
+// `end` no NavLink pra não ficarem marcadas como ativas junto com a
+// filha (NavLink por padrão faz match por PREFIXO). Calculado uma vez
+// aqui, a partir das rotas reais, pra nunca mais esquecer de atualizar
+// isso à mão quando uma rota nova ganhar uma sub-rota.
+const ALL_NAV_PATHS = NAV_SECTIONS.flatMap(s => s.items.map(i => i.to))
+const PARENT_NAV_PATHS = new Set(
+  ALL_NAV_PATHS.filter(to => ALL_NAV_PATHS.some(other => other !== to && other.startsWith(to + '/')))
+)
+
+// Índice plano (rota → item) pra resolver um favorito salvo (só a rota
+// fica no banco) de volta pro ícone/label/roles reais do módulo.
+const ITEM_BY_PATH = new Map(NAV_SECTIONS.flatMap(s => s.items).map(item => [item.to, item]))
 
 // Menu fixo e mínimo pro escritório (terceiros) — Dashboard + Kanban só.
 // Não passa pelo canAccess() dinâmico porque escritório não tem
@@ -115,14 +145,27 @@ const ESCRITORIO_SECTIONS = [
 // Cor própria por categoria — 'base' pro fundo do item ativo/realce da seção,
 // 'light' pro ícone/texto do item ativo (tom mais claro da mesma cor)
 const SECTION_COLORS = {
-  'Principal':        { base: '#F43F5E', light: '#FCA5B8' }, // rose
+  'Favoritos':        { base: '#F43F5E', light: '#FCA5B8' }, // rose
   'Otimização ML':    { base: '#10B981', light: '#6EE7B7' }, // emerald
+  'Blog':              { base: '#6366F1', light: '#A5B4FC' }, // indigo
   'Produção':         { base: '#F59E0B', light: '#FCD34D' }, // amber
   'Recursos Humanos': { base: '#8B5CF6', light: '#C4B5FD' }, // violeta
   'Gestão':           { base: '#0EA5E9', light: '#7DD3FC' }, // azul
   'Diretoria':        { base: '#D946EF', light: '#F0ABFC' }, // magenta
 }
-const DEFAULT_SECTION_COLOR = SECTION_COLORS['Principal']
+const DEFAULT_SECTION_COLOR = SECTION_COLORS['Favoritos']
+
+// Ícone próprio por grupo — usado no cabeçalho do acordeão, no lugar do
+// pontinho colorido antigo (dá mais peso visual sem precisar de cor forte)
+const SECTION_ICONS = {
+  'Favoritos':        Bookmark,
+  'Otimização ML':    TrendingUp,
+  'Blog':              Newspaper,
+  'Produção':         Factory,
+  'Recursos Humanos': Users,
+  'Gestão':           Briefcase,
+  'Diretoria':        Crown,
+}
 
 const ROLE_INFO = {
   admin:          { label: 'Diretor',        bg: 'rgba(244,63,94,0.25)',  color: '#FCA5B8' },
@@ -155,13 +198,87 @@ function NavTooltip({ label, children }) {
   )
 }
 
+const SIDEBAR_SECTIONS_KEY = 'coisapet_sidebar_sections'
+
 export function Sidebar({ open, onToggle }) {
   const { user, signOut }   = useAuth()
   const { canAccess }       = usePermissions()
   const navigate            = useNavigate()
+  const location             = useLocation()
   const userRole            = user?.role ?? 'equipe'
   const roleInfo            = ROLE_INFO[userRole] ?? ROLE_INFO.equipe
   const isEscritorioRole    = userRole === 'escritorio'
+
+  // Preferência de grupos abertos/fechados no menu — só existe quando o
+  // usuário mexe manualmente; padrão (sem preferência salva) é só
+  // "Principal" aberto. Fica no localStorage (por navegador), não no
+  // banco — é só conveniência visual, não precisa sincronizar entre PCs.
+  const [manualSections, setManualSections] = useState(() => {
+    try {
+      const raw = localStorage.getItem(SIDEBAR_SECTIONS_KEY)
+      return raw ? JSON.parse(raw) : {}
+    } catch {
+      return {}
+    }
+  })
+
+  function toggleSection(label, currentlyOpen) {
+    setManualSections(prev => {
+      const next = { ...prev, [label]: !currentlyOpen }
+      try { localStorage.setItem(SIDEBAR_SECTIONS_KEY, JSON.stringify(next)) } catch { /* noop */ }
+      return next
+    })
+  }
+
+  // Favoritos — bandeirinha por módulo, salva por USUÁRIO (não por
+  // navegador, ao contrário da preferência de grupo aberto/fechado
+  // acima) pra acompanhar a pessoa entre os PCs de casa/escritório.
+  // O item favoritado continua aparecendo no grupo original também —
+  // isso aqui é um atalho fixado no topo, não uma mudança de lugar.
+  const [favorites, setFavorites] = useState([])
+  useEffect(() => {
+    if (!user?.id || isEscritorioRole) return
+    let cancelled = false
+    supabase.from('user_sidebar_favorites').select('nav_to').eq('user_id', user.id)
+      .then(({ data }) => { if (!cancelled) setFavorites((data ?? []).map(r => r.nav_to)) })
+    return () => { cancelled = true }
+  }, [user?.id, isEscritorioRole])
+
+  async function toggleFavorite(to) {
+    if (!user?.id) return
+    const isFav = favorites.includes(to)
+    setFavorites(prev => isFav ? prev.filter(t => t !== to) : [...prev, to])
+    if (isFav) {
+      await supabase.from('user_sidebar_favorites').delete().eq('user_id', user.id).eq('nav_to', to)
+    } else {
+      await supabase.from('user_sidebar_favorites').insert({ user_id: user.id, nav_to: to })
+    }
+  }
+
+  const favoritosItems = [DASHBOARD_ITEM, ...favorites.map(to => ITEM_BY_PATH.get(to)).filter(Boolean)]
+  const renderSections = isEscritorioRole ? ESCRITORIO_SECTIONS : [{ label: 'Favoritos', items: favoritosItems }, ...NAV_SECTIONS]
+
+  // Fecha sozinho o grupo que você acabou de sair, quando o clique leva
+  // pra um módulo de OUTRO grupo — só o grupo "antigo" fecha, qualquer
+  // outro que você tenha deixado aberto de propósito continua do jeito
+  // que estava. Baseado só nos grupos "de verdade" (não no Favoritos,
+  // que é um atalho — ele não deve fechar sozinho por causa disso).
+  const sectionsForRole = isEscritorioRole ? ESCRITORIO_SECTIONS : NAV_SECTIONS
+  const activeSectionLabel = sectionsForRole.find(({ items }) =>
+    items.some(({ to }) => location.pathname === to || location.pathname.startsWith(to + '/'))
+  )?.label ?? null
+  const prevActiveSectionRef = useRef(null)
+  useEffect(() => {
+    const prevLabel = prevActiveSectionRef.current
+    if (prevLabel && prevLabel !== activeSectionLabel) {
+      setManualSections(prev => {
+        const next = { ...prev, [prevLabel]: false }
+        try { localStorage.setItem(SIDEBAR_SECTIONS_KEY, JSON.stringify(next)) } catch { /* noop */ }
+        return next
+      })
+    }
+    prevActiveSectionRef.current = activeSectionLabel
+  }, [activeSectionLabel])
 
   function handleLogout() { signOut(); navigate('/login') }
 
@@ -214,7 +331,7 @@ export function Sidebar({ open, onToggle }) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-2">
-        {(isEscritorioRole ? ESCRITORIO_SECTIONS : NAV_SECTIONS).map(({ label, items }) => {
+        {renderSections.map(({ label, items }) => {
           // Filtra pela permissão dinâmica do banco (fonte da verdade)
           // canSee é ignorado — quem decide é o controle de acesso
           // Admin vê tudo sempre (canAccess já trata isso)
@@ -223,46 +340,79 @@ export function Sidebar({ open, onToggle }) {
           const visible = isEscritorioRole ? items : items.filter(item => canAccess(item.moduleKey))
           if (visible.length === 0) return null
           const sc = SECTION_COLORS[label] ?? DEFAULT_SECTION_COLOR
+          const containsActive = visible.some(({ to }) => location.pathname === to || location.pathname.startsWith(to + '/'))
+          const manualOpen = manualSections[label]
+          const isSectionOpen = (manualOpen !== undefined ? manualOpen : label === 'Favoritos') || containsActive
+          const SectionIcon = SECTION_ICONS[label] ?? LayoutGrid
           return (
-            <div key={label} className="mb-3">
+            <div key={label} className="mb-2">
               {open && (
-                <div className="flex items-center gap-1.5 px-4 pt-4 pb-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sc.base }}/>
-                  <p style={{ fontSize: '10px', fontWeight: 800, color: sc.base + 'B0', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                <button type="button" onClick={() => toggleSection(label, isSectionOpen)}
+                  className="w-[calc(100%-16px)] mx-2 mt-3 mb-1 flex items-center gap-2 px-2 py-2 rounded-xl transition-colors hover:bg-[var(--sec-hover)]"
+                  style={{ '--sec-hover': sc.base + '16' }}>
+                  <SectionIcon size={15} className="shrink-0" style={{ color: sc.light }}/>
+                  <span className="flex-1 text-left truncate" style={{ fontSize: '12.5px', fontWeight: 700, color: sc.base + 'DD', fontFamily: 'Nunito Sans, sans-serif' }}>
                     {label}
-                  </p>
-                </div>
+                  </span>
+                  {!isSectionOpen && (
+                    <span className="shrink-0 text-[10px] font-bold leading-none px-1.5 py-1 rounded-full"
+                      style={{ color: sc.light, backgroundColor: sc.base + '22' }}>
+                      {visible.length}
+                    </span>
+                  )}
+                  <ChevronDown size={13} className="shrink-0 transition-transform duration-200"
+                    style={{ color: sc.base + '90', transform: isSectionOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}/>
+                </button>
               )}
               {!open && <div className="mt-3 mb-1 mx-3 h-px" style={{ background: sc.base + '40' }}/>}
 
-              {/* Caixa da seção — dá a quebra visual entre blocos */}
-              <div className={open ? 'mx-2 rounded-2xl py-1' : ''} style={open ? { backgroundColor: sc.base + '0C' } : {}}>
-                {visible.map(({ to, icon: Icon, label: itemLabel }) => (
-                  open ? (
-                    <NavLink key={to} to={to}
-                      end={to === '/rh' || to === '/ml'}
-                      className={({ isActive }) =>
-                        `flex items-center gap-2.5 mx-2 px-3 py-2 rounded-xl text-sm transition-all ${isActive ? 'font-semibold' : 'hover:bg-[var(--nav-hover)]'}`
-                      }
-                      style={({ isActive }) => ({
-                        '--nav-hover': sc.base + '14',
-                        ...(isActive
-                          ? { backgroundColor: sc.base + '2E', color: '#fff' }
-                          : { color: 'rgba(255,255,255,0.50)' })
-                      })}
-                    >
-                      {({ isActive }) => (
-                        <>
-                          <Icon size={16} style={{ color: isActive ? sc.light : sc.light + 'B3' }}/>
-                          <span style={{ fontFamily: 'Nunito Sans, sans-serif' }}>{itemLabel}</span>
-                          {isActive && <ChevronRight size={13} className="ml-auto" style={{ color: sc.light + '80' }}/>}
-                        </>
+              {/* Caixa da seção — dá a quebra visual entre blocos; recolhe/expande no toggle acima */}
+              <div className={open ? 'mx-2 rounded-2xl overflow-hidden transition-all duration-200' : ''}
+                style={open ? {
+                  backgroundColor: sc.base + '0C',
+                  maxHeight: isSectionOpen ? `${visible.length * 40 + 16}px` : '0px',
+                  opacity: isSectionOpen ? 1 : 0,
+                  paddingTop: isSectionOpen ? '4px' : 0,
+                  paddingBottom: isSectionOpen ? '4px' : 0,
+                } : {}}>
+                {visible.map(({ to, icon: Icon, label: itemLabel }) => {
+                  const canFavorite = !isEscritorioRole && to !== '/dashboard'
+                  const isFav = favorites.includes(to)
+                  return open ? (
+                    <div key={to} className="relative group/row mx-2">
+                      <NavLink to={to}
+                        end={PARENT_NAV_PATHS.has(to)}
+                        className={({ isActive }) =>
+                          `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-all ${canFavorite ? 'pr-8' : ''} ${isActive ? 'font-semibold' : 'hover:bg-[var(--nav-hover)]'}`
+                        }
+                        style={({ isActive }) => ({
+                          '--nav-hover': sc.base + '14',
+                          ...(isActive
+                            ? { backgroundColor: sc.base + '2E', color: '#fff' }
+                            : { color: 'rgba(255,255,255,0.50)' })
+                        })}
+                      >
+                        {({ isActive }) => (
+                          <>
+                            <Icon size={16} className="shrink-0" style={{ color: isActive ? sc.light : sc.light + 'B3' }}/>
+                            <span className="truncate" style={{ fontFamily: 'Nunito Sans, sans-serif' }}>{itemLabel}</span>
+                            {isActive && !canFavorite && <ChevronRight size={13} className="ml-auto shrink-0" style={{ color: sc.light + '80' }}/>}
+                          </>
+                        )}
+                      </NavLink>
+                      {canFavorite && (
+                        <button type="button"
+                          onClick={e => { e.preventDefault(); e.stopPropagation(); toggleFavorite(to) }}
+                          className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-opacity ${isFav ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100'}`}
+                          title={isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}>
+                          <Bookmark size={13} fill={isFav ? sc.light : 'none'} style={{ color: sc.light }}/>
+                        </button>
                       )}
-                    </NavLink>
+                    </div>
                   ) : (
                     <NavTooltip key={to} label={itemLabel}>
                       <NavLink to={to}
-                        end={to === '/rh' || to === '/ml'}
+                        end={PARENT_NAV_PATHS.has(to)}
                         className={({ isActive }) =>
                           `flex items-center justify-center w-9 h-9 mx-auto rounded-xl transition-all ${isActive ? '' : 'hover:bg-[var(--nav-hover)]'}`
                         }
@@ -277,7 +427,7 @@ export function Sidebar({ open, onToggle }) {
                       </NavLink>
                     </NavTooltip>
                   )
-                ))}
+                })}
               </div>
             </div>
           )
