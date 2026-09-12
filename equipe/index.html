@@ -1189,12 +1189,13 @@ async function sendMensagem(){
 }
 
 async function loadMais(){
-  const{data:ps}=await db.from('payslips').select('id,reference,file_url,mirror_url').eq('employee_id',me.id).order('year',{ascending:false}).order('month',{ascending:false})
+  const{data:ps}=await db.from('payslips').select('id,reference,file_url,mirror_url,notes,label').eq('employee_id',me.id).order('year',{ascending:false}).order('month',{ascending:false})
   const psl=document.getElementById('psl')
   if(!ps?.length)psl.innerHTML='<div class="empty" style="padding:12px 0"><p>Nenhum holerite disponível</p></div>'
   else psl.innerHTML=ps.map(p=>`
     <div style="padding:12px 0;border-bottom:1px solid var(--bdr)">
-      <div style="font-size:14px;font-weight:800;color:var(--txt);margin-bottom:8px">${p.reference}</div>
+      <div style="font-size:14px;font-weight:800;color:var(--txt);margin-bottom:8px">${p.reference}${p.label ? ` <span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#7c3aed;background:rgba(124,58,237,.12);padding:2px 6px;border-radius:6px;vertical-align:middle">${p.label}</span>` : ''}</div>
+      ${p.notes ? `<div style="font-size:12px;color:var(--txt2);font-style:italic;margin-bottom:8px">${p.notes}</div>` : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="viewPs('${p.file_url}')" class="btn-sm">📄 Holerite</button>
         ${p.mirror_url ? `<button onclick="viewPs('${p.mirror_url}')" class="btn-sm" style="background:rgba(61,186,106,.15);color:var(--ok)">📋 Espelho de Ponto</button>` : ''}

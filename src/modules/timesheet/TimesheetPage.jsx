@@ -154,6 +154,8 @@ export function TimesheetPage() {
   const [announcModal,setAnnounceModal]= useState(false)
   const [reviewTarget,setReviewTarget]= useState(null)
   const [rejectReason,setRejectReason]= useState('')
+  const [certReviewTarget,setCertReviewTarget]= useState(null)
+  const [certRejectReason,setCertRejectReason]= useState('')
   const [saving,      setSaving]      = useState(false)
 
   function getSession() {
@@ -168,7 +170,7 @@ export function TimesheetPage() {
       supabase.from('system_users').select('id,name,email,role,job_title,active,work_start,work_end,lunch_minutes').eq('active',true).order('name'),
       supabase.from('time_records').select('*,employee:system_users(name)').order('recorded_at',{ascending:false}).limit(200),
       supabase.from('vacation_requests').select('*,employee:system_users(name),reviewer:system_users!reviewed_by(name)').order('created_at',{ascending:false}),
-      supabase.from('medical_certificates').select('*,employee:system_users(name)').order('created_at',{ascending:false}),
+      supabase.from('medical_certificates').select('*,employee:system_users(name),reviewer:system_users!reviewed_by(name)').order('created_at',{ascending:false}),
       supabase.from('announcements').select('*,author:system_users!created_by(name)').order('created_at',{ascending:false}),
     ])
     setEmployees(empRes.data ?? [])
@@ -237,6 +239,26 @@ export function TimesheetPage() {
     loadAll()
   }
 
+  // ── Aprovar / rejeitar atestado ─────────────────────────────────
+  async function reviewCertificate(id, status) {
+    setSaving(true)
+    const session = getSession()
+    const { error } = await supabase
+      .from('medical_certificates')
+      .update({
+        status,
+        reviewed_by: session.id,
+        reviewed_at: new Date().toISOString(),
+        reject_reason: status === 'rejeitado' ? certRejectReason : null,
+      })
+      .eq('id', id)
+    if (error) { toast.error('Erro ao revisar.'); setSaving(false); return }
+    toast.success(status === 'aprovado' ? 'Atestado aprovado! ✅' : 'Atestado rejeitado.')
+    setCertReviewTarget(null); setCertRejectReason('')
+    setSaving(false)
+    loadAll()
+  }
+
   // ── Publicar aviso ────────────────────────────────────────────
   async function publishAnnouncement(form) {
     const session = getSession()
@@ -260,6 +282,7 @@ export function TimesheetPage() {
   }
 
   const pendingVacations = vacations.filter(v => v.status === 'pendente').length
+  const pendingCerts     = certs.filter(c => c.status === 'pendente').length
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
@@ -283,7 +306,7 @@ export function TimesheetPage() {
           ['ponto',    '⏱️ Registros'],
           ['horas',    '📊 Banco de Horas'],
           ['ferias',   `🏖️ Férias${pendingVacations > 0 ? ` (${pendingVacations})` : ''}`],
-          ['atestados','🏥 Atestados'],
+          ['atestados',`🏥 Atestados${pendingCerts > 0 ? ` (${pendingCerts})` : ''}`],
           ['avisos',   '📢 Avisos'],
           ['qrcodes',  '🔲 QR Codes'],
         ].map(([v, label]) => (
@@ -476,34 +499,82 @@ export function TimesheetPage() {
 
           {/* ── ABA: Atestados ── */}
           {tab === 'atestados' && (
-            <div className="table-wrapper">
-              <table className="table">
-                <thead>
-                  <tr><th>Funcionário</th><th>Data</th><th>Dias</th><th>Observações</th><th>Arquivo</th></tr>
-                </thead>
-                <tbody>
-                  {certs.length === 0 ? (
-                    <tr><td colSpan={5} className="text-center py-8 text-slate-400">Nenhum atestado enviado</td></tr>
-                  ) : certs.map(c => (
-                    <tr key={c.id}>
-                      <td className="font-semibold text-slate-800">{c.employee?.name}</td>
-                      <td className="text-sm text-slate-500">{fmtDate(c.date)}</td>
-                      <td className="text-sm font-semibold text-slate-700">{c.days_off} dia(s)</td>
-                      <td className="text-sm text-slate-500">{c.notes || '—'}</td>
-                      <td>
-                        {c.file_url ? (
-                          <button onClick={async () => {
-                            const { data } = await supabase.storage.from('employee-docs').createSignedUrl(c.file_url, 3600)
-                            if (data) window.open(data.signedUrl, '_blank')
-                          }} className="flex items-center gap-1 text-xs text-sky-500 hover:text-sky-600 font-semibold">
-                            <FileText size={13}/> Ver arquivo
-                          </button>
-                        ) : <span className="text-slate-300">—</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="flex flex-col gap-3">
+              {certs.length === 0 ? (
+                <div className="card"><div className="flex flex-col items-center py-12 gap-2">
+                  <FileText size={32} className="text-slate-200"/>
+                  <p className="text-slate-400 font-semibold">Nenhum atestado enviado</p>
+                </div></div>
+              ) : certs.map(c => (
+                <div key={c.id} className="card flex items-center gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-slate-800">{c.employee?.name}</p>
+                      <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${STATUS_CONFIG[c.status].cls}`}>
+                        {STATUS_CONFIG[c.status].label}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                      {fmtDate(c.date)} · {c.days_off} dia(s)
+                    </p>
+                    {c.notes && <p className="text-xs text-slate-400 mt-0.5 italic">{c.notes}</p>}
+                    {c.status === 'rejeitado' && c.reject_reason && (
+                      <p className="text-xs text-rose-500 mt-0.5">Motivo: {c.reject_reason}</p>
+                    )}
+                    {c.file_url && (
+                      <button onClick={async () => {
+                        const { data } = await supabase.storage.from('employee-docs').createSignedUrl(c.file_url, 3600)
+                        if (data) window.open(data.signedUrl, '_blank')
+                      }} className="flex items-center gap-1 text-xs text-sky-500 hover:text-sky-600 font-semibold mt-1">
+                        <FileText size={13}/> Ver arquivo
+                      </button>
+                    )}
+                  </div>
+                  {c.status === 'pendente' && (
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => setCertReviewTarget({ ...c, action: 'aprovado' })}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition-colors">
+                        <Check size={13}/> Aprovar
+                      </button>
+                      <button onClick={() => setCertReviewTarget({ ...c, action: 'rejeitado' })}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-500 text-white hover:bg-rose-600 transition-colors">
+                        <X size={13}/> Rejeitar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Confirm review */}
+              {certReviewTarget && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                  <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setCertReviewTarget(null)} />
+                  <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 border border-slate-100">
+                    <h3 className="font-bold text-slate-800 mb-1">
+                      {certReviewTarget.action === 'aprovado' ? '✅ Aprovar atestado?' : '❌ Rejeitar atestado?'}
+                    </h3>
+                    <p className="text-sm text-slate-500 mb-4">
+                      {certReviewTarget.employee?.name} — {fmtDate(certReviewTarget.date)} · {certReviewTarget.days_off} dia(s)
+                    </p>
+                    {certReviewTarget.action === 'rejeitado' && (
+                      <div className="mb-4">
+                        <label className="form-label">Motivo da rejeição (opcional)</label>
+                        <input className="input" value={certRejectReason}
+                          onChange={e => setCertRejectReason(e.target.value)}
+                          placeholder="Ex: Atestado ilegível, pedir novo envio" />
+                      </div>
+                    )}
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={() => setCertReviewTarget(null)} className="btn-secondary" disabled={saving}>Cancelar</button>
+                      <button onClick={() => reviewCertificate(certReviewTarget.id, certReviewTarget.action)}
+                        className={certReviewTarget.action === 'aprovado' ? 'btn-primary' : 'px-4 py-2 rounded-xl text-sm font-bold bg-rose-500 text-white hover:bg-rose-600 transition-colors'}
+                        disabled={saving}>
+                        {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : 'Confirmar'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

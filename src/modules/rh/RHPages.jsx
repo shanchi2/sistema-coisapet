@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   TrendingUp, TrendingDown, Calendar, FileText,
   Bell, Receipt, Check, X, Plus, Upload, Eye,
-  Trash2, Send, RefreshCw, ChevronDown} from 'lucide-react'
+  Trash2, Send, RefreshCw, ChevronDown, Pencil} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { fmtDate, fmtDT, fmtH, Avatar, Badge, PageHeader, LoadingCard, EmptyState, getSession, viewStorageFile } from './rhHelpers'
 import { Modal } from '../../components/ui/Modal'
@@ -279,9 +279,17 @@ export function RHFeriasPage() {
 }
 
 // ─── ATESTADOS ────────────────────────────────────────────────────
+// Mesmo fluxo de aprovação das férias (RHFeriasPage acima): pendente
+// → aprovado/rejeitado aqui → só o aprovado entra no cálculo do
+// Relatório de Ponto (RHRelatorioPage.jsx, isAtestadoDay), sem
+// nenhum passo manual depois de aprovar.
 export function RHAtestadosPage() {
-  const [certs, setCerts] = useState([])
+  const [certs,   setCerts]   = useState([])
   const [loading, setLoading] = useState(true)
+  const [filter,  setFilter]  = useState('pendente')
+  const [target,  setTarget]  = useState(null)
+  const [reason,  setReason]  = useState('')
+  const [saving,  setSaving]  = useState(false)
 
   useEffect(() => { load() }, [])
   async function load() {
@@ -293,47 +301,112 @@ export function RHAtestadosPage() {
     setLoading(false)
   }
 
+  async function review(id, status) {
+    setSaving(true)
+    const { id: uid } = getSession()
+    const { error } = await supabase.from('medical_certificates').update({
+      status, reviewed_by: uid,
+      reviewed_at: new Date().toISOString(),
+      reject_reason: status === 'rejeitado' ? reason : null,
+    }).eq('id', id)
+    if (error) { toast.error('Erro ao processar.'); setSaving(false); return }
+    toast.success(status === 'aprovado' ? '✅ Atestado aprovado!' : 'Atestado rejeitado.')
+    setTarget(null); setReason(''); setSaving(false); load()
+  }
+
+  const FILT = [['pendente','Pendentes'],['aprovado','Aprovados'],['rejeitado','Rejeitados'],['','Todos']]
+  const filtered = filter ? certs.filter(c => c.status === filter) : certs
+  const pending  = certs.filter(c => c.status === 'pendente').length
+
+  const CERT_CLS = { pendente:'border-amber-300', aprovado:'border-emerald-300', rejeitado:'border-rose-300' }
+
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
       <PageHeader title="Atestados Médicos" subtitle="Atestados enviados pela equipe via app" />
 
-      {loading ? <LoadingCard /> : certs.length === 0 ? (
-        <EmptyState icon={FileText} title="Nenhum atestado enviado" description="Quando um funcionário enviar um atestado pelo app, ele aparecerá aqui." />
+      <div className="flex gap-2 flex-wrap">
+        {FILT.map(([v, l]) => (
+          <button key={v} onClick={() => setFilter(v)}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${filter===v ? 'bg-rose-500 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+            {l}
+            {v === 'pendente' && pending > 0 && (
+              <span className="ml-1.5 bg-white text-rose-500 rounded-full w-4 h-4 inline-flex items-center justify-center text-[10px] font-black">{pending}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {loading ? <LoadingCard /> : filtered.length === 0 ? (
+        <EmptyState icon={FileText} title="Nenhum atestado" description="Nenhum atestado encontrado para este filtro." />
       ) : (
         <div className="flex flex-col gap-3">
-          {certs.map(c => (
-            <div key={c.id} className="card flex items-center gap-4 flex-wrap">
-              <Avatar name={c.employee?.name} />
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-slate-800">{c.employee?.name}</p>
-                <p className="text-xs text-slate-400">{c.employee?.job_title}</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-slate-400 font-semibold">Data</p>
-                <p className="text-sm font-bold text-slate-700">{fmtDate(c.date)}</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-slate-400 font-semibold">Afastamento</p>
-                <p className="text-sm font-bold text-slate-700">{c.days_off} dia(s)</p>
-              </div>
-              {c.notes && (
-                <div className="text-center max-w-[160px]">
-                  <p className="text-xs text-slate-400 font-semibold">Observação</p>
-                  <p className="text-xs text-slate-600 truncate">{c.notes}</p>
+          {filtered.map(c => (
+            <div key={c.id} className={`card border-l-4 ${CERT_CLS[c.status]||'border-slate-200'}`}>
+              <div className="flex items-start gap-4 flex-wrap">
+                <Avatar name={c.employee?.name} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <p className="font-bold text-slate-800">{c.employee?.name}</p>
+                    <Badge variant={c.status}>{c.status.charAt(0).toUpperCase()+c.status.slice(1)}</Badge>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    <span className="font-semibold">{fmtDate(c.date)}</span>
+                    <span className="text-slate-400 ml-2">· {c.days_off} dia(s) de afastamento</span>
+                  </p>
+                  {c.notes && <p className="text-xs text-slate-400 mt-1 italic">"{c.notes}"</p>}
+                  {c.reject_reason && <p className="text-xs text-rose-500 mt-1">Motivo da rejeição: {c.reject_reason}</p>}
+                  <p className="text-xs text-slate-300 mt-1">Enviado em {fmtDT(c.created_at)}</p>
+                  {c.file_url
+                    ? <button onClick={() => viewStorageFile(c.file_url)}
+                        className="flex items-center gap-1.5 text-xs font-bold text-sky-500 hover:text-sky-600 mt-1">
+                        <Eye size={13}/> Ver arquivo
+                      </button>
+                    : <span className="text-xs text-slate-300">Sem arquivo</span>
+                  }
                 </div>
-              )}
-              <div className="text-right shrink-0">
-                <p className="text-xs text-slate-300">{fmtDT(c.created_at)}</p>
-                {c.file_url
-                  ? <button onClick={() => viewStorageFile(c.file_url)}
-                      className="flex items-center gap-1.5 text-xs font-bold text-sky-500 hover:text-sky-600 mt-1">
-                      <Eye size={13}/> Ver arquivo
+                {c.status === 'pendente' && (
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => setTarget({...c, action:'aprovado'})}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition-colors">
+                      <Check size={13}/> Aprovar
                     </button>
-                  : <span className="text-xs text-slate-300">Sem arquivo</span>
-                }
+                    <button onClick={() => setTarget({...c, action:'rejeitado'})}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-rose-500 text-white hover:bg-rose-600 transition-colors">
+                      <X size={13}/> Rejeitar
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Confirm */}
+      {target && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setTarget(null)} />
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 border border-slate-100">
+            <h3 className="font-bold text-slate-800 mb-1 text-lg">
+              {target.action === 'aprovado' ? '✅ Aprovar atestado?' : '❌ Rejeitar atestado?'}
+            </h3>
+            <p className="text-sm text-slate-500 mb-4">
+              <strong>{target.employee?.name}</strong> · {fmtDate(target.date)} · {target.days_off} dia(s)
+            </p>
+            {target.action === 'rejeitado' && (
+              <div className="mb-4">
+                <label className="form-label">Motivo <span className="text-slate-300">(opcional)</span></label>
+                <input className="input" value={reason} onChange={e => setReason(e.target.value)} placeholder="Ex: Atestado ilegível, pedir novo envio" />
+              </div>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setTarget(null)} className="btn-secondary" disabled={saving}>Cancelar</button>
+              <button onClick={() => review(target.id, target.action)} disabled={saving}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white transition-colors ${target.action==='aprovado' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}>
+                {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Confirmar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -647,50 +720,56 @@ export function RHAvisosPage() {
 }
 
 // ─── HOLERITES ────────────────────────────────────────────────────
+function slugify(s) {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'')
+}
 function PayModal({ open, onClose, employees, onSave }) {
-  const [form, setForm] = useState({ employee_id:'', month:'', year:new Date().getFullYear(), reference:'' })
+  const [form, setForm] = useState({ employee_id:'', month:'', year:new Date().getFullYear(), reference:'', notes:'', label:'' })
   const [file,   setFile]   = useState(null)
   const [mirror, setMirror] = useState(null)
   const [saving,   setSaving]   = useState(false)
-  const [conflict, setConflict] = useState(null) // { existing, msg }
+  const [conflict, setConflict] = useState(null) // lista de payslips já existentes pro mesmo funcionário/mês
   const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
   const set = (k,v) => {
     setForm(p => { const n={...p,[k]:v}; if(k==='month'||k==='year') n.reference=n.month?`${MESES[parseInt(n.month)-1]}/${n.year}`:''; return n })
   }
-  useEffect(() => { if (open) { setForm({ employee_id:'', month:'', year:new Date().getFullYear(), reference:'' }); setFile(null); setMirror(null); setConflict(null) } }, [open])
-  async function save(forceOverwrite = false) {
+  useEffect(() => { if (open) { setForm({ employee_id:'', month:'', year:new Date().getFullYear(), reference:'', notes:'', label:'' }); setFile(null); setMirror(null); setConflict(null) } }, [open])
+
+  // action: undefined (tentativa inicial, verifica conflito) | 'add' (mantém os
+  // existentes e insere mais um) | { replaceId } (apaga aquele específico e insere no lugar)
+  async function save(action) {
     if (!form.employee_id||!form.month) { toast.error('Selecione funcionário e mês.'); return }
     if (!file && !mirror) { toast.error('Selecione pelo menos um arquivo (holerite ou espelho).'); return }
 
-    // Verifica se já existe registro para este funcionário/mês
-    if (!forceOverwrite) {
+    if (!action) {
       const { data: existing } = await supabase
         .from('payslips')
-        .select('id, file_url, mirror_url, reference')
+        .select('id, file_url, mirror_url, reference, notes, label')
         .eq('employee_id', form.employee_id)
         .eq('month', parseInt(form.month))
         .eq('year', parseInt(form.year))
-        .maybeSingle()
+        .order('created_at', { ascending: true })
 
-      if (existing) {
-        const hasHolerite = !!existing.file_url
-        const hasMirror   = !!existing.mirror_url
-        const what = hasHolerite && hasMirror
-          ? 'holerite e espelho de ponto'
-          : hasHolerite ? 'holerite' : 'espelho de ponto'
-        const emp = employees.find(e => e.id === form.employee_id)
-        setConflict({
-          existing,
-          msg: `Já existe um ${what} para ${emp?.name} em ${form.reference}. Deseja sobrepor?`
-        })
-        return
-      }
+      if (existing && existing.length > 0) { setConflict(existing); return }
     }
 
+    const replaceId = action?.replaceId || null
     setConflict(null)
     setSaving(true)
     try {
-      const base = `holerites/${form.employee_id}/${form.year}-${String(form.month).padStart(2,'0')}`
+      if (replaceId) {
+        const old = conflict?.find(c => c.id === replaceId)
+        await supabase.from('payslips').delete().eq('id', replaceId)
+        const toRemove = [old?.file_url, old?.mirror_url].filter(Boolean)
+        if (toRemove.length) await supabase.storage.from('employee-docs').remove(toRemove)
+      }
+
+      // Rótulo vira sufixo legível no nome do arquivo; sem rótulo, só
+      // sufixa com timestamp quando já existe outro holerite no mês
+      // (adicionar/substituir) — o caso comum de 1 holerite só continua
+      // com o caminho limpo de sempre.
+      const suffix = form.label ? '-' + slugify(form.label) : (action ? '-' + Date.now() : '')
+      const base = `holerites/${form.employee_id}/${form.year}-${String(form.month).padStart(2,'0')}${suffix}`
 
       let path = null
       if (file) {
@@ -710,11 +789,14 @@ function PayModal({ open, onClose, employees, onSave }) {
         if (me) throw me
       }
       await onSave({
-        ...form,
-        file_url:    path       || null,
-        mirror_url:  mirrorPath || null,
+        employee_id: form.employee_id,
         month:       parseInt(form.month),
-        year:        parseInt(form.year)
+        year:        parseInt(form.year),
+        reference:   form.reference,
+        notes:       form.notes || null,
+        label:       form.label || null,
+        file_url:    path       || null,
+        mirror_url:  mirrorPath || null
       })
       onClose()
     } catch (e) { toast.error('Erro ao enviar: ' + (e?.message || 'tente novamente.')); console.error(e) } finally { setSaving(false) }
@@ -722,7 +804,7 @@ function PayModal({ open, onClose, employees, onSave }) {
   return (
     <Modal open={open} onClose={onClose} title="Enviar holerite"
       footer={<><button onClick={onClose} className="btn-secondary" disabled={saving}>Cancelar</button>
-        <button onClick={save} className="btn-primary" disabled={saving||!form.employee_id||!form.month||(!file&&!mirror)}>
+        <button onClick={()=>save()} className="btn-primary" disabled={saving||!form.employee_id||!form.month||(!file&&!mirror)}>
           {saving?<div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>:<><Upload size={14}/>Enviar</>}
         </button></>}>
       <div className="flex flex-col gap-4">
@@ -738,18 +820,47 @@ function PayModal({ open, onClose, employees, onSave }) {
           <div><label className="form-label">Ano</label><input type="number" className="input" value={form.year} onChange={e=>set('year',e.target.value)} min="2020" max="2035"/></div>
         </div>
         {form.reference && <div className="bg-slate-50 rounded-xl px-4 py-2 border border-slate-100"><p className="text-xs text-slate-400">Referência: <strong className="text-slate-700">{form.reference}</strong></p></div>}
+        <div>
+          <label className="form-label">Rótulo <span className="text-slate-400 font-normal">(opcional — use quando o funcionário recebe mais de um holerite no mês)</span></label>
+          <input className="input" maxLength={40} value={form.label} onChange={e=>set('label',e.target.value)}
+            placeholder="Ex: CLT, Fim de semana, Semana 1"/>
+        </div>
+        <div>
+          <label className="form-label">Observação do mês <span className="text-slate-400 font-normal">(opcional)</span></label>
+          <input className="input" maxLength={200} value={form.notes} onChange={e=>set('notes',e.target.value)}
+            placeholder="Ex: Adiantamento de R$300 já descontado neste holerite"/>
+          <p className="text-xs text-slate-400 mt-1">Aparece pro funcionário junto do holerite no app.</p>
+        </div>
         {conflict && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col gap-3">
             <div className="flex items-start gap-2">
               <span className="text-amber-500 text-lg shrink-0">⚠️</span>
-              <p className="text-sm font-semibold text-amber-800">{conflict.msg}</p>
+              <p className="text-sm font-semibold text-amber-800">
+                {employees.find(e=>e.id===form.employee_id)?.name} já tem {conflict.length === 1 ? '1 holerite' : `${conflict.length} holerites`} em {form.reference}:
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              {conflict.map(c => {
+                const what = [c.file_url && 'holerite', c.mirror_url && 'espelho'].filter(Boolean).join(' + ') || 'sem arquivo'
+                return (
+                  <div key={c.id} className="flex items-center justify-between gap-2 bg-white rounded-lg px-3 py-2 border border-amber-100">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-700 truncate">{c.label || 'Sem rótulo'}</p>
+                      <p className="text-[11px] text-slate-400">{what}</p>
+                    </div>
+                    <button onClick={() => save({ replaceId: c.id })} className="text-xs font-bold text-amber-700 hover:text-amber-800 shrink-0">
+                      Substituir
+                    </button>
+                  </div>
+                )
+              })}
             </div>
             <div className="flex gap-2">
               <button onClick={() => setConflict(null)} className="btn-secondary flex-1 text-xs py-2">
                 Cancelar
               </button>
-              <button onClick={() => save(true)} className="flex-1 text-xs py-2 px-3 rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600 transition-colors">
-                Sim, sobrepor
+              <button onClick={() => save('add')} className="flex-1 text-xs py-2 px-3 rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600 transition-colors">
+                Adicionar mais um
               </button>
             </div>
           </div>
@@ -776,6 +887,39 @@ function PayModal({ open, onClose, employees, onSave }) {
   )
 }
 
+function EditPayslipModal({ open, onClose, payslip, onSave }) {
+  const [label, setLabel] = useState('')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { if (open) { setLabel(payslip?.label || ''); setNotes(payslip?.notes || '') } }, [open, payslip])
+  async function submit() {
+    setSaving(true)
+    try { await onSave(payslip.id, { label: label || null, notes: notes || null }); onClose() } finally { setSaving(false) }
+  }
+  return (
+    <Modal open={open} onClose={onClose} title="Editar holerite"
+      footer={<><button onClick={onClose} className="btn-secondary" disabled={saving}>Cancelar</button>
+        <button onClick={submit} className="btn-primary" disabled={saving}>
+          {saving?<div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>:'Salvar'}
+        </button></>}>
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-slate-500">{payslip?.employee?.name} · {payslip?.reference}</p>
+        <div>
+          <label className="form-label">Rótulo <span className="text-slate-400 font-normal">(opcional — use quando o funcionário recebe mais de um holerite no mês)</span></label>
+          <input className="input" maxLength={40} value={label} onChange={e=>setLabel(e.target.value)}
+            placeholder="Ex: CLT, Fim de semana, Semana 1"/>
+        </div>
+        <div>
+          <label className="form-label">Observação do mês <span className="text-slate-400 font-normal">(opcional)</span></label>
+          <input className="input" maxLength={200} value={notes} onChange={e=>setNotes(e.target.value)}
+            placeholder="Ex: Adiantamento de R$300 já descontado neste holerite"/>
+          <p className="text-xs text-slate-400 mt-1">Aparece pro funcionário junto do holerite no app.</p>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 export function RHHoleritesPage() {
   const [employees, setEmployees] = useState([])
   const [payslips,  setPayslips]  = useState([])
@@ -783,6 +927,7 @@ export function RHHoleritesPage() {
   const [modal,     setModal]     = useState(false)
   const [selEmp,    setSelEmp]    = useState('')
   const [delId,     setDelId]     = useState(null)
+  const [editing,   setEditing]   = useState(null)
 
   useEffect(() => { loadEmployees() }, [])
   useEffect(() => { loadPayslips() }, [selEmp])
@@ -798,12 +943,10 @@ export function RHHoleritesPage() {
     const { data } = await q; setPayslips(data ?? []); setLoading(false)
   }
   async function save(form) {
+    // Substituir/apagar um holerite existente já é resolvido pelo próprio
+    // PayModal (ele apaga o registro escolhido e limpa o storage antes de
+    // chamar isso) — aqui é só inserir, permitindo vários no mesmo mês.
     const { id } = getSession()
-    // Tenta deletar versão anterior do mesmo mês/funcionário antes de inserir
-    await supabase.from('payslips').delete()
-      .eq('employee_id', form.employee_id)
-      .eq('month', form.month)
-      .eq('year', form.year)
     const payload = { ...form, created_by:id }
     if (!form.file_url)   delete payload.file_url
     if (!form.mirror_url) delete payload.mirror_url
@@ -812,6 +955,11 @@ export function RHHoleritesPage() {
   }
   async function del(id) {
     await supabase.from('payslips').delete().eq('id',id); toast.success('Removido.'); loadPayslips()
+  }
+  async function saveDetails(id, patch) {
+    const { error } = await supabase.from('payslips').update(patch).eq('id', id)
+    if (error) { toast.error('Erro ao salvar: ' + error.message); return }
+    toast.success('Holerite atualizado.'); loadPayslips()
   }
 
   // Nomes dos meses em português
@@ -827,7 +975,9 @@ export function RHHoleritesPage() {
       if (!map.has(key)) map.set(key, { year: p.year, month: p.month, label: `${MESES[p.month-1]} ${p.year}`, items: [] })
       map.get(key).items.push(p)
     })
-    // Ordena do mais recente para o mais antigo
+    // Dentro de cada mês, ordena por nome do funcionário (A-Z)
+    map.forEach(g => g.items.sort((a,b) => (a.employee?.name || '').localeCompare(b.employee?.name || '', 'pt-BR')))
+    // Ordena os meses do mais recente para o mais antigo
     return Array.from(map.values()).sort((a,b) => b.year !== a.year ? b.year - a.year : b.month - a.month)
   }, [payslips, selEmp])
 
@@ -881,7 +1031,7 @@ export function RHHoleritesPage() {
                     </div>
                     <div className="text-left">
                       <p className="font-semibold text-slate-800">{group.label}</p>
-                      <p className="text-xs text-slate-400">{group.items.length} {group.items.length === 1 ? 'funcionário' : 'funcionários'}</p>
+                      <p className="text-xs text-slate-400">{group.items.length} {group.items.length === 1 ? 'holerite' : 'holerites'}</p>
                     </div>
                   </div>
                   <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}/>
@@ -905,7 +1055,13 @@ export function RHHoleritesPage() {
                             <td>
                               <div className="flex items-center gap-2">
                                 <Avatar name={p.employee?.name} size="sm"/>
-                                <span className="font-semibold text-slate-800">{p.employee?.name}</span>
+                                <div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-semibold text-slate-800">{p.employee?.name}</span>
+                                    {p.label && <span className="text-[10px] font-bold uppercase tracking-wide text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded">{p.label}</span>}
+                                  </div>
+                                  {p.notes && <p className="text-xs text-slate-400 italic">{p.notes}</p>}
+                                </div>
                               </div>
                             </td>
                             <td>
@@ -919,9 +1075,14 @@ export function RHHoleritesPage() {
                                 : <span className="text-xs text-slate-300">—</span>}
                             </td>
                             <td>
-                              <button onClick={()=>setDelId(p.id)} className="p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors">
-                                <Trash2 size={14}/>
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button onClick={()=>setEditing(p)} title="Editar rótulo/observação" className="p-1.5 rounded-lg text-slate-300 hover:text-violet-500 hover:bg-violet-50 transition-colors">
+                                  <Pencil size={14}/>
+                                </button>
+                                <button onClick={()=>setDelId(p.id)} className="p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors">
+                                  <Trash2 size={14}/>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -936,6 +1097,7 @@ export function RHHoleritesPage() {
       )}
 
       <PayModal open={modal} onClose={()=>setModal(false)} employees={employees} onSave={save}/>
+      <EditPayslipModal open={!!editing} onClose={()=>setEditing(null)} payslip={editing} onSave={saveDetails}/>
       <ConfirmDialog open={!!delId} onClose={()=>setDelId(null)} onConfirm={()=>{del(delId);setDelId(null)}} title="Remover holerite?" description="O holerite será removido do app do funcionário." confirmLabel="Remover"/>
     </div>
   )

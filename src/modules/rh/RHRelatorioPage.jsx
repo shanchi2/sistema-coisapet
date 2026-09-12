@@ -12,6 +12,32 @@ const fmtT   = d => !d ? '—' : new Date(d).toLocaleTimeString('pt-BR',{hour:'2
 const fmtDay = d => new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit'})
 const fmtBRL = v => (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T12:00:00')
+  d.setDate(d.getDate() + n)
+  return d.toISOString().split('T')[0]
+}
+
+// ── Home office fixo da Isabelly (combinado com o Raphael, 2026-09) ──
+// Toda quinta e sexta, a partir de agosto/2026, ela trabalha remoto —
+// não bate ponto nesses dias. Em vez de contar como falta, o dia entra
+// como 100% batido (total = meta do dia, saldo = 0), com um aviso
+// "Home office" na linha. Feriado nesses dias continua sem contar (não
+// é dia útil, então não vira meta nem falta). É uma regra fixa por
+// funcionário — não um cadastro genérico — porque é a única exceção
+// combinada até agora; se surgir outro caso, vale generalizar.
+const HOME_OFFICE_EMP_ID = 'b6a29004-dc27-4fb1-b481-905f0acdaf53' // Isabelly Vitoria Asensio
+const HOME_OFFICE_START  = '2026-08-01'
+function isHomeOfficeDay(empId, dateStr, isHoliday) {
+  if (empId !== HOME_OFFICE_EMP_ID) return false
+  if (isHoliday) return false
+  if (dateStr < HOME_OFFICE_START) return false
+  // Só conta quando o dia já aconteceu — dia futuro fica em branco
+  // igual qualquer outro dia, sem "adiantar" horas que ainda não vieram.
+  if (dateStr > new Date().toISOString().split('T')[0]) return false
+  const dow = new Date(dateStr + 'T12:00:00').getDay()
+  return dow === 4 || dow === 5 // quinta, sexta
+}
 
 // Converte "HH:MM" + date para ISO string com offset do browser
 // Assim 08:00 digitado no Brasil vira 08:00-03:00, não 08:00Z
@@ -263,7 +289,7 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
 }
 
 // ── Componente de linha de dia ────────────────────────────────
-function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, empId, targetMin, onEdit, onSaveTarget, onToggleHoliday }) {
+function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, isHomeOffice, isAtestado, empId, targetMin, onEdit, onSaveTarget, onToggleHoliday }) {
   const dayLabel = fmtDay(date)
 
   // Estado para edição inline da meta do dia
@@ -320,6 +346,8 @@ function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, empI
     <tr className={`border-b border-slate-100 transition-colors group ${
       isHoliday  ? 'bg-purple-50/60' :
       isVacation ? 'bg-emerald-50/50' :
+      isAtestado ? 'bg-violet-50/50' :
+      isHomeOffice ? 'bg-sky-50/50' :
       isWeekend  ? 'bg-slate-50/60' :
       isToday    ? 'bg-sky-50/40' :
       hasRecords ? 'hover:bg-slate-50' : 'hover:bg-slate-50/40'
@@ -336,6 +364,8 @@ function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, empI
           {isToday    && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-600">HOJE</span>}
           {isHoliday  && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-600">FERIADO</span>}
           {isVacation && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">🌴 FÉRIAS</span>}
+          {isAtestado && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700" title="Atestado médico aprovado — conta 100% da meta do dia">🩺 ATESTADO</span>}
+          {isHomeOffice && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700" title="Home office combinado — conta 100% da meta do dia">🏠 HOME OFFICE</span>}
           {!isHoliday && !isWeekend && (
             <button onClick={() => onToggleHoliday?.(date)}
               className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 text-[9px] text-purple-400 hover:text-purple-600 font-semibold"
@@ -371,11 +401,13 @@ function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, empI
       {/* Total + botão editar */}
       <td className="py-2.5 px-4 text-right">
         <div className="flex items-center justify-end gap-2">
-          {totalH != null
-            ? <span className="text-sm font-black text-slate-800">{fmtH(totalH)}</span>
-            : emAberto
-              ? <span className="text-xs text-amber-500 font-semibold">Em aberto</span>
-              : <span className="text-xs text-slate-300">—</span>
+          {(isHomeOffice || isAtestado)
+            ? <span className={`text-sm font-black ${isAtestado ? 'text-violet-700' : 'text-sky-700'}`}>{fmtH(targetMin/60)}</span>
+            : totalH != null
+              ? <span className="text-sm font-black text-slate-800">{fmtH(totalH)}</span>
+              : emAberto
+                ? <span className="text-xs text-amber-500 font-semibold">Em aberto</span>
+                : <span className="text-xs text-slate-300">—</span>
           }
           <button
               onClick={() => onEdit(date, records)}
@@ -389,7 +421,17 @@ function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, empI
 
       {/* Meta do dia + Saldo */}
       <td className="py-2.5 px-4 text-right w-28">
-        {totalH != null ? (
+        {isAtestado ? (
+          <div className="flex flex-col items-end gap-0.5">
+            <span className="text-xs font-black text-slate-400">em dia</span>
+            <span className="text-[10px] text-violet-500">atestado médico</span>
+          </div>
+        ) : isHomeOffice ? (
+          <div className="flex flex-col items-end gap-0.5">
+            <span className="text-xs font-black text-slate-400">em dia</span>
+            <span className="text-[10px] text-sky-500">100% remoto</span>
+          </div>
+        ) : totalH != null ? (
           <div className="flex flex-col items-end gap-0.5">
             {/* Saldo do dia */}
             {(() => {
@@ -505,6 +547,7 @@ export function RHRelatorioPage() {
   const [editModal, setEditModal] = useState(null) // { date, empId, records }
   const [holidays,  setHolidays]  = useState([])   // array de date strings 'YYYY-MM-DD'
   const [vacations, setVacations] = useState([])   // array de { employee_id, start_date, end_date }
+  const [atestados, setAtestados] = useState([])   // array de { employee_id, date, date_end } (atestado aprovado)
   const [showHolidayModal, setShowHolidayModal] = useState(false)
   const [activeTab, setActiveTab]  = useState('relatorio')
   const [diagEmp,   setDiagEmp]    = useState('')
@@ -534,8 +577,13 @@ export function RHRelatorioPage() {
     setLoading(true)
     const dateStart = `${year}-${String(month+1).padStart(2,'0')}-01`
     const dateEnd   = `${year}-${String(month+1).padStart(2,'0')}-${String(daysInMonth).padStart(2,'0')}`
-    const [empR, recR, tgtR, holR, vacR] = await Promise.all([
-      supabase.from('system_users').select('id,name,role,job_title,active,half_day,fixed_monthly_salary').eq('active',true).order('name'),
+    // Atestado não tem coluna de fim (só `date` + `days_off`) — busca
+    // com uma folga de 30 dias antes do mês pra pegar atestado que
+    // começou no mês anterior e ainda cobre o início deste. O recorte
+    // exato (date..date+days_off-1) é calculado no cliente, em isAtestadoDay.
+    const certBufferStart = new Date(year, month, 1 - 30).toISOString().split('T')[0]
+    const [empR, recR, tgtR, holR, vacR, certR] = await Promise.all([
+      supabase.from('system_users').select('id,name,role,job_title,active,half_day,fixed_monthly_salary,weekend_hours_separate').eq('active',true).order('name'),
       supabase.from('time_records').select('id,employee_id,punch_type,recorded_at,date,hours_worked,manually_edited')
         .gte('date', dateStart).lte('date', dateEnd).order('recorded_at',{ascending:true}),
       supabase.from('work_day_targets').select('employee_id,date,target_min')
@@ -545,10 +593,19 @@ export function RHRelatorioPage() {
         .eq('status','aprovado')
         .lte('date_start', dateEnd)
         .gte('date_end', dateStart),
+      supabase.from('medical_certificates').select('employee_id,date,days_off')
+        .eq('status','aprovado')
+        .lte('date', dateEnd)
+        .gte('date', certBufferStart),
     ])
     setEmployees(empR.data ?? [])
     setHolidays((holR.data ?? []).map(h => h.date))
     setVacations(vacR.data ?? [])
+    setAtestados((certR.data ?? []).map(c => ({
+      employee_id: c.employee_id,
+      date: c.date,
+      date_end: addDays(c.date, (c.days_off || 1) - 1),
+    })))
     const grouped = {}
     for (const r of recR.data ?? []) {
       if (!grouped[r.employee_id]) grouped[r.employee_id] = {}
@@ -631,6 +688,19 @@ export function RHRelatorioPage() {
     )
   }
 
+  // Atestado médico aprovado (Timesheet → aba Atestados) — dia entra
+  // com a meta cheia batida, nem zerado nem proporcional às horas
+  // parciais que a pessoa tenha batido antes de passar mal (essas
+  // continuam aparecendo no ponto real, só o saldo do dia é que ignora
+  // e usa a meta inteira). Ver isHomeOfficeDay acima pro mesmo espírito.
+  function isAtestadoDay(empId, dateStr) {
+    return atestados.some(a =>
+      a.employee_id === empId &&
+      dateStr >= a.date &&
+      dateStr <= a.date_end
+    )
+  }
+
   function calcEmpStats(emp, daysArr) {
     // Usa daysArr explícito ou recalcula na hora com holidays atual
     const _days = daysArr ?? Array.from({ length: daysInMonth }, (_, i) => {
@@ -652,6 +722,11 @@ export function RHRelatorioPage() {
       if (d.date > today) continue
       const isVac = isVacationDay(emp.id, d.date)
       if (d.isWeekend || d.isHoliday || isVac) {
+        // Quem tem hora de fim de semana separada (ex: Marlon) já soma
+        // esse fim de semana na tela dedicada (Horas Fim de Semana) —
+        // aqui no Relatório de Ponto geral esse dia nem entra na conta,
+        // pra não contar em dobro (ver rhHelpers/system_users.weekend_hours_separate).
+        if (d.isWeekend && emp.weekend_hours_separate) continue
         const dr = empRecs[d.date] || []
         const { h } = calcDayHours(dr)
         if (h != null) totalH += h
@@ -664,6 +739,13 @@ export function RHRelatorioPage() {
       }
       const tgtMin = targets[emp.id]?.[d.date] ?? dailyTarget(emp)
       metaH += tgtMin / 60
+      // Home office: dia entra como 100% batido, nem mais nem menos —
+      // não olha os registros reais de ponto pra isso.
+      if (isHomeOfficeDay(emp.id, d.date, d.isHoliday)) { totalH += tgtMin / 60; continue }
+      // Atestado aprovado: mesma mecânica (crédito cheio), mas os
+      // registros reais do dia (se houver, ex: trabalhou parte antes de
+      // passar mal) continuam existindo — só não entram nessa soma.
+      if (isAtestadoDay(emp.id, d.date)) { totalH += tgtMin / 60; continue }
       const dr = empRecs[d.date] || []
       if (dr.length === 0) continue
       const { h } = calcDayHours(dr)
@@ -671,7 +753,12 @@ export function RHRelatorioPage() {
     }
 
     const saldoH = totalH - metaH
-    const totalDays = _days.filter(d => (empRecs[d.date]||[]).length > 0).length
+    const totalDays = _days.filter(d => {
+      if (d.isWeekend && emp.weekend_hours_separate) return false
+      return (empRecs[d.date]||[]).length > 0
+        || (d.date <= today && isHomeOfficeDay(emp.id, d.date, d.isHoliday))
+        || (d.date <= today && isAtestadoDay(emp.id, d.date))
+    }).length
     return { totalH, metaH, saldoH, totalDays, empRecs }
   }
 
@@ -956,7 +1043,11 @@ export function RHRelatorioPage() {
     html += '.eb { display: inline-block; background: #eff6ff; color: #1d4ed8; font-size: 8px; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }'
     html += '.hb { display: inline-block; background: #f3e8ff; color: #7c3aed; font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 4px; margin-left: 4px; }'
     html += '.vb { display: inline-block; background: #d1fae5; color: #065f46; font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 4px; margin-left: 4px; }'
+    html += '.hob { display: inline-block; background: #e0f2fe; color: #0369a1; font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 4px; margin-left: 4px; }'
+    html += '.atb { display: inline-block; background: #ede9fe; color: #6d28d9; font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 4px; margin-left: 4px; }'
     html += 'tr.vac td { background: #ecfdf5; } tr.vac td:first-child { color: #059669; font-weight: 700; }'
+    html += 'tr.ho td { background: #f0f9ff; } tr.ho td:first-child { color: #0369a1; font-weight: 700; }'
+    html += 'tr.at td { background: #f5f3ff; } tr.at td:first-child { color: #6d28d9; font-weight: 700; }'
     html += '.meta-bar { display: flex; gap: 0; margin-bottom: 18px; border-radius: 10px; overflow: hidden; border: 1.5px solid #e2e8f0; }'
     html += '.meta-cell { flex: 1; padding: 10px 16px; display: flex; flex-direction: column; justify-content: center; border-right: 1.5px solid #e2e8f0; }'
     html += '.meta-cell:last-child { border-right: none; }'
@@ -1102,7 +1193,12 @@ export function RHRelatorioPage() {
       for (const d of days) {
         const { date, isWeekend, isHoliday: isHol } = d
         const isVac = isVacationDay(emp.id, date)
-        const dr = empRecs[date] || []
+        const isHO  = isHomeOfficeDay(emp.id, date, isHol)
+        const isAT  = !isVac && isAtestadoDay(emp.id, date)
+        // Hora de fim de semana separada (ex: Marlon): já aparece na tela
+        // dedicada — some do Relatório de Ponto geral, não duplica aqui.
+        const hideWk = isWeekend && emp.weekend_hours_separate
+        const dr = hideWk ? [] : (empRecs[date] || [])
         const entrada = dr.find(r => r.punch_type === 'entrada')
         const sAlm    = dr.find(r => r.punch_type === 'saida_almoco')
         const vAlm    = dr.find(r => r.punch_type === 'volta_almoco')
@@ -1112,19 +1208,22 @@ export function RHRelatorioPage() {
         const { h } = calcDayHours(dr)
 
         const tgtMin = (isHol || isVac) ? 0 : (targets[emp.id]?.[date] ?? (isWeekend ? 0 : dailyTarget(emp)))
-        const saldo  = h != null ? h - tgtMin / 60 : null
+        const saldo  = (isHO || isAT) ? 0 : (h != null ? h - tgtMin / 60 : null)
 
-        const cls = isVac ? 'vac' : isHol ? 'hol' : isWeekend ? 'wk' : dr.length === 0 ? 'norec' : ''
-        const holBadge = isHol ? '<span class="hb">Feriado</span>' : isVac ? '<span class="vb">&#127796; F&eacute;rias</span>' : ''
+        const cls = isVac ? 'vac' : isHol ? 'hol' : isWeekend ? 'wk' : isAT ? 'at' : isHO ? 'ho' : dr.length === 0 ? 'norec' : ''
+        const holBadge = isHol ? '<span class="hb">Feriado</span>' : isVac ? '<span class="vb">&#127796; F&eacute;rias</span>' : isAT ? '<span class="atb">&#129658; Atestado</span>' : isHO ? '<span class="hob">&#127968; Home office</span>' : ''
 
         let totalCell = ''
-        if (h != null) totalCell = fmtH(h)
+        if (isHO || isAT) totalCell = fmtH(tgtMin/60)
+        else if (h != null) totalCell = fmtH(h)
         else if (dr.length > 0) totalCell = 'Em aberto'
         else if (isWeekend || isHol || isVac || date > today) totalCell = '&mdash;'
         else totalCell = 'Falta'
 
         let saldoCell = ''
-        if (saldo != null) {
+        if (isHO || isAT) {
+          saldoCell = '<span class="st">em dia</span>'
+        } else if (saldo != null) {
           const sc = saldo >= 0 ? 'sp' : 'sn'
           const ss = saldo >= 0 ? '+' : ''
           saldoCell = '<span class="' + sc + '">' + ss + fmtH(Math.abs(saldo)) + '</span>'
@@ -1147,7 +1246,7 @@ export function RHRelatorioPage() {
 
       const saldoFinal = saldoH >= 0
         ? '<span class="sp">+' + fmtH(saldoH) + '</span>'
-        : '<span class="sn">' + fmtH(saldoH) + '</span>'
+        : '<span class="sn">-' + fmtH(Math.abs(saldoH)) + '</span>'
 
       // Rodapé com meta total + trabalhado + saldo
       html += '<tr class="total-row">'
@@ -1380,8 +1479,7 @@ export function RHRelatorioPage() {
             </h3>
             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {(selEmp === 'all' ? activeEmps : employees.filter(e => e.id === selEmp)).map(emp => {
-                const { totalH, saldoH } = calcEmpStats(emp, days)
-                const totalDays = days.filter(d => (records[emp.id]?.[d.date]||[]).length > 0).length
+                const { totalH, saldoH, totalDays } = calcEmpStats(emp, days)
                 const isFocused = focusEmp === emp.id
                 return (
                   <div key={emp.id}
@@ -1423,9 +1521,7 @@ export function RHRelatorioPage() {
 
             // Calcula total trabalhado E saldo (excedente/faltante) do mês
             // Usa calcEmpStats para consistência com o PDF
-            const { totalH, metaH, saldoH } = calcEmpStats(emp, days)
-
-            const totalDays = days.filter(d=>(empRecs[d.date]||[]).length>0).length
+            const { totalH, metaH, saldoH, totalDays } = calcEmpStats(emp, days)
 
             // ── Funcionário com salário fixo (ex: Eduardo) — mostra dias, nunca horas ──
             if (emp.fixed_monthly_salary > 0) {
@@ -1536,9 +1632,11 @@ export function RHRelatorioPage() {
                       <tbody>
                         {days.map(({date, isWeekend, isToday, isHoliday})=>(
                           <DayRow key={date} date={date}
-                            records={empRecs[date]||[]}
+                            records={(isWeekend && emp.weekend_hours_separate) ? [] : (empRecs[date]||[])}
                             isWeekend={isWeekend} isToday={isToday} isHoliday={isHoliday}
                             isVacation={isVacationDay(emp.id, date)}
+                            isHomeOffice={isHomeOfficeDay(emp.id, date, isHoliday)}
+                            isAtestado={!isVacationDay(emp.id, date) && isAtestadoDay(emp.id, date)}
                             empId={emp.id}
                             targetMin={(isHoliday || isVacationDay(emp.id, date)) ? 0 : (targets[emp.id]?.[date] ?? (isWeekend ? 0 : dailyTarget(emp)))}
                             onEdit={(d, recs) => handleEdit(d, recs, emp.id)}
@@ -1625,9 +1723,11 @@ export function RHRelatorioPage() {
                     <tbody>
                       {days.map(({date, isWeekend, isToday, isHoliday})=>(
                         <DayRow key={date} date={date}
-                          records={empRecs[date]||[]}
+                          records={(isWeekend && emp.weekend_hours_separate) ? [] : (empRecs[date]||[])}
                           isWeekend={isWeekend} isToday={isToday} isHoliday={isHoliday}
                           isVacation={isVacationDay(emp.id, date)}
+                          isHomeOffice={isHomeOfficeDay(emp.id, date, isHoliday)}
+                          isAtestado={!isVacationDay(emp.id, date) && isAtestadoDay(emp.id, date)}
                           empId={emp.id}
                           targetMin={(isHoliday || isVacationDay(emp.id, date)) ? 0 : (targets[emp.id]?.[date] ?? (isWeekend ? 0 : dailyTarget(emp)))}
                           onEdit={(d, recs) => handleEdit(d, recs, emp.id)}
