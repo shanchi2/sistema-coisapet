@@ -131,6 +131,134 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-09-13 (8ª parte) — Nova aba "Imagens & IA" no detalhe do anúncio: sugestão e geração de foto real por IA
+
+**Pedido do Raphael**: começar a atualizar as fotos dos produtos (além das descrições) — pediu uma aba nova na tela de Saúde de Anúncio (detalhe do item) com sugestões de criação de imagem baseadas nas perguntas dos compradores, com opção de já gerar a imagem sugerida usando a foto real do produto como base (API do ChatGPT e/ou Higgsfield). Confirmado por ele: (1) manter a geração mesmo quando o produto não tem nenhuma pergunta ainda (cai só na ficha técnica/descrição), (2) imagem sempre em proporção **vertical** (melhor visibilidade no app do ML), (3) pensar no caso de produto com variações (cor/modelo), e (4) além da sugestão por IA, ter uma opção de **prompt personalizado simples** (ex: "gere uma imagem deste item na cor rosa, sem mudar nada apenas a cor"). Pedido pra começar no mesmo dia.
+
+**Pesquisa antes de implementar**: confirmado que o endpoint já usado no Blog pra edição de imagem (`gpt-image-1`, `POST /v1/images/edits`) aceita `size: "1024x1536"` (vertical 2:3) além do quadrado — não precisou de endpoint novo nem da Higgsfield (o fluxo de referência de foto real já tinha sido abandonado lá por "travar" no objeto, ver 12/09).
+
+**Construído** (`ml-insights/index.ts`, mesmo padrão auto-contido do `blog-ai/index.ts`, sem módulo compartilhado):
+- `suggestItemImages` — reaproveita `fetchItemQuestions` + `buildFullAttributes` (mesmas fontes do `suggestContent`) e devolve 2-4 ideias de foto (título + motivo + prompt de edição já pronto em inglês), além da lista de fotos do anúncio e, quando o item tem variação, a foto de cada variação já rotulada (ex: "Rosa", "Preto") pra servir de base.
+- `generateItemImage` / `generateItemImageCustom` — gera a imagem de verdade a partir da foto real escolhida como base (baixada direto do CDN público do ML, sem precisar de bucket próprio nem signed URL) + `gpt-image-1` sempre com `size: 1024x1536`. O caminho "custom" primeiro traduz o pedido em português pra uma instrução de edição em inglês (chamada de texto simples, gpt-4o-mini) antes de cair na mesma geração. Sufixo obrigatório fixo no código (mesmo raciocínio do Blog: o GPT às vezes derruba regra do prompt sob pressão de espaço) garante produto fiel, sem texto/logo, vertical, e animal em escala realista quando aparecer.
+- `attachItemImage` — só ação que GRAVA de verdade: sobe a imagem gerada (`uploadPicture`, endpoint já existente) e faz `PUT /items/{id}` acrescentando ao array de fotos já existente (nunca substitui/remove nenhuma) — sempre atrás de `ConfirmWriteModal`, mesma regra permanente de toda escrita no ML.
+- `MlItemDetailPage.jsx`: aba nova "Imagens & IA" ao lado de "Conteúdo & IA" — sugestão, seletor de foto base (com atalho por variação quando existem), botão por sugestão pra gerar, campo de prompt personalizado, prévia da imagem antes de aplicar (nunca grava sozinho), e confirmação explícita pra adicionar ao anúncio real.
+
+**Testado ao vivo** (`MLB3690960834`, "Gaiola Hamster Terrário Com Roda Habitat Completo Roedores" — item real com 11 perguntas de comprador e 5 variações de cor incluindo "Rosa", o mesmo cenário do pedido original do Raphael): `suggest_item_images` devolveu 4 sugestões coerentes com as perguntas reais (uso com hamster, resistência/transporte, escala) e as 5 variações corretamente rotuladas com foto própria cada uma. Geração de imagem testada de ponta a ponta com a foto real da variação "Amadeirado" como base + 1 das sugestões: resultado manteve o terrário fiel (mesmo corte, mesmas juntas), hamster em escala realista dentro da roda, ambiente doméstico ao fundo, vertical, sem texto/logo — conferido visualmente decodificando o `b64_json` retornado. Ação de gravação real (`attach_item_image`) **não foi testada** — mesma regra de sempre, fica pra o Raphael confirmar pela tela quando quiser aplicar de verdade.
+
+**Pendência**: verificação visual do clique-a-clique da aba nova pelo navegador ficou bloqueada por limite de uso da sessão (não é bug do app — o backend já foi confirmado funcionando via chamada direta, e o build do frontend passou limpo). Vale conferir na tela na próxima sessão antes de considerar 100% fechado.
+
+---
+
+### 2026-09-13 (7ª parte) — Sugestão de descrição por IA passa a ler as perguntas reais do anúncio
+
+**Pedido do Raphael**: a sugestão de título/descrição por IA (Fase existente, `suggestContent`) já usa ficha técnica + tendências da categoria — pediu pra também ler as perguntas/dúvidas reais que compradores fizeram naquele anúncio específico e, quando der, já responder isso dentro da descrição.
+
+**Construído** (`ml-insights/index.ts`): `fetchItemQuestions(integration, itemId)` — `GET /questions/search?item=$ITEM_ID` (endpoint já usado noutro lugar do sistema pra perguntas sem resposta da conta toda; aqui é o mesmo endpoint, só filtrado por item e sem filtro de status, pra pegar respondidas E não respondidas — o que importa é o que o comprador ficou em dúvida, não se já foi respondido no Q&A). Prompt da OpenAI ganhou regra explícita: só responder na descrição a pergunta que der pra confirmar com 100% de certeza usando a ficha técnica/descrição já fornecidas — pergunta sem dado que sustente a resposta é ignorada de propósito (reforça a regra mais importante do prompt, "nunca inventar fato", em vez de abrir exceção pra ela).
+
+**Testado ao vivo com item real** (`MLB3334101665`, "Gaiola Terrário 60x40x40" — 17 perguntas reais, bem misturadas): funcionou exatamente como esperado — várias perguntas de compatibilidade de espécie ("Serve pra hamster sírio?", "Por que não indicado pra gerbil?", "Serve pra ouriço?") foram respondidas de uma vez com uma frase nova na descrição, baseada no campo real da ficha técnica ("Animais recomendados: Anão-Russo, Hamster"). Perguntas sem dado de sustentação (ex: "já vem com casinha ou compra separado?", "dá pra fazer maior?", "é normal vazar forragem?", "meu hamster fugiu, como aviso o vendedor?") foram corretamente IGNORADAS pela IA, sem inventar resposta nenhuma — validado lendo a resposta completa, não só confiando no comportamento esperado.
+
+`MlItemDetailPage.jsx`: aba "Conteúdo & IA" agora mostra, abaixo do resumo de mudanças, a lista de perguntas reais consideradas na sugestão — transparência de onde cada ajuste no texto veio.
+
+---
+
+### 2026-09-13 (6ª parte) — Campanhas & Promoções vira 3 abas + Oferta Relâmpago (LIGHTNING) implementada de verdade
+
+**Pedido do Raphael**: a tela "Campanhas & Promoções" misturava 3 áreas sem separação clara (desconto em massa, convites de campanha, "candidatos a campanha relâmpago" — que na real nunca fazia oferta relâmpago de verdade, era só um diagnóstico de estoque parado desconectado da API). Pediu pra separar em abas e perguntou se dava pra fazer oferta relâmpago de verdade daqui.
+
+**Pesquisa antes de implementar**: doc oficial (`ofertas-relampago`) confirma que `LIGHTNING` é gravável, mesmo padrão de escrita da campanha DEAL (`POST /seller-promotions/items/{id}`), só que exige também um campo `stock` (quantidade reservada pra promoção — quando esgota, encerra sozinha nesse item). Testado ao vivo contra a conta real: a CoisaPet já tem um convite ativo (`LGH-MLB1000`) com **mais de 100 candidatos reais** retornados por `promotion_candidates` (reaproveitado sem nenhuma mudança — já era genérico por `promotion_type`).
+
+**Construído**:
+- Backend: `promotionJoinItem` ganhou um parâmetro `stock` opcional (só enviado quando informado — DEAL/SELLER_CAMPAIGN continuam sem ele, sem quebrar nada).
+- `MlPromotionsPage.jsx` reescrita com 3 abas: **Desconto em massa**, **Campanhas** (convites DEAL etc., como já era), **Oferta relâmpago** (nova, de verdade). Cada aba carrega os dados sozinha na primeira vez que é aberta.
+- Oferta relâmpago: mostra o convite ativo, candidatos com preço/estoque sugeridos (editáveis), toggle "Ordenar por: Estoque parado / Mais vendidos" (o antigo diagnóstico de "candidatos a campanha relâmpago" virou esse critério de ordenação DENTRO da aba real, em vez de uma tela solta desconectada da API) — checkbox + preço + estoque reservado por linha, "Indicar selecionados" sempre atrás de `ConfirmWriteModal`. "Sair" só aparece pra item ainda `pending` (doc confirma: depois de `started`, oferta não pode ser removida por essa API — só pausando o anúncio).
+
+**Resposta pro Raphael sobre "a tela de desconto não mostra os produtos de cara"**: é esperado, não é bug — a API do ML exige a campanha (`promotion_id`) existir ANTES de poder indicar item com preço; sem campanha criada, não tem em que "encaixar" os produtos. A tela já reflete isso: mostra o formulário de criar campanha primeiro, e a lista de produtos só depois de criada.
+
+**Não testado com gravação real de LIGHTNING** (mesmo cuidado de sempre — indicar item de verdade é escrita real, fica pro Raphael testar pela tela). Backend testado ao vivo (candidatos reais confirmados). Build limpo. Verificação visual final da aba nova pelo navegador ficou inconclusiva por instabilidade recorrente da ferramenta de automação nesta sessão (mesmo padrão já visto e reportado antes) — a aba "Desconto em massa" (também reescrita nesta parte) foi confirmada funcionando ao vivo antes da ferramenta travar.
+
+---
+
+### 2026-09-13 (4ª parte) — Bug real corrigido: Estoque Full mostrava números MUITO maiores que o real
+
+**Pedido do Raphael**: "os números que temos no sistema não batem com o painel do ML" — pediu um pente fino no Estoque Full.
+
+**Causa raiz encontrada e confirmada ao vivo**: em `fulfillmentStock()` (`ml-insights/index.ts`), item do Full SEM variação usava `item.available_quantity` (vindo direto de `/items`) como estoque disponível — esse campo NÃO reflete o estoque real do Full. Achado um caso concreto: `MLB7117567508` (Roda Para Hamster Branco) dizia **93 unidades** disponíveis; o estoque de verdade no centro de distribuição (`/inventories/{inventory_id}/stock/fulfillment`, ondevinventory_id vem do próprio item) era **0** — confirmado batendo exatamente com a tela "Controle de estoque" do painel do ML (`vendedores.mercadolivre.com.br/anuncios/lista/space_management`), que mostra o estoque por SKU com colunas "A caminho / Não aptas para venda / Aptas para venda". Itens COM variação já usavam a fonte certa (`/inventories/.../stock/fulfillment` por variação) — só o caminho sem variação estava errado.
+
+**Corrigido**: agora todo item (com ou sem variação) busca o estoque real via `/inventories/{inventory_id}/stock/fulfillment` — o `inventory_id` do item (não só da variação) passou a ser pedido no `/items?attributes=...`. Item sem variação também ganhou a mesma exibição de "indisponível/motivo" que já existia só pros com variação (`MlFullStockPage.jsx`).
+
+**Testado ao vivo, comparando com o painel real**: total ANTES da correção somava **240 unidades** nos 13 itens ativos do Full; DEPOIS da correção, **44 unidades** — batendo em cheio com a soma da coluna "Aptas para venda" da tela oficial do ML (também 44, conferido item por item, todos os 13 batendo exato).
+
+**Achado à parte, resolvido na mesma sessão (5ª parte abaixo)**: a tela "Controle de estoque" do ML também mostrava 6 SKUs de "Gaiola Terrário" com estoque real chegando que não apareciam em lugar nenhum do nosso sistema. Raphael pediu pra ampliar — ver 2026-09-13 (5ª parte).
+
+---
+
+### 2026-09-13 (5ª parte) — Estoque Full: mostra estoque "a caminho" (lotes em trânsito) e cruza com a Gestão de Envios Full
+
+**Pedido do Raphael**: "este lote saiu da fábrica há 2 dias, está a caminho... seria legal fazer essas 2 telas conversarem" (Estoque Full + Gestão de Envios Full).
+
+**Descoberta ao vivo**: o endpoint `/inventories/{id}/stock/fulfillment` NUNCA mostra quantidade "a caminho" (só o que já está fisicamente no armazém) — testado com um SKU real (IOXE55033) que o painel do ML mostra como "20 un. Entrada pendente": o endpoint devolve `total:0`. Ou seja, "a caminho" não existe no endpoint de estoque — só existe na Gestão de Envios Full, que já sincronizamos via bookmarklet (13/09, 1ª parte do dia). Cruzamento confirmado: SKU `IOXE55033` bate exatamente com `ml_full_inbound_items.raw->>'inventoryId'` do envio #74259426 (variação "Amadeirado", 20 un. declaradas) — **`ml_code` guarda o ID do ANÚNCIO** (repete por variação), o SKU/inventory_id real só existe dentro do `raw` (campo `inventoryId`, não estava mapeado em coluna própria).
+
+**3 problemas em cadeia, todos achados e corrigidos ao vivo, comparando sempre com o painel real do ML**:
+1. Item recém entrando no Full não tem `logistic_type: fulfillment` ainda (fica em `xd_drop_off` com a tag `fbm_in_process` durante a transição) — invisível pra busca normal. Corrigido: complementa a lista de itens com qualquer `ml_code` referenciado num envio nosso "não terminal" (`status` fora de `closed_ok/closed_with_changes/cancelled/expired` — inclui um status real e não documentado que apareceu numa conta de verdade, `received` com `sub_status: open`, "chegou mas ainda processando").
+2. Isso trouxe pra lista um item (`MLB3334101665`) cujo total pulou pra 251 un. — óbvio demais pra ser real. Causa: 2 das 5 variações desse item (Vermelho, Rosa) ainda não têm `inventory_id` no Full (só ALGUMAS cores já migraram) — o código antigo caía de volta pro `available_quantity` cru pra essas, o MESMO bug da 4ª parte, só que no nível de variação. Corrigido: variação sem `inventory_id` agora mostra "não confirmado" (null, não soma no total) em vez de repetir o número não confiável.
+3. Resultado final, testado e batendo: total ficou nas mesmas **44 unidades** de antes (os itens novos genuinamente não têm nada "apto pra venda" ainda, só "a caminho") — 15 itens no total agora (13 + 2 "Gaiola" que entraram pelo cruzamento).
+
+**Construído**: `fulfillmentStock()` agora inclui `status=paused` na busca também, monta um `Set` de `inventory_id`s vistos e faz UMA query em `ml_full_inbound_items` (filtro `raw->>inventoryId in (...)`) pra achar envios em aberto por SKU — anexa `item.incoming`/`variation.incoming` (`{shipment_id, qty, status, appointment_date}`). `MlFullStockPage.jsx`: badge "X un. a caminho — Envio #123" (ícone caminhão) linkando pra `/ml/full/envios?envio=123`; selo "Pausado" pra anúncio inativo; variação "não confirmado" com texto explicativo. `MlFullShipmentsPage.jsx`: lê `?envio=` da URL, abre o card já expandido e rola até ele (`scrollIntoView`), com borda destacada; adicionado o status `received` (faltava no `STATUS_CONFIG`, caía num rótulo genérico antes).
+
+---
+
+### 2026-09-13 (2ª parte) — Desconto em massa nos anúncios ML ("de/por" self-service, sem depender de convite do ML)
+
+**Motivação**: Raphael notou que a grande maioria dos anúncios não tem preço "de/por" (o riscado + desconto que chama atenção do comprador), e queria um jeito de selecionar vários anúncios em massa e aplicar um desconto (% escolhida por ele) direto no ML, sem precisar ficar me pedindo.
+
+**Pesquisa antes de construir** (doc oficial do ML, `developers.mercadolivre.com.br`, acessada pelo navegador logado — igual sempre): a campanha "9.9"/DEAL que já existe na tela (Fase 37, ver 01/09) é por CONVITE do ML — item pré-selecionado por eles, preço sugerido dentro de min/max deles. O que o Raphael queria é outra coisa: `SELLER_CAMPAIGN` (sub_type `FLEXIBLE_PERCENTAGE` — o único disponível, `FIXED_PERCENTAGE` foi descontinuado em 07/2025), campanha CRIADA pelo próprio vendedor, item e desconto livremente escolhidos. Confirmado ao vivo contra a conta real: a CoisaPet não tinha nenhuma campanha desse tipo rodando. Achado também um alerta sério e irrelevante pra nós: os campos `price`/`base_price`/`original_price` do endpoint antigo `/items` estão sendo descontinuados (desde 18/03/2026 um PUT só com `price` já dá 400), mas isso não afeta esse recurso — a escrita de desconto usa `/seller-promotions/...`, que é outro sistema, já validado e em uso desde a Fase 37.
+
+**Regras reais da campanha do vendedor** (confirmadas na doc):
+- Prazo máximo de **14 dias** por campanha (Raphael escolhe as datas dentro desse limite, nada fixo).
+- Elegibilidade: reputação verde, anúncio ativo, condição "novo", exposição paga (não gratuita) — não validamos isso na tela, deixamos o erro real do ML aparecer isolado por item (mesmo espírito de `applyContent`/`create_item`: sucesso parcial, nunca tudo ou nada).
+- Preço só pode diminuir enquanto a campanha estiver ativa, nunca aumentar.
+- Escreve nos MESMOS endpoints `/seller-promotions/items/{id}` já usados pela campanha DEAL — `promotionJoinItem`/`promotionLeaveItem` (`ml-insights/index.ts`) são genéricos por `promotion_type` e não precisaram mudar nada.
+
+**Construído** (`ml-insights/index.ts` + `MlPromotionsPage.jsx`):
+- Backend novo: `sellerCampaignCreate` (`POST /seller-promotions/promotions`), `sellerCampaignDelete` (`DELETE`), `sellerCampaignLastChange` (não pergunta pro ML — lê a data mais recente do nosso próprio log `ml_item_updates` onde `action` é `promotion_join`/`promotion_leave` e `detail->>promotion_type = 'SELLER_CAMPAIGN'`).
+- Tela nova "Desconto em massa (de/por)", dentro de Campanhas & Promoções: se não tem campanha própria rodando, mostra formulário de criação (nome + datas, já sugerindo hoje até +14 dias, editável). Se tem, mostra card com nome/status/dias até encerrar/**dias desde a última alteração** (pedido explícito do Raphael, pra nunca esquecer uma campanha parada) + botão "Excluir campanha". Abaixo, lista TODOS os anúncios ativos (`active_listings`, já existia) com busca por título, checkbox de seleção, campo de "% off" aplicado ao lote no momento que marca o item (editável por linha depois — decisão explícita do Raphael, não por item desde o início). "Aplicar desconto" abre `ConfirmWriteModal` com a lista de antes→depois de cada item, sucesso parcial por item.
+
+**Nada testado com gravação real** (criar campanha, indicar item) — mesmo cuidado já usado com `promotion_join_item`/`promotion_leave_item` desde a Fase 37: fica pro Raphael testar pela tela de verdade, sempre atrás do modal de confirmação. Testado ao vivo só o que é seguro: build limpo, tela renderiza, detecção de "nenhuma campanha ainda" funcionando (confirmado contra a conta real — 0 `SELLER_CAMPAIGN` hoje), formulário de criação pré-preenche datas corretamente.
+
+---
+
+### 2026-09-13 (3ª parte) — Preço "de/por" verdadeiro (subir preço antes de descontar) confirmado indisponível + bug real no nome da campanha de desconto
+
+**Dúvida do Raphael**: dado que já vendem alguns produtos abaixo do ideal, ele perguntou se dava pra subir o preço "de verdade" primeiro e só depois aplicar o desconto (pra manter o valor final igual ao de hoje, mas com o "de/por" aparecendo). Respondi com dois pontos, o segundo mais importante que o primeiro:
+1. **Risco legal real**: subir o preço pouco antes de "descontar" de volta pro mesmo valor é "desconto fictício", proibido pelo art. 37 do CDC — tem caso recente do Procon notificando o iFood por exatamente isso. Não é só falta de ética, é enforcement ativo.
+2. **Testado ao vivo contra a conta real** (autorizado pelo Raphael, valor de teste = preço já vigente, sem mudar nada de verdade): os dois caminhos de editar o preço "padrão" de um item estão bloqueados AGORA pelo próprio ML — `POST /items/$ID/prices/standard` (o novo, documentado como "em breve") devolve **404 not.found** (não existe de verdade); `PUT /items` só com `price` devolve **400 item.price.not_modifiable**. Confirma que a doc (desatualizada, última mod. 26/02) ainda reflete a realidade — não é preguiça de atualizar a doc, o endpoint novo genuinamente não foi lançado. Conclusão pro Raphael: hoje só dá pra subir preço manualmente no painel do ML; o desconto em massa daqui do sistema só atua sobre o preço já publicado.
+
+**Bug real achado e corrigido**: Raphael reportou "não achei a tela de selecionar produtos". Reproduzi ao vivo (com autorização, criando e apagando campanhas de teste reais) e achei a causa: o nome padrão que o formulário sugeria (`Desconto CoisaPet 13/09/2026`) é **sempre rejeitado pelo ML** — testei o limite exato: **máximo 25 caracteres, proibido usar "/"** (erro real do ML: `seller_proposition_title: may only be  characters long`, mensagem mal formatada dele mesmo). Como o nome padrão sempre violava os dois limites de uma vez, TODA tentativa de criar campanha com o nome sugerido falhava silenciosamente (toast de erro rápido demais pra notar) — por isso a tela de seleção de produtos (que só aparece depois de criar a campanha) nunca aparecia. Corrigido: nome padrão agora é `Desconto AAAAMMDD` (sem barra, 17 caracteres), campo do formulário com `maxLength=25` + contador de caracteres restantes, e barra digitada é auto-convertida pra hífen. Confirmado ao vivo que o novo formato é aceito pelo ML. Nenhuma alteração na Edge Function foi necessária desta vez (o backend já funcionava certo — o bug era só no valor padrão gerado no frontend).
+
+---
+
+### 2026-09-13 — Gerador de imagem do Blog (edição real de produto via OpenAI) + bug de cursor no editor + sync self-service da Gestão de Envios Full
+
+**Gerador de imagem do Blog — trocado o motor quando há produto de referência**: pedido do Raphael foi "usar o produto real como base, sem ser cópia fiel, deixando a cena livre" — algo que nem o `soul/reference` nem o `soul/character` da Higgsfield resolvem bem (ver notas de 11/09). Testado ao vivo e confirmado: a **OpenAI** (`gpt-image-1`, endpoint `images/edits`) faz exatamente isso — mantém o produto fiel e compõe a cena livremente ao redor, sem precisar de conta/API nova (já tínhamos `OPENAI_API_KEY`). `blog-ai/index.ts`: `generate_image` agora usa `callOpenAiImageEdit` quando há `reference_photo_path`; sem referência, continua na Higgsfield (`callHiggsfield`, só texto, sem o parâmetro de referência que existia antes). Prompt de sistema novo (`IMAGE_EDIT_PROMPT_SYSTEM`) escreve INSTRUÇÃO DE EDIÇÃO, não descrição de cena. Iterado ao vivo com o Raphael até ficar bom, nessa ordem:
+- Proibição de texto/logo (a IA "alucinava" um logo ilegível no produto) — reforçada como sufixo FIXO no código (`MANDATORY_IMAGE_SUFFIX`), não só pedida ao GPT — porque o GPT às vezes cortava essa regra quando tinha muita coisa pra cobrir num prompt curto (por isso também removemos o limite de "3-5 frases" dos prompts de sistema).
+- Enquadramento sempre aberto/afastado (vinha com zoom apertado demais).
+- Fundo trocado de "estúdio branco" pra ambiente lifestyle real (quarto, mesa, janela) — pedido explícito do Raphael, é conteúdo de blog, não fica de catálogo.
+- Realismo fotográfico explícito (textura de pelo real, evitar "cara de CGI/IA").
+- Proporção do hamster (é um bicho pequeno, 13-18cm) — tende a sair grande demais; reforçado com número explícito (10-15% da largura do habitat) + instrução "quando em dúvida, faça menor" no sufixo fixo.
+- Hamster não precisa olhar pra câmera — pode estar interagindo com o ambiente (fungando, cavando), não posado feito retrato.
+- Terrário sempre "mobiliado" (forração farta + 2-3 itens de enriquecimento), nunca vazio.
+Também adicionado: campo de "Instrução extra pra imagem" (textarea) na aba de capa do editor de post (`BlogPostEditorPage.jsx`) — faltava desde sempre; o gerador de imagem do CORPO do post já tinha esse campo, só a capa não.
+
+**Bug real corrigido no editor de texto do Blog**: Raphael reportou que clicar no meio de um parágrafo pra editar fazia a letra digitada "voltar pro início e escrever de trás pra frente". Causa: `BlogRichTextEditor.jsx` usava `dangerouslySetInnerHTML` controlado — a cada tecla, o React reescrevia o `innerHTML` inteiro da `contentEditable`, destruindo a posição do cursor no meio do texto (só não aparecia digitando no final). Corrigido trocando por sincronização via `useLayoutEffect` que só toca no DOM quando `html` difere do que já está lá (nunca acontece durante digitação normal, já que `onInput` já deixou o DOM com o valor novo antes do React re-renderizar). Testado ao vivo num rascunho real.
+
+**Gestão de Envios Full — sincronização virou self-service (bookmarklet), sem precisar mais pedir pro Claude**: o ML não expõe esses dados por nenhuma API (só o painel logado). Descoberto que a própria tela do ML (`vendedores.mercadolivre.com.br/shipping/inbounds`) é renderizada com os dados já embutidos em JSON numa tag `<script>` de hidratação (framework Nordic/Fury deles), e a paginação da lista usa uma API JSON de verdade (`/api/shipping/inbounds/search?page=N&offset=...`) — dá pra puxar tudo isso com `fetch()` simples, usando a sessão já logada do navegador, sem precisar de browser automation nem raspar texto de tela.
+- Nova Edge Function `ml-full-shipments-ingest` (deploy `--no-verify-jwt`, mesmo motivo do `ml-webhook`/`ml-oauth-callback` — quem chama é o navegador no domínio do ML, não o nosso frontend) — recebe o JSON bruto, mapeia pros campos de `ml_full_inbound_shipments`/`ml_full_inbound_items`, protegida por um segredo simples (`FULL_SYNC_SECRET`, não JWT de usuário).
+- Bookmarklet em `scripts/ml-full-sync-bookmarklet.js` (fonte legível) — o Raphael salva a versão minificada como favorito "Sincronizar Full CoisaPet" e clica nele estando logado na Central de Vendedores do ML. Busca a lista (paginada) + detalhe de cada envio, e manda tudo pro ingest.
+- **Limitação real, testada ao vivo**: buscar os ~29 detalhes em paralelo faz o ML devolver página incompleta pra várias (15 de 29 falharam num teste); sequencial com retry (3x) reduz bastante mas não elimina 100% — especificamente, envios já **cancelados/finalizados há muito tempo** (`closed_ok`/`closed_with_changes`/`cancelled`) às vezes não atualizam numa passada. Como o dado desses nunca muda mesmo, não é um problema prático — só clicar de novo se quiser forçar. Os envios que realmente importam (em preparação, aguardando recebimento) sincronizaram certinho em 100% dos testes.
+- `MlFullShipmentsPage.jsx`: texto atualizado pra explicar o novo processo (era "peça pro Claude"), botão "Recarregar" adicionado (só relê o que já está no nosso banco, não refaz a sincronização com o ML).
+
+---
+
 ### 2026-09-09 — Módulo Blog (CMS interno, geração por IA + SEO tipo Yoast + hyperlinks)
 
 **Motivação**: o WordPress usado hoje pro blog está degradando cada vez
