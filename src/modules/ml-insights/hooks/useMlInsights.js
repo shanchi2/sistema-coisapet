@@ -171,6 +171,32 @@ export function useMlInsights() {
     [run],
   )
 
+  // ── Imagens & IA ──────────────────────────────────────────────────
+  const suggestItemImages = useCallback(
+    (itemId) => run(() => callMlInsights({ action: 'suggest_item_images', item_id: itemId })),
+    [run],
+  )
+
+  // prompt já pronto (vindo de uma sugestão) — usa direto na geração.
+  const generateItemImage = useCallback(
+    (pictureUrl, prompt) => callMlInsights({ action: 'generate_item_image', picture_url: pictureUrl, prompt }),
+    [],
+  )
+
+  // instruction em português (prompt personalizado, ex: "na cor rosa") —
+  // a Edge Function traduz pra uma instrução de edição antes de gerar.
+  const generateItemImageCustom = useCallback(
+    (pictureUrl, instruction) => callMlInsights({ action: 'generate_item_image_custom', picture_url: pictureUrl, instruction }),
+    [],
+  )
+
+  // Sempre chamado depois de confirmação explícita na tela (adiciona a
+  // imagem gerada como nova foto do anúncio real).
+  const attachItemImage = useCallback(
+    (itemId, imageBase64) => run(() => callMlInsights({ action: 'attach_item_image', item_id: itemId, image_base64: imageBase64 })),
+    [run],
+  )
+
   const fetchClaimsByProduct = useCallback(
     () => run(() => callMlInsights({ action: 'claims_by_product' })),
     [run],
@@ -205,9 +231,9 @@ export function useMlInsights() {
 
   // Sempre chamado depois de confirmação explícita na tela.
   const promotionJoinItem = useCallback(
-    (itemId, promotionId, promotionType, dealPrice, topDealPrice) => run(() => callMlInsights({
+    (itemId, promotionId, promotionType, dealPrice, topDealPrice, stock) => run(() => callMlInsights({
       action: 'promotion_join_item', item_id: itemId, promotion_id: promotionId, promotion_type: promotionType,
-      deal_price: dealPrice, top_deal_price: topDealPrice,
+      deal_price: dealPrice, top_deal_price: topDealPrice, stock,
     })),
     [run],
   )
@@ -216,6 +242,25 @@ export function useMlInsights() {
     (itemId, promotionId, promotionType) => run(() => callMlInsights({
       action: 'promotion_leave_item', item_id: itemId, promotion_id: promotionId, promotion_type: promotionType,
     })),
+    [run],
+  )
+
+  // ── Desconto em massa (Campanha do vendedor / SELLER_CAMPAIGN) ────
+  // Sempre chamado depois de confirmação explícita na tela.
+  const createSellerCampaign = useCallback(
+    (name, startDate, finishDate) => run(() => callMlInsights({
+      action: 'seller_campaign_create', name, start_date: startDate, finish_date: finishDate,
+    })),
+    [run],
+  )
+
+  const deleteSellerCampaign = useCallback(
+    (promotionId) => run(() => callMlInsights({ action: 'seller_campaign_delete', promotion_id: promotionId })),
+    [run],
+  )
+
+  const fetchSellerCampaignLastChange = useCallback(
+    () => run(async () => (await callMlInsights({ action: 'seller_campaign_last_change' })).last_change),
     [run],
   )
 
@@ -294,9 +339,11 @@ export function useMlInsights() {
     draftAnswer,
     fetchAccountDashboard,
     suggestContent, applyContent,
+    suggestItemImages, generateItemImage, generateItemImageCustom, attachItemImage,
     fetchClaimsByProduct,
     fetchAdsCoverage, fetchAdsDashboard,
     fetchPromotionInvites, fetchPromotionCandidates, promotionJoinItem, promotionLeaveItem, fetchCoupons,
+    createSellerCampaign, deleteSellerCampaign, fetchSellerCampaignLastChange,
     fetchComboSuggestions,
     fetchActiveListings, updateItemFields,
     predictCategory, fetchCategoryAttributesForCreate,

@@ -423,6 +423,21 @@ async function priceScan(integration: any, offset: number, limit: number) {
   return { total, offset, limit, results }
 }
 
+// Perguntas reais desse item específico (respondidas ou não) — pedido
+// do Raphael (13/09): usar como entrada pra sugestão de descrição, pra
+// ela já cobrir a dúvida real de quem compra, em vez de só reescrever o
+// que já estava lá. Falha isolada (item sem nenhuma pergunta ainda, ou
+// erro pontual da API) nunca derruba a sugestão de conteúdo inteira —
+// só segue sem esse insumo.
+async function fetchItemQuestions(integration: any, itemId: string): Promise<string[]> {
+  try {
+    const res = await mlFetch(`/questions/search?item=${itemId}&limit=50`, integration.access_token)
+    return ((res.questions || []) as any[]).map((q) => q.text).filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
 async function unansweredQuestions(integration: any) {
   const res = await mlFetch(
     `/questions/search?seller_id=${integration.ml_user_id}&status=UNANSWERED&sort_fields=date_created&sort_types=ASC&limit=50`,
@@ -856,7 +871,12 @@ async function updateItemAttributes(integration: any, db: ReturnType<typeof admi
 // contra inventar fato (não mudou, só ficou mais explícita).
 const OPENAI_SYSTEM_PROMPT = `Você é um especialista em copywriting e SEO para anúncios do Mercado Livre Brasil, escrevendo para um FABRICANTE (não revendedor) de produtos pet personalizados/artesanais.
 
-Sua tarefa é sugerir um título e uma descrição MELHORES para um anúncio, usando SOMENTE os fatos fornecidos (título atual, descrição atual, ficha técnica preenchida, palavras-chave em alta da categoria).
+Sua tarefa é sugerir um título e uma descrição MELHORES para um anúncio, usando SOMENTE os fatos fornecidos (título atual, descrição atual, ficha técnica preenchida, palavras-chave em alta da categoria, perguntas reais de compradores sobre esse anúncio).
+
+PERGUNTAS REAIS DE COMPRADORES (quando fornecidas):
+- São dúvidas de verdade de quem já visitou esse anúncio — é um sinal forte do que falta ficar claro no texto atual.
+- Pra cada pergunta, só a responda dentro da descrição (nos blocos 3 ou 4, nunca como uma seção de "Perguntas frequentes") SE der pra responder com 100% de certeza usando a ficha técnica ou a descrição atual fornecidas.
+- Se uma pergunta não tem resposta certa nos dados fornecidos, simplesmente ignore ela — NUNCA chute ou invente uma resposta plausível só porque foi perguntada. Isso vale mais que a regra de "usar as perguntas": nunca inventar fato continua sendo a regra mais importante de todas.
 
 REGRA MAIS IMPORTANTE — NUNCA INVENTAR FATO:
 Nunca invente característica, material, medida, garantia, prazo ou qualquer especificação que não esteja explicitamente nos dados fornecidos. Isso seria propaganda enganosa num anúncio real de venda. Se uma informação não foi fornecida, simplesmente não mencione — não "preencha a lacuna" com um chute genérico.
@@ -979,7 +999,7 @@ function sanitizeAttrsForContent(attrs: any[]) {
     })
 }
 
-function buildContentPrompt(item: any, currentDescription: string, attrs: any[], trendKeywords: string[]) {
+function buildContentPrompt(item: any, currentDescription: string, attrs: any[], trendKeywords: string[], questions: string[]) {
   const filledAttrs = sanitizeAttrsForContent(attrs).map((a: any) => `${a.name}: ${a.current_value}`).join('\n')
   return [
     `Título atual: ${item.title}`,
@@ -988,6 +1008,7 @@ function buildContentPrompt(item: any, currentDescription: string, attrs: any[],
       ? `Ficha técnica preenchida (USE TODOS OS ITENS ABAIXO na descrição, não só 1 ou 2):\n${filledAttrs}`
       : 'Ficha técnica: nenhum atributo preenchido ainda.',
     trendKeywords.length ? `Palavras-chave em alta nessa categoria (use só se fizerem sentido pro produto): ${trendKeywords.join(', ')}` : '',
+    questions.length ? `Perguntas reais de compradores sobre ESSE anúncio (responda na descrição só as que der pra responder com certeza usando os dados acima; ignore as outras):\n${questions.map((q) => `- ${q}`).join('\n')}` : '',
   ].filter(Boolean).join('\n\n')
 }
 
@@ -1000,21 +1021,212 @@ async function suggestContent(integration: any, itemId: string) {
     currentDescription = descRes.plain_text || ''
   } catch { /* item pode não ter descrição cadastrada ainda — segue com string vazia */ }
 
-  const [catAttrsResult, trendsResult] = await Promise.allSettled([
-    mlFetch(`/categories/${item.category_id}/attributes`, integration.access_token),
-    mlFetch(`/trends/MLB/${item.category_id}`, integration.access_token),
+  const [[catAttrsResult, trendsResult], questions] = await Promise.all([
+    Promise.allSettled([
+      mlFetch(`/categories/${item.category_id}/attributes`, integration.access_token),
+      mlFetch(`/trends/MLB/${item.category_id}`, integration.access_token),
+    ]),
+    fetchItemQuestions(integration, itemId),
   ])
   const catAttrs = catAttrsResult.status === 'fulfilled' ? catAttrsResult.value : []
   const trendKeywords = trendsResult.status === 'fulfilled' ? (trendsResult.value || []).map((t: any) => t.keyword).filter(Boolean) : []
   const attrs = buildFullAttributes(item, catAttrs)
 
-  const prompt = buildContentPrompt(item, currentDescription, attrs, trendKeywords)
+  const prompt = buildContentPrompt(item, currentDescription, attrs, trendKeywords, questions)
   const suggestion = await callOpenAI(prompt)
 
   return {
     current:   { title: item.title, description: currentDescription },
     suggested: { title: suggestion.title, description: suggestion.description, changes_summary: suggestion.changes_summary },
+    questions_considered: questions,
   }
+}
+
+// ── Sugestão e geração de imagem com IA (foto real do produto) ──────
+// Pedido do Raphael (13/09): igual ao suggestContent acima, mas pra
+// FOTO em vez de texto — sugere 2-4 ideias de imagem a partir das
+// mesmas fontes (perguntas reais + ficha técnica/descrição), e gera a
+// imagem de verdade a partir da foto real do produto (nunca do zero).
+// Mesmo endpoint da OpenAI já usado no blog-ai (gpt-image-1,
+// /v1/images/edits) — reaproveitado aqui em vez de importado de um
+// módulo compartilhado porque cada function já é auto-contida nesse
+// projeto (mesmo padrão de fetchItemQuestions/callOpenAI duplicados).
+// Diferenças-chave em relação ao blog: (1) sempre vertical (1024x1536 —
+// melhor visibilidade no app do ML, pedido explícito), (2) a foto de
+// referência é a própria foto pública do anúncio no CDN do ML, nunca
+// precisa de signed URL nem bucket próprio, (3) mantém geração mesmo
+// sem nenhuma pergunta (cai só na ficha técnica/descrição).
+const IMAGE_SUGGEST_SYSTEM_PROMPT = `Você é um especialista em fotografia de produto e conversão de anúncios do Mercado Livre Brasil, ajudando um FABRICANTE de produtos pet personalizados/artesanais a decidir que NOVAS fotos gerar por IA pra um anúncio, a partir da foto real do produto já existente.
+
+Sua tarefa é sugerir de 2 a 4 ideias concretas de imagem, usando SOMENTE os fatos fornecidos (título, ficha técnica, descrição atual e, quando houver, perguntas reais de compradores sobre esse anúncio).
+
+REGRA MAIS IMPORTANTE — NUNCA INVENTAR FATO:
+Nunca proponha uma imagem que sugira característica, material, medida ou uso que não esteja nos dados fornecidos. Se não há dado suficiente pra uma ideia específica, prefira uma ideia mais genérica (ex: "mostrar o produto em uso num ambiente doméstico", "close-up do material/acabamento") em vez de inventar contexto.
+
+QUANDO HÁ PERGUNTAS REAIS DE COMPRADORES:
+- Cada pergunta é um sinal forte de o que uma foto poderia esclarecer melhor que o texto (tamanho, como é usado, cabe onde, com o que é compatível) — priorize ideias que respondam essas dúvidas visualmente.
+- Só proponha isso se a resposta for 100% verificável pela ficha técnica/descrição fornecida — nunca invente pra "responder" uma pergunta.
+
+QUANDO NÃO HÁ PERGUNTAS (produto sem perguntas ainda):
+- Baseie as ideias só na ficha técnica e na descrição: ângulos que mostrem melhor o material/acabamento, o produto em contexto de uso real, escala/tamanho comparado a algo reconhecível, ou o produto com o pet certo interagindo (só se o tipo de pet for claro pelo título/categoria/ficha técnica).
+
+CADA SUGESTÃO PRECISA TER:
+- title: título curto em português (max ~8 palavras) do que a foto vai mostrar.
+- reason: 1 frase em português explicando por que essa foto ajuda a vender/esclarecer dúvida.
+- prompt: instrução de EDIÇÃO DE IMAGEM pronta, em INGLÊS, pra uma IA que recebe a FOTO REAL do produto como imagem-base e deve compor a cena ao redor dele SEM alterar o produto em si (mesma cor/material/formato/acabamento) — só adicionar ambientação, ângulo, contexto de uso ou (quando fizer sentido) o pet certo interagindo com o produto em escala realista. Nunca descreva o produto do zero, só o que muda ao redor dele.
+
+FORMATO DA RESPOSTA — JSON válido, exatamente:
+{"suggestions": [{"title": "...", "reason": "...", "prompt": "..."}]}`
+
+function buildImageSuggestPrompt(item: any, currentDescription: string, attrs: any[], questions: string[]) {
+  const filledAttrs = sanitizeAttrsForContent(attrs).map((a: any) => `${a.name}: ${a.current_value}`).join('\n')
+  return [
+    `Título do anúncio: ${item.title}`,
+    `Descrição atual: ${currentDescription || '(sem descrição cadastrada ainda)'}`,
+    filledAttrs ? `Ficha técnica preenchida:\n${filledAttrs}` : 'Ficha técnica: nenhum atributo preenchido ainda.',
+    questions.length
+      ? `Perguntas reais de compradores sobre ESSE anúncio (priorize ideias de foto que esclareçam essas dúvidas, só quando verificável pelos dados acima):\n${questions.map((q) => `- ${q}`).join('\n')}`
+      : 'Nenhuma pergunta de comprador ainda registrada pra esse anúncio — baseie as sugestões só na ficha técnica e descrição.',
+  ].filter(Boolean).join('\n\n')
+}
+
+async function suggestItemImages(integration: any, itemId: string) {
+  const item = await mlFetch(
+    `/items/${itemId}?attributes=id,title,category_id,attributes,pictures,variations`,
+    integration.access_token,
+  )
+
+  let currentDescription = ''
+  try {
+    const descRes = await mlFetch(`/items/${itemId}/description`, integration.access_token)
+    currentDescription = descRes.plain_text || ''
+  } catch { /* item pode não ter descrição cadastrada ainda — segue com string vazia */ }
+
+  const [[catAttrsResult], questions] = await Promise.all([
+    Promise.allSettled([mlFetch(`/categories/${item.category_id}/attributes`, integration.access_token)]),
+    fetchItemQuestions(integration, itemId),
+  ])
+  const catAttrs = catAttrsResult.status === 'fulfilled' ? catAttrsResult.value : []
+  const attrs = buildFullAttributes(item, catAttrs)
+
+  const prompt = buildImageSuggestPrompt(item, currentDescription, attrs, questions)
+  const result = await callOpenAI(prompt, IMAGE_SUGGEST_SYSTEM_PROMPT)
+
+  const pictures = (item.pictures || []).map((p: any) => ({ id: p.id, url: p.secure_url || p.url })).filter((p: any) => p.url)
+  const pictureUrlById = new Map(pictures.map((p: any) => [p.id, p.url]))
+  const variations = (item.variations || [])
+    .map((v: any) => ({
+      id: v.id,
+      label: (v.attribute_combinations || []).map((a: any) => a.value_name).filter(Boolean).join(' / ') || `Variação ${v.id}`,
+      picture_url: pictureUrlById.get((v.picture_ids || [])[0]) ?? null,
+    }))
+    .filter((v: any) => v.picture_url)
+
+  return {
+    suggestions: (result?.suggestions || []).filter((s: any) => s?.title && s?.prompt),
+    questions_considered: questions,
+    pictures,
+    variations,
+  }
+}
+
+// Cloudflare/OpenAI às vezes devolve 502/503/504 numa chamada isolada
+// sem ser um problema real (mesmo comportamento já visto no blog-ai) —
+// só vale re-tentar 5xx, 4xx é erro real (credencial, conteúdo etc.).
+async function fetchRetrying5xx(url: string, init: RequestInit, maxRetries = 2): Promise<Response> {
+  let lastRes: Response = null as unknown as Response
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    lastRes = await fetch(url, init)
+    if (lastRes.ok || lastRes.status < 500) return lastRes
+    if (attempt < maxRetries) await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
+  }
+  return lastRes
+}
+
+// Reforço fixo sempre anexado no código, nunca só no system prompt —
+// mesmo motivo do blog-ai (MANDATORY_IMAGE_SUFFIX): o GPT às vezes
+// derruba uma instrução quando tem muita coisa pra cobrir num prompt
+// curto. Aqui é uma versão genérica (não hamster-específica, já que o
+// catálogo cobre hamster, gerbil, porquinho-da-índia, coelho, chinchila
+// e tartaruga) — vertical sempre, produto fiel, sem texto/logo.
+const MANDATORY_ITEM_IMAGE_SUFFIX = ' Keep the product itself (shape, color, material, size, proportions, finish) EXACTLY as shown in the reference photo, unless explicitly asked to change one specific attribute like color. No text, no logos, no watermarks, no engraved brand marks or labels anywhere in the image. Photorealistic, shot on a camera, natural lighting and shadow, real material texture, avoid CGI/3D render look, avoid plastic/overly smooth look, avoid the uncanny AI-generated look. Vertical portrait composition (2:3), product fully visible with comfortable framing, not cropped at the edges. If an animal is shown, depict it at realistic real-world scale for its species and candidly interacting with the product, not stiffly posed facing the camera.'
+
+// Edição de imagem via OpenAI (gpt-image-1, /v1/images/edits) — mesmo
+// endpoint/lógica do blog-ai, só que sempre com `size` vertical (pedido
+// explícito: fotos verticais têm melhor visibilidade no app do ML) e
+// baixando direto da URL pública do CDN do ML (nunca precisa de signed
+// URL, ao contrário do blog que usa o bucket privado product-photos).
+async function callOpenAiImageEditItem(referenceImageUrl: string, prompt: string): Promise<string> {
+  const apiKey = Deno.env.get('OPENAI_API_KEY')
+  if (!apiKey) throw new Error('OPENAI_API_KEY não configurada.')
+
+  const imgRes = await fetch(referenceImageUrl)
+  if (!imgRes.ok) throw new Error(`Erro ao baixar a foto do produto: HTTP ${imgRes.status}`)
+  const contentType = imgRes.headers.get('content-type') || 'image/jpeg'
+  const imgBytes = new Uint8Array(await imgRes.arrayBuffer())
+
+  const form = new FormData()
+  form.append('model', 'gpt-image-1')
+  form.append('prompt', prompt)
+  form.append('size', '1024x1536')
+  form.append('image[]', new Blob([imgBytes], { type: contentType }), 'reference.jpg')
+
+  const editRes = await fetchRetrying5xx('https://api.openai.com/v1/images/edits', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  })
+  if (!editRes.ok) throw new Error(`Erro na API da OpenAI (edição de imagem): ${editRes.status} ${await editRes.text()}`)
+  const editData = await editRes.json()
+  const b64 = editData.data?.[0]?.b64_json
+  if (!b64) throw new Error('OpenAI não devolveu imagem (b64_json ausente).')
+  return b64
+}
+
+async function generateItemImage(pictureUrl: string, prompt: string) {
+  if (!pictureUrl) throw new Error('Nenhuma foto de referência do produto foi informada.')
+  if (!prompt) throw new Error('Nenhuma instrução de imagem foi informada.')
+  const finalPrompt = prompt + MANDATORY_ITEM_IMAGE_SUFFIX
+  const imageBase64 = await callOpenAiImageEditItem(pictureUrl, finalPrompt)
+  return { image_base64: imageBase64, prompt_used: finalPrompt }
+}
+
+// Caminho simples do "prompt personalizado" (pedido do Raphael: "gere
+// uma imagem deste item na cor rosa, sem mudar nada apenas a cor") — só
+// traduz/organiza o pedido em português pra uma instrução de edição em
+// inglês, preservando a intenção exata, antes de cair no mesmo
+// generateItemImage acima (mesmo sufixo obrigatório, mesma geração).
+const CUSTOM_IMAGE_PROMPT_SYSTEM = `Você traduz um pedido curto em português (de um lojista, sobre a foto de um produto) numa instrução de EDIÇÃO de imagem em INGLÊS, pra uma IA que recebe a FOTO REAL do produto e deve aplicar só a mudança pedida.
+
+REGRAS:
+- Preserve exatamente a intenção do pedido — não invente mudança extra que não foi pedida, nem remova parte do pedido.
+- Deixe claro que tudo no produto deve continuar igual (forma, material, proporção, acabamento) EXCETO o que foi pedido explicitamente.
+- Direto na instrução, sem "Prompt:", sem aspas.
+
+FORMATO DA RESPOSTA — JSON válido, exatamente:
+{"prompt": "..."}`
+
+async function buildCustomEditPrompt(instructionPt: string) {
+  const result = await callOpenAI(`Pedido do lojista (português): ${instructionPt}`, CUSTOM_IMAGE_PROMPT_SYSTEM)
+  const prompt = String(result?.prompt || '').trim()
+  if (!prompt) throw new Error('Não foi possível montar uma instrução de edição a partir do pedido.')
+  return prompt
+}
+
+// Adiciona a imagem gerada (aprovada na tela) como NOVA foto do
+// anúncio real — sempre disparado atrás de confirmação explícita
+// (ConfirmWriteModal), nunca substitui/remove fotos existentes, só
+// acrescenta. Reaproveita o mesmo uploadPicture já usado na criação de
+// anúncio (devolve só o id da foto), depois faz merge com o array de
+// fotos já existente antes do PUT — o ML substitui o array inteiro, não
+// faz merge sozinho.
+async function attachItemImage(integration: any, db: ReturnType<typeof adminClient>, itemId: string, imageBase64: string) {
+  const uploaded = await uploadPicture(integration.access_token, imageBase64, `ai-generated-${Date.now()}.png`, 'image/png')
+  const current = await mlFetch(`/items/${itemId}?attributes=pictures`, integration.access_token)
+  const pictures = [...(current.pictures || []).map((p: any) => ({ id: p.id })), { id: uploaded.id }]
+  await mlWrite(`/items/${itemId}`, integration.access_token, 'PUT', { pictures })
+  await logItemUpdate(db, itemId, 'picture_added', { picture_id: uploaded.id })
+  return { ok: true, picture_id: uploaded.id }
 }
 
 // Escrita — mesma regra de sempre: só dispara atrás de confirmação
@@ -1149,18 +1361,55 @@ async function activeListings(integration: any) {
 // endpoint de agendamento/envio de reposição pro centro de distribuição
 // — confirmado testando vários caminhos prováveis, todos 404 — isso só
 // é feito manualmente no painel do vendedor do próprio Mercado Livre.
-async function fulfillmentStock(integration: any) {
-  const search = await mlFetch(
-    `/users/${integration.ml_user_id}/items/search?status=active&logistic_type=fulfillment&limit=100`,
-    integration.access_token,
-  )
-  const ids: string[] = search.results || []
+// Testado ao vivo em 2026-09-13 (pedido do Raphael — números do Full não
+// batiam com o painel do ML): pra item SEM variação, `item.available_quantity`
+// vindo de `/items` NÃO é o estoque real do Full — achado um caso real
+// onde o item dizia 93 unidades e o estoque de verdade no centro de
+// distribuição (confirmado contra `/inventories/{id}/stock/fulfillment`
+// E contra a tela "Controle de estoque" do próprio painel do ML) era 0.
+// A fonte de verdade é sempre o endpoint de inventário, com ou sem
+// variação — todo item Full tem um `inventory_id` próprio (mesmo sem
+// variação), só não estava sendo pedido nem usado antes.
+async function fulfillmentStock(integration: any, db: ReturnType<typeof adminClient>) {
+  // Inclui `paused` além de `active` (pedido do Raphael, 13/09): um
+  // anúncio pausado pode ter estoque real chegando no Full mesmo assim
+  // (lote já despachado da fábrica antes de o anúncio ser reativado) —
+  // antes esse estoque ficava invisível no sistema.
+  const [activeSearch, pausedSearch] = await Promise.all([
+    mlFetch(`/users/${integration.ml_user_id}/items/search?status=active&logistic_type=fulfillment&limit=100`, integration.access_token),
+    mlFetch(`/users/${integration.ml_user_id}/items/search?status=paused&logistic_type=fulfillment&limit=100`, integration.access_token),
+  ])
+  const idsSet = new Set<string>([...(activeSearch.results || []), ...(pausedSearch.results || [])])
+
+  // Item recém entrando no Full (lote já despachado, mas o ML ainda não
+  // reclassificou o anúncio como `logistic_type: fulfillment`) não
+  // aparece nas buscas acima — testado ao vivo em 13/09 com um caso
+  // real ("Gaiola Terrário", `shipping.tags` tinha `fbm_in_process` mas
+  // `logistic_type` ainda `xd_drop_off`). Complementa com qualquer
+  // anúncio referenciado num envio NOSSO ainda "em aberto" — ou seja,
+  // que não terminou. Usar "não está numa lista de status terminais" em
+  // vez de listar os status "em andamento": testado ao vivo, `received`
+  // com `sub_status: open` (lote chegou mas ainda processando) É um
+  // status real que apareceu numa conta de verdade e não é nem
+  // `working` nem `confirmed` — mais seguro excluir só os terminais
+  // conhecidos do que tentar adivinhar todo status "em andamento".
+  const TERMINAL_SHIPMENT_STATUSES = ['closed_ok', 'closed_with_changes', 'cancelled', 'expired']
+  const { data: openShipments } = await db.from('ml_full_inbound_shipments').select('id').not('status', 'in', `(${TERMINAL_SHIPMENT_STATUSES.join(',')})`)
+  const openShipmentIds = (openShipments || []).map((s: any) => s.id)
+  if (openShipmentIds.length) {
+    const { data: pendingItems } = await db.from('ml_full_inbound_items').select('ml_code').in('shipment_id', openShipmentIds)
+    for (const row of (pendingItems || [])) if (row.ml_code) idsSet.add(row.ml_code)
+  }
+
+  const ids: string[] = [...idsSet]
   if (!ids.length) return { results: [] }
 
   const results: any[] = []
+  const inventoryIds = new Set<string>()
+
   for (const group of chunk(ids, 20)) {
     try {
-      const multi = await mlFetch(`/items?ids=${group.join(',')}&attributes=id,title,thumbnail,permalink,available_quantity,variations`, integration.access_token)
+      const multi = await mlFetch(`/items?ids=${group.join(',')}&attributes=id,title,thumbnail,permalink,available_quantity,variations,inventory_id,status`, integration.access_token)
       for (const entry of (multi || [])) {
         const item = entry?.body
         if (!item?.id) continue
@@ -1168,7 +1417,15 @@ async function fulfillmentStock(integration: any) {
         if (item.variations?.length) {
           const variations = await mapWithConcurrency(item.variations, 5, async (v: any) => {
             const label = (v.attribute_combinations || []).map((a: any) => a.value_name).filter(Boolean).join(' / ') || `Variação ${v.id}`
-            if (!v.inventory_id) return { variation_id: v.id, label, inventory_id: null, available: v.available_quantity ?? null, total: null, not_available: null, not_available_detail: [] }
+            if (v.inventory_id) inventoryIds.add(v.inventory_id)
+            // Sem inventory_id = variação ainda não entrou no Full de
+            // verdade (visto ao vivo em 13/09: produto no meio da
+            // transição, algumas cores já com inventory_id, outras
+            // ainda não) — `v.available_quantity` aqui é o MESMO campo
+            // não confiável pro Full que já corrigimos acima pro item
+            // inteiro; melhor mostrar "não confirmado" (null, não conta
+            // na soma) do que repetir o mesmo erro numa variação.
+            if (!v.inventory_id) return { variation_id: v.id, label, inventory_id: null, available: null, total: null, not_available: null, not_available_detail: [], unconfirmed: true }
             try {
               const stock = await mlFetch(`/inventories/${v.inventory_id}/stock/fulfillment`, integration.access_token)
               return {
@@ -1181,13 +1438,34 @@ async function fulfillmentStock(integration: any) {
             }
           })
           results.push({
-            item_id: item.id, title: item.title, thumbnail: item.thumbnail, permalink: item.permalink || null,
+            item_id: item.id, title: item.title, thumbnail: item.thumbnail, permalink: item.permalink || null, status: item.status,
             available_quantity: variations.reduce((s: number, v: any) => s + (v.available ?? 0), 0),
             variations,
           })
+        } else if (item.inventory_id) {
+          inventoryIds.add(item.inventory_id)
+          try {
+            const stock = await mlFetch(`/inventories/${item.inventory_id}/stock/fulfillment`, integration.access_token)
+            results.push({
+              item_id: item.id, title: item.title, thumbnail: item.thumbnail, permalink: item.permalink || null, status: item.status,
+              inventory_id: item.inventory_id,
+              available_quantity: stock.available_quantity ?? 0,
+              not_available: stock.not_available_quantity ?? null, not_available_detail: stock.not_available_detail ?? [],
+              variations: null,
+            })
+          } catch {
+            // Falha isolada: melhor mostrar o número (possivelmente
+            // impreciso) do item do que sumir com ele da lista.
+            results.push({
+              item_id: item.id, title: item.title, thumbnail: item.thumbnail, permalink: item.permalink || null, status: item.status,
+              inventory_id: item.inventory_id,
+              available_quantity: item.available_quantity ?? 0,
+              variations: null,
+            })
+          }
         } else {
           results.push({
-            item_id: item.id, title: item.title, thumbnail: item.thumbnail, permalink: item.permalink || null,
+            item_id: item.id, title: item.title, thumbnail: item.thumbnail, permalink: item.permalink || null, status: item.status,
             available_quantity: item.available_quantity ?? 0,
             variations: null,
           })
@@ -1195,6 +1473,46 @@ async function fulfillmentStock(integration: any) {
       }
     } catch { /* lote falho não derruba os outros */ }
   }
+
+  // Cruza com a Gestão de Envios Full (pedido do Raphael, 13/09: "fazer
+  // essas 2 telas conversarem") — o estoque "a caminho" que aparece no
+  // painel do ML não vem do endpoint de inventário (testado: sempre
+  // devolve 0 pra unidade ainda não recebida), vem mesmo do envio em
+  // aberto. `ml_full_inbound_items.ml_code` guarda o ID do ANÚNCIO
+  // (pode repetir por variação), não o SKU/inventory_id — o inventory_id
+  // real de cada unidade só existe dentro de `raw->>'inventoryId'`
+  // (confirmado ao vivo cruzando um caso real: SKU "IOXE55033" batendo
+  // com o envio #74259426, variação "Amadeirado", 20 un. declaradas).
+  const incomingByInventory = new Map<string, any[]>()
+  if (inventoryIds.size) {
+    const list = [...inventoryIds]
+    const { data: incomingRows, error: incomingErr } = await db
+      .from('ml_full_inbound_items')
+      .select('shipment_id, declared_qty, raw, shipment:ml_full_inbound_shipments(status, name, appointment_date, reception_date)')
+      .filter('raw->>inventoryId', 'in', `(${list.map((v) => `"${v}"`).join(',')})`)
+    if (!incomingErr) {
+      for (const row of (incomingRows || [])) {
+        const shipmentStatus = (row as any).shipment?.status
+        if (TERMINAL_SHIPMENT_STATUSES.includes(shipmentStatus)) continue // só envio ainda em aberto, não finalizado/cancelado
+        const invId = (row as any).raw?.inventoryId
+        if (!invId) continue
+        const arr = incomingByInventory.get(invId) || []
+        arr.push({
+          shipment_id: (row as any).shipment_id, qty: (row as any).declared_qty,
+          status: shipmentStatus, name: (row as any).shipment?.name,
+          appointment_date: (row as any).shipment?.appointment_date,
+        })
+        incomingByInventory.set(invId, arr)
+      }
+    }
+  }
+  for (const item of results) {
+    if (item.inventory_id) item.incoming = incomingByInventory.get(item.inventory_id) || []
+    if (item.variations) {
+      for (const v of item.variations) v.incoming = v.inventory_id ? (incomingByInventory.get(v.inventory_id) || []) : []
+    }
+  }
+
   return { results }
 }
 
@@ -1635,12 +1953,17 @@ async function couponsList(integration: any) {
 // Escrita — SEMPRE atrás de confirmação explícita na tela. Indica 1
 // item pra campanha tradicional (v1 só cobre `promotion_type: 'DEAL'`,
 // o único com o fluxo de escrita 100% confirmado na doc oficial).
-async function promotionJoinItem(integration: any, db: ReturnType<typeof adminClient>, itemId: string, promotionId: string, promotionType: string, dealPrice: number, topDealPrice?: number) {
+// `stock` (obrigatório só pra LIGHTNING — quantidade que o vendedor
+// reserva pra oferta relâmpago; quando esgota, a promoção nesse item
+// encerra sozinha, confirmado na doc oficial 13/09) é opcional aqui pra
+// não quebrar DEAL/SELLER_CAMPAIGN, que não usam esse campo.
+async function promotionJoinItem(integration: any, db: ReturnType<typeof adminClient>, itemId: string, promotionId: string, promotionType: string, dealPrice: number, topDealPrice?: number, stock?: number) {
   try {
     const body: Record<string, unknown> = { deal_price: dealPrice, promotion_id: promotionId, promotion_type: promotionType }
     if (topDealPrice != null) body.top_deal_price = topDealPrice
+    if (stock != null) body.stock = stock
     const res = await mlWrite(`/seller-promotions/items/${itemId}?app_version=v2`, integration.access_token, 'POST', body)
-    await logItemUpdate(db, itemId, 'promotion_join', { promotion_id: promotionId, promotion_type: promotionType, deal_price: dealPrice })
+    await logItemUpdate(db, itemId, 'promotion_join', { promotion_id: promotionId, promotion_type: promotionType, deal_price: dealPrice, stock })
     return { ok: true, item_id: itemId, ...res }
   } catch (err) {
     throw new Error(friendlyMlError(String(err)))
@@ -1653,6 +1976,60 @@ async function promotionLeaveItem(integration: any, db: ReturnType<typeof adminC
   if (!res.ok) throw new Error(friendlyMlError(`${res.status} ${await res.text()}`))
   await logItemUpdate(db, itemId, 'promotion_leave', { promotion_id: promotionId, promotion_type: promotionType })
   return { ok: true, item_id: itemId }
+}
+
+// ── Desconto em massa (Campanha do vendedor) ─────────────────────────
+// Pedido do Raphael (13/09): maioria dos anúncios não tem "de/por" — a
+// campanha DEAL acima é por convite do ML (item pré-selecionado por
+// eles); esta é o tipo self-service (`SELLER_CAMPAIGN`), o vendedor
+// escolhe quais itens e quanto de desconto, sem depender de convite.
+// Confirmado na doc oficial (13/09): sub_type só pode ser
+// `FLEXIBLE_PERCENTAGE` (FIXED_PERCENTAGE foi descontinuado em 07/2025),
+// prazo máximo de 14 dias, e escreve nos MESMOS endpoints
+// `/seller-promotions/items/{id}` já usados por promotionJoinItem/
+// promotionLeaveItem acima — só muda o `promotion_type` enviado.
+// Elegibilidade exigida pelo ML (não validamos aqui, deixamos o erro
+// real dele aparecer por item, mesmo espírito de createItem/
+// applyContent): reputação verde, item ativo, condição novo, exposição
+// paga (não gratuita).
+async function sellerCampaignCreate(integration: any, db: ReturnType<typeof adminClient>, name: string, startDate: string, finishDate: string) {
+  try {
+    const res = await mlWrite(`/seller-promotions/promotions?app_version=v2`, integration.access_token, 'POST', {
+      promotion_type: 'SELLER_CAMPAIGN',
+      sub_type: 'FLEXIBLE_PERCENTAGE',
+      name, start_date: startDate, finish_date: finishDate,
+    })
+    await logItemUpdate(db, String(res.id), 'seller_campaign_create', { name, start_date: startDate, finish_date: finishDate })
+    return { ok: true, ...res }
+  } catch (err) {
+    throw new Error(friendlyMlError(String(err)))
+  }
+}
+
+async function sellerCampaignDelete(integration: any, db: ReturnType<typeof adminClient>, promotionId: string) {
+  const url = `https://api.mercadolibre.com/seller-promotions/promotions/${promotionId}?promotion_type=SELLER_CAMPAIGN&app_version=v2`
+  const res = await fetch(url, { method: 'DELETE', headers: { Authorization: `Bearer ${integration.access_token}` } })
+  if (!res.ok) throw new Error(friendlyMlError(`${res.status} ${await res.text()}`))
+  await logItemUpdate(db, promotionId, 'seller_campaign_delete', {})
+  return { ok: true }
+}
+
+// "Há quantos dias foi a última alteração" (pedido explícito do
+// Raphael, pra nunca esquecer uma campanha rodando sem mexer há tempo)
+// — data da gravação real mais recente (indicar ou tirar item da
+// campanha), não da criação dela. Fonte: nosso próprio log
+// `ml_item_updates` (já gravado por promotionJoinItem/
+// promotionLeaveItem de qualquer forma), não precisa perguntar de novo
+// pro ML.
+async function sellerCampaignLastChange(db: ReturnType<typeof adminClient>) {
+  const { data, error } = await db.from('ml_item_updates')
+    .select('updated_at')
+    .in('action', ['promotion_join', 'promotion_leave'])
+    .filter('detail->>promotion_type', 'eq', 'SELLER_CAMPAIGN')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+  if (error) throw error
+  return { last_change: data?.[0]?.updated_at ?? null }
 }
 
 // Escrita — SEMPRE atrás de confirmação explícita na tela (mesmo padrão
@@ -2000,10 +2377,22 @@ serve(async (req) => {
         return json(await promotionCandidates(integration, body.promotion_id, body.promotion_type))
       case 'promotion_join_item':
         if (!body.item_id || !body.promotion_id || !body.promotion_type || body.deal_price == null) return json({ error: 'item_id, promotion_id, promotion_type e deal_price obrigatórios' }, 400)
-        return json(await promotionJoinItem(integration, db, body.item_id, body.promotion_id, body.promotion_type, Number(body.deal_price), body.top_deal_price != null ? Number(body.top_deal_price) : undefined))
+        return json(await promotionJoinItem(
+          integration, db, body.item_id, body.promotion_id, body.promotion_type, Number(body.deal_price),
+          body.top_deal_price != null ? Number(body.top_deal_price) : undefined,
+          body.stock != null ? Number(body.stock) : undefined,
+        ))
       case 'promotion_leave_item':
         if (!body.item_id || !body.promotion_id || !body.promotion_type) return json({ error: 'item_id, promotion_id e promotion_type obrigatórios' }, 400)
         return json(await promotionLeaveItem(integration, db, body.item_id, body.promotion_id, body.promotion_type))
+      case 'seller_campaign_create':
+        if (!body.name || !body.start_date || !body.finish_date) return json({ error: 'name, start_date e finish_date obrigatórios' }, 400)
+        return json(await sellerCampaignCreate(integration, db, String(body.name), String(body.start_date), String(body.finish_date)))
+      case 'seller_campaign_delete':
+        if (!body.promotion_id) return json({ error: 'promotion_id obrigatório' }, 400)
+        return json(await sellerCampaignDelete(integration, db, body.promotion_id))
+      case 'seller_campaign_last_change':
+        return json(await sellerCampaignLastChange(db))
       case 'combo_suggestions':
         return json(await comboSuggestions(db, Number(body.days) || 180))
       case 'suggest_content':
@@ -2012,10 +2401,24 @@ serve(async (req) => {
       case 'apply_content':
         if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
         return json(await applyContent(integration, db, body.item_id, body.title, body.description))
+      case 'suggest_item_images':
+        if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
+        return json(await suggestItemImages(integration, body.item_id))
+      case 'generate_item_image':
+        if (!body.picture_url || !body.prompt) return json({ error: 'picture_url e prompt obrigatórios' }, 400)
+        return json(await generateItemImage(String(body.picture_url), String(body.prompt)))
+      case 'generate_item_image_custom': {
+        if (!body.picture_url || !body.instruction) return json({ error: 'picture_url e instruction obrigatórios' }, 400)
+        const translated = await buildCustomEditPrompt(String(body.instruction))
+        return json(await generateItemImage(String(body.picture_url), translated))
+      }
+      case 'attach_item_image':
+        if (!body.item_id || !body.image_base64) return json({ error: 'item_id e image_base64 obrigatórios' }, 400)
+        return json(await attachItemImage(integration, db, body.item_id, String(body.image_base64)))
       case 'active_listings':
         return json(await activeListings(integration))
       case 'fulfillment_stock':
-        return json(await fulfillmentStock(integration))
+        return json(await fulfillmentStock(integration, db))
       case 'update_item_fields':
         if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
         return json(await updateItemFields(integration, db, body.item_id, body.fields || {}))

@@ -35,6 +35,7 @@ const UPDATE_ACTION_LABEL = {
   promotion_join: 'Indicado pra campanha',
   promotion_leave: 'Removido de campanha',
   question_answer: 'Pergunta respondida',
+  picture_added: 'Nova foto adicionada',
 }
 function scoreColor(score) {
   if (score >= 80) return { text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' }
@@ -118,6 +119,7 @@ function pickAdsMetrics(raw) {
 const TABS = [
   { key: 'overview',    label: 'Visão Geral',     icon: LayoutGrid },
   { key: 'content',     label: 'Conteúdo & IA',   icon: Sparkles },
+  { key: 'images',      label: 'Imagens & IA',    icon: ImageIcon },
   { key: 'attributes',  label: 'Ficha Técnica',   icon: ClipboardList },
   { key: 'performance', label: 'Desempenho',      icon: TrendingUp },
 ]
@@ -125,7 +127,10 @@ const TABS = [
 export function MlItemDetailPage() {
   const { itemId } = useParams()
   const navigate = useNavigate()
-  const { loading, error, fetchItemDetail, applyAttributes, suggestContent, applyContent, updateItemFields, fetchItemUpdateHistory } = useMlInsights()
+  const {
+    loading, error, fetchItemDetail, applyAttributes, suggestContent, applyContent, updateItemFields, fetchItemUpdateHistory,
+    suggestItemImages, generateItemImage, generateItemImageCustom, attachItemImage,
+  } = useMlInsights()
   const [detail, setDetail] = useState(null)
   const [updateHistory, setUpdateHistory] = useState(null)
   const [showHistory, setShowHistory] = useState(false)
@@ -144,8 +149,14 @@ export function MlItemDetailPage() {
   const [applyingContent, setApplyingContent] = useState(false)
   const [showRawAds, setShowRawAds] = useState(false)
   const [showRawPerf, setShowRawPerf] = useState(false)
-  const [confirmModal, setConfirmModal] = useState(null) // null | 'attributes' | 'content' | 'quick'
+  const [confirmModal, setConfirmModal] = useState(null) // null | 'attributes' | 'content' | 'quick' | 'image'
   const [highlightQuick, setHighlightQuick] = useState(false)
+  const [imageSuggestions, setImageSuggestions] = useState(null)
+  const [selectedPictureUrl, setSelectedPictureUrl] = useState(null)
+  const [customInstruction, setCustomInstruction] = useState('')
+  const [generatedImage, setGeneratedImage] = useState(null) // { image_base64, prompt_used, source }
+  const [generatingImage, setGeneratingImage] = useState(false)
+  const [attachingImage, setAttachingImage] = useState(false)
 
   // Leva o usuário direto pro lugar do PRÓPRIO sistema que resolve essa
   // pendência — troca de aba (fica na mesma página) ou rola até Ações
@@ -290,6 +301,66 @@ export function MlItemDetailPage() {
       toast.error('Erro ao aplicar: ' + err.message)
     } finally {
       setApplyingContent(false)
+      setConfirmModal(null)
+    }
+  }
+
+  async function handleSuggestImages() {
+    try {
+      const res = await suggestItemImages(itemId)
+      setImageSuggestions(res)
+      setSelectedPictureUrl(res.pictures?.[0]?.url || null)
+      setGeneratedImage(null)
+    } catch (err) {
+      toast.error('Erro ao gerar sugestões de imagem: ' + err.message)
+    }
+  }
+
+  async function handleGenerateFromSuggestion(suggestion) {
+    if (!selectedPictureUrl) return
+    setGeneratingImage(true)
+    try {
+      const res = await generateItemImage(selectedPictureUrl, suggestion.prompt)
+      setGeneratedImage({ ...res, source: suggestion.title })
+    } catch (err) {
+      toast.error('Erro ao gerar imagem: ' + err.message)
+    } finally {
+      setGeneratingImage(false)
+    }
+  }
+
+  async function handleGenerateCustom() {
+    if (!selectedPictureUrl || !customInstruction.trim()) return
+    setGeneratingImage(true)
+    try {
+      const res = await generateItemImageCustom(selectedPictureUrl, customInstruction.trim())
+      setGeneratedImage({ ...res, source: 'Prompt personalizado' })
+    } catch (err) {
+      toast.error('Erro ao gerar imagem: ' + err.message)
+    } finally {
+      setGeneratingImage(false)
+    }
+  }
+
+  // Só ABRE o modal de confirmação — nunca grava nada sozinho.
+  function requestAttachImage() {
+    if (!generatedImage) return
+    setConfirmModal('image')
+  }
+
+  async function confirmAttachImage() {
+    setAttachingImage(true)
+    try {
+      await attachItemImage(itemId, generatedImage.image_base64)
+      toast.success('Imagem adicionada ao anúncio no Mercado Livre!')
+      const updated = await fetchItemDetail(itemId)
+      setDetail(updated)
+      setGeneratedImage(null)
+      refreshHistory()
+    } catch (err) {
+      toast.error('Erro ao adicionar imagem: ' + err.message)
+    } finally {
+      setAttachingImage(false)
       setConfirmModal(null)
     }
   }
@@ -589,6 +660,16 @@ export function MlItemDetailPage() {
                   <p className="text-sm text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">{suggestion.suggested.changes_summary}</p>
                 )}
 
+                {suggestion.questions_considered?.length > 0 && (
+                  <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    <p className="font-semibold text-slate-600 mb-1">Perguntas reais de compradores consideradas ({suggestion.questions_considered.length}):</p>
+                    <ul className="list-disc pl-4 space-y-0.5">
+                      {suggestion.questions_considered.map((q, i) => <li key={i}>{q}</li>)}
+                    </ul>
+                    <p className="mt-1 text-[11px] text-slate-400">Só entram no texto as que dão pra responder com certeza usando a ficha técnica — as outras a IA ignora de propósito, pra nunca chutar.</p>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <label className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase">
@@ -651,6 +732,124 @@ export function MlItemDetailPage() {
               </div>
             )}
           </Card>
+        )}
+
+        {/* ── Aba: Imagens & IA ────────────────────────────────────── */}
+        {tab === 'images' && (
+          <div className="space-y-4">
+            <Card icon={ImageIcon} title="Sugestões de imagem com IA" caption="Baseado nas perguntas reais de compradores (quando houver) e na ficha técnica/descrição do anúncio"
+              help="Gera até 4 ideias de foto a partir dos dados reais do anúncio. Só olhar as sugestões não cria nem grava nada — a geração de verdade só acontece ao clicar em 'Gerar essa imagem', e adicionar ao anúncio real sempre pede confirmação antes de gravar.">
+              {!imageSuggestions ? (
+                <button onClick={handleSuggestImages} disabled={loading}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors">
+                  {loading ? <Loader2 size={15} className="animate-spin"/> : <Wand2 size={15}/>}
+                  {loading ? 'Analisando anúncio...' : 'Sugerir imagens'}
+                </button>
+              ) : (
+                <div className="space-y-4">
+                  {imageSuggestions.questions_considered?.length > 0 ? (
+                    <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      <p className="font-semibold text-slate-600 mb-1">Perguntas reais de compradores consideradas ({imageSuggestions.questions_considered.length}):</p>
+                      <ul className="list-disc pl-4 space-y-0.5">
+                        {imageSuggestions.questions_considered.map((q, i) => <li key={i}>{q}</li>)}
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      Esse anúncio ainda não tem perguntas de comprador — as sugestões abaixo vieram só da ficha técnica e da descrição.
+                    </p>
+                  )}
+
+                  {imageSuggestions.pictures?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase mb-1.5">Foto base do produto</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {imageSuggestions.pictures.map(p => (
+                          <button key={p.id} type="button" onClick={() => setSelectedPictureUrl(p.url)}
+                            className={`w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors ${selectedPictureUrl === p.url ? 'border-violet-500' : 'border-transparent hover:border-slate-300'}`}>
+                            <img src={secureThumb(p.url)} alt="" className="w-full h-full object-cover"/>
+                          </button>
+                        ))}
+                      </div>
+                      {imageSuggestions.variations?.length > 0 && (
+                        <div className="flex gap-1.5 flex-wrap mt-2">
+                          {imageSuggestions.variations.map(v => (
+                            <button key={v.id} type="button" onClick={() => setSelectedPictureUrl(v.picture_url)}
+                              className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${selectedPictureUrl === v.picture_url ? 'text-violet-700 bg-violet-50 border-violet-300' : 'text-slate-500 bg-white border-slate-200 hover:border-slate-300'}`}>
+                              {v.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    {imageSuggestions.suggestions.map((s, i) => (
+                      <div key={i} className="flex items-start justify-between gap-3 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2.5">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">{s.title}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{s.reason}</p>
+                        </div>
+                        <button onClick={() => handleGenerateFromSuggestion(s)} disabled={generatingImage || !selectedPictureUrl}
+                          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
+                          {generatingImage ? <Loader2 size={13} className="animate-spin"/> : <Wand2 size={13}/>}
+                          Gerar essa imagem
+                        </button>
+                      </div>
+                    ))}
+                    {!imageSuggestions.suggestions.length && (
+                      <p className="text-sm text-slate-400">A IA não conseguiu montar sugestões dessa vez — tente de novo ou use o prompt personalizado abaixo.</p>
+                    )}
+                  </div>
+
+                  <button onClick={handleSuggestImages} disabled={loading} className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2">
+                    Gerar sugestões de novo
+                  </button>
+                </div>
+              )}
+            </Card>
+
+            {imageSuggestions && (
+              <Card icon={Wand2} title="Prompt personalizado" caption="Pra um pedido simples e específico, sem passar pela sugestão da IA"
+                help="Descreva em português o que quer mudar na foto (ex: 'gere uma imagem deste item na cor rosa, sem mudar nada além da cor'). O resto do produto é mantido fiel à foto base escolhida acima.">
+                <div className="flex gap-2 flex-col sm:flex-row">
+                  <input type="text" value={customInstruction} onChange={e => setCustomInstruction(e.target.value)}
+                    placeholder="Ex: gere uma imagem deste item na cor rosa, sem mudar nada além da cor"
+                    className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-400"/>
+                  <button onClick={handleGenerateCustom} disabled={generatingImage || !selectedPictureUrl || !customInstruction.trim()}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
+                    {generatingImage ? <Loader2 size={14} className="animate-spin"/> : <Wand2 size={14}/>}
+                    Gerar
+                  </button>
+                </div>
+              </Card>
+            )}
+
+            {generatedImage && (
+              <Card icon={ImageIcon} title="Prévia da imagem gerada" caption={generatedImage.source}
+                help="Só é gravada no anúncio real depois que você confirmar. Enquanto isso é só uma prévia — pode descartar e gerar de novo à vontade.">
+                <div className="flex gap-4 flex-wrap items-start">
+                  <img src={`data:image/png;base64,${generatedImage.image_base64}`} alt="" className="w-48 rounded-xl border border-slate-200"/>
+                  <div className="flex-1 min-w-[220px] space-y-3">
+                    <details className="text-xs text-slate-400">
+                      <summary className="cursor-pointer select-none">Ver instrução usada (inglês)</summary>
+                      <p className="mt-1 whitespace-pre-wrap">{generatedImage.prompt_used}</p>
+                    </details>
+                    <div className="flex gap-2">
+                      <button onClick={requestAttachImage}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors">
+                        <CheckCircle2 size={14}/> Adicionar ao anúncio
+                      </button>
+                      <button onClick={() => setGeneratedImage(null)} className="px-4 py-2 text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+                        Descartar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )}
+          </div>
         )}
 
         {/* ── Aba: Ficha Técnica ───────────────────────────────────── */}
@@ -831,6 +1030,18 @@ export function MlItemDetailPage() {
             {quickChanges.status && <li><strong>Status:</strong> {quickChanges.status === 'active' ? 'Ativo' : 'Pausado'}</li>}
           </ul>
         }
+      />
+
+      <ConfirmWriteModal
+        open={confirmModal === 'image' && !!generatedImage}
+        title="Adicionar imagem ao anúncio"
+        description="Vai acrescentar essa foto como uma NOVA imagem do anúncio real no Mercado Livre — não substitui nem remove nenhuma foto existente."
+        confirming={attachingImage}
+        onConfirm={confirmAttachImage}
+        onCancel={() => setConfirmModal(null)}
+        detail={generatedImage && (
+          <img src={`data:image/png;base64,${generatedImage.image_base64}`} alt="" className="w-40 rounded-lg border border-slate-200"/>
+        )}
       />
     </div>
   )
