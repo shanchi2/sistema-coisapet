@@ -278,28 +278,71 @@ async function rehostImages(db: ReturnType<typeof adminClient>) {
 // (terrários) —, nunca plástico brilhante nem aparência de brinquedo
 // infantil. Fotografia sempre em fundo branco/cinza-claro contínuo de
 // estúdio, luz suave sem sombra dura, ângulo 3/4. Testado ao vivo
-// (11/09): pedir foto de referência real força a IA a "copiar" o
-// objeto específico da foto, ignorando o resto do prompt — por isso a
-// abordagem aqui é DESCREVER o estilo em texto (dá liberdade pra cena
-// mudar com o assunto) em vez de mandar imagem de referência.
+// (11/09): pedir foto de referência real pro Higgsfield força a IA a
+// "copiar" o objeto específico da foto, ignorando o resto do prompt —
+// por isso ESTE prompt (só texto) é usado quando NÃO há produto de
+// referência escolhido. Quando há produto de referência, o fluxo é
+// outro (ver IMAGE_EDIT_PROMPT_SYSTEM + callOpenAiImageEdit abaixo,
+// testado ao vivo em 12/09 com foto real de terrário — funcionou bem:
+// manteve o produto fiel e compôs a cena livremente ao redor dele).
 const IMAGE_PROMPT_SYSTEM = `Você transforma o contexto de um post de blog (em português) num prompt de imagem em INGLÊS pra um gerador de imagem por IA.
 
 REGRAS:
 - Descreva uma cena real e fotografável: o animal/pet certo (baseado no contexto), ambiente, luz, enquadramento — estilo fotografia editorial/lifestyle, natural, não ilustração infantil nem cartoon.
+- ESCALA/PROPORÇÃO real do animal é ESSENCIAL: hamster (sírio ou anão) é um bicho pequeno (13-18cm de comprimento) — na cena, ele precisa aparecer visivelmente pequeno perto de qualquer terrário/casinha/objeto do ambiente, nunca do tamanho de um gato/coelho nem ocupando boa parte da largura/altura do habitat. Deixe isso explícito no prompt em inglês (ex: "the hamster is tiny and small-scale relative to the enclosure, real-world accurate proportions, occupying only a small fraction of the enclosure's space").
 - Se a cena inclui algum acessório/habitat (terrário, casinha, caixa de feno, comedouro etc), descreva-o seguindo o estilo real da CoisaPet: peça de madeira/MDF cortada a laser, com bordas de corte visíveis e encaixes geométricos nos cantos, acabamento fosco (madeira tingida escura OU pintura clara/branca — varie conforme o tipo de item, nunca invente uma cor específica de produto real), nunca plástico brilhante nem visual de brinquedo. IMPORTANTE: um "terrário" da CoisaPet NUNCA é de vidro/aquário — é sempre uma caixa de madeira/MDF cortada a laser com paredes sólidas (pode ter uma abertura/janela recortada, nunca painel de vidro transparente inteiro). Deixe isso explícito no prompt em inglês (ex: "laser-cut wood/MDF enclosure with solid painted panels, NOT a glass tank"). Se o post for só sobre o animal/comportamento, sem foco em produto, não force a aparição de acessório nenhum.
-- Fotografia: fundo branco ou cinza bem claro contínuo de estúdio (seamless), luz suave e uniforme, sem sombra dura, ângulo 3/4 — estilo foto de produto/editorial de e-commerce, nunca cena doméstica bagunçada nem still-life genérico de banco de imagens.
+- Quando o assunto for especificamente TERRÁRIO, descreva o interior dele bem completo/rico, nunca vazio ou pobre: camada generosa e espessa de forração/maravalha (cobrindo bem o fundo, não uma camada rala), e pelo menos 2-3 elementos de enriquecimento diferentes e coerentes (esconderijo, túnel/tronco, brinquedo de mastigar, roda, comedouro, bebedouro), sempre no mesmo estilo de material real da CoisaPet. Deixe isso explícito no prompt em inglês (ex: "generous thick layer of bedding, well-furnished habitat with multiple enrichment items, not sparse or empty").
+- Fotografia estilo lifestyle editorial: a cena acontece num ambiente doméstico real e coerente com o assunto (um cantinho de quarto, uma estante, uma mesa de madeira perto de uma janela com luz natural), com o fundo levemente desfocado (profundidade de campo suave) pra dar contexto sem competir com o assunto principal — NUNCA um fundo de estúdio branco/cinza liso e vazio, mas também nunca uma cena bagunçada ou lotada de objetos aleatórios.
+- Realismo é ESSENCIAL — o objetivo é uma foto que pareça tirada de verdade com câmera, nunca ter "cara de imagem gerada por IA". Peça explicitamente textura real de pelo/pele (fio a fio, não uniforme/plástica), iluminação e sombra naturais de fotografia real, pequenas imperfeições/variações naturais, profundidade de campo real de lente — e explicitamente PROÍBA visual de render 3D/CGI, pele/pelo "liso demais", brilho artificial, ou simetria perfeita demais. Deixe isso explícito no prompt em inglês (ex: "photorealistic, shot on a camera, natural fur texture strand by strand, realistic lighting and shadow, avoid CGI/3D render look, avoid plastic/overly smooth skin, avoid the uncanny AI-generated look").
+- Enquadramento SEMPRE aberto/afastado (wide shot): a câmera fica a uma distância confortável, mostrando o produto/animal por inteiro com bastante sobra de cenário/fundo ao redor — nunca um close-up apertado só no rosto do animal ou um produto colado nas bordas do quadro. Deixe isso explícito no prompt em inglês (ex: "wide shot, camera at a distance, full scene visible with generous background space, not a close-up").
 - NUNCA inclua texto, letras, logotipo, marca ou nome de produto na imagem — só a cena visual. Se a cena envolve madeira/superfície onde normalmente haveria uma gravação de marca, descreva a superfície como lisa/sem gravação (ex: "plain wood surface, no engraving, no text") — evita a IA "inventar" uma marca ilegível.
 - NUNCA invente um produto específico (não descreva embalagem, rótulo ou modelo) — se o contexto menciona um acessório, descreva genericamente (ex: "a wooden hideout", não um produto específico da empresa).
-- Curto: no máximo 3-4 frases, direto na descrição visual (sem "Prompt:", sem aspas).
+- Direto na descrição visual, sem "Prompt:", sem aspas, sem repetir a mesma ideia com outras palavras — mas SEM se preocupar em cortar frases pra caber num limite: é melhor cobrir todas as regras acima do que ficar curto.
 
 FORMATO DA RESPOSTA — JSON válido, exatamente:
 {"prompt": "..."}`
+
+// Reforço fixo, sempre anexado no código (não depende do GPT lembrar de
+// incluir isso) — testado ao vivo em 12/09: mesmo com a regra no system
+// prompt, o GPT às vezes corta a instrução "sem texto/logo" quando tem
+// muita coisa pra cobrir num prompt curto, e a IA de imagem "alucina"
+// um logo ilegível no produto. Isso garante que a proibição nunca falte.
+const MANDATORY_IMAGE_SUFFIX = ' No text, no logos, no watermarks, no engraved brand marks or labels anywhere in the image. If a hamster is included, it must be depicted EVEN SMALLER than most AI image generators tend to draw it: a hamster is a tiny rodent, only about 13-18cm long, and its body should span no more than about 10-15% of the enclosure/terrarium width in the frame — when in doubt, make it smaller, not bigger. Most generated images make the hamster far too large relative to the enclosure; deliberately exaggerate how small and tiny the hamster looks compared to the enclosure and its accessories. The hamster should NOT be posed looking at the camera like a portrait — show it candidly interacting with its environment (sniffing, digging in bedding, exploring a hideout, mid-movement), as if photographed unposed, from a natural angle.'
 
 async function buildVisualPrompt(context: string) {
   const result = await callOpenAI(IMAGE_PROMPT_SYSTEM, `Contexto do post (português):\n${context}`)
   const prompt = String(result?.prompt || '').trim()
   if (!prompt) throw new Error('Não foi possível montar um prompt de imagem a partir do contexto.')
-  return prompt
+  return prompt + MANDATORY_IMAGE_SUFFIX
+}
+
+// Prompt pra quando HÁ uma foto de produto real escolhida como
+// referência — diferente do IMAGE_PROMPT_SYSTEM acima (que descreve uma
+// cena inteira do zero), aqui a IA já recebe o produto de verdade como
+// imagem-base e só precisa escrever a instrução de EDIÇÃO (o que
+// adicionar/compor ao redor dele), nunca uma descrição do produto em si
+// (senão arrisca contradizer a aparência real da foto).
+const IMAGE_EDIT_PROMPT_SYSTEM = `Você escreve uma instrução de EDIÇÃO de imagem em INGLÊS pra uma IA que recebe uma FOTO REAL de um produto da CoisaPet e deve compor uma cena nova ao redor dele, sem alterar o produto.
+
+REGRAS:
+- Comece deixando claro que o objeto da imagem fornecida deve ser mantido EXATAMENTE como está (mesma cor, material, formato, acabamento) — a IA não deve redesenhar nem substituir o produto, só usá-lo como está.
+- A partir do contexto do post (em português), descreva o que deve ser ADICIONADO/composto ao redor do produto: o animal certo (baseado no contexto/espécie), ambientação (ex: forração/maravalha, postura natural do animal), luz e enquadramento de foto de produto/editorial. Se o post não tem foco em animal (só produto), descreva só a composição/luz.
+- Se o produto da foto for um TERRÁRIO, peça pra completar/enriquecer o interior dele: camada generosa e espessa de forração/maravalha (cobrindo bem o fundo, não uma camada rala) e pelo menos 2-3 elementos de enriquecimento diferentes e coerentes com o estilo real da CoisaPet (esconderijo, túnel/tronco, brinquedo de mastigar, roda, comedouro, bebedouro) — nunca deixe o interior parecendo vazio ou pobre. Inclua isso explicitamente na instrução (ex: "generous thick layer of bedding, well-furnished habitat with multiple enrichment items, not sparse or empty").
+- ESCALA/PROPORÇÃO real do animal é ESSENCIAL: hamster (sírio ou anão) é um bicho pequeno (13-18cm de comprimento) — precisa aparecer visivelmente pequeno perto do produto/habitat, nunca ocupando boa parte da largura/altura dele. Inclua isso explicitamente na instrução (ex: "the hamster is tiny and small-scale relative to the enclosure, real-world accurate proportions, occupying only a small fraction of the enclosure's space").
+- Peça um enquadramento aberto/afastado (wide shot): a câmera deve ficar a uma distância confortável, mostrando o produto por inteiro com bastante sobra de cenário/fundo ao redor — nunca um close-up apertado no animal ou no produto colado nas bordas do quadro. Inclua isso explicitamente na instrução (ex: "wide shot, camera at a distance, full scene visible with generous background space, not a close-up").
+- PROIBIDO pedir texto, letra, logotipo, marca, gravação, rótulo ou selo em qualquer parte da imagem — inclua essa proibição explicitamente na instrução (ex: "no text, no logos, no engraving, no labels anywhere in the image").
+- Fundo: peça pra substituir o fundo por um ambiente doméstico real e coerente com o assunto (um cantinho de quarto, uma estante, uma mesa de madeira perto de uma janela com luz natural), com leve desfoque de profundidade de campo — nunca um fundo de estúdio branco/cinza liso e vazio, mas também nunca uma cena bagunçada.
+- Realismo é ESSENCIAL — o que for adicionado (animal, cenário) precisa parecer foto real de câmera, nunca "cara de imagem gerada por IA". Peça textura real de pelo/pele (fio a fio, não uniforme/plástica), iluminação e sombra naturais, pequenas imperfeições/variações naturais — e proíba explicitamente visual de render 3D/CGI, pele/pelo liso demais ou brilho artificial. Inclua isso na instrução em inglês (ex: "photorealistic, natural fur texture strand by strand, realistic lighting and shadow, avoid CGI/3D render look, avoid plastic/overly smooth skin, avoid the uncanny AI-generated look").
+- Direto na instrução, sem "Prompt:", sem aspas, sem repetir a mesma ideia com outras palavras — mas SEM se preocupar em cortar frases pra caber num limite: é melhor cobrir todas as regras acima do que ficar curto.
+
+FORMATO DA RESPOSTA — JSON válido, exatamente:
+{"prompt": "..."}`
+
+async function buildImageEditPrompt(context: string) {
+  const result = await callOpenAI(IMAGE_EDIT_PROMPT_SYSTEM, `Contexto do post (português):\n${context}`)
+  const prompt = String(result?.prompt || '').trim()
+  if (!prompt) throw new Error('Não foi possível montar uma instrução de edição a partir do contexto.')
+  return prompt + MANDATORY_IMAGE_SUFFIX
 }
 
 // Cloudflare na frente da API deles às vezes devolve 502/503/504
@@ -317,31 +360,24 @@ async function fetchRetrying5xx(url: string, init: RequestInit, maxRetries = 2):
   return lastRes
 }
 
-// Testado ao vivo em 2026-09-11 com foto de produto real: soul/reference
-// reproduz o objeto da referência com bastante fidelidade (madeira, corte,
-// acabamento) — mas o CONTEÚDO da referência domina o resultado mesmo
-// com prompt pedindo uma cena bem diferente (testado com style_strength
-// 0.8, 0.6 e até 0.25 — sempre voltou pro mesmo objeto da foto). Por
-// isso só faz sentido usar quando a referência já É do produto/categoria
-// certa pro assunto do post (o Raphael escolhe na hora, ver
-// BlogPostEditorPage.jsx) — nunca uma foto fixa genérica pra tudo.
-async function callHiggsfield(prompt: string, referenceImageUrl?: string): Promise<string> {
+// Usado só quando NÃO há produto de referência escolhido — nesse caso
+// não tem imagem real pra "editar", então segue com o Soul da Higgsfield
+// (texto puro). Testado ao vivo em 2026-09-11: soul/reference (variante
+// com imagem) domina o resultado com o conteúdo da referência mesmo
+// pedindo cena diferente — por isso essa variante foi abandonada em
+// favor de callOpenAiImageEdit (abaixo) pro caso com produto real.
+async function callHiggsfield(prompt: string): Promise<string> {
   const keyId = Deno.env.get('HIGGSFIELD_API_KEY_ID')
   const keySecret = Deno.env.get('HIGGSFIELD_API_KEY_SECRET')
   if (!keyId || !keySecret) throw new Error('Credenciais da Higgsfield não configuradas (HIGGSFIELD_API_KEY_ID / HIGGSFIELD_API_KEY_SECRET).')
   const authHeader = `Key ${keyId}:${keySecret}`
 
-  const endpoint = referenceImageUrl
-    ? 'https://api.higgsfield.ai/higgsfield-ai/soul/reference'
-    : 'https://api.higgsfield.ai/higgsfield-ai/soul/v2/standard'
-  const payload = referenceImageUrl
-    ? { prompt, image_reference_url: referenceImageUrl, style_strength: 0.8 }
-    : { prompt }
+  const endpoint = 'https://api.higgsfield.ai/higgsfield-ai/soul/v2/standard'
 
   const submitRes = await fetchRetrying5xx(endpoint, {
     method: 'POST',
     headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ prompt }),
   })
   if (!submitRes.ok) throw new Error(`Higgsfield indisponível no momento (erro ${submitRes.status}) — tente gerar de novo em alguns segundos.`)
   const submitData = await submitRes.json()
@@ -372,18 +408,66 @@ async function callHiggsfield(prompt: string, referenceImageUrl?: string): Promi
   throw new Error('Higgsfield: tempo limite esperando a imagem ficar pronta.')
 }
 
-async function generateImage(db: ReturnType<typeof adminClient>, context: string, referencePhotoPath?: string) {
-  const visualPrompt = await buildVisualPrompt(context)
+// Edição de imagem via OpenAI (gpt-image-1, /v1/images/edits) — usada
+// quando HÁ produto de referência. Testado ao vivo em 2026-09-12 com
+// foto real de terrário + prompt pedindo um hamster deitado na maravalha
+// dentro dele: manteve o produto fiel (mesmo corte, mesmas juntas) e
+// compôs a cena livremente ao redor — bem diferente do soul/reference da
+// Higgsfield, que travava no objeto e ignorava o prompt. Endpoint aceita
+// multipart (campo image[]) + prompt, sem máscara, e devolve só b64_json
+// (não tem opção de devolver URL direta, por isso hostBase64Png abaixo).
+async function callOpenAiImageEdit(referenceImageUrl: string, prompt: string): Promise<string> {
+  const apiKey = Deno.env.get('OPENAI_API_KEY')
+  if (!apiKey) throw new Error('OPENAI_API_KEY não configurada.')
 
-  let referenceUrl: string | undefined
+  const imgRes = await fetch(referenceImageUrl)
+  if (!imgRes.ok) throw new Error(`Erro ao baixar a foto do produto: HTTP ${imgRes.status}`)
+  const contentType = imgRes.headers.get('content-type') || 'image/jpeg'
+  const imgBytes = new Uint8Array(await imgRes.arrayBuffer())
+
+  const form = new FormData()
+  form.append('model', 'gpt-image-1')
+  form.append('prompt', prompt)
+  form.append('image[]', new Blob([imgBytes], { type: contentType }), 'reference.jpg')
+
+  const editRes = await fetchRetrying5xx('https://api.openai.com/v1/images/edits', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  })
+  if (!editRes.ok) throw new Error(`Erro na API da OpenAI (edição de imagem): ${editRes.status} ${await editRes.text()}`)
+  const editData = await editRes.json()
+  const b64 = editData.data?.[0]?.b64_json
+  if (!b64) throw new Error('OpenAI não devolveu imagem (b64_json ausente).')
+  return b64
+}
+
+// Mesma convenção hash-based do downloadAndHost (idempotente), só que a
+// partir de bytes base64 em vez de uma URL — necessário porque o
+// endpoint de edição da OpenAI só devolve b64_json, nunca uma URL.
+async function hostBase64Png(db: ReturnType<typeof adminClient>, base64: string, folder: string): Promise<string> {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+  const hash = await sha256Hex(base64)
+  const path = `${folder}/${hash}.png`
+  const { error: upErr } = await db.storage.from('blog-covers').upload(path, bytes, { contentType: 'image/png', upsert: true })
+  if (upErr) throw upErr
+  const { data: pub } = db.storage.from('blog-covers').getPublicUrl(path)
+  return pub.publicUrl
+}
+
+async function generateImage(db: ReturnType<typeof adminClient>, context: string, referencePhotoPath?: string) {
   if (referencePhotoPath) {
     const { data: signed, error: signErr } = await db.storage
       .from('product-photos').createSignedUrl(referencePhotoPath, 3600)
     if (signErr || !signed?.signedUrl) throw new Error('Não consegui acessar a foto do produto escolhido como referência.')
-    referenceUrl = signed.signedUrl
+    const editPrompt = await buildImageEditPrompt(context)
+    const b64 = await callOpenAiImageEdit(signed.signedUrl, editPrompt)
+    const hostedUrl = await hostBase64Png(db, b64, 'ai-generated')
+    return { image_url: hostedUrl, prompt_used: editPrompt }
   }
 
-  const rawUrl = await callHiggsfield(visualPrompt, referenceUrl)
+  const visualPrompt = await buildVisualPrompt(context)
+  const rawUrl = await callHiggsfield(visualPrompt)
   const hostedUrl = await downloadAndHost(db, rawUrl, 'ai-generated')
   return { image_url: hostedUrl, prompt_used: visualPrompt }
 }

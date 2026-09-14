@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Bold, Italic, List, Quote, Link as LinkIcon, Eraser, Package, Search, ImagePlus, Loader2 } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import toast from 'react-hot-toast'
@@ -199,6 +199,23 @@ export function BlogRichTextEditor({ html, onChange, resetKey }) {
   const [imageDefaultPrompt, setImageDefaultPrompt] = useState('')
   const [imageGenerating, setImageGenerating] = useState(false)
 
+  // Sincroniza a `div` com o `html` vindo de fora SÓ quando ele muda por
+  // uma fonte externa (carregar post, geração por IA, aplicar link) —
+  // nunca depois de uma tecla digitada. Antes disso usava
+  // `dangerouslySetInnerHTML`, que reescreve o innerHTML inteiro a CADA
+  // re-render (mesmo com o mesmo conteúdo), destruindo a posição do
+  // cursor no meio do texto — bug real reportado pelo Raphael em 13/09
+  // (clicar no meio do texto pra editar fazia a letra digitada "voltar
+  // pro início" e escrever de trás pra frente). A comparação abaixo é o
+  // que evita a reescrita: depois de digitar, `ref.current.innerHTML`
+  // JÁ é igual a `html` (foi de lá que ele veio, via onInput), então o
+  // `if` é sempre falso nesse caso e a `div` nunca é tocada.
+  useLayoutEffect(() => {
+    if (ref.current && html !== ref.current.innerHTML) {
+      ref.current.innerHTML = html || ''
+    }
+  }, [html])
+
   function exec(cmd, arg) {
     document.execCommand(cmd, false, arg)
     ref.current?.focus()
@@ -383,7 +400,6 @@ export function BlogRichTextEditor({ html, onChange, resetKey }) {
           [&_table]:w-full [&_table]:border-collapse [&_table]:mb-3 [&_table]:text-sm
           [&_th]:border [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-bold [&_th]:text-slate-600
           [&_td]:border [&_td]:border-slate-200 [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:text-slate-600"
-        dangerouslySetInnerHTML={{ __html: html || '' }}
         onInput={e => onChange(e.currentTarget.innerHTML)}
         onPaste={handlePaste}
       />

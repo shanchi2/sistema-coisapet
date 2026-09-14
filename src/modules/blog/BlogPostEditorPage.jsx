@@ -123,6 +123,7 @@ export function BlogPostEditorPage() {
   const [candidateCoverUrl, setCandidateCoverUrl] = useState(null) // capa gerada, aguardando aprovação
   const [zoomImageUrl, setZoomImageUrl] = useState(null) // qualquer imagem em tela cheia (capa atual ou candidata)
   const [referenceProduct, setReferenceProduct] = useState(null) // produto opcional usado como referência visual
+  const [coverImagePrompt, setCoverImagePrompt] = useState('') // instrução extra opcional pra guiar a cena da capa
 
   const [suggestions, setSuggestions] = useState([])
   const [suggestLoading, setSuggestLoading] = useState(false)
@@ -288,7 +289,8 @@ export function BlogPostEditorPage() {
   // um trecho do corpo. Só cai pra título/palavra-chave se ainda não
   // tiver resumo escrito (post recém-começado).
   function buildImageContext() {
-    return excerpt.trim() || title.trim() || focusKeyword.trim() || stripHtml(contentHtml).slice(0, 300)
+    const base = excerpt.trim() || title.trim() || focusKeyword.trim() || stripHtml(contentHtml).slice(0, 300)
+    return coverImagePrompt.trim() ? `${base}\n\nInstrução extra do usuário pra essa imagem (siga com prioridade): ${coverImagePrompt.trim()}` : base
   }
 
   async function handleGenerateCover() {
@@ -477,6 +479,13 @@ export function BlogPostEditorPage() {
               {referenceProduct && (
                 <p className="text-[10px] text-slate-400 mt-1">A IA usa a foto real desse produto como base — só funciona bem se ele for do mesmo assunto do post.</p>
               )}
+            </div>
+
+            <div className="mt-2">
+              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">Instrução extra pra imagem (opcional)</label>
+              <textarea className="input text-xs min-h-[60px] resize-none" rows={2}
+                placeholder="ex: hamster cavando na maravalha, ambiente mais claro"
+                value={coverImagePrompt} onChange={e => setCoverImagePrompt(e.target.value)} />
             </div>
 
             <button onClick={handleGenerateCover} disabled={generatingCover}
