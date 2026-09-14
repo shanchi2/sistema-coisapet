@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Truck, Loader2, AlertTriangle, ExternalLink, ChevronDown, Info, PackageCheck, PackageX, Clock, Calendar, MapPin, Ban, Hourglass } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Truck, Loader2, AlertTriangle, ExternalLink, ChevronDown, Info, PackageCheck, PackageX, Clock, Calendar, MapPin, Ban, Hourglass, RefreshCw } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { InfoTooltip } from './InfoTooltip'
 
@@ -22,6 +23,11 @@ function fmtMoney(v) {
 const STATUS_CONFIG = {
   working:              { label: 'Em preparação',           bucket: 'pending',   action: true,  badge: 'bg-amber-50 text-amber-700 border border-amber-200',   dot: 'bg-amber-500' },
   confirmed:            { label: 'Aguardando recebimento',  bucket: 'transit',   action: false, badge: 'bg-sky-50 text-sky-700 border border-sky-200',         dot: 'bg-sky-500' },
+  // Achado ao vivo em 13/09 (caso real): lote chegou fisicamente mas
+  // ainda está sendo processado/conferido pelo centro de distribuição —
+  // status real do ML, diferente de `confirmed` (que é "ainda a
+  // caminho"). Sem isso caía no rótulo genérico "received" cru.
+  received:             { label: 'Recebido, processando',   bucket: 'transit',   action: false, badge: 'bg-sky-50 text-sky-700 border border-sky-200',         dot: 'bg-sky-500' },
   closed_ok:            { label: 'Finalizado',              bucket: 'done',      action: false, badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200', dot: 'bg-emerald-500' },
   closed_with_changes:  { label: 'Finalizado c/ diferenças',bucket: 'done',      action: false, badge: 'bg-orange-50 text-orange-700 border border-orange-200', dot: 'bg-orange-500' },
   cancelled:            { label: 'Cancelado',               bucket: 'cancelled', action: false, badge: 'bg-slate-100 text-slate-500 border border-slate-200',  dot: 'bg-slate-400' },
@@ -59,8 +65,9 @@ function ItemRow({ item }) {
   )
 }
 
-function ShipmentCard({ shipment }) {
-  const [open, setOpen] = useState(false)
+function ShipmentCard({ shipment, highlighted }) {
+  const [open, setOpen] = useState(!!highlighted)
+  const cardRef = useRef(null)
   const cfg = statusCfg(shipment.status)
   const items = shipment.items || []
   const diffItems = items.filter(i => i.diff_qty)
@@ -70,8 +77,15 @@ function ShipmentCard({ shipment }) {
     shipment.has_fiscal_problems && 'problema fiscal',
   ].filter(Boolean)
 
+  // Veio de um link da tela de Estoque Full ("X un. a caminho — Envio
+  // #123") — abre já expandido e rola até ele (pedido do Raphael, 13/09:
+  // "fazer essas 2 telas conversarem").
+  useEffect(() => {
+    if (highlighted) cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [highlighted])
+
   return (
-    <div className={`bg-white border-2 rounded-2xl overflow-hidden transition-colors ${cfg.action ? 'border-amber-300' : 'border-slate-200'}`}>
+    <div ref={cardRef} className={`bg-white border-2 rounded-2xl overflow-hidden transition-colors ${highlighted ? 'border-sky-400 ring-2 ring-sky-200' : cfg.action ? 'border-amber-300' : 'border-slate-200'}`}>
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between gap-4 p-4 hover:bg-slate-50/60 transition-colors text-left">
         <div className="flex items-center gap-3 min-w-0">
           <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${cfg.dot}`} />
@@ -125,12 +139,17 @@ function ShipmentCard({ shipment }) {
 }
 
 export function MlFullShipmentsPage() {
+  const [searchParams] = useSearchParams()
+  const highlightId = searchParams.get('envio')
   const [shipments, setShipments] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // Default "Todos" também cobre o caso de vir de um link específico de
+  // envio ("Estoque Full" → "a caminho") — garante que o card apareça
+  // independente do status dele.
   const [tab, setTab] = useState('all')
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   async function load() {
     setLoading(true)
     setError(null)
@@ -184,10 +203,16 @@ export function MlFullShipmentsPage() {
               <p className="text-sm text-slate-500">Acompanhamento dos envios de mercadoria pro centro de distribuição do ML</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <Clock size={13} />
-            {lastSync ? `Última sincronização: ${fmtDateTime(lastSync)}` : 'Ainda não sincronizado'}
-            <InfoTooltip source="nosso" text="Esta tela não atualiza sozinha — o Mercado Livre não libera esses dados por API, só pelo painel logado no navegador. Peça pro Claude 'sincronizar a gestão de envios Full' sempre que quiser os dados mais recentes." />
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <Clock size={13} />
+              {lastSync ? `Última sincronização: ${fmtDateTime(lastSync)}` : 'Ainda não sincronizado'}
+              <InfoTooltip source="nosso" text="Os dados aqui vêm de um favorito do navegador ('Sincronizar Full CoisaPet') que você clica enquanto está logado na Central de Vendedores do ML — ele lê a Gestão de Envios Full de lá e manda pra cá. O Mercado Livre não libera isso por API, só pelo painel logado. Esse botão 'Recarregar' só busca o que já está salvo no nosso banco (não refaz a sincronização com o ML)." />
+            </div>
+            <button onClick={load} disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-600 transition-colors disabled:opacity-50">
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Recarregar
+            </button>
           </div>
         </div>
 
@@ -195,7 +220,7 @@ export function MlFullShipmentsPage() {
         <div className="flex items-start gap-3 bg-sky-50 border border-sky-200 rounded-2xl px-4 py-3.5">
           <Info size={16} className="text-sky-500 mt-0.5 shrink-0" />
           <p className="text-sm text-sky-800 leading-relaxed">
-            Assim como o Estoque Full, isso aqui é uma <strong>fotografia</strong> do painel do Mercado Livre, não uma conexão ao vivo — o ML só mostra a gestão de envios pelo navegador logado, não tem API pública pra isso. Peça pro Claude sincronizar de novo sempre que precisar do estado mais atual.
+            Assim como o Estoque Full, isso aqui é uma <strong>fotografia</strong> do painel do Mercado Livre, não uma conexão ao vivo — o ML não libera a Gestão de Envios Full por nenhuma API pública, só pelo painel logado no navegador. Pra atualizar, clique no favorito <strong>"Sincronizar Full CoisaPet"</strong> na barra do navegador enquanto estiver logado na Central de Vendedores do ML (não precisa mais pedir pro Claude). Envios já cancelados/finalizados há muito tempo às vezes precisam de um segundo clique pra atualizar os itens — é seguro clicar quantas vezes quiser.
           </p>
         </div>
 
@@ -254,7 +279,7 @@ export function MlFullShipmentsPage() {
 
         {filtered.length > 0 && (
           <div className="flex flex-col gap-3">
-            {filtered.map(s => <ShipmentCard key={s.id} shipment={s} />)}
+            {filtered.map(s => <ShipmentCard key={s.id} shipment={s} highlighted={String(s.id) === highlightId} />)}
           </div>
         )}
         {shipments && shipments.length > 0 && filtered.length === 0 && (

@@ -1,6 +1,26 @@
 import { useEffect, useState } from 'react'
-import { Warehouse, RefreshCw, Loader2, AlertTriangle, ExternalLink, ImageOff, ChevronDown, Info, PackageCheck, PackageX } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Warehouse, RefreshCw, Loader2, AlertTriangle, ExternalLink, ImageOff, ChevronDown, Info, PackageCheck, PackageX, Truck } from 'lucide-react'
 import { useMlInsights } from './hooks/useMlInsights'
+
+// "X un. a caminho" cruzado com a Gestão de Envios Full (pedido do
+// Raphael, 13/09: "fazer essas 2 telas conversarem") — o estoque
+// "a caminho" que o painel do ML mostra não vem do endpoint de
+// inventário (esse só sabe o que já chegou fisicamente), vem do envio
+// ainda em aberto. Link leva direto pro envio específico na outra tela.
+function IncomingBadge({ incoming }) {
+  if (!incoming?.length) return null
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {incoming.map(i => (
+        <Link key={i.shipment_id} to={`/ml/full/envios?envio=${i.shipment_id}`}
+          className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-700 bg-sky-50 border border-sky-200 rounded-full px-2 py-0.5 hover:bg-sky-100 transition-colors">
+          <Truck size={10} /> {i.qty} un. a caminho — Envio #{i.shipment_id}
+        </Link>
+      ))}
+    </div>
+  )
+}
 
 // A API do ML às vezes devolve o thumbnail em http:// puro — o site roda
 // em https, então isso vira mixed content bloqueado pelo navegador.
@@ -36,9 +56,13 @@ function VariationRow({ v }) {
     <div className="flex items-center justify-between gap-3 bg-slate-50 rounded-lg px-3 py-2">
       <div className="min-w-0">
         <p className="text-sm text-slate-700 truncate">{v.label}</p>
+        {v.unconfirmed && (
+          <p className="text-xs text-slate-400 mt-0.5">Ainda não entrou no Full — sem estoque confirmado</p>
+        )}
         {v.not_available > 0 && (
           <p className="text-xs text-amber-600 mt-0.5">{v.not_available} {v.not_available > 1 ? 'indisponíveis' : 'indisponível'}{v.not_available_detail?.length > 0 && ` — ${v.not_available_detail.map(d => d.status || d.reason).filter(Boolean).join(', ')}`}</p>
         )}
+        <IncomingBadge incoming={v.incoming} />
       </div>
       <span className={`text-sm font-bold px-2.5 py-1 rounded-full shrink-0 ${style.badge}`}>
         {v.available ?? '—'} un.
@@ -65,8 +89,15 @@ function FullProductCard({ item }) {
             className="text-sm font-medium text-slate-800 hover:text-emerald-600 inline-flex items-start gap-1.5">
             <span className="line-clamp-2">{item.title}</span>
             <ExternalLink size={11} className="text-slate-300 mt-0.5 shrink-0" />
+            {item.status && item.status !== 'active' && (
+              <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">Pausado</span>
+            )}
           </a>
           <p className="text-xs font-mono text-slate-400 mt-1">{item.item_id}</p>
+          {!hasVariations && item.not_available > 0 && (
+            <p className="text-xs text-amber-600 mt-0.5">{item.not_available} {item.not_available > 1 ? 'indisponíveis' : 'indisponível'}{item.not_available_detail?.length > 0 && ` — ${item.not_available_detail.map(d => d.status || d.reason).filter(Boolean).join(', ')}`}</p>
+          )}
+          {!hasVariations && <IncomingBadge incoming={item.incoming} />}
         </div>
         <div className="text-right shrink-0">
           <p className={`text-2xl font-bold leading-none ${style.text}`}>{item.available_quantity}</p>
