@@ -1114,18 +1114,48 @@ async function suggestItemImages(integration: any, itemId: string) {
 
   const pictures = (item.pictures || []).map((p: any) => ({ id: p.id, url: p.secure_url || p.url })).filter((p: any) => p.url)
   const pictureUrlById = new Map(pictures.map((p: any) => [p.id, p.url]))
-  const variations = (item.variations || [])
-    .map((v: any) => ({
-      id: v.id,
-      label: (v.attribute_combinations || []).map((a: any) => a.value_name).filter(Boolean).join(' / ') || `Variação ${v.id}`,
-      picture_url: pictureUrlById.get((v.picture_ids || [])[0]) ?? null,
-    }))
-    .filter((v: any) => v.picture_url)
+
+  // Pedido do Raphael (14/09): a aba precisa organizar por variação de
+  // verdade (não só "1 foto representante" por cor) — cada variação
+  // mostra TODAS as fotos vinculadas a ela (uma foto pode aparecer em
+  // mais de uma variação se for compartilhada no ML, o que é normal).
+  // `general_pictures` = fotos do item que não estão em NENHUMA
+  // variação — inclui as órfãs que o bug de 13/09 gerava, agora
+  // visíveis na tela pra poder limpar em vez de ficarem escondidas.
+  const linkedPictureIds = new Set((item.variations || []).flatMap((v: any) => v.picture_ids || []))
+  const generalPictures = pictures.filter((p: any) => !linkedPictureIds.has(p.id))
+
+  const variationLabel = (v: any) => (v.attribute_combinations || []).map((a: any) => a.value_name).filter(Boolean).join(' / ') || `Variação ${v.id}`
+  // Uma foto pode estar em VÁRIAS variações ao mesmo tempo (comum quando
+  // ainda não foi trocada a foto genérica de cada cor) — sem sinalizar
+  // isso na tela, excluir "a foto de Preto" bloqueava com um erro que
+  // citava outras variações que o Raphael nem estava olhando, parecendo
+  // bug (14/09, 2º relato). Cada foto agora carrega `shared_with` (nome
+  // das OUTRAS variações que também a usam) pra ficar óbvio antes de
+  // tentar excluir.
+  const variationsByPictureId = new Map<string, string[]>()
+  for (const v of item.variations || []) {
+    for (const pid of v.picture_ids || []) {
+      if (!variationsByPictureId.has(pid)) variationsByPictureId.set(pid, [])
+      variationsByPictureId.get(pid)!.push(variationLabel(v))
+    }
+  }
+  const variations = (item.variations || []).map((v: any) => ({
+    id: v.id,
+    label: variationLabel(v),
+    pictures: (v.picture_ids || [])
+      .map((id: string) => ({
+        id, url: pictureUrlById.get(id),
+        shared_with: (variationsByPictureId.get(id) || []).filter((label) => label !== variationLabel(v)),
+      }))
+      .filter((p: any) => p.url),
+  }))
 
   return {
     suggestions: (result?.suggestions || []).filter((s: any) => s?.title && s?.prompt),
     questions_considered: questions,
     pictures,
+    general_pictures: generalPictures,
     variations,
   }
 }
@@ -1220,13 +1250,193 @@ async function buildCustomEditPrompt(instructionPt: string) {
 // anúncio (devolve só o id da foto), depois faz merge com o array de
 // fotos já existente antes do PUT — o ML substitui o array inteiro, não
 // faz merge sozinho.
-async function attachItemImage(integration: any, db: ReturnType<typeof adminClient>, itemId: string, imageBase64: string) {
+// Bug real reportado pelo Raphael (14/09): a imagem gerada ATÉ subia pro
+// ML (confirmado consultando o item de verdade — o id da foto aparecia
+// no array geral `pictures`), mas nunca ficava visível nem "pra variação
+// escolhida nem pra geral". Causa raiz: item com variação só mostra pro
+// comprador (e no app) as fotos que estão em `variations[].picture_ids`
+// daquela variação — uma foto que só existe no array geral do item, sem
+// estar linkada em nenhuma variação, fica órfã e não aparece em lugar
+// nenhum de verdade. Corrigido: quando a foto base escolhida veio de uma
+// variação específica (`variationId`), a foto nova entra TAMBÉM no
+// `picture_ids` daquela variação, além do array geral (que continua
+// precisando ser atualizado primeiro/junto — a variação só pode
+// referenciar um id que já existe no item).
+// Regra de ouro pra qualquer escrita em `variations` — NUNCA montar isso
+// à mão de outro jeito. Incidente real 14/09 (ver coisapet.md e memória
+// `coisapet-ml-variations-put-gotcha`): o PUT `/items/{id}` trata
+// `variations` como SUBSTITUIÇÃO TOTAL do array, nunca merge por id —
+// mandar só as variações que mudaram apaga de verdade todas as outras
+// do anúncio real (já aconteceu: apagou 5 de 8 variações de um item ao
+// vivo, precisou restaurar na mão). Por isso essa função SEMPRE recebe
+// a lista COMPLETA de variações existentes e só deixa `mutatePictureIds`
+// mexer no `picture_ids` de cada uma — nunca ecoa de volta campos que o
+// próprio ML rejeita como só-leitura (catalog_product_id, inventory_id,
+// item_relations, user_product_id, sold_quantity — confirmado ao vivo
+// que só `catalog_product_id` de volta já derruba o PUT inteiro com
+// "not_modifiable").
+function buildVariationsForWrite(existing: any[], mutatePictureIds: (v: any) => string[]): any[] {
+  return (existing || []).map((v: any) => ({
+    id: v.id,
+    price: v.price,
+    attribute_combinations: v.attribute_combinations,
+    available_quantity: v.available_quantity,
+    sale_terms: v.sale_terms,
+    seller_custom_field: v.seller_custom_field,
+    picture_ids: mutatePictureIds(v),
+  }))
+}
+
+// Bug real reportado pelo Raphael (14/09): a imagem gerada ATÉ subia pro
+// ML (confirmado consultando o item de verdade — o id da foto aparecia
+// no array geral `pictures`), mas nunca ficava visível nem "pra variação
+// escolhida nem pra geral". Causa raiz: item com variação só mostra pro
+// comprador (e no app) as fotos que estão em `variations[].picture_ids`
+// daquela variação — uma foto que só existe no array geral do item, sem
+// estar linkada em nenhuma variação, fica órfã e não aparece em lugar
+// nenhum de verdade. Corrigido: quando a foto base escolhida veio de uma
+// variação específica (`variationId`), a foto nova entra TAMBÉM no
+// `picture_ids` daquela variação, além do array geral (que continua
+// precisando ser atualizado primeiro/junto — a variação só pode
+// referenciar um id que já existe no item).
+async function attachItemImage(integration: any, db: ReturnType<typeof adminClient>, itemId: string, imageBase64: string, variationId?: number) {
   const uploaded = await uploadPicture(integration.access_token, imageBase64, `ai-generated-${Date.now()}.png`, 'image/png')
-  const current = await mlFetch(`/items/${itemId}?attributes=pictures`, integration.access_token)
+  const current = await mlFetch(`/items/${itemId}?attributes=pictures,variations`, integration.access_token)
   const pictures = [...(current.pictures || []).map((p: any) => ({ id: p.id })), { id: uploaded.id }]
-  await mlWrite(`/items/${itemId}`, integration.access_token, 'PUT', { pictures })
-  await logItemUpdate(db, itemId, 'picture_added', { picture_id: uploaded.id })
+  const payload: Record<string, unknown> = { pictures }
+
+  if (variationId && (current.variations || []).length) {
+    payload.variations = buildVariationsForWrite(current.variations, (v) =>
+      v.id === variationId ? [...(v.picture_ids || []), uploaded.id] : v.picture_ids)
+  }
+
+  await mlWrite(`/items/${itemId}`, integration.access_token, 'PUT', payload)
+  await logItemUpdate(db, itemId, 'picture_added', { picture_id: uploaded.id, variation_id: variationId ?? null })
   return { ok: true, picture_id: uploaded.id }
+}
+
+// Exclui uma foto do anúncio de verdade — remove do array geral E de
+// qualquer variação que a referencie (nunca deixa órfã pro lado
+// contrário do bug acima). Sempre atrás de confirmação explícita na
+// tela, mesma regra de qualquer escrita real no ML.
+async function deleteItemImage(integration: any, db: ReturnType<typeof adminClient>, itemId: string, pictureId: string) {
+  const current = await mlFetch(`/items/${itemId}?attributes=pictures,variations`, integration.access_token)
+  const pictures = (current.pictures || []).filter((p: any) => p.id !== pictureId).map((p: any) => ({ id: p.id }))
+  if (!pictures.length) throw new Error('Não é possível excluir: o anúncio precisa ter pelo menos 1 foto.')
+
+  // Confirmado ao vivo (14/09): o ML rejeita a variação inteira se ela
+  // ficar com `picture_ids` vazio ("Null or Empty is not valid") — se a
+  // foto é a ÚNICA de alguma variação, bloqueia aqui com mensagem clara
+  // em vez de deixar o erro cru da API estourar na tela.
+  const wouldEmptyVariations = (current.variations || [])
+    .filter((v: any) => (v.picture_ids || []).length === 1 && v.picture_ids[0] === pictureId)
+    .map((v: any) => (v.attribute_combinations || []).map((a: any) => a.value_name).filter(Boolean).join(' / ') || `Variação ${v.id}`)
+  if (wouldEmptyVariations.length) {
+    throw new Error(`Não é possível excluir: essa foto é COMPARTILHADA e é a única foto da variação "${wouldEmptyVariations.join('", "')}" também — o Mercado Livre exige pelo menos 1 foto por variação. Adicione outra foto pra essa(s) variação(ões) antes de excluir esta.`)
+  }
+
+  const payload: Record<string, unknown> = { pictures }
+
+  if ((current.variations || []).length) {
+    payload.variations = buildVariationsForWrite(current.variations, (v) =>
+      (v.picture_ids || []).filter((id: string) => id !== pictureId))
+  }
+
+  await mlWrite(`/items/${itemId}`, integration.access_token, 'PUT', payload)
+  await logItemUpdate(db, itemId, 'picture_removed', { picture_id: pictureId })
+  return { ok: true }
+}
+
+// Pedido do Raphael (14/09): poder escolher qual foto é a "principal" de
+// uma variação — a 1ª do `picture_ids` é a que o ML usa como capa/miniatura
+// pra quem escolhe aquela cor. Só reordena (nunca adiciona/remove nada) —
+// serve tanto pra promover uma foto boa que já existe quanto, combinado
+// com gerar uma foto nova, pra tirar a genérica compartilhada da posição
+// de destaque mesmo antes de poder excluí-la de vez (ela só pode ser
+// excluída quando deixar de ser a ÚNICA foto de alguma variação).
+async function reorderVariationPicture(integration: any, db: ReturnType<typeof adminClient>, itemId: string, variationId: number, pictureId: string) {
+  const current = await mlFetch(`/items/${itemId}?attributes=pictures,variations`, integration.access_token)
+  const target = (current.variations || []).find((v: any) => v.id === variationId)
+  if (!target) throw new Error('Variação não encontrada.')
+  if (!(target.picture_ids || []).includes(pictureId)) throw new Error('Essa foto não pertence a essa variação.')
+
+  // Sempre reenvia `pictures` explícito também, mesmo sem mudar nada nele
+  // — igual `attachItemImage`/`deleteItemImage` já faziam. Suspeita real
+  // (14/09): um PUT só com `variations` (sem `pictures` no corpo) parece
+  // ter feito o ML remover sozinho 1 foto do array geral (e da variação
+  // Cobre) que não tinha nenhuma relação com a escrita pedida — nunca
+  // mais omitir esse campo em nenhuma escrita de variação, custe o que
+  // custar em verbosidade.
+  const payload = {
+    pictures: (current.pictures || []).map((p: any) => ({ id: p.id })),
+    variations: buildVariationsForWrite(current.variations, (v: any) =>
+      v.id === variationId ? [pictureId, ...(v.picture_ids || []).filter((id: string) => id !== pictureId)] : v.picture_ids),
+  }
+
+  await mlWrite(`/items/${itemId}`, integration.access_token, 'PUT', payload)
+  await logItemUpdate(db, itemId, 'picture_reordered', { variation_id: variationId, picture_id: pictureId })
+  return { ok: true }
+}
+
+// Pedido do Raphael (14/09, 3º relato): a foto genérica compartilhada
+// (usada por 7 das 8 variações do exemplo real) não podia ser removida
+// de UMA variação específica que já tinha fotos próprias (ex: Branco,
+// com 3 fotos) porque `deleteItemImage` sempre olha o item inteiro — se
+// qualquer OUTRA variação (Azul, Preto etc.) ainda depende só dela,
+// bloqueia certo, mas isso impedia até tirar ela de uma variação que já
+// não precisa mais dela. Essa função resolve exatamente esse caso:
+// desvincula a foto só da variação escolhida (nunca mexe no array geral
+// `pictures` nem em nenhuma OUTRA variação) — a foto continua existindo
+// no anúncio e em quem mais a usa, só sai da galeria dessa variação.
+async function unlinkVariationPicture(integration: any, db: ReturnType<typeof adminClient>, itemId: string, variationId: number, pictureId: string) {
+  const current = await mlFetch(`/items/${itemId}?attributes=pictures,variations`, integration.access_token)
+  const target = (current.variations || []).find((v: any) => v.id === variationId)
+  if (!target) throw new Error('Variação não encontrada.')
+  const remaining = (target.picture_ids || []).filter((id: string) => id !== pictureId)
+  if (!remaining.length) throw new Error('Não é possível remover: essa é a única foto dessa variação. Adicione outra foto pra ela antes.')
+
+  // Ver nota em `reorderVariationPicture` — sempre reenvia `pictures`
+  // explícito, nunca deixar de fora de um PUT que mexe em `variations`.
+  const payload = {
+    pictures: (current.pictures || []).map((p: any) => ({ id: p.id })),
+    variations: buildVariationsForWrite(current.variations, (v: any) => (v.id === variationId ? remaining : v.picture_ids)),
+  }
+
+  await mlWrite(`/items/${itemId}`, integration.access_token, 'PUT', payload)
+  await logItemUpdate(db, itemId, 'picture_unlinked', { variation_id: variationId, picture_id: pictureId })
+  return { ok: true }
+}
+
+// Pedido do Raphael (15/09): gerava a imagem usando uma foto da variação
+// Amadeirado como referência (pra pedir "faz ela preta"), mas o resultado
+// ficava vinculado ao Amadeirado (a variação da foto BASE) em vez do
+// Preto (a variação de destino de verdade) — e não tinha como mover
+// depois, só excluir e regerar. Essa função move uma foto já existente
+// de uma variação pra outra num único PUT (tira de origem, acrescenta em
+// destino, sem duplicar se já estiver lá) — mesma regra de sempre:
+// reenvia TODAS as variações e `pictures` explícito.
+async function moveVariationPicture(integration: any, db: ReturnType<typeof adminClient>, itemId: string, pictureId: string, fromVariationId: number, toVariationId: number) {
+  const current = await mlFetch(`/items/${itemId}?attributes=pictures,variations`, integration.access_token)
+  const fromV = (current.variations || []).find((v: any) => v.id === fromVariationId)
+  const toV = (current.variations || []).find((v: any) => v.id === toVariationId)
+  if (!fromV || !toV) throw new Error('Variação não encontrada.')
+  if (!(fromV.picture_ids || []).includes(pictureId)) throw new Error('Essa foto não pertence à variação de origem.')
+  if ((fromV.picture_ids || []).length === 1) {
+    throw new Error('Não é possível mover: essa é a única foto dessa variação — o Mercado Livre exige pelo menos 1 foto por variação. Adicione outra foto lá antes de mover esta.')
+  }
+
+  const payload = {
+    pictures: (current.pictures || []).map((p: any) => ({ id: p.id })),
+    variations: buildVariationsForWrite(current.variations, (v: any) => {
+      if (v.id === fromVariationId) return (v.picture_ids || []).filter((id: string) => id !== pictureId)
+      if (v.id === toVariationId) return (v.picture_ids || []).includes(pictureId) ? v.picture_ids : [...(v.picture_ids || []), pictureId]
+      return v.picture_ids
+    }),
+  }
+
+  await mlWrite(`/items/${itemId}`, integration.access_token, 'PUT', payload)
+  await logItemUpdate(db, itemId, 'picture_moved', { picture_id: pictureId, from_variation_id: fromVariationId, to_variation_id: toVariationId })
+  return { ok: true }
 }
 
 // Escrita — mesma regra de sempre: só dispara atrás de confirmação
@@ -1323,12 +1533,34 @@ async function applyContent(integration: any, db: ReturnType<typeof adminClient>
 // buscas de ids (`status=active` / `status=paused`) + 1 multiget em
 // lotes de 20 (mesmo padrão de `trafficAudit`) pra trazer thumbnail/
 // preço/estoque/status de uma vez, sem 1 chamada por item.
+// Bug real reportado pelo Raphael (14/09): na tela de Desconto em massa,
+// alguns itens da lista "Já com desconto" apareciam só com o código
+// (MLB...) em vez do título. Causa: essa busca só pegava a 1ª página (100
+// primeiros) de cada status — com 233 anúncios ativos na conta, quem
+// ficava depois do 100º nunca entrava em `bulkItems`, e o front cai no
+// fallback de mostrar o id cru quando não acha o título correspondente.
+// Corrigido: pagina por `offset` até esgotar cada status (mesmo padrão
+// de paginação já usado em outras varreduras deste arquivo).
+async function searchAllItemIds(integration: any, status: string): Promise<string[]> {
+  const ids: string[] = []
+  const limit = 100
+  let offset = 0
+  for (let i = 0; i < 20; i++) { // teto de segurança — no máx. 2000 itens
+    const page = await mlFetch(`/users/${integration.ml_user_id}/items/search?status=${status}&limit=${limit}&offset=${offset}`, integration.access_token)
+    ids.push(...(page.results || []))
+    const total = page.paging?.total ?? ids.length
+    offset += limit
+    if (offset >= total || !page.results?.length) break
+  }
+  return ids
+}
+
 async function activeListings(integration: any) {
-  const [activeRes, pausedRes] = await Promise.all([
-    mlFetch(`/users/${integration.ml_user_id}/items/search?status=active&limit=100`, integration.access_token),
-    mlFetch(`/users/${integration.ml_user_id}/items/search?status=paused&limit=100`, integration.access_token),
+  const [activeIds, pausedIds] = await Promise.all([
+    searchAllItemIds(integration, 'active'),
+    searchAllItemIds(integration, 'paused'),
   ])
-  const ids = [...(activeRes.results || []), ...(pausedRes.results || [])]
+  const ids = [...activeIds, ...pausedIds]
   if (!ids.length) return { results: [] }
 
   const results: any[] = []
@@ -1992,12 +2224,23 @@ async function promotionLeaveItem(integration: any, db: ReturnType<typeof adminC
 // real dele aparecer por item, mesmo espírito de createItem/
 // applyContent): reputação verde, item ativo, condição novo, exposição
 // paga (não gratuita).
+// ML exige start_date/finish_date em formato LOCAL "YYYY-MM-DDTHH:mm:ss"
+// (bug real reportado pelo Raphael em 14/09: "Start and finish dates
+// must be in local format" — confirmado na doc oficial). O <input
+// type="date"> do formulário só devolve "YYYY-MM-DD" (sem hora), então
+// completa aqui antes de mandar. Doc confirma que o próprio ML já
+// assume início do dia pro start_date e fim do dia pro finish_date
+// mesmo com T00:00:00 nos dois — não precisa calcular 23:59:59.
+function toMlLocalDateTime(date: string): string {
+  return date.includes('T') ? date : `${date}T00:00:00`
+}
+
 async function sellerCampaignCreate(integration: any, db: ReturnType<typeof adminClient>, name: string, startDate: string, finishDate: string) {
   try {
     const res = await mlWrite(`/seller-promotions/promotions?app_version=v2`, integration.access_token, 'POST', {
       promotion_type: 'SELLER_CAMPAIGN',
       sub_type: 'FLEXIBLE_PERCENTAGE',
-      name, start_date: startDate, finish_date: finishDate,
+      name, start_date: toMlLocalDateTime(startDate), finish_date: toMlLocalDateTime(finishDate),
     })
     await logItemUpdate(db, String(res.id), 'seller_campaign_create', { name, start_date: startDate, finish_date: finishDate })
     return { ok: true, ...res }
@@ -2414,7 +2657,19 @@ serve(async (req) => {
       }
       case 'attach_item_image':
         if (!body.item_id || !body.image_base64) return json({ error: 'item_id e image_base64 obrigatórios' }, 400)
-        return json(await attachItemImage(integration, db, body.item_id, String(body.image_base64)))
+        return json(await attachItemImage(integration, db, body.item_id, String(body.image_base64), body.variation_id != null ? Number(body.variation_id) : undefined))
+      case 'delete_item_image':
+        if (!body.item_id || !body.picture_id) return json({ error: 'item_id e picture_id obrigatórios' }, 400)
+        return json(await deleteItemImage(integration, db, body.item_id, String(body.picture_id)))
+      case 'reorder_variation_picture':
+        if (!body.item_id || body.variation_id == null || !body.picture_id) return json({ error: 'item_id, variation_id e picture_id obrigatórios' }, 400)
+        return json(await reorderVariationPicture(integration, db, body.item_id, Number(body.variation_id), String(body.picture_id)))
+      case 'unlink_variation_picture':
+        if (!body.item_id || body.variation_id == null || !body.picture_id) return json({ error: 'item_id, variation_id e picture_id obrigatórios' }, 400)
+        return json(await unlinkVariationPicture(integration, db, body.item_id, Number(body.variation_id), String(body.picture_id)))
+      case 'move_variation_picture':
+        if (!body.item_id || !body.picture_id || body.from_variation_id == null || body.to_variation_id == null) return json({ error: 'item_id, picture_id, from_variation_id e to_variation_id obrigatórios' }, 400)
+        return json(await moveVariationPicture(integration, db, body.item_id, String(body.picture_id), Number(body.from_variation_id), Number(body.to_variation_id)))
       case 'active_listings':
         return json(await activeListings(integration))
       case 'fulfillment_stock':

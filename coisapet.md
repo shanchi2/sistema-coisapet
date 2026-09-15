@@ -131,6 +131,67 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-09-15 — Destino da imagem gerada era sempre a variação da foto BASE, não dava pra escolher nem mover
+
+**Pedido do Raphael**: "precisamos deixar mais claro como uma imagem vai para cada variação" — exemplo real: pega a foto do Amadeirado como inspiração, pede pra IA fazer ela preta, mas o resultado vai pro Amadeirado (a variação da foto base) e não pro Preto (o destino de verdade) — e não tinha como mover depois.
+
+**Causa**: clicar numa foto da galeria pra usar como referência (`selectedPictureUrl`) e escolher pra qual variação a imagem gerada vai (`variationId` mandado no `attach_item_image`) eram a MESMA ação/estado (`selectedVariationId`) — não dava pra usar a foto de uma variação como inspiração e mandar o resultado pra outra.
+
+**Construído**:
+- Desacoplado em dois estados: `selectedVariationId` (só destaca qual foto é a base/referência visual) e `targetVariationId` (pra onde a imagem gerada vai de verdade) — por padrão andam juntos (clicar numa foto já sugere a mesma variação como destino, comportamento de antes preservado), mas agora dá pra trocar o destino livremente antes de gerar (dropdown "Vai entrar em:" no card "Gerar nova imagem") e de novo na prévia antes de confirmar (mesmo dropdown, último checkpoint antes do `attach_item_image`).
+- Nova ação `move_variation_picture` (`ml-insights/index.ts`) — move uma foto JÁ existente de uma variação pra outra num PUT só (tira do `picture_ids` de origem, acrescenta no de destino, sem duplicar), pra quando a foto já foi parar na variação errada e não faz sentido regenerar. Segue a mesma regra de ouro do incidente de 14/09 (`buildVariationsForWrite`, reenvia todas as variações + `pictures` explícito). Bloqueia se a foto for a única da variação de origem (mesma regra do `unlink`/`delete`).
+- Botão novo (ícone de setas ⇄) no hover de cada foto da galeria, ao lado da lupa — só aparece quando o anúncio tem mais de 1 variação. Abre confirmação com seletor de variação de destino antes de gravar no ML.
+
+**Testado**: `npm run build` passou limpo, edge function `ml-insights` reimplantada no Supabase (`supabase functions deploy ml-insights`). Clique-a-clique na tela real (gerar com destino diferente da base + mover foto existente) **não foi testado ao vivo** nesta sessão — vale conferir na próxima antes de considerar fechado, mesmo padrão de pendência de sessões anteriores.
+
+---
+
+### 2026-09-14 (3ª parte) — Definir foto principal + remover foto de 1 variação só (e 2º incidente real, já corrigido)
+
+**Pedido do Raphael**: depois de conseguir só "reordenar", perguntou se dava pra ESCOLHER qual foto é a principal (resolvido com `reorder_variation_picture`, ver entrada anterior) — mas ao tentar excluir a foto genérica de uma variação que já tinha fotos próprias (Branco, 3 fotos), continuava bloqueado, mesmo Branco tendo mais de 1 foto.
+
+**Causa**: `deleteItemImage` sempre olha o item INTEIRO — bloqueia mesmo se a variação em que você está clicando já tem fotos de sobra, porque OUTRAS variações (Azul, Preto, BERLIN, GEPETO, Verde-claro) ainda dependem só daquela foto. Faltava uma ação de escopo menor.
+
+**Construído**: nova ação `unlink_variation_picture` — remove a foto só do `picture_ids` daquela variação (nunca mexe no array geral `pictures` nem em nenhuma outra variação). A tela agora decide sozinha qual ação usar ao clicar na lixeira: se a foto é compartilhada (tem o selo 🔗), vira "remover só dessa variação"; se é exclusiva, continua sendo exclusão de verdade do anúncio. Testado ao vivo: removida a foto genérica só do Branco, as outras 5 variações que ainda dependiam dela continuaram com ela normalmente.
+
+**2º INCIDENTE real do dia, pego durante o teste ao vivo dessa função**: depois de testar `reorder_variation_picture` e `unlink_variation_picture`, uma foto REAL do Cobre (`876789-MLB74658223649_022024`, uma das 6 fotos originais, nunca tocada por nenhuma ação) sumiu sozinha do anúncio — nem do array geral `pictures` nem da variação Cobre. A foto continuava válida no CDN do ML (URL respondia 200), então não foi expiração — foi removida pelo próprio ML durante um dos PUTs. Causa suspeita: as duas funções novas só mandavam `variations` no corpo do PUT, sem incluir `pictures` — parece que o ML "sincroniza" o array geral quando ele não vem explícito, derrubando algo nesse processo. **Corrigido preventivamente**: as duas funções agora SEMPRE mandam `pictures` explícito também (idêntico ao que já tinha, sem mudança nenhuma nele) — regra nova, permanente: nenhum PUT que toque `variations` pode omitir `pictures`. Restaurada a foto do Cobre na hora (mesma técnica de sempre: snapshot salvo antes do erro). Registrado em memória (`coisapet-ml-variations-put-gotcha`) pra nunca mais esquecer, já que é o 2º incidente de gravação em `variations` no mesmo dia.
+
+---
+
+### 2026-09-14 (2ª parte) — Imagens & IA reorganizada: galeria por variação + excluir foto
+
+**Pedido do Raphael**: depois do incidente (ver entrada acima), pediu pra reorganizar a aba de imagens de verdade — galeria por variação, poder adicionar/gerar/excluir foto, "confesso que tá bem difícil" de usar como estava.
+
+**Construído**:
+- `suggestItemImages` agora devolve a galeria já organizada: `variations[].pictures` (TODAS as fotos de cada variação, não só uma "representante") e `general_pictures` (fotos do item que não estão em nenhuma variação — inclui as órfãs que o bug de 13/09 tinha deixado invisíveis, agora aparecem numa seção própria pra poder limpar).
+- Nova ação `delete_item_image` — remove a foto do array geral E de qualquer variação que a use, sempre pela mesma regra de segurança descoberta no incidente (reenvia todas as variações, nunca um subconjunto).
+- Extraído `buildVariationsForWrite()` — helper único que tanto `attachItemImage` quanto `deleteItemImage` usam pra montar o `variations` de qualquer PUT, garantindo que a regra do incidente nunca seja esquecida de novo em código futuro.
+- `MlItemDetailPage.jsx`: aba reescrita — 1 seção por variação (miniatura + nome, com lupa/lixeira no hover de cada foto), seção "Fotos gerais" quando existem órfãs, e um card de geração separado que sempre mostra pra qual variação a próxima imagem vai ("Gerando pra variação: Branco" etc.) antes de gerar qualquer coisa — a seleção de variação e a seleção de foto base viraram a mesma ação (clicar na foto já escolhe tudo junto).
+
+**Bug pego pelo Raphael na primeira tentativa real de excluir**: `item.variations.picture_ids.invalid` — o ML rejeita a variação inteira se ela ficar com `picture_ids` vazio (variação sem nenhuma foto não é permitido). Corrigido com uma checagem ANTES do PUT: se a foto é a única de alguma variação, `deleteItemImage` bloqueia com mensagem clara nomeando a(s) variação(ões) afetada(s), em vez de deixar o JSON cru do ML estourar na tela. Testado ao vivo com o exato caso que falhou (MLB4685435660, foto compartilhada por Azul/BERLIN/GEPETO/Verde-claro) — bloqueou certinho nomeando as 4, sem tocar no anúncio.
+
+**2º relato do Raphael — mesmo erro em variação com 2 fotos**: confuso, porque "Preto (2 fotos)" também acusava a foto travada. Causa: a foto genérica compartilhada aparece como a 1ª foto em TODAS as variações que ainda não têm foto própria (7 das 8) — visualmente parecia "a foto de Preto", mas é a mesma foto em todo lugar. Corrigido: cada miniatura compartilhada agora mostra um selo "🔗N" com o número de variações que a usam (hover mostra quais) — `variationsByPictureId` calculado em `suggestItemImages`, expõe `shared_with` por foto.
+
+**Erro meu ao testar ao vivo pro Raphael**: pra provar que excluir funcionava, testei apagando a foto (de verdade, gerada) da variação Preto — sem perceber que era a foto BOA (não a genérica), deixando Preto de volta só com a genérica. Assumido e avisado na hora; ofereço regenerar.
+
+**Pedido seguinte do Raphael**: "tem como eu escolher qual eu quero que seja a principal?" — nova ação `reorder_variation_picture` (só reordena `picture_ids`, promove uma foto já existente pra posição 0 = capa da variação no ML) — não precisa apagar a genérica pra ela deixar de ser a foto de destaque, só reordenar. Testado ao vivo: promovido a foto branca própria pra 1ª posição de Branco, genérica foi pra 2ª, as 8 variações continuaram intactas.
+
+---
+
+### 2026-09-14 — INCIDENTE: PUT de `variations` apagou 5 de 8 variações de um item real (causa raiz + fix permanente)
+
+**O que aconteceu**: ao vincular a mão as 4 fotos geradas (ver 8ª parte de 13/09) à variação certa do `MLB4685435660`, o PUT `/items/{id}` foi feito enviando só as 3 variações que mudaram (Preto, Verde-escuro, Branco). O Mercado Livre trata o campo `variations` no PUT como **substituição TOTAL do array, não merge por id** — as outras 5 variações do anúncio real (Cobre, Azul, BERLIN, GEPETO, Verde-claro) foram **apagadas de verdade** do anúncio. O Raphael reportou na hora ("sumiram as outras variações").
+
+**Correção de emergência**: tinha um snapshot completo das 8 variações salvo antes do erro (rotina de sempre nesse módulo: ler o item inteiro antes de qualquer PUT) — reconstruído o payload com as 8 (as 5 intocadas exatamente como estavam, as 3 com a foto nova mantida) e regravado. Confirmado ao vivo: as 8 voltaram, preço/estoque/fotos corretos.
+
+**Efeito colateral que NÃO deu pra desfazer**: as 5 variações recriadas (Cobre, Azul, BERLIN, GEPETO, Verde-claro) voltaram com **IDs novos** no ML (o Preto/Branco/Verde-escuro mantiveram o ID original, por nunca terem saído do ar) — e o contador de "vendido" (`sold_quantity`) dessas 5 zerou (era histórico da variação antiga, que deixou de existir). Conferido: nenhuma tabela do nosso banco referencia `variation_id` do ML diretamente (a única coluna parecida, `product_variation_option_links.variation_id`, é `uuid` do catálogo interno, sem relação) — não quebrou nada por aqui, só o número exibido no próprio anúncio do ML.
+
+**Causa raiz também confirmada durante a restauração**: reenviar um objeto de variação inteiro (como veio do GET) também falha — o ML rejeita com `catalog_product_id is not_modifiable` se esse campo (mesmo `null`) for ecoado de volta. Campos seguros pra reenviar num PUT de variação: `id`, `price`, `attribute_combinations`, `available_quantity`, `sale_terms`, `picture_ids`, `seller_custom_field`. NUNCA ecoar de volta: `catalog_product_id`, `inventory_id`, `item_relations`, `user_product_id`, `sold_quantity`.
+
+**Fix permanente** (`attachItemImage` em `ml-insights/index.ts`): agora SEMPRE reenvia todas as variações existentes do item no PUT (buscadas antes, na mesma chamada), só trocando o `picture_ids` da variação alvo — nunca mais manda um array parcial. Mesma regra vale pra qualquer futura função que precise editar 1 variação: **regra de ouro, nunca esquecer** — `variations` no PUT do ML é sempre "tudo ou nada", nunca um patch por id.
+
+---
+
 ### 2026-09-13 (8ª parte) — Nova aba "Imagens & IA" no detalhe do anúncio: sugestão e geração de foto real por IA
 
 **Pedido do Raphael**: começar a atualizar as fotos dos produtos (além das descrições) — pediu uma aba nova na tela de Saúde de Anúncio (detalhe do item) com sugestões de criação de imagem baseadas nas perguntas dos compradores, com opção de já gerar a imagem sugerida usando a foto real do produto como base (API do ChatGPT e/ou Higgsfield). Confirmado por ele: (1) manter a geração mesmo quando o produto não tem nenhuma pergunta ainda (cai só na ficha técnica/descrição), (2) imagem sempre em proporção **vertical** (melhor visibilidade no app do ML), (3) pensar no caso de produto com variações (cor/modelo), e (4) além da sugestão por IA, ter uma opção de **prompt personalizado simples** (ex: "gere uma imagem deste item na cor rosa, sem mudar nada apenas a cor"). Pedido pra começar no mesmo dia.

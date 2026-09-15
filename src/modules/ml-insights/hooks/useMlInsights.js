@@ -191,9 +191,44 @@ export function useMlInsights() {
   )
 
   // Sempre chamado depois de confirmação explícita na tela (adiciona a
-  // imagem gerada como nova foto do anúncio real).
+  // imagem gerada como nova foto do anúncio real). variationId opcional —
+  // quando a foto base usada na geração veio de uma variação específica,
+  // a foto nova entra também no picture_ids daquela variação (senão fica
+  // órfã no array geral e não aparece pro comprador em lugar nenhum).
   const attachItemImage = useCallback(
-    (itemId, imageBase64) => run(() => callMlInsights({ action: 'attach_item_image', item_id: itemId, image_base64: imageBase64 })),
+    (itemId, imageBase64, variationId) => run(() => callMlInsights({ action: 'attach_item_image', item_id: itemId, image_base64: imageBase64, variation_id: variationId })),
+    [run],
+  )
+
+  // Sempre chamado depois de confirmação explícita na tela — remove a
+  // foto do anúncio real (array geral e de qualquer variação que a use).
+  const deleteItemImage = useCallback(
+    (itemId, pictureId) => run(() => callMlInsights({ action: 'delete_item_image', item_id: itemId, picture_id: pictureId })),
+    [run],
+  )
+
+  // Promove uma foto já existente pra primeira posição (capa) daquela
+  // variação — só reordena, não muda quais fotos existem.
+  const reorderVariationPicture = useCallback(
+    (itemId, variationId, pictureId) => run(() => callMlInsights({ action: 'reorder_variation_picture', item_id: itemId, variation_id: variationId, picture_id: pictureId })),
+    [run],
+  )
+
+  // Remove a foto só dessa variação (nunca do array geral nem de outras
+  // variações) — pra foto compartilhada que essa variação já não precisa
+  // mais, mas que outras ainda usam.
+  const unlinkVariationPicture = useCallback(
+    (itemId, variationId, pictureId) => run(() => callMlInsights({ action: 'unlink_variation_picture', item_id: itemId, variation_id: variationId, picture_id: pictureId })),
+    [run],
+  )
+
+  // Move uma foto já existente de uma variação pra outra (ex: gerou a
+  // partir da foto do Amadeirado mas o resultado é do Preto e ficou
+  // vinculado ao Amadeirado por engano) — não regenera nada, só reatribui.
+  const moveVariationPicture = useCallback(
+    (itemId, pictureId, fromVariationId, toVariationId) => run(() => callMlInsights({
+      action: 'move_variation_picture', item_id: itemId, picture_id: pictureId, from_variation_id: fromVariationId, to_variation_id: toVariationId,
+    })),
     [run],
   )
 
@@ -339,7 +374,7 @@ export function useMlInsights() {
     draftAnswer,
     fetchAccountDashboard,
     suggestContent, applyContent,
-    suggestItemImages, generateItemImage, generateItemImageCustom, attachItemImage,
+    suggestItemImages, generateItemImage, generateItemImageCustom, attachItemImage, deleteItemImage, reorderVariationPicture, unlinkVariationPicture, moveVariationPicture,
     fetchClaimsByProduct,
     fetchAdsCoverage, fetchAdsDashboard,
     fetchPromotionInvites, fetchPromotionCandidates, promotionJoinItem, promotionLeaveItem, fetchCoupons,

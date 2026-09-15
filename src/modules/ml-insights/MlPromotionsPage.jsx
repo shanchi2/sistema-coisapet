@@ -9,6 +9,20 @@ function fmtMoney(v) {
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+// A oferta relâmpago não fica ativa na hora que indica o item — o ML
+// reserva uma janela específica (start_date/finish_date, geralmente um
+// bloco de horas num dia futuro) e só aplica o preço quando ela chega.
+// Sem mostrar isso na tela, "Aguardando início" parece bug (o Raphael
+// reportou 13/09: "ativei vários produtos... mas nenhum foi ativo pro
+// ML" — na real nenhum bug, a janela deles começava no dia seguinte).
+function fmtWindow(startIso, finishIso) {
+  if (!startIso) return null
+  const opts = { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }
+  const start = new Date(startIso).toLocaleString('pt-BR', opts)
+  const finish = finishIso ? new Date(finishIso).toLocaleString('pt-BR', opts) : null
+  return finish ? `${start} até ${finish}` : start
+}
+
 function itemLink(row) {
   return row.permalink || `https://produto.mercadolivre.com.br/${row.item_id}`
 }
@@ -744,13 +758,18 @@ export function MlPromotionsPage() {
                         <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Já participando ({lightningJoined.length})</p>
                         <div className="space-y-1.5">
                           {lightningJoined.map(r => (
-                            <div key={r.item_id} className="flex items-center justify-between gap-3 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+                            <div key={r.item_id} className="flex items-center justify-between gap-3 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 flex-wrap">
                               <a href={itemLink(r)} target="_blank" rel="noreferrer" className="text-sm text-slate-700 hover:text-emerald-700 truncate min-w-0 flex items-center gap-1.5">
                                 {r.title || r.item_id}<ExternalLink size={11} className="text-slate-300 shrink-0"/>
                               </a>
                               <div className="flex items-center gap-2 shrink-0">
                                 <span className="text-xs text-slate-500">{fmtMoney(r.price)}</span>
                                 <span className="text-xs font-semibold text-emerald-700">{ITEM_STATUS_LABEL[r.status] || r.status}</span>
+                                {r.status === 'pending' && fmtWindow(r.start_date, r.finish_date) && (
+                                  <span className="flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5" title="O preço só passa a valer de verdade no anúncio quando essa janela começar — reserva do ML, não depende de nada aqui.">
+                                    <Clock size={10}/> ativa em {fmtWindow(r.start_date, r.finish_date)}
+                                  </span>
+                                )}
                                 {r.status === 'pending' ? (
                                   <button onClick={() => requestLightningLeave(r.item_id)} disabled={lightningSubmitting}
                                     className="flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700 disabled:opacity-50">

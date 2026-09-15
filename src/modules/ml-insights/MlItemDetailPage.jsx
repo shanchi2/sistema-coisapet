@@ -4,7 +4,7 @@ import {
   ArrowLeft, Loader2, AlertTriangle, ExternalLink, Save, DollarSign,
   Type, Image as ImageIcon, TrendingUp, Package, Star, HeartPulse,
   ClipboardList, Megaphone, CheckCircle2, XCircle, ChevronDown, Sparkles, Wand2, Truck,
-  Zap, Play, Pause, History, LayoutGrid, ImageOff, ArrowRight,
+  Zap, Play, Pause, History, LayoutGrid, ImageOff, ArrowRight, X as XIcon, ZoomIn, Trash2, Plus, Link2, ArrowRightLeft,
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -36,6 +36,9 @@ const UPDATE_ACTION_LABEL = {
   promotion_leave: 'Removido de campanha',
   question_answer: 'Pergunta respondida',
   picture_added: 'Nova foto adicionada',
+  picture_removed: 'Foto removida',
+  picture_reordered: 'Foto principal alterada',
+  picture_unlinked: 'Foto removida de uma variação',
 }
 function scoreColor(score) {
   if (score >= 80) return { text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' }
@@ -60,6 +63,54 @@ function Card({ icon: Icon, title, caption, help, children, id, highlight }) {
       {!caption && <div className="mb-1"/>}
       {children}
     </div>
+  )
+}
+
+// Miniatura reutilizável da galeria de fotos (aba Imagens & IA) — clicar
+// na foto seleciona ela como base pra próxima geração; os botões de lupa
+// (ver grande) e lixeira (excluir do anúncio real) só aparecem no hover,
+// com stopPropagation pra nunca disparar a seleção junto.
+function GalleryThumb({ picture, selected, onSelect, onZoom, onDelete, onMove, isPrimary, onSetPrimary }) {
+  const sharedCount = picture.shared_with?.length || 0
+  return (
+    <button type="button" onClick={onSelect}
+      className={`relative group w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors ${selected ? 'border-violet-500' : 'border-transparent hover:border-slate-300'}`}>
+      <img src={secureThumb(picture.url)} alt="" className="w-full h-full object-cover"/>
+      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"/>
+      {sharedCount > 0 && (
+        <span title={`Essa foto também está em: ${picture.shared_with.join(', ')} — excluir aqui remove de lá também`}
+          className="absolute top-0.5 left-0.5 flex items-center gap-0.5 px-1 py-0.5 bg-amber-100/95 border border-amber-300 rounded text-amber-700 text-[9px] font-semibold leading-none">
+          <Link2 size={9}/>{sharedCount + 1}
+        </span>
+      )}
+      <span className="absolute top-0.5 right-0.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        {onMove && (
+          <span onClick={e => { e.stopPropagation(); onMove() }} title="Mover pra outra variação"
+            className="p-1 bg-white/90 hover:bg-white rounded-md text-violet-500">
+            <ArrowRightLeft size={11}/>
+          </span>
+        )}
+        <span onClick={e => { e.stopPropagation(); onZoom() }} title="Ver em tamanho grande"
+          className="p-1 bg-white/90 hover:bg-white rounded-md text-slate-500">
+          <ZoomIn size={11}/>
+        </span>
+      </span>
+      <span onClick={e => { e.stopPropagation(); onDelete() }} title="Excluir do anúncio"
+        className="absolute bottom-0.5 right-0.5 p-1 bg-white/90 hover:bg-rose-50 rounded-md text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Trash2 size={11}/>
+      </span>
+      {isPrimary ? (
+        <span title="Foto principal (capa) dessa variação"
+          className="absolute bottom-0.5 left-0.5 p-1 bg-violet-600 rounded-md text-white">
+          <Star size={10} fill="currentColor"/>
+        </span>
+      ) : onSetPrimary && (
+        <span onClick={e => { e.stopPropagation(); onSetPrimary() }} title="Tornar essa a foto principal (capa) dessa variação"
+          className="absolute bottom-0.5 left-0.5 p-1 bg-white/90 hover:bg-white rounded-md text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Star size={11}/>
+        </span>
+      )}
+    </button>
   )
 }
 
@@ -129,7 +180,7 @@ export function MlItemDetailPage() {
   const navigate = useNavigate()
   const {
     loading, error, fetchItemDetail, applyAttributes, suggestContent, applyContent, updateItemFields, fetchItemUpdateHistory,
-    suggestItemImages, generateItemImage, generateItemImageCustom, attachItemImage,
+    suggestItemImages, generateItemImage, generateItemImageCustom, attachItemImage, deleteItemImage, reorderVariationPicture, unlinkVariationPicture, moveVariationPicture,
   } = useMlInsights()
   const [detail, setDetail] = useState(null)
   const [updateHistory, setUpdateHistory] = useState(null)
@@ -149,14 +200,27 @@ export function MlItemDetailPage() {
   const [applyingContent, setApplyingContent] = useState(false)
   const [showRawAds, setShowRawAds] = useState(false)
   const [showRawPerf, setShowRawPerf] = useState(false)
-  const [confirmModal, setConfirmModal] = useState(null) // null | 'attributes' | 'content' | 'quick' | 'image'
+  const [confirmModal, setConfirmModal] = useState(null) // null | 'attributes' | 'content' | 'quick' | 'image' | 'delete_image' | 'move_image'
   const [highlightQuick, setHighlightQuick] = useState(false)
   const [imageSuggestions, setImageSuggestions] = useState(null)
   const [selectedPictureUrl, setSelectedPictureUrl] = useState(null)
+  const [selectedVariationId, setSelectedVariationId] = useState(null)
+  // Pra ONDE a imagem gerada vai (destino) — decoupled de qual foto foi
+  // usada como base/referência. Por padrão acompanha a variação clicada
+  // na galeria (`selectedVariationId`), mas pode ser trocado depois: caso
+  // real do Raphael (15/09) — usa a foto do Amadeirado como referência
+  // pra pedir "faz ela preta", mas o resultado é do Preto, não do
+  // Amadeirado.
+  const [targetVariationId, setTargetVariationId] = useState(null)
   const [customInstruction, setCustomInstruction] = useState('')
-  const [generatedImage, setGeneratedImage] = useState(null) // { image_base64, prompt_used, source }
+  const [generatedImage, setGeneratedImage] = useState(null) // { image_base64, prompt_used, source, variationId }
   const [generatingImage, setGeneratingImage] = useState(false)
   const [attachingImage, setAttachingImage] = useState(false)
+  const [deleteImageTarget, setDeleteImageTarget] = useState(null) // { id, url, context } | null
+  const [deletingImage, setDeletingImage] = useState(false)
+  const [moveImageTarget, setMoveImageTarget] = useState(null) // { id, url, fromVariationId, toVariationId } | null
+  const [movingImage, setMovingImage] = useState(false)
+  const [zoomImageUrl, setZoomImageUrl] = useState(null) // qualquer imagem em tela cheia — do anúncio ou gerada
 
   // Leva o usuário direto pro lugar do PRÓPRIO sistema que resolve essa
   // pendência — troca de aba (fica na mesma página) ou rola até Ações
@@ -310,6 +374,8 @@ export function MlItemDetailPage() {
       const res = await suggestItemImages(itemId)
       setImageSuggestions(res)
       setSelectedPictureUrl(res.pictures?.[0]?.url || null)
+      setSelectedVariationId(null)
+      setTargetVariationId(null)
       setGeneratedImage(null)
     } catch (err) {
       toast.error('Erro ao gerar sugestões de imagem: ' + err.message)
@@ -321,7 +387,7 @@ export function MlItemDetailPage() {
     setGeneratingImage(true)
     try {
       const res = await generateItemImage(selectedPictureUrl, suggestion.prompt)
-      setGeneratedImage({ ...res, source: suggestion.title })
+      setGeneratedImage({ ...res, source: suggestion.title, variationId: targetVariationId })
     } catch (err) {
       toast.error('Erro ao gerar imagem: ' + err.message)
     } finally {
@@ -334,7 +400,7 @@ export function MlItemDetailPage() {
     setGeneratingImage(true)
     try {
       const res = await generateItemImageCustom(selectedPictureUrl, customInstruction.trim())
-      setGeneratedImage({ ...res, source: 'Prompt personalizado' })
+      setGeneratedImage({ ...res, source: 'Prompt personalizado', variationId: targetVariationId })
     } catch (err) {
       toast.error('Erro ao gerar imagem: ' + err.message)
     } finally {
@@ -351,10 +417,20 @@ export function MlItemDetailPage() {
   async function confirmAttachImage() {
     setAttachingImage(true)
     try {
-      await attachItemImage(itemId, generatedImage.image_base64)
+      const res = await attachItemImage(itemId, generatedImage.image_base64, generatedImage.variationId)
       toast.success('Imagem adicionada ao anúncio no Mercado Livre!')
       const updated = await fetchItemDetail(itemId)
       setDetail(updated)
+      // Atualiza a galeria local sem precisar gerar sugestões de novo
+      // (isso custaria uma chamada de IA só pra refletir 1 foto nova).
+      const newPic = { id: res.picture_id, url: `data:image/png;base64,${generatedImage.image_base64}` }
+      setImageSuggestions(prev => prev && {
+        ...prev,
+        variations: generatedImage.variationId
+          ? prev.variations.map(v => v.id === generatedImage.variationId ? { ...v, pictures: [...v.pictures, newPic] } : v)
+          : prev.variations,
+        general_pictures: generatedImage.variationId ? prev.general_pictures : [...prev.general_pictures, newPic],
+      })
       setGeneratedImage(null)
       refreshHistory()
     } catch (err) {
@@ -362,6 +438,111 @@ export function MlItemDetailPage() {
     } finally {
       setAttachingImage(false)
       setConfirmModal(null)
+    }
+  }
+
+  // Só ABRE o modal de confirmação — nunca exclui/desvincula nada
+  // sozinho. Dentro de uma variação, se a foto é COMPARTILHADA com
+  // outras, a ação vira "desvincular só daqui" (nunca mexe nas outras
+  // variações nem no array geral) — só quando a foto é exclusiva dali
+  // (ou é uma foto geral, sem variação) que vira exclusão de verdade.
+  function requestDeleteImage(picture, variationId) {
+    const mode = variationId != null && picture.shared_with?.length > 0 ? 'unlink' : 'delete'
+    setDeleteImageTarget({ ...picture, variationId, mode })
+    setConfirmModal('delete_image')
+  }
+
+  async function confirmDeleteImage() {
+    const { id: pictureId, variationId, mode } = deleteImageTarget
+    setDeletingImage(true)
+    try {
+      if (mode === 'unlink') {
+        await unlinkVariationPicture(itemId, variationId, pictureId)
+        toast.success('Foto removida dessa variação!')
+        setImageSuggestions(prev => prev && {
+          ...prev,
+          variations: prev.variations.map(v => v.id !== variationId ? v : { ...v, pictures: v.pictures.filter(p => p.id !== pictureId) }),
+        })
+      } else {
+        await deleteItemImage(itemId, pictureId)
+        toast.success('Foto removida do anúncio!')
+        setImageSuggestions(prev => prev && {
+          ...prev,
+          general_pictures: prev.general_pictures.filter(p => p.id !== pictureId),
+          variations: prev.variations.map(v => ({ ...v, pictures: v.pictures.filter(p => p.id !== pictureId) })),
+        })
+      }
+      if (selectedPictureUrl === deleteImageTarget.url) {
+        setSelectedPictureUrl(null)
+        setSelectedVariationId(null)
+        setTargetVariationId(null)
+      }
+      const updated = await fetchItemDetail(itemId)
+      setDetail(updated)
+      refreshHistory()
+    } catch (err) {
+      toast.error(`Erro ao ${mode === 'unlink' ? 'remover' : 'excluir'} imagem: ` + err.message)
+    } finally {
+      setDeletingImage(false)
+      setConfirmModal(null)
+      setDeleteImageTarget(null)
+    }
+  }
+
+  // Só ABRE o modal de confirmação (com o seletor de destino já pronto,
+  // pra 1ª variação diferente da de origem) — nunca move nada sozinho.
+  // Pedido do Raphael (15/09): foto gerada a partir da referência do
+  // Amadeirado tinha ficado vinculada ao Amadeirado (a variação da foto
+  // BASE), não ao Preto (destino de verdade) — sem essa ação só dava pra
+  // excluir e gerar de novo.
+  function requestMoveImage(picture, fromVariationId) {
+    const firstOther = imageSuggestions.variations.find(v => v.id !== fromVariationId)
+    setMoveImageTarget({ ...picture, fromVariationId, toVariationId: firstOther?.id ?? null })
+    setConfirmModal('move_image')
+  }
+
+  async function confirmMoveImage() {
+    const { id: pictureId, fromVariationId, toVariationId } = moveImageTarget
+    setMovingImage(true)
+    try {
+      await moveVariationPicture(itemId, pictureId, fromVariationId, toVariationId)
+      toast.success('Foto movida pra outra variação!')
+      setImageSuggestions(prev => prev && {
+        ...prev,
+        variations: prev.variations.map(v => {
+          if (v.id === fromVariationId) return { ...v, pictures: v.pictures.filter(p => p.id !== pictureId) }
+          if (v.id === toVariationId && !v.pictures.some(p => p.id === pictureId)) return { ...v, pictures: [...v.pictures, { id: pictureId, url: moveImageTarget.url }] }
+          return v
+        }),
+      })
+      const updated = await fetchItemDetail(itemId)
+      setDetail(updated)
+      refreshHistory()
+    } catch (err) {
+      toast.error('Erro ao mover imagem: ' + err.message)
+    } finally {
+      setMovingImage(false)
+      setConfirmModal(null)
+      setMoveImageTarget(null)
+    }
+  }
+
+  // Só reordena (nunca adiciona/remove foto) — por isso não passa por
+  // confirmação, diferente de adicionar/excluir.
+  async function handleSetPrimaryPicture(variationId, pictureId) {
+    try {
+      await reorderVariationPicture(itemId, variationId, pictureId)
+      toast.success('Foto principal atualizada!')
+      setImageSuggestions(prev => prev && {
+        ...prev,
+        variations: prev.variations.map(v => v.id !== variationId ? v : {
+          ...v,
+          pictures: [v.pictures.find(p => p.id === pictureId), ...v.pictures.filter(p => p.id !== pictureId)],
+        }),
+      })
+      refreshHistory()
+    } catch (err) {
+      toast.error('Erro ao definir foto principal: ' + err.message)
     }
   }
 
@@ -403,15 +584,24 @@ export function MlItemDetailPage() {
           <div className="flex items-start gap-5 flex-wrap">
             {/* Foto */}
             <div className="shrink-0">
-              <div className="w-28 h-28 rounded-2xl bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center">
+              <div className="relative group w-28 h-28 rounded-2xl bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center">
                 {heroPic
-                  ? <img src={heroPic} alt="" className="w-full h-full object-cover"/>
+                  ? (
+                    <>
+                      <img src={heroPic} alt="" className="w-full h-full object-cover cursor-zoom-in" onClick={() => setZoomImageUrl(heroPic)}/>
+                      <button onClick={() => setZoomImageUrl(heroPic)} title="Ver em tamanho grande"
+                        className="absolute top-1 right-1 p-1 bg-white/90 hover:bg-white rounded-lg text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <ZoomIn size={12}/>
+                      </button>
+                    </>
+                  )
                   : <ImageOff size={26} className="text-slate-300"/>}
               </div>
               {pictures.length > 1 && (
                 <div className="flex gap-1 mt-1.5">
                   {pictures.slice(1, 5).map((p, i) => (
-                    <img key={i} src={p} alt="" className="w-6 h-6 rounded-md object-cover border border-slate-200"/>
+                    <img key={i} src={p} alt="" className="w-6 h-6 rounded-md object-cover border border-slate-200 cursor-zoom-in hover:ring-2 hover:ring-violet-300"
+                      onClick={() => setZoomImageUrl(p)}/>
                   ))}
                   {pictures.length > 5 && (
                     <span className="w-6 h-6 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-[9px] font-semibold text-slate-400">
@@ -737,117 +927,178 @@ export function MlItemDetailPage() {
         {/* ── Aba: Imagens & IA ────────────────────────────────────── */}
         {tab === 'images' && (
           <div className="space-y-4">
-            <Card icon={ImageIcon} title="Sugestões de imagem com IA" caption="Baseado nas perguntas reais de compradores (quando houver) e na ficha técnica/descrição do anúncio"
-              help="Gera até 4 ideias de foto a partir dos dados reais do anúncio. Só olhar as sugestões não cria nem grava nada — a geração de verdade só acontece ao clicar em 'Gerar essa imagem', e adicionar ao anúncio real sempre pede confirmação antes de gravar.">
-              {!imageSuggestions ? (
+            {!imageSuggestions ? (
+              <Card icon={ImageIcon} title="Imagens & IA" caption="Galeria organizada por variação + sugestões e geração de foto real por IA"
+                help="Carrega a galeria de fotos do anúncio (organizada por variação) e sugere ideias de imagem com base nas perguntas reais de compradores e na ficha técnica. Só carregar não grava nada.">
                 <button onClick={handleSuggestImages} disabled={loading}
                   className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors">
                   {loading ? <Loader2 size={15} className="animate-spin"/> : <Wand2 size={15}/>}
-                  {loading ? 'Analisando anúncio...' : 'Sugerir imagens'}
+                  {loading ? 'Analisando anúncio...' : 'Carregar galeria e sugestões'}
                 </button>
-              ) : (
-                <div className="space-y-4">
-                  {imageSuggestions.questions_considered?.length > 0 ? (
-                    <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                      <p className="font-semibold text-slate-600 mb-1">Perguntas reais de compradores consideradas ({imageSuggestions.questions_considered.length}):</p>
-                      <ul className="list-disc pl-4 space-y-0.5">
-                        {imageSuggestions.questions_considered.map((q, i) => <li key={i}>{q}</li>)}
-                      </ul>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                      Esse anúncio ainda não tem perguntas de comprador — as sugestões abaixo vieram só da ficha técnica e da descrição.
-                    </p>
-                  )}
-
-                  {imageSuggestions.pictures?.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-slate-500 uppercase mb-1.5">Foto base do produto</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {imageSuggestions.pictures.map(p => (
-                          <button key={p.id} type="button" onClick={() => setSelectedPictureUrl(p.url)}
-                            className={`w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors ${selectedPictureUrl === p.url ? 'border-violet-500' : 'border-transparent hover:border-slate-300'}`}>
-                            <img src={secureThumb(p.url)} alt="" className="w-full h-full object-cover"/>
-                          </button>
-                        ))}
-                      </div>
-                      {imageSuggestions.variations?.length > 0 && (
-                        <div className="flex gap-1.5 flex-wrap mt-2">
-                          {imageSuggestions.variations.map(v => (
-                            <button key={v.id} type="button" onClick={() => setSelectedPictureUrl(v.picture_url)}
-                              className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${selectedPictureUrl === v.picture_url ? 'text-violet-700 bg-violet-50 border-violet-300' : 'text-slate-500 bg-white border-slate-200 hover:border-slate-300'}`}>
-                              {v.label}
-                            </button>
+              </Card>
+            ) : (
+              <>
+                {/* Galeria organizada por variação — sempre visível, é o
+                    "estado atual" do anúncio (o que já foi feito) */}
+                <Card icon={ImageIcon} title="Galeria de fotos" caption={imageSuggestions.variations?.length > 0 ? 'Uma seção por variação — clique numa foto pra usar como base da próxima geração' : 'Clique numa foto pra usar como base da próxima geração'}
+                  help="Cada foto pode ser vista em tamanho grande (lupa) ou excluída do anúncio real (lixeira) passando o mouse por cima. Clicar na própria foto só seleciona ela como referência pra gerar uma imagem nova — não grava nada.">
+                  <div className="space-y-4">
+                    {imageSuggestions.variations?.length > 0 && imageSuggestions.variations.map(v => (
+                      <div key={v.id}>
+                        <p className="text-xs font-semibold text-slate-600 mb-1.5">{v.label} <span className="text-slate-400 font-normal">({v.pictures.length} foto{v.pictures.length === 1 ? '' : 's'})</span></p>
+                        <div className="flex gap-2 flex-wrap">
+                          {v.pictures.map((p, i) => (
+                            <GalleryThumb key={p.id} picture={p}
+                              selected={selectedPictureUrl === p.url && selectedVariationId === v.id}
+                              onSelect={() => { setSelectedPictureUrl(p.url); setSelectedVariationId(v.id); setTargetVariationId(v.id) }}
+                              onZoom={() => setZoomImageUrl(p.url)}
+                              onDelete={() => requestDeleteImage(p, v.id)}
+                              onMove={imageSuggestions.variations.length > 1 ? () => requestMoveImage(p, v.id) : undefined}
+                              isPrimary={i === 0}
+                              onSetPrimary={v.pictures.length > 1 ? () => handleSetPrimaryPicture(v.id, p.id) : null}/>
                           ))}
+                          <button type="button" onClick={() => { setSelectedPictureUrl(v.pictures[0]?.url || null); setSelectedVariationId(v.id); setTargetVariationId(v.id) }}
+                            title="Selecionar essa variação pra gerar uma imagem nova"
+                            className={`w-16 h-16 rounded-lg border-2 border-dashed flex items-center justify-center transition-colors ${selectedVariationId === v.id && !v.pictures.some(p => p.url === selectedPictureUrl) ? 'border-violet-400 text-violet-500' : 'border-slate-200 text-slate-300 hover:border-slate-300'}`}>
+                            <Plus size={18}/>
+                          </button>
                         </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    {imageSuggestions.suggestions.map((s, i) => (
-                      <div key={i} className="flex items-start justify-between gap-3 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2.5">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-800">{s.title}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{s.reason}</p>
-                        </div>
-                        <button onClick={() => handleGenerateFromSuggestion(s)} disabled={generatingImage || !selectedPictureUrl}
-                          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
-                          {generatingImage ? <Loader2 size={13} className="animate-spin"/> : <Wand2 size={13}/>}
-                          Gerar essa imagem
-                        </button>
                       </div>
                     ))}
-                    {!imageSuggestions.suggestions.length && (
-                      <p className="text-sm text-slate-400">A IA não conseguiu montar sugestões dessa vez — tente de novo ou use o prompt personalizado abaixo.</p>
+
+                    {imageSuggestions.general_pictures?.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-600 mb-1.5">
+                          {imageSuggestions.variations?.length > 0 ? 'Fotos gerais (sem variação)' : 'Fotos do anúncio'}
+                          <span className="text-slate-400 font-normal"> ({imageSuggestions.general_pictures.length})</span>
+                        </p>
+                        {imageSuggestions.variations?.length > 0 && (
+                          <p className="text-[11px] text-slate-400 mb-1.5">Não aparecem pra quem já escolheu uma variação específica no anúncio — só na galeria geral.</p>
+                        )}
+                        <div className="flex gap-2 flex-wrap">
+                          {imageSuggestions.general_pictures.map(p => (
+                            <GalleryThumb key={p.id} picture={p}
+                              selected={selectedPictureUrl === p.url && !selectedVariationId}
+                              onSelect={() => { setSelectedPictureUrl(p.url); setSelectedVariationId(null); setTargetVariationId(null) }}
+                              onZoom={() => setZoomImageUrl(p.url)}
+                              onDelete={() => requestDeleteImage(p)}/>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
+                </Card>
 
-                  <button onClick={handleSuggestImages} disabled={loading} className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2">
-                    Gerar sugestões de novo
-                  </button>
-                </div>
-              )}
-            </Card>
+                {/* Alvo atual + geração — sempre mostra pra onde a próxima
+                    imagem gerada vai, antes de gerar qualquer coisa */}
+                <Card icon={Wand2} title="Gerar nova imagem" caption={
+                  selectedVariationId
+                    ? `Foto base: variação ${imageSuggestions.variations.find(v => v.id === selectedVariationId)?.label}`
+                    : selectedPictureUrl ? 'Foto base: galeria geral' : 'Selecione uma foto na galeria acima pra começar'
+                  }
+                  help="Escolha uma sugestão da IA ou descreva um pedido simples no prompt personalizado — os dois usam a foto selecionada na galeria acima como referência visual. A variação de DESTINO é escolhida separado, logo abaixo — não precisa ser a mesma variação da foto usada como referência (ex: usar a foto do Amadeirado de base pra gerar a versão Preta).">
+                  <div className="space-y-4">
+                    {selectedPictureUrl && imageSuggestions.variations?.length > 0 && (
+                      <div className="flex items-center gap-2 text-xs bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+                        <span className="font-semibold text-violet-700 shrink-0">Vai entrar em:</span>
+                        <select value={targetVariationId ?? ''} onChange={e => setTargetVariationId(e.target.value ? Number(e.target.value) : null)}
+                          className="flex-1 min-w-0 border border-violet-200 rounded-md px-2 py-1 text-xs bg-white text-slate-700 focus:outline-none focus:border-violet-400">
+                          <option value="">Galeria geral (sem variação)</option>
+                          {imageSuggestions.variations.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {imageSuggestions.questions_considered?.length > 0 ? (
+                      <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                        <p className="font-semibold text-slate-600 mb-1">Perguntas reais de compradores consideradas ({imageSuggestions.questions_considered.length}):</p>
+                        <ul className="list-disc pl-4 space-y-0.5">
+                          {imageSuggestions.questions_considered.map((q, i) => <li key={i}>{q}</li>)}
+                        </ul>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                        Esse anúncio ainda não tem perguntas de comprador — as sugestões abaixo vieram só da ficha técnica e da descrição.
+                      </p>
+                    )}
 
-            {imageSuggestions && (
-              <Card icon={Wand2} title="Prompt personalizado" caption="Pra um pedido simples e específico, sem passar pela sugestão da IA"
-                help="Descreva em português o que quer mudar na foto (ex: 'gere uma imagem deste item na cor rosa, sem mudar nada além da cor'). O resto do produto é mantido fiel à foto base escolhida acima.">
-                <div className="flex gap-2 flex-col sm:flex-row">
-                  <input type="text" value={customInstruction} onChange={e => setCustomInstruction(e.target.value)}
-                    placeholder="Ex: gere uma imagem deste item na cor rosa, sem mudar nada além da cor"
-                    className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-400"/>
-                  <button onClick={handleGenerateCustom} disabled={generatingImage || !selectedPictureUrl || !customInstruction.trim()}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
-                    {generatingImage ? <Loader2 size={14} className="animate-spin"/> : <Wand2 size={14}/>}
-                    Gerar
-                  </button>
-                </div>
-              </Card>
-            )}
+                    <div className="space-y-2">
+                      {imageSuggestions.suggestions.map((s, i) => (
+                        <div key={i} className="flex items-start justify-between gap-3 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2.5">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">{s.title}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{s.reason}</p>
+                          </div>
+                          <button onClick={() => handleGenerateFromSuggestion(s)} disabled={generatingImage || !selectedPictureUrl}
+                            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
+                            {generatingImage ? <Loader2 size={13} className="animate-spin"/> : <Wand2 size={13}/>}
+                            Gerar essa imagem
+                          </button>
+                        </div>
+                      ))}
+                      {!imageSuggestions.suggestions.length && (
+                        <p className="text-sm text-slate-400">A IA não conseguiu montar sugestões dessa vez — tente de novo ou use o prompt personalizado abaixo.</p>
+                      )}
+                    </div>
 
-            {generatedImage && (
-              <Card icon={ImageIcon} title="Prévia da imagem gerada" caption={generatedImage.source}
-                help="Só é gravada no anúncio real depois que você confirmar. Enquanto isso é só uma prévia — pode descartar e gerar de novo à vontade.">
-                <div className="flex gap-4 flex-wrap items-start">
-                  <img src={`data:image/png;base64,${generatedImage.image_base64}`} alt="" className="w-48 rounded-xl border border-slate-200"/>
-                  <div className="flex-1 min-w-[220px] space-y-3">
-                    <details className="text-xs text-slate-400">
-                      <summary className="cursor-pointer select-none">Ver instrução usada (inglês)</summary>
-                      <p className="mt-1 whitespace-pre-wrap">{generatedImage.prompt_used}</p>
-                    </details>
-                    <div className="flex gap-2">
-                      <button onClick={requestAttachImage}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors">
-                        <CheckCircle2 size={14}/> Adicionar ao anúncio
-                      </button>
-                      <button onClick={() => setGeneratedImage(null)} className="px-4 py-2 text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
-                        Descartar
+                    <div className="flex gap-2 flex-col sm:flex-row pt-1 border-t border-slate-100">
+                      <input type="text" value={customInstruction} onChange={e => setCustomInstruction(e.target.value)}
+                        placeholder="Prompt personalizado — ex: gere uma imagem deste item na cor rosa, sem mudar nada além da cor"
+                        className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-400 mt-3"/>
+                      <button onClick={handleGenerateCustom} disabled={generatingImage || !selectedPictureUrl || !customInstruction.trim()}
+                        className="flex items-center gap-1.5 px-4 py-2 mt-3 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
+                        {generatingImage ? <Loader2 size={14} className="animate-spin"/> : <Wand2 size={14}/>}
+                        Gerar
                       </button>
                     </div>
+
+                    <button onClick={handleSuggestImages} disabled={loading} className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2">
+                      Recarregar galeria e sugestões
+                    </button>
                   </div>
-                </div>
-              </Card>
+                </Card>
+
+                {generatedImage && (
+                  <Card icon={ImageIcon} title="Prévia da imagem gerada" caption={generatedImage.source}
+                    help="Só é gravada no anúncio real depois que você confirmar. Enquanto isso é só uma prévia — pode descartar e gerar de novo à vontade.">
+                    <div className="flex gap-4 flex-wrap items-start">
+                      <div className="relative group shrink-0">
+                        <img src={`data:image/png;base64,${generatedImage.image_base64}`} alt="" className="w-48 rounded-xl border border-slate-200 cursor-zoom-in"
+                          onClick={() => setZoomImageUrl(`data:image/png;base64,${generatedImage.image_base64}`)}/>
+                        <button onClick={() => setZoomImageUrl(`data:image/png;base64,${generatedImage.image_base64}`)} title="Ver em tamanho grande"
+                          className="absolute top-1.5 right-1.5 p-1.5 bg-white/90 hover:bg-white rounded-lg text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <ZoomIn size={13}/>
+                        </button>
+                      </div>
+                      <div className="flex-1 min-w-[220px] space-y-3">
+                        {imageSuggestions.variations?.length > 0 && (
+                          <div className="flex items-center gap-2 text-xs bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+                            <span className="font-semibold text-violet-700 shrink-0">Vai entrar em:</span>
+                            <select value={generatedImage.variationId ?? ''}
+                              onChange={e => setGeneratedImage(prev => ({ ...prev, variationId: e.target.value ? Number(e.target.value) : null }))}
+                              className="flex-1 min-w-0 border border-violet-200 rounded-md px-2 py-1 text-xs bg-white text-slate-700 focus:outline-none focus:border-violet-400">
+                              <option value="">Galeria geral (sem variação)</option>
+                              {imageSuggestions.variations.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+                            </select>
+                          </div>
+                        )}
+                        <details className="text-xs text-slate-400">
+                          <summary className="cursor-pointer select-none">Ver instrução usada (inglês)</summary>
+                          <p className="mt-1 whitespace-pre-wrap">{generatedImage.prompt_used}</p>
+                        </details>
+                        <div className="flex gap-2">
+                          <button onClick={requestAttachImage}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors">
+                            <CheckCircle2 size={14}/> Adicionar ao anúncio
+                          </button>
+                          <button onClick={() => setGeneratedImage(null)} className="px-4 py-2 text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+                            Descartar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1035,14 +1286,68 @@ export function MlItemDetailPage() {
       <ConfirmWriteModal
         open={confirmModal === 'image' && !!generatedImage}
         title="Adicionar imagem ao anúncio"
-        description="Vai acrescentar essa foto como uma NOVA imagem do anúncio real no Mercado Livre — não substitui nem remove nenhuma foto existente."
+        description={generatedImage?.variationId
+          ? `Vai acrescentar essa foto como uma NOVA imagem do anúncio real no Mercado Livre, já vinculada à variação "${imageSuggestions?.variations?.find(v => v.id === generatedImage.variationId)?.label}" — não substitui nem remove nenhuma foto existente.`
+          : 'Vai acrescentar essa foto como uma NOVA imagem do anúncio real no Mercado Livre, só na galeria geral (sem variação vinculada) — não substitui nem remove nenhuma foto existente.'}
         confirming={attachingImage}
         onConfirm={confirmAttachImage}
         onCancel={() => setConfirmModal(null)}
         detail={generatedImage && (
-          <img src={`data:image/png;base64,${generatedImage.image_base64}`} alt="" className="w-40 rounded-lg border border-slate-200"/>
+          <img src={`data:image/png;base64,${generatedImage.image_base64}`} alt="" className="w-40 rounded-lg border border-slate-200 cursor-zoom-in"
+            onClick={() => setZoomImageUrl(`data:image/png;base64,${generatedImage.image_base64}`)}/>
         )}
       />
+
+      <ConfirmWriteModal
+        open={confirmModal === 'delete_image' && !!deleteImageTarget}
+        title={deleteImageTarget?.mode === 'unlink' ? 'Remover foto dessa variação' : 'Excluir imagem do anúncio'}
+        description={deleteImageTarget?.mode === 'unlink'
+          ? `Vai tirar essa foto só da variação "${imageSuggestions?.variations?.find(v => v.id === deleteImageTarget.variationId)?.label}" — ela continua no anúncio e em quem mais a usa (${deleteImageTarget?.shared_with?.join(', ')}). Não dá pra desfazer — só adicionando de volta.`
+          : 'Vai remover essa foto de verdade do anúncio real no Mercado Livre (do array geral e de qualquer variação que a use). Não dá pra desfazer — só gerando ou subindo outra foto de novo.'}
+        confirming={deletingImage}
+        onConfirm={confirmDeleteImage}
+        onCancel={() => { setConfirmModal(null); setDeleteImageTarget(null) }}
+        detail={deleteImageTarget && (
+          <img src={secureThumb(deleteImageTarget.url)} alt="" className="w-40 rounded-lg border border-slate-200"/>
+        )}
+      />
+
+      <ConfirmWriteModal
+        open={confirmModal === 'move_image' && !!moveImageTarget}
+        title="Mover foto pra outra variação"
+        description={moveImageTarget && imageSuggestions
+          ? `Vai tirar essa foto de "${imageSuggestions.variations.find(v => v.id === moveImageTarget.fromVariationId)?.label}" e colocar em "${imageSuggestions.variations.find(v => v.id === moveImageTarget.toVariationId)?.label}" no anúncio real. Não regenera nada — a foto continua a mesma.`
+          : ''}
+        confirmLabel="Sim, mover no Mercado Livre"
+        confirming={movingImage}
+        onConfirm={confirmMoveImage}
+        onCancel={() => { setConfirmModal(null); setMoveImageTarget(null) }}
+        detail={moveImageTarget && imageSuggestions && (
+          <div className="flex items-center gap-3">
+            <img src={secureThumb(moveImageTarget.url)} alt="" className="w-24 h-24 object-cover rounded-lg border border-slate-200 shrink-0"/>
+            <div className="flex-1 space-y-1">
+              <label className="text-xs font-semibold text-slate-600">Mover pra qual variação?</label>
+              <select value={moveImageTarget.toVariationId ?? ''}
+                onChange={e => setMoveImageTarget(prev => ({ ...prev, toVariationId: e.target.value ? Number(e.target.value) : null }))}
+                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-violet-400">
+                {imageSuggestions.variations.filter(v => v.id !== moveImageTarget.fromVariationId).map(v => (
+                  <option key={v.id} value={v.id}>{v.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+      />
+
+      {zoomImageUrl && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[80] p-6" onClick={() => setZoomImageUrl(null)}>
+          <img src={zoomImageUrl} alt="" className="max-w-full max-h-full rounded-xl" onClick={e => e.stopPropagation()}/>
+          <button onClick={() => setZoomImageUrl(null)}
+            className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors">
+            <XIcon size={20}/>
+          </button>
+        </div>
+      )}
     </div>
   )
 }

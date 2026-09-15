@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { Rocket, RefreshCw, Loader2, AlertTriangle, ExternalLink, Truck, TrendingDown, Ghost, DollarSign, Boxes, Megaphone, HeartPulse } from 'lucide-react'
 import { useMlInsights } from './hooks/useMlInsights'
@@ -84,6 +84,14 @@ export function MlOpportunitiesPage() {
     const adsSet = new Set(adsData.item_ids || [])
     setMerged(traffic.map(r => ({ ...r, price_info: priceMap.get(r.item_id) || null, has_ads: adsSet.has(r.item_id) })))
   }, [fetchTrafficAudit, fetchPriceScan, fetchAdsCoverage])
+
+  // Mesmo padrão das outras telas do módulo (Saúde dos Anúncios, Tráfego
+  // & Conversão) — carrega sozinho ao entrar na tela, "Analisar" cobre só
+  // o refresh manual depois. Faltava aqui: antes disso, as abas ficavam
+  // sem nenhum dado até alguém clicar em "Analisar" (nada óbvio no botão
+  // avisando isso), dando a impressão de tela quebrada — bug reportado
+  // pelo Raphael em 14/09 ("clico nos tópicos... nada acontece").
+  useEffect(() => { scan() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const searchCombos = useCallback(async () => {
     setCombosLoading(true)
