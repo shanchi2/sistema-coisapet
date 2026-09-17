@@ -685,8 +685,10 @@ function startApp(){
   checkUnseenMensagens()
   initChatRealtime();checkUnreadChat()
   loadBirthdays();loadAchievements()
-  // Mostra botão de lançamento de produção para horistas
-  if(me.role==='horista'){
+  // Mostra botão de lançamento de produção pra horistas e produção
+  // (pedido do Raphael, 17/09: Daniel — role 'producao' — também
+  // precisa lançar a própria produção diária por aqui)
+  if(me.role==='horista'||me.role==='producao'){
     const nbLanc=document.getElementById('nb-lancamento')
     if(nbLanc) nbLanc.style.display=''
     const qaLanc=document.getElementById('qa-lancamento')
