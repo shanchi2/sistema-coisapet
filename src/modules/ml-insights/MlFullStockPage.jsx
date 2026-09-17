@@ -1,7 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Warehouse, RefreshCw, Loader2, AlertTriangle, ExternalLink, ImageOff, ChevronDown, Info, PackageCheck, PackageX, Truck } from 'lucide-react'
+import { Warehouse, RefreshCw, Loader2, AlertTriangle, ExternalLink, ImageOff, ChevronDown, Info, PackageCheck, PackageX, Truck, Search, Clock } from 'lucide-react'
 import { useMlInsights } from './hooks/useMlInsights'
+
+function fmtDateTime(d) {
+  if (!d) return null
+  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
 
 // "X un. a caminho" cruzado com a Gestão de Envios Full (pedido do
 // Raphael, 13/09: "fazer essas 2 telas conversarem") — o estoque
@@ -128,11 +133,22 @@ function FullProductCard({ item }) {
   )
 }
 
+const LEVEL_FILTERS = [
+  { key: 'all',      label: 'Todos' },
+  { key: 'zero',     label: 'Sem estoque' },
+  { key: 'critical', label: 'Crítico' },
+  { key: 'warning',  label: 'Baixo' },
+  { key: 'ok',       label: 'Saudável' },
+]
+
 export function MlFullStockPage() {
   const { loading, error, fetchFulfillmentStock } = useMlInsights()
   const [items, setItems] = useState(null) // null = nunca escaneado
+  const [lastSync, setLastSync] = useState(null) // client-side — busca é sempre ao vivo na API do ML
+  const [levelFilter, setLevelFilter] = useState('all')
+  const [search, setSearch] = useState('')
 
-  const load = () => fetchFulfillmentStock().then(setItems).catch(() => {})
+  const load = () => fetchFulfillmentStock().then(data => { setItems(data); setLastSync(new Date()) }).catch(() => {})
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = items ? {
@@ -143,7 +159,14 @@ export function MlFullStockPage() {
     units: items.reduce((s, i) => s + i.available_quantity, 0),
   } : null
 
-  const sorted = items ? [...items].sort((a, b) => a.available_quantity - b.available_quantity) : []
+  const filtered = useMemo(() => {
+    if (!items) return []
+    return items
+      .filter(i => levelFilter === 'all' || stockLevel(i.available_quantity) === levelFilter)
+      .filter(i => !search.trim() || i.title?.toLowerCase().includes(search.trim().toLowerCase()) || i.item_id?.toLowerCase().includes(search.trim().toLowerCase()))
+  }, [items, levelFilter, search])
+
+  const sorted = [...filtered].sort((a, b) => a.available_quantity - b.available_quantity)
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
@@ -160,11 +183,18 @@ export function MlFullStockPage() {
               <p className="text-sm text-slate-500">Quanto você tem fisicamente no centro de distribuição do Mercado Livre, por produto</p>
             </div>
           </div>
-          <button onClick={load} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors shadow-sm">
-            {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-            {loading ? 'Atualizando...' : 'Atualizar'}
-          </button>
+          <div className="flex flex-col items-end gap-1.5">
+            <button onClick={load} disabled={loading}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors shadow-sm">
+              {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+              {loading ? 'Atualizando...' : 'Atualizar'}
+            </button>
+            {lastSync && (
+              <p className="flex items-center gap-1 text-xs text-slate-400">
+                <Clock size={11} /> Consultado ao vivo às {fmtDateTime(lastSync)}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Aviso: reposição é manual */}
@@ -187,23 +217,49 @@ export function MlFullStockPage() {
 
         {stats && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white border border-slate-200 rounded-2xl p-5">
+            <button onClick={() => setLevelFilter('all')}
+              className={`text-left bg-white border rounded-2xl p-5 transition-colors ${levelFilter === 'all' ? 'border-slate-400 ring-2 ring-slate-200' : 'border-slate-200 hover:border-slate-300'}`}>
               <div className="flex items-center gap-2 mb-1"><Warehouse size={14} className="text-slate-400" /><p className="text-xs font-semibold text-slate-500 uppercase">No Full</p></div>
               <p className="text-2xl font-bold text-slate-800">{stats.total}</p>
               <p className="text-xs text-slate-400 mt-1">{stats.units} unidades ao todo</p>
-            </div>
-            <div className="bg-white border border-rose-200 rounded-2xl p-5">
+            </button>
+            <button onClick={() => setLevelFilter('zero')}
+              className={`text-left bg-white border rounded-2xl p-5 transition-colors ${levelFilter === 'zero' ? 'border-rose-400 ring-2 ring-rose-200' : 'border-rose-200 hover:border-rose-300'}`}>
               <div className="flex items-center gap-2 mb-1"><PackageX size={14} className="text-rose-500" /><p className="text-xs font-semibold text-slate-500 uppercase">Sem estoque</p></div>
               <p className="text-2xl font-bold text-rose-600">{stats.zero}</p>
-            </div>
-            <div className="bg-white border border-amber-200 rounded-2xl p-5">
+            </button>
+            <button onClick={() => setLevelFilter('critical')}
+              className={`text-left bg-white border rounded-2xl p-5 transition-colors ${levelFilter === 'critical' ? 'border-amber-400 ring-2 ring-amber-200' : 'border-amber-200 hover:border-amber-300'}`}>
               <div className="flex items-center gap-2 mb-1"><AlertTriangle size={14} className="text-amber-500" /><p className="text-xs font-semibold text-slate-500 uppercase">Estoque crítico (≤{CRITICAL_MAX})</p></div>
               <p className="text-2xl font-bold text-amber-600">{stats.critical}</p>
-            </div>
-            <div className="bg-white border border-emerald-200 rounded-2xl p-5">
+            </button>
+            <button onClick={() => setLevelFilter('ok')}
+              className={`text-left bg-white border rounded-2xl p-5 transition-colors ${levelFilter === 'ok' ? 'border-emerald-400 ring-2 ring-emerald-200' : 'border-emerald-200 hover:border-emerald-300'}`}>
               <div className="flex items-center gap-2 mb-1"><PackageCheck size={14} className="text-emerald-500" /><p className="text-xs font-semibold text-slate-500 uppercase">Saudável</p></div>
               <p className="text-2xl font-bold text-emerald-600">{stats.total - stats.zero - stats.critical - stats.warning}</p>
+            </button>
+          </div>
+        )}
+
+        {items && items.length > 0 && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar por título ou MLB..."
+                className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-200 bg-white" />
             </div>
+            <div className="flex gap-1.5">
+              {LEVEL_FILTERS.map(f => (
+                <button key={f.key} onClick={() => setLevelFilter(f.key)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                    levelFilter === f.key ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-emerald-300'
+                  }`}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-xs text-slate-400 ml-auto">{filtered.length} de {items.length} anúncio{items.length > 1 ? 's' : ''}</span>
           </div>
         )}
 
@@ -211,6 +267,12 @@ export function MlFullStockPage() {
           <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
             <Warehouse size={32} strokeWidth={1} className="mx-auto mb-3 text-slate-200" />
             <p className="text-slate-500">Nenhum anúncio no Full encontrado.</p>
+          </div>
+        )}
+
+        {items && items.length > 0 && filtered.length === 0 && (
+          <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
+            <p className="text-slate-500">Nenhum anúncio bate com o filtro.</p>
           </div>
         )}
 

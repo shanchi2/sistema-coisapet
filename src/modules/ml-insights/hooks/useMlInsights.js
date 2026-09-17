@@ -295,7 +295,7 @@ export function useMlInsights() {
   )
 
   const fetchSellerCampaignLastChange = useCallback(
-    () => run(async () => (await callMlInsights({ action: 'seller_campaign_last_change' })).last_change),
+    (promotionId) => run(async () => (await callMlInsights({ action: 'seller_campaign_last_change', promotion_id: promotionId })).last_change),
     [run],
   )
 

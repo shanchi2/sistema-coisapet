@@ -2263,14 +2263,16 @@ async function sellerCampaignDelete(integration: any, db: ReturnType<typeof admi
 // campanha), não da criação dela. Fonte: nosso próprio log
 // `ml_item_updates` (já gravado por promotionJoinItem/
 // promotionLeaveItem de qualquer forma), não precisa perguntar de novo
-// pro ML.
-async function sellerCampaignLastChange(db: ReturnType<typeof adminClient>) {
-  const { data, error } = await db.from('ml_item_updates')
+// pro ML. `promotionId` opcional (16/09: agora dá pra ter várias
+// campanhas SELLER_CAMPAIGN ao mesmo tempo — sem filtrar por ID, o
+// "última alteração" de uma vazava pra todas as outras).
+async function sellerCampaignLastChange(db: ReturnType<typeof adminClient>, promotionId?: string) {
+  let query = db.from('ml_item_updates')
     .select('updated_at')
     .in('action', ['promotion_join', 'promotion_leave'])
     .filter('detail->>promotion_type', 'eq', 'SELLER_CAMPAIGN')
-    .order('updated_at', { ascending: false })
-    .limit(1)
+  if (promotionId) query = query.filter('detail->>promotion_id', 'eq', promotionId)
+  const { data, error } = await query.order('updated_at', { ascending: false }).limit(1)
   if (error) throw error
   return { last_change: data?.[0]?.updated_at ?? null }
 }
@@ -2635,7 +2637,7 @@ serve(async (req) => {
         if (!body.promotion_id) return json({ error: 'promotion_id obrigatório' }, 400)
         return json(await sellerCampaignDelete(integration, db, body.promotion_id))
       case 'seller_campaign_last_change':
-        return json(await sellerCampaignLastChange(db))
+        return json(await sellerCampaignLastChange(db, body.promotion_id))
       case 'combo_suggestions':
         return json(await comboSuggestions(db, Number(body.days) || 180))
       case 'suggest_content':

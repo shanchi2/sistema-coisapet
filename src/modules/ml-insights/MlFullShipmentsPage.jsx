@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Truck, Loader2, AlertTriangle, ExternalLink, ChevronDown, Info, PackageCheck, PackageX, Clock, Calendar, MapPin, Ban, Hourglass, RefreshCw } from 'lucide-react'
+import { Truck, Loader2, AlertTriangle, ExternalLink, ChevronDown, Info, PackageCheck, PackageX, Clock, Calendar, MapPin, Ban, Hourglass, RefreshCw, Search } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { InfoTooltip } from './InfoTooltip'
 
@@ -148,6 +148,8 @@ export function MlFullShipmentsPage() {
   // envio ("Estoque Full" → "a caminho") — garante que o card apareça
   // independente do status dele.
   const [tab, setTab] = useState('all')
+  const [search, setSearch] = useState('')
+  const [centerFilter, setCenterFilter] = useState('all')
 
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   async function load() {
@@ -179,11 +181,23 @@ export function MlFullShipmentsPage() {
     }
   }, [shipments])
 
+  const centers = useMemo(() => {
+    if (!shipments) return []
+    return [...new Set(shipments.map(s => s.logistic_center_id).filter(Boolean))].sort()
+  }, [shipments])
+
   const filtered = useMemo(() => {
     if (!shipments) return []
-    if (tab === 'all') return shipments
-    return shipments.filter(s => statusCfg(s.status).bucket === tab)
-  }, [shipments, tab])
+    return shipments
+      .filter(s => tab === 'all' || statusCfg(s.status).bucket === tab)
+      .filter(s => centerFilter === 'all' || s.logistic_center_id === centerFilter)
+      .filter(s => {
+        if (!search.trim()) return true
+        const q = search.trim().toLowerCase()
+        if (String(s.id).toLowerCase().includes(q) || s.name?.toLowerCase().includes(q)) return true
+        return (s.items || []).some(i => i.title?.toLowerCase().includes(q) || i.ml_code?.toLowerCase().includes(q))
+      })
+  }, [shipments, tab, centerFilter, search])
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
@@ -256,6 +270,25 @@ export function MlFullShipmentsPage() {
               <div className="flex items-center gap-2 mb-1"><Ban size={14} className="text-slate-400" /><p className="text-xs font-semibold text-slate-500 uppercase">Cancelados/vencidos</p></div>
               <p className="text-2xl font-bold text-slate-500">{stats.cancelled}</p>
             </div>
+          </div>
+        )}
+
+        {shipments && shipments.length > 0 && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar por nº do envio, produto ou MLB..."
+                className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-200 bg-white" />
+            </div>
+            {centers.length > 1 && (
+              <select value={centerFilter} onChange={e => setCenterFilter(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white text-slate-600 focus:outline-none">
+                <option value="all">Todos os centros</option>
+                {centers.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+            <span className="text-xs text-slate-400 ml-auto">{filtered.length} de {shipments.length} envio{shipments.length > 1 ? 's' : ''}</span>
           </div>
         )}
 

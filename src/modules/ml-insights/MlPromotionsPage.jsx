@@ -52,8 +52,14 @@ function daysSince(dateStr) {
   if (!dateStr) return null
   return Math.floor((new Date() - new Date(dateStr)) / 86400000)
 }
+// Math.round pode arredondar o preço final PRA CIMA (ex: R$62,90 a 5% off
+// vira R$59,755 → arredonda pra R$59,76 → desconto real fica em 4,99%,
+// não 5%) — o ML exige o desconto MAIOR que o % mínimo, então isso é
+// rejeitado (MINIMUM_DISCOUNT_PERCENT). Math.floor sempre arredonda o
+// preço pra baixo, garantindo que o desconto de verdade nunca fica
+// abaixo do % pedido.
 function computeDiscountedPrice(price, pct) {
-  return Math.round(Number(price) * (1 - Number(pct) / 100) * 100) / 100
+  return Math.floor(Number(price) * (1 - Number(pct) / 100) * 100) / 100
 }
 
 const TABS = [
@@ -61,6 +67,259 @@ const TABS = [
   { key: 'campanhas',  label: 'Campanhas',          icon: Gift },
   { key: 'relampago',  label: 'Oferta relâmpago',   icon: Zap },
 ]
+
+// Um card por campanha de desconto do vendedor — o ML permite várias
+// SELLER_CAMPAIGN ativas ao mesmo tempo (ex: "Super Promo" 10% em uns
+// itens + "Promoçãozinha" 5% em outros), então cada card carrega e
+// gerencia os itens/seleção/confirmação da SUA campanha, independente
+// das outras. `allItems` (catálogo ativo) é compartilhado, carregado
+// uma vez só pelo componente pai.
+function BulkDiscountCampaignCard({ campaign, allItems, api, onChanged }) {
+  const { fetchPromotionCandidates, fetchSellerCampaignLastChange, promotionJoinItem, promotionLeaveItem, deleteSellerCampaign } = api
+  const [lastChange, setLastChange] = useState(null)
+  const [campaignItems, setCampaignItems] = useState(null) // null = carregando
+  const [selected, setSelected] = useState({})
+  const [percent, setPercent] = useState(10)
+  const [search, setSearch] = useState('')
+  const [confirm, setConfirm] = useState(null) // null | 'apply' | 'delete' | { leave: item_id }
+  const [submitting, setSubmitting] = useState(false)
+
+  async function load() {
+    setCampaignItems(null)
+    setSelected({})
+    try {
+      const [lc, items] = await Promise.all([
+        fetchSellerCampaignLastChange(campaign.id),
+        fetchPromotionCandidates(campaign.id, 'SELLER_CAMPAIGN'),
+      ])
+      setLastChange(lc)
+      // status 'candidate' = só elegível, ainda não participando de
+      // verdade (ver nota em loadBulkDiscount do componente pai).
+      setCampaignItems(items.filter(c => c.status !== 'candidate'))
+    } catch { /* erro global já tratado pelo hook (useMlInsights) */ }
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [campaign.id])
+
+  const alreadyIds = new Set((campaignItems || []).map(c => c.id))
+  const filtered = (allItems || []).filter(it =>
+    it.status === 'active' && !alreadyIds.has(it.item_id) &&
+    (!search.trim() || it.title?.toLowerCase().includes(search.trim().toLowerCase())))
+  const selectedCount = Object.keys(selected).length
+
+  function toggleSelect(item, checked) {
+    setSelected(sel => {
+      const next = { ...sel }
+      if (checked) next[item.item_id] = computeDiscountedPrice(item.price, percent)
+      else delete next[item.item_id]
+      return next
+    })
+  }
+
+  function applyPercentToSelected() {
+    setSelected(sel => {
+      const next = {}
+      for (const id of Object.keys(sel)) {
+        const item = allItems?.find(i => i.item_id === id)
+        next[id] = item ? computeDiscountedPrice(item.price, percent) : sel[id]
+      }
+      return next
+    })
+  }
+
+  async function confirmApply() {
+    setSubmitting(true)
+    let okCount = 0
+    const failed = []
+    for (const [itemId, price] of Object.entries(selected)) {
+      try {
+        await promotionJoinItem(itemId, campaign.id, 'SELLER_CAMPAIGN', Number(price))
+        okCount++
+      } catch (err) {
+        failed.push({ itemId, message: err.message })
+      }
+    }
+    if (okCount) toast.success(`${okCount} ite${okCount > 1 ? 'ns com desconto aplicado' : 'm com desconto aplicado'}!`)
+    failed.forEach(f => toast.error(`${f.itemId}: ${f.message}`, { duration: 8000 }))
+    setSubmitting(false)
+    setConfirm(null)
+    await load()
+  }
+
+  async function confirmLeave() {
+    const itemId = confirm.leave
+    setSubmitting(true)
+    try {
+      await promotionLeaveItem(itemId, campaign.id, 'SELLER_CAMPAIGN')
+      toast.success('Desconto removido desse item.')
+      await load()
+    } catch (err) {
+      toast.error('Erro ao remover: ' + err.message)
+    } finally {
+      setSubmitting(false)
+      setConfirm(null)
+    }
+  }
+
+  async function confirmDelete() {
+    setSubmitting(true)
+    try {
+      await deleteSellerCampaign(campaign.id)
+      toast.success('Campanha excluída.')
+      onChanged() // recarrega a lista de campanhas no pai (esse card some)
+    } catch (err) {
+      toast.error('Erro ao excluir: ' + err.message)
+      setSubmitting(false)
+      setConfirm(null)
+    }
+  }
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5">
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+        <div>
+          <p className="text-base font-semibold text-slate-800 mb-1">{campaign.name || campaign.id}</p>
+          <p className="text-xs text-slate-400">
+            Campanha do vendedor · {STATUS_LABEL[campaign.status] || campaign.status}
+            {campaign.finish_date && ` · encerra em ${daysUntil(campaign.finish_date)} dia(s) (${new Date(campaign.finish_date).toLocaleDateString('pt-BR')})`}
+          </p>
+          <p className="text-xs text-slate-400 inline-flex items-center gap-1 mt-1">
+            <Clock size={11}/>
+            {lastChange ? `Última alteração há ${daysSince(lastChange)} dia(s)` : 'Nenhuma alteração registrada ainda'}
+          </p>
+        </div>
+        <button onClick={() => setConfirm('delete')} disabled={submitting}
+          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
+          <Trash2 size={13}/> Excluir campanha
+        </button>
+      </div>
+
+      {campaignItems === null ? (
+        <div className="flex items-center gap-2 text-sm text-slate-400 py-6"><Loader2 size={16} className="animate-spin"/> Carregando anúncios...</div>
+      ) : (
+        <>
+          {campaignItems.length > 0 && (
+            <div className="mb-5">
+              <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Já com desconto ({campaignItems.length})</p>
+              <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                {campaignItems.map(r => {
+                  const listing = allItems.find(i => i.item_id === r.id)
+                  return (
+                    <div key={r.id} className="flex items-center justify-between gap-3 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+                      <a href={listing?.permalink || `https://produto.mercadolivre.com.br/${r.id}`} target="_blank" rel="noreferrer" className="text-sm text-slate-700 hover:text-emerald-700 truncate min-w-0 flex items-center gap-1.5">
+                        {listing?.title || r.id}<ExternalLink size={11} className="text-slate-300 shrink-0"/>
+                      </a>
+                      <div className="flex items-center gap-2 shrink-0 text-xs">
+                        <span className="text-slate-400 line-through">{fmtMoney(r.original_price)}</span>
+                        <span className="font-semibold text-emerald-700">{fmtMoney(r.price)}</span>
+                        <span className="text-slate-400">{ITEM_STATUS_LABEL[r.status] || r.status}</span>
+                        <button onClick={() => setConfirm({ leave: r.id })} disabled={submitting}
+                          className="flex items-center gap-1 text-rose-600 hover:text-rose-700 disabled:opacity-50">
+                          <LogOut size={12}/> Sair
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 mb-3 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300"/>
+              <input className="input pl-8" placeholder="Buscar anúncio pelo título..."
+                value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Percent size={14} className="text-slate-400"/>
+              <input type="number" min={5} max={70} step={1} value={percent}
+                onChange={e => setPercent(e.target.value)}
+                className="w-16 text-sm border border-slate-200 rounded-lg px-2 py-2 focus:outline-none focus:border-emerald-400"/>
+              <span className="text-sm text-slate-500">% off</span>
+            </div>
+            <button onClick={applyPercentToSelected} disabled={!selectedCount}
+              className="px-3 py-2 border border-slate-200 hover:border-emerald-300 text-slate-600 text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
+              Aplicar % aos selecionados
+            </button>
+            <button onClick={() => selectedCount && setConfirm('apply')} disabled={!selectedCount || submitting}
+              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
+              <Send size={13}/> Aplicar desconto{selectedCount ? ` (${selectedCount})` : ''}
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-400 mb-2">O desconto usa a % do campo acima no momento em que você marca o item — depois disso, o preço de cada linha fica editável individualmente.</p>
+
+          {filtered.length === 0 ? (
+            <p className="text-sm text-slate-400 py-4">Nenhum anúncio ativo encontrado{search ? ' com esse termo' : ''}.</p>
+          ) : (
+            <div className="space-y-1.5 max-h-[32rem] overflow-y-auto">
+              {filtered.map(item => (
+                <div key={item.item_id} className="flex items-center gap-3 bg-slate-50 rounded-lg px-3 py-2">
+                  <input type="checkbox" checked={item.item_id in selected} onChange={e => toggleSelect(item, e.target.checked)}/>
+                  {item.thumbnail && <img src={item.thumbnail} alt="" className="w-8 h-8 rounded object-cover shrink-0"/>}
+                  <a href={item.permalink || `https://produto.mercadolivre.com.br/${item.item_id}`} target="_blank" rel="noreferrer"
+                    className="text-sm text-slate-700 hover:text-emerald-600 truncate min-w-0 flex-1 flex items-center gap-1.5">
+                    {item.title || item.item_id}<ExternalLink size={11} className="text-slate-300 shrink-0"/>
+                  </a>
+                  <span className="text-xs text-slate-400 shrink-0 line-through">{fmtMoney(item.price)}</span>
+                  <input type="number" step="0.01"
+                    value={item.item_id in selected ? selected[item.item_id] : ''}
+                    onChange={e => setSelected(sel => ({ ...sel, [item.item_id]: e.target.value }))}
+                    disabled={!(item.item_id in selected)}
+                    className="w-24 text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-400 disabled:bg-slate-100 shrink-0"/>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      <ConfirmWriteModal
+        open={confirm === 'apply'}
+        title={`Aplicar desconto em ${selectedCount} ite${selectedCount > 1 ? 'ns' : 'm'}`}
+        description="Vai gravar esse preço com desconto de verdade nos anúncios do Mercado Livre."
+        confirmLabel="Sim, aplicar"
+        confirming={submitting}
+        onConfirm={confirmApply}
+        onCancel={() => setConfirm(null)}
+        detail={
+          <ul className="text-sm text-slate-700 space-y-1">
+            {Object.entries(selected).map(([itemId, price]) => {
+              const item = allItems?.find(i => i.item_id === itemId)
+              return <li key={itemId}><strong>{item?.title || itemId}:</strong> {fmtMoney(item?.price)} → {fmtMoney(price)}</li>
+            })}
+          </ul>
+        }
+      />
+
+      <ConfirmWriteModal
+        open={!!confirm?.leave}
+        title="Remover desconto do item"
+        description="Vai remover esse item da campanha de verdade no Mercado Livre — o preço volta ao normal."
+        confirmLabel="Sim, remover"
+        confirming={submitting}
+        onConfirm={confirmLeave}
+        onCancel={() => setConfirm(null)}
+        detail={confirm?.leave && (
+          <p className="text-sm text-slate-700">{allItems?.find(i => i.item_id === confirm.leave)?.title || confirm.leave}</p>
+        )}
+      />
+
+      <ConfirmWriteModal
+        open={confirm === 'delete'}
+        title="Excluir campanha de desconto"
+        description="Vai excluir a campanha de verdade no Mercado Livre — os itens que ainda estiverem participando perdem o desconto."
+        confirmLabel="Sim, excluir"
+        confirming={submitting}
+        onConfirm={confirmDelete}
+        onCancel={() => setConfirm(null)}
+        detail={<p className="text-sm text-slate-700">{campaign.name || campaign.id}</p>}
+      />
+    </div>
+  )
+}
 
 export function MlPromotionsPage() {
   const {
@@ -72,49 +331,38 @@ export function MlPromotionsPage() {
 
   const [activeTab, setActiveTab] = useState('desconto')
 
-  // ── Desconto em massa (Campanha do vendedor) ──────────────────────
-  const [bulkCampaign, setBulkCampaign] = useState(null) // null=não verificado, false=nenhuma encontrada, objeto=achou
-  const [bulkLastChange, setBulkLastChange] = useState(null)
-  const [bulkItems, setBulkItems] = useState(null)
-  const [bulkCampaignItems, setBulkCampaignItems] = useState(null)
-  const [bulkSelected, setBulkSelected] = useState({}) // { item_id: preço com desconto }
-  const [bulkPercent, setBulkPercent] = useState(10)
-  const [bulkSearch, setBulkSearch] = useState('')
-  const [bulkConfirm, setBulkConfirm] = useState(null) // null | 'apply' | 'delete' | { leave: item_id }
-  const [bulkSubmitting, setBulkSubmitting] = useState(false)
+  // ── Desconto em massa (Campanhas do vendedor — pode ter várias ao
+  //    mesmo tempo, ex: "Super Promo" 10% + "Promoçãozinha" 5% em itens
+  //    diferentes; cada `BulkDiscountCampaignCard` cuida da sua) ──────
+  const [bulkCampaigns, setBulkCampaigns] = useState(null) // null=não verificado, [] = nenhuma, array = achadas
+  const [bulkItems, setBulkItems] = useState(null) // catálogo ativo, compartilhado entre os cards
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newCampaignName, setNewCampaignName] = useState('')
   const [newCampaignStart, setNewCampaignStart] = useState('')
   const [newCampaignFinish, setNewCampaignFinish] = useState('')
 
+  function resetNewCampaignForm() {
+    // Nome tem que caber no limite do ML: testado ao vivo em 13/09,
+    // "seller_proposition_title" aceita no máximo 25 caracteres e não
+    // pode ter "/" — formato "13/09/2026" quebrava os dois limites de
+    // uma vez (o padrão anterior, com toLocaleDateString, gerava um
+    // nome inválido sempre).
+    setNewCampaignName(`Desconto ${todayISODate().replace(/-/g, '')}`)
+    setNewCampaignStart(todayISODate())
+    setNewCampaignFinish(addDaysISODate(todayISODate(), 14))
+  }
+
   async function loadBulkDiscount() {
-    setBulkCampaign(null)
-    setBulkCampaignItems(null)
+    setBulkCampaigns(null)
     setBulkItems(null)
-    setBulkSelected({})
     setShowCreateForm(false)
     try {
-      const invites = await fetchPromotionInvites()
-      const found = invites.find(i => i.type === 'SELLER_CAMPAIGN' && i.status !== 'finished') || false
-      setBulkCampaign(found)
-      if (found) {
-        const [lastChange, items, campItems] = await Promise.all([
-          fetchSellerCampaignLastChange(),
-          fetchActiveListings(),
-          fetchPromotionCandidates(found.id, 'SELLER_CAMPAIGN'),
-        ])
-        setBulkLastChange(lastChange)
-        setBulkItems(items)
-        setBulkCampaignItems(campItems)
-      } else {
-        // Nome tem que caber no limite do ML: testado ao vivo em 13/09,
-        // "seller_proposition_title" aceita no máximo 25 caracteres e
-        // não pode ter "/" — formato "13/09/2026" quebrava os dois
-        // limites de uma vez (o padrão anterior, com toLocaleDateString,
-        // gerava um nome inválido sempre).
-        setNewCampaignName(`Desconto ${todayISODate().replace(/-/g, '')}`)
-        setNewCampaignStart(todayISODate())
-        setNewCampaignFinish(addDaysISODate(todayISODate(), 14))
+      const [invites, items] = await Promise.all([fetchPromotionInvites(), fetchActiveListings()])
+      const found = invites.filter(i => i.type === 'SELLER_CAMPAIGN' && i.status !== 'finished')
+      setBulkItems(items)
+      setBulkCampaigns(found)
+      if (found.length === 0) {
+        resetNewCampaignForm()
         setShowCreateForm(true)
       }
     } catch { /* erro já fica em `error` do hook */ }
@@ -128,94 +376,6 @@ export function MlPromotionsPage() {
       loadBulkDiscount()
     } catch (err) {
       toast.error('Erro ao criar campanha: ' + err.message, { duration: 8000 })
-    }
-  }
-
-  const alreadyInCampaignIds = new Set((bulkCampaignItems || []).map(c => c.id))
-  const bulkFiltered = (bulkItems || []).filter(it =>
-    it.status === 'active' && !alreadyInCampaignIds.has(it.item_id) &&
-    (!bulkSearch.trim() || it.title?.toLowerCase().includes(bulkSearch.trim().toLowerCase())))
-  const bulkSelectedCount = Object.keys(bulkSelected).length
-
-  function toggleBulkSelect(item, checked) {
-    setBulkSelected(sel => {
-      const next = { ...sel }
-      if (checked) next[item.item_id] = computeDiscountedPrice(item.price, bulkPercent)
-      else delete next[item.item_id]
-      return next
-    })
-  }
-
-  function applyPercentToSelected() {
-    setBulkSelected(sel => {
-      const next = {}
-      for (const id of Object.keys(sel)) {
-        const item = bulkItems?.find(i => i.item_id === id)
-        next[id] = item ? computeDiscountedPrice(item.price, bulkPercent) : sel[id]
-      }
-      return next
-    })
-  }
-
-  function requestBulkApply() {
-    if (!bulkSelectedCount) return
-    setBulkConfirm('apply')
-  }
-
-  async function confirmBulkApply() {
-    setBulkSubmitting(true)
-    let okCount = 0
-    const failed = []
-    for (const [itemId, price] of Object.entries(bulkSelected)) {
-      try {
-        await promotionJoinItem(itemId, bulkCampaign.id, 'SELLER_CAMPAIGN', Number(price))
-        okCount++
-      } catch (err) {
-        failed.push({ itemId, message: err.message })
-      }
-    }
-    if (okCount) toast.success(`${okCount} ite${okCount > 1 ? 'ns com desconto aplicado' : 'm com desconto aplicado'}!`)
-    failed.forEach(f => toast.error(`${f.itemId}: ${f.message}`, { duration: 8000 }))
-    setBulkSubmitting(false)
-    setBulkConfirm(null)
-    setBulkSelected({})
-    loadBulkDiscount()
-  }
-
-  function requestBulkLeave(itemId) {
-    setBulkConfirm({ leave: itemId })
-  }
-
-  async function confirmBulkLeave() {
-    const itemId = bulkConfirm.leave
-    setBulkSubmitting(true)
-    try {
-      await promotionLeaveItem(itemId, bulkCampaign.id, 'SELLER_CAMPAIGN')
-      toast.success('Desconto removido desse item.')
-      loadBulkDiscount()
-    } catch (err) {
-      toast.error('Erro ao remover: ' + err.message)
-    } finally {
-      setBulkSubmitting(false)
-      setBulkConfirm(null)
-    }
-  }
-
-  function requestDeleteCampaign() {
-    setBulkConfirm('delete')
-  }
-
-  async function confirmDeleteCampaign() {
-    setBulkSubmitting(true)
-    try {
-      await deleteSellerCampaign(bulkCampaign.id)
-      toast.success('Campanha excluída.')
-      loadBulkDiscount()
-    } catch (err) {
-      toast.error('Erro ao excluir: ' + err.message)
-    } finally {
-      setBulkSubmitting(false)
-      setBulkConfirm(null)
     }
   }
 
@@ -428,7 +588,7 @@ export function MlPromotionsPage() {
   // (nunca de novo sozinho — só quando o usuário troca de aba ou pede
   // "Verificar"/"Buscar" de novo).
   useEffect(() => {
-    if (activeTab === 'desconto' && bulkCampaign === null) loadBulkDiscount()
+    if (activeTab === 'desconto' && bulkCampaigns === null) loadBulkDiscount()
     if (activeTab === 'relampago' && lightningInvite === null) loadLightning()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
@@ -472,139 +632,65 @@ export function MlPromotionsPage() {
 
         {/* ── Aba: Desconto em massa ── */}
         {activeTab === 'desconto' && (
-          <div className="bg-white border border-slate-200 rounded-2xl p-5">
-            {bulkCampaign === null ? (
-              <div className="flex items-center gap-2 text-sm text-slate-400 py-6"><Loader2 size={16} className="animate-spin"/> Verificando campanha atual...</div>
-            ) : showCreateForm ? (
-              <div className="max-w-md">
-                <p className="text-base font-semibold text-slate-800 mb-1">Criar campanha de desconto</p>
-                <p className="text-xs text-slate-400 mb-4">Nenhuma campanha própria rodando agora. Escolha o nome e o período (máximo 14 dias, regra do Mercado Livre) — depois disso você escolhe os itens e o desconto de cada um.</p>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Nome da campanha</label>
-                    <input className="input" value={newCampaignName} maxLength={25}
-                      onChange={e => setNewCampaignName(e.target.value.replace(/\//g, '-'))} />
-                    <p className="text-[11px] text-slate-400 mt-1">Máximo 25 caracteres, sem "/" (regra do Mercado Livre) — {25 - newCampaignName.length} restantes.</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="flex-1">
-                      <label className="text-xs font-semibold text-slate-500 mb-1 block">Início</label>
-                      <input type="date" className="input" value={newCampaignStart} min={todayISODate()}
-                        onChange={e => {
-                          const v = e.target.value
-                          setNewCampaignStart(v)
-                          if (newCampaignFinish && daysUntil(newCampaignFinish) - daysUntil(v) > 14) setNewCampaignFinish(addDaysISODate(v, 14))
-                        }} />
-                    </div>
-                    <div className="flex-1">
-                      <label className="text-xs font-semibold text-slate-500 mb-1 block">Fim (máx. 14 dias do início)</label>
-                      <input type="date" className="input" value={newCampaignFinish}
-                        min={newCampaignStart} max={addDaysISODate(newCampaignStart || todayISODate(), 14)}
-                        onChange={e => setNewCampaignFinish(e.target.value)} />
-                    </div>
-                  </div>
-                  <button onClick={handleCreateCampaign} disabled={loading || !newCampaignName.trim()}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
-                    <Plus size={14}/> Criar campanha
-                  </button>
-                </div>
+          <div className="space-y-4">
+            {bulkCampaigns === null ? (
+              <div className="bg-white border border-slate-200 rounded-2xl p-5">
+                <div className="flex items-center gap-2 text-sm text-slate-400 py-6"><Loader2 size={16} className="animate-spin"/> Verificando campanhas...</div>
               </div>
             ) : (
               <>
-                <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
-                  <div>
-                    <p className="text-base font-semibold text-slate-800 mb-1">{bulkCampaign.name || bulkCampaign.id}</p>
-                    <p className="text-xs text-slate-400">
-                      Campanha do vendedor · {STATUS_LABEL[bulkCampaign.status] || bulkCampaign.status}
-                      {bulkCampaign.finish_date && ` · encerra em ${daysUntil(bulkCampaign.finish_date)} dia(s) (${new Date(bulkCampaign.finish_date).toLocaleDateString('pt-BR')})`}
-                    </p>
-                    <p className="text-xs text-slate-400 inline-flex items-center gap-1 mt-1">
-                      <Clock size={11}/>
-                      {bulkLastChange ? `Última alteração há ${daysSince(bulkLastChange)} dia(s)` : 'Nenhuma alteração registrada ainda'}
-                    </p>
-                  </div>
-                  <button onClick={requestDeleteCampaign} disabled={bulkSubmitting}
-                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
-                    <Trash2 size={13}/> Excluir campanha
-                  </button>
-                </div>
+                {bulkCampaigns.map(c => (
+                  <BulkDiscountCampaignCard key={c.id} campaign={c} allItems={bulkItems}
+                    api={{ fetchPromotionCandidates, fetchSellerCampaignLastChange, promotionJoinItem, promotionLeaveItem, deleteSellerCampaign }}
+                    onChanged={loadBulkDiscount} />
+                ))}
 
-                {bulkItems === null ? (
-                  <div className="flex items-center gap-2 text-sm text-slate-400 py-6"><Loader2 size={16} className="animate-spin"/> Carregando anúncios...</div>
-                ) : (
-                  <>
-                    {bulkCampaignItems?.length > 0 && (
-                      <div className="mb-5">
-                        <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Já com desconto ({bulkCampaignItems.length})</p>
-                        <div className="space-y-1.5 max-h-56 overflow-y-auto">
-                          {bulkCampaignItems.map(r => (
-                            <div key={r.id} className="flex items-center justify-between gap-3 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
-                              <a href={`https://produto.mercadolivre.com.br/${r.id}`} target="_blank" rel="noreferrer" className="text-sm text-slate-700 hover:text-emerald-700 truncate min-w-0 flex items-center gap-1.5">
-                                {bulkItems.find(i => i.item_id === r.id)?.title || r.id}<ExternalLink size={11} className="text-slate-300 shrink-0"/>
-                              </a>
-                              <div className="flex items-center gap-2 shrink-0 text-xs">
-                                <span className="text-slate-400 line-through">{fmtMoney(r.original_price)}</span>
-                                <span className="font-semibold text-emerald-700">{fmtMoney(r.price)}</span>
-                                <span className="text-slate-400">{ITEM_STATUS_LABEL[r.status] || r.status}</span>
-                                <button onClick={() => requestBulkLeave(r.id)} disabled={bulkSubmitting}
-                                  className="flex items-center gap-1 text-rose-600 hover:text-rose-700 disabled:opacity-50">
-                                  <LogOut size={12}/> Sair
-                                </button>
-                              </div>
-                            </div>
-                          ))}
+                {showCreateForm ? (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 max-w-md">
+                    <p className="text-base font-semibold text-slate-800 mb-1">Criar campanha de desconto</p>
+                    <p className="text-xs text-slate-400 mb-4">Escolha o nome e o período (máximo 14 dias, regra do Mercado Livre) — depois disso você escolhe os itens e o desconto de cada um. Pode ter várias campanhas rodando ao mesmo tempo, com itens diferentes em cada uma.</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500 mb-1 block">Nome da campanha</label>
+                        <input className="input" value={newCampaignName} maxLength={25}
+                          onChange={e => setNewCampaignName(e.target.value.replace(/\//g, '-'))} />
+                        <p className="text-[11px] text-slate-400 mt-1">Máximo 25 caracteres, sem "/" (regra do Mercado Livre) — {25 - newCampaignName.length} restantes.</p>
+                      </div>
+                      <div className="flex gap-3">
+                        <div className="flex-1">
+                          <label className="text-xs font-semibold text-slate-500 mb-1 block">Início</label>
+                          <input type="date" className="input" value={newCampaignStart} min={todayISODate()}
+                            onChange={e => {
+                              const v = e.target.value
+                              setNewCampaignStart(v)
+                              if (newCampaignFinish && daysUntil(newCampaignFinish) - daysUntil(v) > 14) setNewCampaignFinish(addDaysISODate(v, 14))
+                            }} />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-xs font-semibold text-slate-500 mb-1 block">Fim (máx. 14 dias do início)</label>
+                          <input type="date" className="input" value={newCampaignFinish}
+                            min={newCampaignStart} max={addDaysISODate(newCampaignStart || todayISODate(), 14)}
+                            onChange={e => setNewCampaignFinish(e.target.value)} />
                         </div>
                       </div>
-                    )}
-
-                    <div className="flex items-center gap-3 mb-3 flex-wrap">
-                      <div className="relative flex-1 min-w-[200px]">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300"/>
-                        <input className="input pl-8" placeholder="Buscar anúncio pelo título..."
-                          value={bulkSearch} onChange={e => setBulkSearch(e.target.value)} />
+                      <div className="flex items-center gap-2">
+                        <button onClick={handleCreateCampaign} disabled={loading || !newCampaignName.trim()}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
+                          <Plus size={14}/> Criar campanha
+                        </button>
+                        {bulkCampaigns.length > 0 && (
+                          <button onClick={() => setShowCreateForm(false)} className="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">
+                            Cancelar
+                          </button>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <Percent size={14} className="text-slate-400"/>
-                        <input type="number" min={10} max={70} step={1} value={bulkPercent}
-                          onChange={e => setBulkPercent(e.target.value)}
-                          className="w-16 text-sm border border-slate-200 rounded-lg px-2 py-2 focus:outline-none focus:border-emerald-400"/>
-                        <span className="text-sm text-slate-500">% off</span>
-                      </div>
-                      <button onClick={applyPercentToSelected} disabled={!bulkSelectedCount}
-                        className="px-3 py-2 border border-slate-200 hover:border-emerald-300 text-slate-600 text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
-                        Aplicar % aos selecionados
-                      </button>
-                      <button onClick={requestBulkApply} disabled={!bulkSelectedCount || bulkSubmitting}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
-                        <Send size={13}/> Aplicar desconto{bulkSelectedCount ? ` (${bulkSelectedCount})` : ''}
-                      </button>
                     </div>
-
-                    <p className="text-xs text-slate-400 mb-2">O desconto usa a % do campo acima no momento em que você marca o item — depois disso, o preço de cada linha fica editável individualmente.</p>
-
-                    {bulkFiltered.length === 0 ? (
-                      <p className="text-sm text-slate-400 py-4">Nenhum anúncio ativo encontrado{bulkSearch ? ' com esse termo' : ''}.</p>
-                    ) : (
-                      <div className="space-y-1.5 max-h-[32rem] overflow-y-auto">
-                        {bulkFiltered.map(item => (
-                          <div key={item.item_id} className="flex items-center gap-3 bg-slate-50 rounded-lg px-3 py-2">
-                            <input type="checkbox" checked={item.item_id in bulkSelected} onChange={e => toggleBulkSelect(item, e.target.checked)}/>
-                            {item.thumbnail && <img src={item.thumbnail} alt="" className="w-8 h-8 rounded object-cover shrink-0"/>}
-                            <a href={item.permalink || `https://produto.mercadolivre.com.br/${item.item_id}`} target="_blank" rel="noreferrer"
-                              className="text-sm text-slate-700 hover:text-emerald-600 truncate min-w-0 flex-1 flex items-center gap-1.5">
-                              {item.title || item.item_id}<ExternalLink size={11} className="text-slate-300 shrink-0"/>
-                            </a>
-                            <span className="text-xs text-slate-400 shrink-0 line-through">{fmtMoney(item.price)}</span>
-                            <input type="number" step="0.01"
-                              value={item.item_id in bulkSelected ? bulkSelected[item.item_id] : ''}
-                              onChange={e => setBulkSelected(sel => ({ ...sel, [item.item_id]: e.target.value }))}
-                              disabled={!(item.item_id in bulkSelected)}
-                              className="w-24 text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-400 disabled:bg-slate-100 shrink-0"/>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
+                  </div>
+                ) : (
+                  <button onClick={() => { resetNewCampaignForm(); setShowCreateForm(true) }}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 hover:border-emerald-300 text-slate-600 text-sm font-medium rounded-xl transition-colors">
+                    <Plus size={14}/> Nova campanha de desconto
+                  </button>
                 )}
               </>
             )}
@@ -874,48 +960,6 @@ export function MlPromotionsPage() {
         detail={confirmModal?.leave && (
           <p className="text-sm text-slate-700">{candidates?.find(c => c.item_id === confirmModal.leave)?.title || confirmModal.leave}</p>
         )}
-      />
-
-      <ConfirmWriteModal
-        open={bulkConfirm === 'apply'}
-        title={`Aplicar desconto em ${bulkSelectedCount} ite${bulkSelectedCount > 1 ? 'ns' : 'm'}`}
-        description="Vai gravar esse preço com desconto de verdade nos anúncios do Mercado Livre."
-        confirmLabel="Sim, aplicar"
-        confirming={bulkSubmitting}
-        onConfirm={confirmBulkApply}
-        onCancel={() => setBulkConfirm(null)}
-        detail={
-          <ul className="text-sm text-slate-700 space-y-1">
-            {Object.entries(bulkSelected).map(([itemId, price]) => {
-              const item = bulkItems?.find(i => i.item_id === itemId)
-              return <li key={itemId}><strong>{item?.title || itemId}:</strong> {fmtMoney(item?.price)} → {fmtMoney(price)}</li>
-            })}
-          </ul>
-        }
-      />
-
-      <ConfirmWriteModal
-        open={!!bulkConfirm?.leave}
-        title="Remover desconto do item"
-        description="Vai remover esse item da campanha de verdade no Mercado Livre — o preço volta ao normal."
-        confirmLabel="Sim, remover"
-        confirming={bulkSubmitting}
-        onConfirm={confirmBulkLeave}
-        onCancel={() => setBulkConfirm(null)}
-        detail={bulkConfirm?.leave && (
-          <p className="text-sm text-slate-700">{bulkItems?.find(i => i.item_id === bulkConfirm.leave)?.title || bulkConfirm.leave}</p>
-        )}
-      />
-
-      <ConfirmWriteModal
-        open={bulkConfirm === 'delete'}
-        title="Excluir campanha de desconto"
-        description="Vai excluir a campanha de verdade no Mercado Livre — os itens que ainda estiverem participando perdem o desconto."
-        confirmLabel="Sim, excluir"
-        confirming={bulkSubmitting}
-        onConfirm={confirmDeleteCampaign}
-        onCancel={() => setBulkConfirm(null)}
-        detail={<p className="text-sm text-slate-700">{bulkCampaign?.name || bulkCampaign?.id}</p>}
       />
 
       <ConfirmWriteModal
