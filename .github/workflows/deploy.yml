@@ -1,0 +1,74 @@
+name: Deploy CoisaPet para a Hostinger
+
+# Roda toda vez que dá push na main — builda o app React e manda o
+# resultado (+ as pastas estáticas que hoje sobem na mão via FileZilla)
+# direto pro public_html via FTP. Precisa de 3 secrets configurados em
+# Settings > Secrets and variables > Actions: FTP_HOST, FTP_USERNAME,
+# FTP_PASSWORD (conta FTP dedicada pro deploy, ver coisapet.md).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # também dá pra disparar manualmente pela aba Actions do GitHub
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configura Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instala dependências
+        run: npm ci
+
+      - name: Builda o app (gera dist/)
+        run: npm run build
+
+      # ── App React (dist/) → raiz do public_html ──────────────────
+      - name: Deploy — app React
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist/
+          server-dir: ./public_html/
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/equipe/**
+            **/links/**
+            **/doc/**
+
+      # ── Pastas estáticas soltas (fora do build do Vite) ──────────
+      - name: Deploy — /equipe (PWA da equipe)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./equipe/
+          server-dir: ./public_html/equipe/
+
+      - name: Deploy — /links (bio links + manuais)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./links/
+          server-dir: ./public_html/links/
+
+      - name: Deploy — /doc (manuais de produto)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./doc/
+          server-dir: ./public_html/doc/
