@@ -74,7 +74,7 @@ function Section({ icon: Icon, title, children }) {
 }
 
 // ── Modal principal ────────────────────────────────────────────────
-export function ProductFormModal({ open, onClose, product, initial, categories = [], onSaved, onSave, loading: externalLoading = false }) {
+export function ProductFormModal({ open, onClose, product, initial, categories = [], onSaved, onSave, loading: externalLoading = false, defaultIsKit = false }) {
   const isEditing = !!(product ?? initial)
 
   const EMPTY = {
@@ -191,7 +191,7 @@ export function ProductFormModal({ open, onClose, product, initial, categories =
       setSlugAuto(!prod.slug)
       loadPhotoPreview(prod.photo_url)
     } else {
-      setForm(EMPTY)
+      setForm({ ...EMPTY, is_kit: defaultIsKit })
       setPhotoUrl(null)
       setPhotoSrc(null)
       setSlugAuto(true)
@@ -909,45 +909,6 @@ export function ProductFormModal({ open, onClose, product, initial, categories =
               <p className="text-xs text-slate-400">Múltiplas · Máx 10 MB cada</p>
             </div>
           </Section>
-
-          {/* ── 7. VARIAÇÕES ─────────────────────────────────── */}
-          {varTypes.length > 0 && (
-            <Section icon={Layers} title="Variações">
-              <p className="text-xs text-slate-400">Selecione as variações deste produto (ex: Cor: Branco, Tamanho: G).</p>
-              <div className="grid grid-cols-2 gap-3">
-                {varTypes.map(type => {
-                  const opts = varOptions[type.id] || []
-                  const selectedId = selectedVars[type.id] || ''
-                  return (
-                    <div key={type.id} className="flex flex-col gap-1">
-                      <label className="text-xs font-semibold text-slate-600">{type.name}</label>
-                      <select className="select" value={selectedId}
-                        onChange={e => setSelectedVars(prev => ({ ...prev, [type.id]: e.target.value || undefined }))}>
-                        <option value="">— Sem {type.name.toLowerCase()} —</option>
-                        {opts.map(opt => <option key={opt.id} value={opt.id}>{opt.value}</option>)}
-                      </select>
-                    </div>
-                  )
-                })}
-              </div>
-              {Object.keys(selectedVars).filter(tid => selectedVars[tid]).length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {varTypes.map(type => {
-                    const optId = selectedVars[type.id]
-                    if (!optId) return null
-                    const opt = (varOptions[type.id] || []).find(o => o.id === optId)
-                    if (!opt) return null
-                    return (
-                      <span key={type.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-violet-50 border border-violet-200 text-violet-700">
-                        <Palette size={9}/> {type.name}: {opt.value}
-                        <button type="button" onClick={() => setSelectedVars(prev => { const n={...prev}; delete n[type.id]; return n })} className="ml-0.5 hover:text-violet-900">×</button>
-                      </span>
-                    )
-                  })}
-                </div>
-              )}
-            </Section>
-          )}
 
           {/* ── Footer ────────────────────────────────────────── */}
           <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">

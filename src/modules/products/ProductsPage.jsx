@@ -5,6 +5,7 @@ import { useProductCategories }     from './hooks/useProductCategories'
 import { ProductFormModal }         from './components/ProductFormModal'
 import { ProductCategoriesModal }   from './components/ProductCategoriesModal'
 import { BillOfMaterialsModal }     from './components/BillOfMaterialsModal'
+import { StockMovementsModal }      from './components/StockMovementsModal'
 import { ConfirmDialog }            from '../../components/ui/ConfirmDialog'
 import { EmptyState }               from '../../components/ui/EmptyState'
 import { supabase }                 from '../../lib/supabase'
@@ -114,6 +115,18 @@ function CapacityBadge({ productId, capacity }) {
   return <span className="badge-ok">{n} un. possíveis</span>
 }
 
+// Estoque real do produto (fase63 — só sobe hoje via lançamento de
+// produção de chapa ou ajuste manual; venda ainda não desconta).
+function StockBadge({ qty, onClick }) {
+  const n = Number(qty ?? 0)
+  const cls = n === 0 ? 'badge-danger' : n <= 5 ? 'badge-warn' : 'badge-ok'
+  return (
+    <button onClick={onClick} className={`${cls} hover:opacity-80 transition-opacity`} title="Ver movimentações / ajustar estoque">
+      {n} un.
+    </button>
+  )
+}
+
 
 // ─── Thumbnail de foto ───────────────────────────────────────────
 function ProductPhoto({ photoUrl, name }) {
@@ -136,7 +149,7 @@ function ProductPhoto({ photoUrl, name }) {
 }
 
 export function ProductsPage() {
-  const { products, loading, create, update, remove, refetch } = useProducts()
+  const { products, loading, create, update, remove, refetch, adjustStock, fetchStockMovements } = useProducts()
   const [varRefresh, setVarRefresh] = useState(0) // incrementa após save para recarregar varMap
   const { categories } = useProductCategories()
   const capacity       = useProductionCapacity()
@@ -149,6 +162,8 @@ export function ProductsPage() {
   const [bomOpen,        setBomOpen]        = useState(false)
   const [editing,        setEditing]        = useState(null)
   const [bomProduct,     setBomProduct]     = useState(null)
+  const [stockProductId, setStockProductId] = useState(null)
+  const stockProduct = products.find(p => p.id === stockProductId) || null
   const [deleteTarget,   setDeleteTarget]   = useState(null)
   const [saving,         setSaving]         = useState(false)
   const [search,         setSearch]         = useState('')
@@ -161,6 +176,8 @@ export function ProductsPage() {
   const filtered = useMemo(() =>
     products
       .filter(p => p.active)
+      .filter(p => !p.is_kit) // Kits ganharam módulo próprio (/kits) — aqui só produto de verdade.
+      .filter(p => p.is_sellable !== false) // Produto principal (fase64) nunca aparece como linha própria.
       .filter(p => !search    || p.name.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase()))
       .filter(p => !filterCat || p.category_id === filterCat)
       .sort((a, b) => {
@@ -177,65 +194,37 @@ export function ProductsPage() {
   , [products, search, filterCat, sortBy])
 
 
-  // Agrupa produtos usando parent_product_id (novo sistema)
-  // Lógica:
-  //   - Produto SEM parent_product_id = é um produto independente ou é o MESTRE do grupo
-  //   - Produto COM parent_product_id = é VARIAÇÃO, aparece dentro do mestre
-  //   - Produtos que são referenciados como parent de outros = mestres
+  // Agrupa produtos por `parent_product_id` (fase64: pode ser um produto
+  // principal de verdade — is_sellable=false, nunca aparece em `filtered`
+  // — ou, pra famílias ainda não migradas, uma das próprias variações
+  // agindo como "mestre" igual sempre foi). Nome/foto/categoria do
+  // cabeçalho do grupo vêm do principal quando ele existe — nunca do
+  // preço/foto de uma variação qualquer, que é a raiz do bug de "R$
+  // 0,00" que existia antes de existir produto principal.
   const groups = useMemo(() => {
     const map = new Map()
-
-    // Primeiro: descobre quais IDs são mestres (são referenciados por outros)
-    const masterIds = new Set(
-      filtered.filter(p => p.parent_product_id).map(p => p.parent_product_id)
-    )
+    const principalsById = new Map(products.filter(p => p.is_sellable === false).map(p => [p.id, p]))
 
     filtered.forEach(p => {
-      // Variações (filhos) não criam grupo próprio — entram no grupo do pai
-      if (p.parent_product_id) return
-
-      // Chave do grupo: id do produto (mestre ou independente)
-      const key = p.id
+      const key = p.parent_product_id || p.id
       if (!map.has(key)) {
+        const principal = p.parent_product_id ? principalsById.get(p.parent_product_id) : null
         map.set(key, {
           key,
-          name:      p.name,
+          name:      principal?.name || p.name,
           products:  [],
-          group_id:  p.group_id,
-          category:  p.category,
-          image_url: p.image_url,
-          photo_url: p.photo_url,
-          isMaster:  masterIds.has(p.id),
+          category:  principal?.category || p.category,
+          photo_url: principal?.photo_url || p.photo_url,
+          isMaster:  !!p.parent_product_id, // tem variação vinculada (agrupado)
         })
       }
       map.get(key).products.push(p)
     })
 
-    // Adiciona os filhos (variações) ao grupo do pai
-    filtered.filter(p => p.parent_product_id).forEach(p => {
-      if (map.has(p.parent_product_id)) {
-        map.get(p.parent_product_id).products.push(p)
-      } else {
-        // Pai não está na lista filtrada (pode estar inativo ou fora do filtro)
-        // Cria um grupo temporário para o filho aparecer
-        const key = p.id
-        map.set(key, {
-          key,
-          name:      p.name,
-          products:  [p],
-          group_id:  p.group_id,
-          category:  p.category,
-          image_url: p.image_url,
-          photo_url: p.photo_url,
-          isMaster:  false,
-        })
-      }
-    })
-
     // Ordena variações por preço dentro de cada grupo
     map.forEach(g => g.products.sort((a, b) => Number(a.sale_price) - Number(b.sale_price)))
     return Array.from(map.values())
-  }, [filtered])
+  }, [filtered, products])
 
   const totalPages = viewMode === 'groups'
     ? Math.ceil(groups.length / PAGE_SIZE)
@@ -256,6 +245,7 @@ export function ProductsPage() {
   function openNew()  { setEditing(null); setFormOpen(true) }
   function openEdit(p){ setEditing(p);    setFormOpen(true) }
   function openBom(p) { setBomProduct(p); setBomOpen(true)  }
+  function openStock(p) { setStockProductId(p.id) }
 
   async function handleSave(payload) {
     setSaving(true)
@@ -405,6 +395,7 @@ export function ProductsPage() {
                 <th>Preço</th>
                 <th>Produção</th>
                 <th>Ficha</th>
+                <th>Estoque</th>
                 <th className="text-right">Ações</th>
               </tr>
             </thead>
@@ -501,6 +492,7 @@ export function ProductsPage() {
                             {Number(capacity[prod.id]?.bom_items??0)===0?'Criar ficha':`${capacity[prod.id].bom_items} insumo(s)`}
                           </button>
                         </td>
+                        <td onClick={e=>e.stopPropagation()}><StockBadge qty={prod.stock_qty} onClick={()=>openStock(prod)}/></td>
                         <td>
                           <div className="flex items-center justify-end gap-1" onClick={e=>e.stopPropagation()}>
                             <button onClick={()=>openEdit(prod)} className="p-1.5 rounded-lg text-slate-400 hover:text-sky-500 hover:bg-sky-50"><Pencil size={14}/></button>
@@ -543,6 +535,7 @@ export function ProductsPage() {
                       {Number(capacity[prod.id]?.bom_items??0)===0?'Criar ficha':`${capacity[prod.id].bom_items} insumo(s)`}
                     </button>
                   </td>
+                  <td><StockBadge qty={prod.stock_qty} onClick={()=>openStock(prod)}/></td>
                   <td>
                     <div className="flex items-center justify-end gap-1">
                       <button onClick={()=>openEdit(prod)} className="p-1.5 rounded-lg text-slate-400 hover:text-sky-500 hover:bg-sky-50"><Pencil size={15}/></button>
@@ -636,6 +629,13 @@ export function ProductsPage() {
         open={bomOpen}
         onClose={() => { setBomOpen(false); setBomProduct(null) }}
         product={bomProduct}
+      />
+      <StockMovementsModal
+        open={!!stockProductId}
+        onClose={() => setStockProductId(null)}
+        product={stockProduct}
+        fetchStockMovements={fetchStockMovements}
+        adjustStock={adjustStock}
       />
       <ConfirmDialog
         open={!!deleteTarget}

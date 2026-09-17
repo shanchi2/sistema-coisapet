@@ -141,6 +141,7 @@ async function suggestLinks(db: ReturnType<typeof adminClient>, contentHtml: str
     .from('products')
     .select('id, name, slug')
     .eq('active', true)
+    .eq('is_sellable', true) // Produto principal (fase64) nunca vira link de blog — não é uma página de verdade.
     .order('name')
   if (error) throw error
   if (!products?.length) return { suggestions: [] }

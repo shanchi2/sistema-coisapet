@@ -1,10 +1,15 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Layers, Plus, Search, X, Pencil, Trash2, Package, Hash, ChevronDown } from 'lucide-react'
+import { Layers, Plus, Search, X, Pencil, Trash2, Package, Hash, ChevronDown, Factory, History, ArrowRight } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { useChapas } from './hooks/useChapas'
 import { useProducts } from '../products/hooks/useProducts'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useSignedUrl } from '../../lib/signedUrlCache'
+
+function fmtDateTime(iso) {
+  return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
 
 // Normaliza acento/caixa pra busca não-exigente — "terrario" tem que
 // achar "Terrário" (e vice-versa), sem precisar bater letra por letra.
@@ -234,11 +239,169 @@ function ChapaFormModal({ open, onClose, onSave, products, editing }) {
   )
 }
 
+// ─── Modal: Lançar produção (chapa cortada de verdade) ─────────────
+function ProductionLogModal({ open, onClose, chapa, onLog, fetchColorOptions }) {
+  const [multiplier, setMultiplier] = useState(1)
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  // { [principal_id]: [{id, sku, name, photo_url, cor}] }
+  const [colorOptions, setColorOptions] = useState({})
+  const [loadingColors, setLoadingColors] = useState(false)
+  // { [principal_id]: cor_id_escolhida }
+  const [colorSelections, setColorSelections] = useState({})
+
+  const items = chapa?.items || []
+  // Itens da chapa que apontam pra um produto principal (fase64) — a
+  // chapa foi cadastrada uma vez só pra família inteira; a cor de
+  // verdade é escolhida aqui, na hora de lançar a produção.
+  const principalItems = items.filter(i => i.product?.is_sellable === false)
+
+  useEffect(() => {
+    if (!open) return
+    setMultiplier(1); setNotes(''); setColorSelections({})
+    if (principalItems.length === 0) { setColorOptions({}); return }
+    setLoadingColors(true)
+    Promise.all(principalItems.map(i => fetchColorOptions(i.product.id).then(opts => [i.product.id, opts])))
+      .then(entries => setColorOptions(Object.fromEntries(entries)))
+      .catch(() => {})
+      .finally(() => setLoadingColors(false))
+  }, [open, chapa?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!open || !chapa) return null
+
+  const missingColor = principalItems.some(i => !colorSelections[i.product.id])
+
+  async function handleConfirm() {
+    setSaving(true)
+    try {
+      const result = await onLog(chapa.id, multiplier, notes.trim(), colorSelections)
+      const summary = (result || []).map(r => `${r.product_name}: +${r.delta} (agora ${r.new_stock_qty})`).join(' · ')
+      if (summary) toast.success(summary, { duration: 6000 })
+      onClose()
+    } catch { /* toast de erro já cobre */ }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl p-6 border border-slate-100 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-1">
+          <h2 style={{ fontFamily: 'Nunito, sans-serif', fontWeight: 700, fontSize: '18px' }} className="text-slate-800">Lançar produção</h2>
+          <button onClick={onClose} className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+        <p className="text-sm text-slate-400 mb-4">{chapa.name}</p>
+
+        <label className="form-label">Quantas vezes essa chapa foi cortada hoje?</label>
+        <div className="flex items-center gap-2 mb-4">
+          <button type="button" onClick={() => setMultiplier(m => Math.max(1, m - 1))} className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-600">−</button>
+          <input type="number" min="1" className="input w-20 text-center" value={multiplier} onChange={e => setMultiplier(Math.max(1, parseInt(e.target.value) || 1))} />
+          <button type="button" onClick={() => setMultiplier(m => m + 1)} className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-600">+</button>
+        </div>
+
+        {principalItems.length > 0 && (
+          <div className="mb-4">
+            <label className="form-label">Essa chapa é de qual cor?</label>
+            {loadingColors ? (
+              <p className="text-xs text-slate-400 py-2">Carregando cores...</p>
+            ) : principalItems.map(i => (
+              <div key={i.product.id} className="mb-2">
+                {principalItems.length > 1 && <p className="text-xs text-slate-500 mb-1">{i.product.name}</p>}
+                <div className="flex flex-wrap gap-1.5">
+                  {(colorOptions[i.product.id] || []).map(c => (
+                    <button key={c.id} type="button"
+                      onClick={() => setColorSelections(prev => ({ ...prev, [i.product.id]: c.id }))}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                        colorSelections[i.product.id] === c.id
+                          ? 'bg-emerald-500 border-emerald-500 text-white'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}>
+                      {c.cor}
+                    </button>
+                  ))}
+                  {!loadingColors && (colorOptions[i.product.id] || []).length === 0 && (
+                    <p className="text-xs text-amber-600">Nenhuma cor cadastrada pra essa família ainda.</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <label className="form-label">Isso vai somar ao estoque</label>
+        <div className="border border-slate-200 rounded-xl overflow-hidden mb-4">
+          {items.map((i, idx) => {
+            const isPrincipal = i.product?.is_sellable === false
+            const chosen = isPrincipal ? (colorOptions[i.product.id] || []).find(c => c.id === colorSelections[i.product.id]) : null
+            return (
+              <div key={i.id} className={`flex items-center gap-2.5 px-3 py-2 ${idx < items.length - 1 ? 'border-b border-slate-100' : ''}`}>
+                <div className="w-7 h-7 rounded-md bg-slate-50 overflow-hidden flex items-center justify-center shrink-0">
+                  <ProductThumb photoUrl={(isPrincipal ? chosen?.photo_url : i.product?.photo_url) || i.product?.photo_url} />
+                </div>
+                <p className="text-sm text-slate-700 truncate flex-1">
+                  {i.product?.name}{isPrincipal && <span className="text-slate-400"> — {chosen?.cor || 'escolha a cor acima'}</span>}
+                </p>
+                <span className="text-sm font-bold text-emerald-600 shrink-0">+{i.quantity * multiplier}</span>
+              </div>
+            )
+          })}
+        </div>
+
+        <label className="form-label">Observação (opcional)</label>
+        <textarea className="textarea mb-4" rows={2} placeholder="Ex: turno da tarde..." value={notes} onChange={e => setNotes(e.target.value)} />
+
+        <div className="flex items-center gap-2">
+          <button onClick={handleConfirm} disabled={saving || missingColor}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-emerald-500 hover:bg-emerald-600 text-white transition-all active:scale-[0.98] disabled:opacity-50"
+            style={{ fontFamily: 'Nunito, sans-serif' }}>
+            {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Factory size={15} /> Confirmar produção</>}
+          </button>
+          <button onClick={onClose} className="btn-secondary">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Histórico de produção de uma chapa ─────────────────────────────
+function ProductionHistory({ chapaId, fetchProductionHistory, refreshToken }) {
+  const [history, setHistory] = useState(null)
+
+  useEffect(() => {
+    fetchProductionHistory(chapaId).then(setHistory).catch(() => setHistory([]))
+  }, [chapaId, refreshToken]) // eslint-disable-line
+
+  if (history === null) return <p className="text-xs text-slate-400 py-2">Carregando histórico...</p>
+  if (history.length === 0) return <p className="text-xs text-slate-400 py-2">Nenhuma produção lançada ainda.</p>
+
+  return (
+    <div className="flex flex-col gap-1 mt-2">
+      {history.map(h => (
+        <div key={h.id} className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-2.5 py-1.5">
+          <Factory size={11} className="text-slate-400 shrink-0" />
+          <span className="font-semibold text-slate-600">x{h.multiplier}</span>
+          {h.notes && <span className="italic truncate">— {h.notes}</span>}
+          <span className="ml-auto text-slate-400 shrink-0">{fmtDateTime(h.created_at)}{h.created_by_user?.name ? ` · ${h.created_by_user.name}` : ''}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Card de chapa ─────────────────────────────────────────────────
-function ChapaCard({ chapa, onEdit, onDelete }) {
+function ChapaCard({ chapa, onEdit, onDelete, onLogProduction, fetchProductionHistory, fetchColorOptions }) {
   const [open, setOpen] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [logOpen, setLogOpen] = useState(false)
+  const [historyRefresh, setHistoryRefresh] = useState(0)
   const items = chapa.items || []
   const totalPecas = items.reduce((a, i) => a + i.quantity, 0)
+
+  async function handleLog(chapaId, multiplier, notes, colorSelections) {
+    const result = await onLogProduction(chapaId, multiplier, notes, colorSelections)
+    setHistoryRefresh(r => r + 1)
+    return result
+  }
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-5 hover:border-slate-300 transition-colors">
@@ -283,13 +446,29 @@ function ChapaCard({ chapa, onEdit, onDelete }) {
           ))}
         </div>
       )}
+
+      <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100">
+        <button onClick={() => setLogOpen(true)}
+          className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 hover:text-emerald-700">
+          <Factory size={13} /> Lançar produção <ArrowRight size={11} />
+        </button>
+        <button onClick={() => setShowHistory(h => !h)}
+          className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-600">
+          <History size={13} /> Histórico
+        </button>
+      </div>
+      {showHistory && (
+        <ProductionHistory chapaId={chapa.id} fetchProductionHistory={fetchProductionHistory} refreshToken={historyRefresh} />
+      )}
+
+      <ProductionLogModal open={logOpen} onClose={() => setLogOpen(false)} chapa={chapa} onLog={handleLog} fetchColorOptions={fetchColorOptions} />
     </div>
   )
 }
 
 // ─── Página principal ───────────────────────────────────────────────
 export function ChapasPage() {
-  const { chapas, loading, create, update, remove } = useChapas()
+  const { chapas, loading, create, update, remove, logProduction, fetchProductionHistory, fetchColorOptions } = useChapas()
   const { products } = useProducts()
   const [search,    setSearch]    = useState('')
   const [modalOpen, setModalOpen] = useState(false)
@@ -374,7 +553,8 @@ export function ChapasPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(chapa => (
-            <ChapaCard key={chapa.id} chapa={chapa} onEdit={openEdit} onDelete={setDeleting} />
+            <ChapaCard key={chapa.id} chapa={chapa} onEdit={openEdit} onDelete={setDeleting}
+              onLogProduction={logProduction} fetchProductionHistory={fetchProductionHistory} fetchColorOptions={fetchColorOptions} />
           ))}
         </div>
       )}

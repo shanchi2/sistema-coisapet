@@ -31,6 +31,8 @@ function VarBadge({ tipo, valor }) {
 
 // ─── Modal de agrupamento ─────────────────────────────────────────────────────
 // Permite selecionar N produtos e definir qual é o "pai" (mestre do grupo)
+const NEW_PRINCIPAL = '__new__'
+
 function GroupModal({ products, selectedIds, onClose, onSave }) {
   const selected = products.filter(p => selectedIds.has(p.id))
   const [masterId, setMasterId] = useState(selected[0]?.id || '')
@@ -44,7 +46,61 @@ function GroupModal({ products, selectedIds, onClose, onSave }) {
     return parts.slice(0, -1).join('-') || sku
   }
 
+  // Sugestão de nome/SKU pro produto principal novo — só preenche
+  // automático quando os selecionados já concordam (nome idêntico /
+  // mesmo SKU base); senão fica em branco pra não chutar.
+  const sharedName = selected.every(p => p.name === selected[0]?.name) ? selected[0]?.name || '' : ''
+  const sharedBase = (() => {
+    const bases = new Set(selected.map(p => getBaseSku(p.sku || '')))
+    return bases.size === 1 ? [...bases][0] : ''
+  })()
+  const [newName, setNewName] = useState('')
+  const [newSku,  setNewSku]  = useState('')
+
+  function selectMaster(id) {
+    setMasterId(id)
+    if (id === NEW_PRINCIPAL) {
+      setNewName(sharedName)
+      setNewSku(sharedBase)
+    }
+  }
+
   async function handleSave() {
+    if (masterId === NEW_PRINCIPAL) {
+      if (!newName.trim() || !newSku.trim()) {
+        toast.error('Preencha nome e SKU do produto principal.')
+        return
+      }
+      setSaving(true)
+      try {
+        const first = selected[0]
+        const { data: principal, error: insErr } = await supabase
+          .from('products')
+          .insert({
+            name: newName.trim(), sku: newSku.trim(), is_sellable: false, active: true,
+            sale_price: 0, category_id: first?.category_id || null, photo_url: first?.photo_url || null,
+          })
+          .select('id').single()
+        if (insErr) throw insErr
+
+        const { error: updErr } = await supabase
+          .from('products')
+          .update({ parent_product_id: principal.id })
+          .in('id', selected.map(p => p.id))
+        if (updErr) throw updErr
+
+        toast.success(`Produto principal "${newName.trim()}" criado — ${selected.length} produtos vinculados!`)
+        onSave()
+        onClose()
+      } catch (err) {
+        toast.error(err.code === '23505' ? 'Já existe um produto com esse SKU.' : 'Erro ao criar produto principal.')
+        console.error(err)
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+
     setSaving(true)
     try {
       // Todos os produtos selecionados (menos o mestre) apontam para o mestre
@@ -101,25 +157,62 @@ function GroupModal({ products, selectedIds, onClose, onSave }) {
           <div className="bg-violet-50 border border-violet-200 rounded-xl p-4 text-sm text-violet-800">
             <p className="font-semibold mb-1">Como funciona o agrupamento?</p>
             <p className="text-xs leading-relaxed">
-              Escolha um produto como <strong>mestre</strong> — ele representa o produto base (ex: Terrário 60cm).
-              Os outros produtos do grupo são as <strong>variações</strong> dele (ex: cores diferentes).
-              No catálogo, aparecerá como um único produto com opções de variação.
+              Escolha um <strong>produto principal</strong> novo (recomendado — ele nunca é vendido
+              sozinho, só agrupa as variações) ou, no padrão antigo, um dos próprios produtos
+              selecionados como <strong>mestre</strong>. Os demais viram <strong>variações</strong> dele
+              (ex: cores diferentes) — no catálogo, aparece como um único produto com opções.
             </p>
           </div>
 
           {/* Escolha do mestre */}
           <div>
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-3">
-              Escolha o produto mestre
+              Escolha o produto principal
             </label>
             <div className="space-y-2">
+              <button
+                onClick={() => selectMaster(NEW_PRINCIPAL)}
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 border-dashed transition-all text-left ${
+                  masterId === NEW_PRINCIPAL ? 'border-violet-400 bg-violet-50' : 'border-gray-300 hover:border-gray-400'
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  masterId === NEW_PRINCIPAL ? 'border-violet-500 bg-violet-500' : 'border-gray-300'
+                }`}>
+                  {masterId === NEW_PRINCIPAL && <Check size={11} className="text-white" strokeWidth={3} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
+                    <Plus size={13} className="text-violet-500" /> Criar produto principal novo
+                  </span>
+                  <p className="text-xs text-gray-400 mt-0.5">Nunca vendido sozinho — só agrupa essas {selected.length} variações.</p>
+                </div>
+              </button>
+
+              {masterId === NEW_PRINCIPAL && (
+                <div className="ml-8 pl-3 border-l-2 border-violet-200 space-y-2 py-1">
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-500">Nome</label>
+                    <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
+                      placeholder="Ex: Terrário 60x40x40"
+                      className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-violet-400"/>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-500">SKU base</label>
+                    <input type="text" value={newSku} onChange={e => setNewSku(e.target.value)}
+                      placeholder="Ex: TER-60"
+                      className="w-full text-sm font-mono border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-violet-400"/>
+                  </div>
+                </div>
+              )}
+
               {selected.map(p => {
                 const isMaster = p.id === masterId
                 const variacoes = p.variations || []
                 return (
                   <button
                     key={p.id}
-                    onClick={() => setMasterId(p.id)}
+                    onClick={() => selectMaster(p.id)}
                     className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
                       isMaster
                         ? 'border-violet-400 bg-violet-50'
@@ -163,7 +256,7 @@ function GroupModal({ products, selectedIds, onClose, onSave }) {
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Preview do grupo</p>
             <div className="flex items-center gap-2 text-sm">
               <span className="font-mono font-bold text-gray-800">
-                {getBaseSku(selected.find(p => p.id === masterId)?.sku || '')}
+                {masterId === NEW_PRINCIPAL ? (newSku || '(novo)') : getBaseSku(selected.find(p => p.id === masterId)?.sku || '')}
               </span>
               <ArrowRight size={14} className="text-gray-400" />
               <div className="flex gap-1 flex-wrap">
@@ -189,7 +282,7 @@ function GroupModal({ products, selectedIds, onClose, onSave }) {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || !masterId}
+            disabled={saving || !masterId || (masterId === NEW_PRINCIPAL && (!newName.trim() || !newSku.trim()))}
             className="flex-1 py-2.5 text-sm font-medium text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 rounded-lg transition-colors flex items-center justify-center gap-2"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
@@ -523,7 +616,7 @@ export function VariationsPage() {
       const { data: productsData } = await supabase
         .from('products')
         .select(`
-          id, sku, name, active, parent_product_id,
+          id, sku, name, active, parent_product_id, is_sellable,
           product_variations (
             id,
             product_variation_option_links (
@@ -620,7 +713,8 @@ export function VariationsPage() {
     total:      products.length,
     comVar:     products.filter(p => p.variations.length > 0).length,
     agrupados:  products.filter(p => p.parent_product_id || masterIds.has(p.id)).length,
-    semVar:     products.filter(p => p.variations.length === 0).length,
+    semVar:     products.filter(p => p.variations.length === 0 && p.is_sellable !== false).length,
+    principais: products.filter(p => p.is_sellable === false).length,
   }
 
   return (
@@ -641,12 +735,13 @@ export function VariationsPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {[
-            { label: 'Total de produtos', value: stats.total,     color: 'text-gray-800' },
-            { label: 'Com variações',     value: stats.comVar,    color: 'text-violet-600' },
-            { label: 'Agrupados',         value: stats.agrupados, color: 'text-green-600' },
-            { label: 'Sem variação',      value: stats.semVar,    color: 'text-amber-600' },
+            { label: 'Total de produtos', value: stats.total,      color: 'text-gray-800' },
+            { label: 'Com variações',     value: stats.comVar,     color: 'text-violet-600' },
+            { label: 'Agrupados',         value: stats.agrupados,  color: 'text-green-600' },
+            { label: 'Sem variação',      value: stats.semVar,     color: 'text-amber-600' },
+            { label: 'Produtos principais', value: stats.principais, color: 'text-rose-500' },
           ].map(s => (
             <div key={s.label} className="bg-white border border-gray-200 rounded-xl p-4 text-center">
               <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
@@ -767,8 +862,10 @@ export function VariationsPage() {
                           {isChild && <span className="text-gray-300 text-xs">└</span>}
                           <span className="font-mono text-xs font-semibold text-gray-700">{p.sku}</span>
                           {isMaster && (
-                            <span className="text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded font-semibold">
-                              MESTRE ({children.length} var.)
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                              p.is_sellable === false ? 'bg-rose-100 text-rose-700' : 'bg-violet-100 text-violet-700'
+                            }`}>
+                              {p.is_sellable === false ? `PRINCIPAL (${children.length} var.)` : `MESTRE (${children.length} var.)`}
                             </span>
                           )}
                           {isChild && (

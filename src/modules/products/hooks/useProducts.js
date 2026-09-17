@@ -79,5 +79,30 @@ export function useProducts() {
     await fetch()
   }
 
-  return { products, loading, refetch: fetch, create, update, remove }
+  // Ajuste manual de estoque (correção de contagem, quebra etc.) — via
+  // RPC (fase63), grava o movimento pra auditoria/relatório junto.
+  async function adjustStock(productId, delta, reason) {
+    const session = getSession()
+    const { data, error } = await supabase.rpc('adjust_product_stock', {
+      p_product_id: productId, p_delta: delta, p_reason: reason || null, p_user_id: session.id || null,
+    })
+    if (error) { toast.error('Erro ao ajustar estoque: ' + error.message); throw error }
+    await auditLog('update', 'products', productId, `Estoque ajustado (${delta > 0 ? '+' : ''}${delta})${reason ? `: ${reason}` : ''}`)
+    toast.success('Estoque ajustado!')
+    await fetch()
+    return data // novo stock_qty
+  }
+
+  async function fetchStockMovements(productId) {
+    const { data, error } = await supabase
+      .from('product_stock_movements')
+      .select('id, quantity_delta, movement_type, reason, created_at, created_by_user:system_users(name)')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    if (error) { toast.error('Erro ao carregar movimentações.'); throw error }
+    return data ?? []
+  }
+
+  return { products, loading, refetch: fetch, create, update, remove, adjustStock, fetchStockMovements }
 }

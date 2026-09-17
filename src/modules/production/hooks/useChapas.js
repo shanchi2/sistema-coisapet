@@ -35,7 +35,7 @@ export function useChapas() {
       .from('chapas')
       .select(`
         *,
-        items:chapa_items(id, quantity, product:products(id, name, sku, photo_url))
+        items:chapa_items(id, quantity, product:products(id, name, sku, photo_url, is_sellable))
       `)
       .eq('active', true)
       .order('name')
@@ -110,5 +110,55 @@ export function useChapas() {
     await fetch()
   }
 
-  return { chapas, loading, refetch: fetch, create, update, remove }
+  // Lança 1 evento real de corte de chapa — soma stock_qty de cada
+  // produto da receita (quantity × multiplier) via RPC atômica
+  // (fase63), nunca em passos separados no cliente. `colorSelections`
+  // (fase64c, opcional): { [produto_principal_id]: cor_escolhida_id }
+  // — quando um item da chapa aponta pra um produto principal (família
+  // de cor), resolve pra qual SKU de verdade credita o estoque.
+  async function logProduction(chapaId, multiplier, notes, colorSelections) {
+    const session = getSession()
+    const { data, error } = await supabase.rpc('log_chapa_production', {
+      p_chapa_id: chapaId, p_multiplier: multiplier, p_notes: notes || null, p_user_id: session.id || null,
+      p_color_selections: colorSelections && Object.keys(colorSelections).length ? colorSelections : null,
+    })
+    if (error) { toast.error('Erro ao lançar produção: ' + error.message); throw error }
+    await auditLog('create', 'chapa_production_entries', chapaId, `Produção lançada (x${multiplier})`)
+    toast.success('Produção lançada — estoque atualizado!')
+    return data // [{ product_id, product_name, delta, new_stock_qty }]
+  }
+
+  // Cores disponíveis de um produto principal — usado no passo de
+  // "qual cor saiu dessa chapa" ao lançar produção (fase64c).
+  async function fetchColorOptions(principalId) {
+    const { data, error } = await supabase
+      .from('products')
+      .select(`
+        id, name, sku, photo_url,
+        product_variations(product_variation_option_links(product_variation_options(value, product_variation_types(name))))
+      `)
+      .eq('parent_product_id', principalId)
+      .eq('active', true)
+      .eq('is_sellable', true)
+      .order('sku')
+    if (error) { toast.error('Erro ao carregar cores.'); throw error }
+    return (data ?? []).map(p => {
+      const links = p.product_variations?.[0]?.product_variation_option_links ?? []
+      const cor = links.find(l => l.product_variation_options?.product_variation_types?.name === 'Cor')
+      return { id: p.id, sku: p.sku, name: p.name, photo_url: p.photo_url, cor: cor?.product_variation_options?.value || p.sku }
+    })
+  }
+
+  async function fetchProductionHistory(chapaId) {
+    const { data, error } = await supabase
+      .from('chapa_production_entries')
+      .select('id, multiplier, notes, created_at, created_by_user:system_users(name)')
+      .eq('chapa_id', chapaId)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    if (error) { toast.error('Erro ao carregar histórico.'); throw error }
+    return data ?? []
+  }
+
+  return { chapas, loading, refetch: fetch, create, update, remove, logProduction, fetchProductionHistory, fetchColorOptions }
 }
