@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="description" content="Manuais, instruções de uso e vídeos dos produtos CoisaPet."/>
+<title id="page-title">CoisaPet — Manuais e Instruções</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+<!-- Google tag -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-N51GM1SKH1"></script>
+<script>
+  window.dataLayer=window.dataLayer||[];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js',new Date());gtag('config','G-N51GM1SKH1');
+</script>
+
+<style>
+:root{
+  --bg:    #1a0f07;
+  --card:  rgba(255,255,255,0.05);
+  --card-h:rgba(255,255,255,0.09);
+  --bdr:   rgba(255,255,255,0.08);
+  --txt:   #f5ead7;
+  --muted: rgba(245,234,215,0.5);
+  --gold:  #C5904A;
+  --brown: #6E3F25;
+  --font:  'Nunito', sans-serif;
+  --r:     16px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font);
+  background:var(--bg);
+  color:var(--txt);
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+.bg{
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse 80% 60% at 50% -10%, rgba(197,144,74,0.18) 0%, transparent 70%),
+             radial-gradient(ellipse 50% 40% at 80% 90%, rgba(110,63,37,0.25) 0%, transparent 60%),
+             #1a0f07;
+}
+.page{
+  position:relative;z-index:1;
+  max-width:480px;margin:0 auto;
+  padding:48px 20px 64px;
+  display:flex;flex-direction:column;align-items:center;gap:0;
+}
+.avatar{
+  width:80px;height:80px;border-radius:18px;object-fit:cover;
+  margin-bottom:16px;
+  box-shadow:0 0 0 3px rgba(197,144,74,0.25),0 8px 32px rgba(0,0,0,0.4);
+}
+.brand{font-size:20px;font-weight:800;letter-spacing:-.3px;margin-bottom:4px;text-align:center}
+.tagline{font-size:13px;color:var(--muted);margin-bottom:36px;text-align:center}
+.back-link{
+  font-size:12px;color:var(--muted);text-decoration:none;
+  display:flex;align-items:center;gap:4px;margin-bottom:20px;align-self:flex-start;
+}
+.back-link:hover{color:var(--gold)}
+.link-card{
+  width:100%;display:flex;align-items:center;gap:14px;
+  background:var(--card);border:1px solid var(--bdr);
+  border-radius:var(--r);padding:14px 16px;
+  text-decoration:none;color:var(--txt);
+  transition:background .18s,border-color .18s,transform .15s;
+  margin-bottom:8px;cursor:pointer;
+}
+.link-card:hover{background:var(--card-h);border-color:rgba(197,144,74,0.3);transform:translateY(-1px)}
+.link-card:active{transform:scale(.98)}
+.link-icon{
+  width:40px;height:40px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;font-size:19px;
+  background:rgba(255,255,255,0.06);
+}
+.link-body{flex:1;min-width:0}
+.link-title{font-size:14px;font-weight:700;line-height:1.2}
+.link-sub{font-size:11px;color:var(--muted);margin-top:1px}
+.link-arrow{font-size:16px;color:var(--muted);flex-shrink:0;transition:transform .18s,color .18s}
+.link-card:hover .link-arrow{transform:translateX(3px);color:var(--gold)}
+.skel{
+  width:100%;height:68px;border-radius:var(--r);
+  background:linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.08) 50%,rgba(255,255,255,0.04) 75%);
+  background-size:200% 100%;animation:shimmer 1.4s infinite;margin-bottom:8px;
+}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.empty{color:rgba(255,255,255,.35);text-align:center;font-size:13px;padding:32px 0;line-height:1.6}
+.footer{margin-top:36px;text-align:center;font-size:11px;color:rgba(245,234,215,0.25);line-height:1.8}
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.link-card{animation:fadeUp .4s ease both}
+</style>
+</head>
+<body>
+
+<div class="bg"></div>
+
+<div class="page">
+  <a href="https://coisapet.com.br/links/manuais/" class="back-link">← Todos os manuais</a>
+
+  <div id="product-header">
+    <div class="skel" style="height:80px;width:80px;border-radius:18px;margin:0 auto 16px"></div>
+  </div>
+
+  <div id="content" style="width:100%">
+    <div class="skel"></div>
+    <div class="skel" style="animation-delay:.1s"></div>
+  </div>
+
+  <div class="footer">
+    <p>© 2026 CoisaPet® · Feito com ♥ para os pets</p>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://lcybmdiqxmbqeuyeuhdj.supabase.co'
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxjeWJtZGlxeG1icWV1eWV1aGRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MjYyMjMsImV4cCI6MjA4OTAwMjIyM30.gAFVxdM6TMuse27UiASfFiw0NwfdcGhvck7AUv9EXPM'
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+
+function getSlug() {
+  const m = location.pathname.match(/\/doc\/([a-z0-9-]+)\/?$/i)
+  return m ? m[1] : null
+}
+
+function publicUrl(bucket, path) {
+  if (!path) return null
+  return db.storage.from(bucket).getPublicUrl(path).data.publicUrl
+}
+
+async function load() {
+  const slug = getSlug()
+  const header  = document.getElementById('product-header')
+  const content = document.getElementById('content')
+
+  if (!slug) {
+    header.innerHTML = ''
+    content.innerHTML = '<p class="empty">Nenhum produto informado na URL.</p>'
+    return
+  }
+
+  const { data: product } = await db
+    .from('products').select('id,name,photo_url,slug')
+    .eq('slug', slug).eq('active', true).maybeSingle()
+
+  if (!product) {
+    header.innerHTML = '<div class="brand">Produto não encontrado</div>'
+    content.innerHTML = '<p class="empty">Confira se o link está certo, ou volte pra lista completa de manuais.</p>'
+    return
+  }
+
+  document.getElementById('page-title').textContent = `${product.name} — Manuais | CoisaPet`
+  const photo = publicUrl('product-photos', product.photo_url)
+  header.innerHTML = `
+    ${photo ? `<img src="${photo}" alt="${product.name}" class="avatar"/>` : ''}
+    <div class="brand">${product.name}</div>
+    <div class="tagline">Manuais, instruções e vídeos</div>
+  `
+
+  const { data: resources } = await db
+    .from('product_doc_resources').select('*')
+    .eq('product_id', product.id).order('sort_order')
+
+  if (!resources || resources.length === 0) {
+    content.innerHTML = '<p class="empty">Ainda não tem material publicado pra esse produto — em breve.</p>'
+    return
+  }
+
+  content.innerHTML = resources.map((r, i) => {
+    let href = r.kind === 'link' ? r.url : publicUrl('product-docs', r.file_path)
+    // .html o Supabase não serve com content-type renderizável (proteção
+    // deles contra XSS) — passamos pelo visualizador em vez de linkar direto.
+    if (r.kind === 'file' && /\.html?$/i.test(r.file_path || '')) {
+      const params = new URLSearchParams({ path: r.file_path, title: r.label, back: location.href })
+      href = `ver.html?${params.toString()}`
+    }
+    const icon = r.kind === 'link' ? '🔗' : '📄'
+    return `
+      <a href="${href}" target="_blank" rel="noopener noreferrer" class="link-card" style="animation-delay:${i*0.06}s">
+        <div class="link-icon">${icon}</div>
+        <div class="link-body">
+          <div class="link-title">${r.label}</div>
+        </div>
+        <span class="link-arrow">→</span>
+      </a>
+    `
+  }).join('')
+}
+
+load()
+</script>
+</body>
+</html>

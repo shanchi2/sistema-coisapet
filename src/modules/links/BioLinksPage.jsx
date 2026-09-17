@@ -4,8 +4,13 @@ import {
   Link2, Plus, Pencil, Trash2, X, Check, GripVertical,
   Eye, EyeOff, Search, ExternalLink, Save, Loader2,
   BarChart2, MousePointerClick, TrendingUp, Calendar,
+  FileText, Package, ArrowLeft,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useSignedUrl } from '../../lib/signedUrlCache'
+import { useProductDocs } from './hooks/useProductDocs'
+
+const DOC_SITE_BASE = 'https://coisapet.com.br/doc'
 
 const CATEGORIES = [
   { value: 'lojas',   label: '🛍️ Lojas'         },
@@ -270,6 +275,239 @@ function LinkModal({ initial, onSave, onClose, saving }) {
   )
 }
 
+// ── Thumb de produto ─────────────────────────────────────────
+function DocProductThumb({ photoUrl }) {
+  const url = useSignedUrl('product-photos', photoUrl)
+  if (!url) return <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0"><Package size={14} className="text-slate-300" /></div>
+  return <img src={url} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0 border border-slate-100" />
+}
+
+// ── Modal: adicionar recurso (manual/instruções/vídeo) a um produto ──
+function DocResourceModal({ open, onClose, presetProduct, searchProducts, onSave, saving }) {
+  const [product, setProduct] = useState(presetProduct || null)
+  const [query,   setQuery]   = useState('')
+  const [results, setResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [label, setLabel] = useState('')
+  const [kind,  setKind]  = useState('link')
+  const [url,   setUrl]   = useState('')
+  const [file,  setFile]  = useState(null)
+
+  useEffect(() => {
+    if (!open) return
+    setProduct(presetProduct || null)
+    setQuery(''); setResults([])
+    setLabel(''); setKind('link'); setUrl(''); setFile(null)
+  }, [open, presetProduct])
+
+  async function runSearch(q) {
+    setQuery(q)
+    if (!q.trim()) { setResults([]); return }
+    setSearching(true)
+    setResults(await searchProducts(q))
+    setSearching(false)
+  }
+
+  function handleSave() {
+    if (!product || !label.trim()) return
+    if (kind === 'link' && !url.trim()) return
+    if (kind === 'file' && !file) return
+    onSave(product.id, { label, kind, url, file })
+  }
+
+  const canSave = product && label.trim() && (kind === 'link' ? url.trim() : file)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            {product && !presetProduct && (
+              <button onClick={() => setProduct(null)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
+                <ArrowLeft size={15} />
+              </button>
+            )}
+            <FileText size={18} strokeWidth={1.5} className="text-slate-600" />
+            <h3 className="font-semibold text-slate-800">{product ? 'Novo recurso' : 'Escolher produto'}</h3>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+          {!product ? (
+            <>
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input autoFocus value={query} onChange={e => runSearch(e.target.value)}
+                  placeholder="Buscar produto por nome..."
+                  className="w-full text-sm border border-slate-200 rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:border-slate-400" />
+              </div>
+              {searching ? (
+                <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-slate-300" /></div>
+              ) : (
+                <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
+                  {results.map(p => (
+                    <button key={p.id} onClick={() => setProduct(p)}
+                      className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 text-left">
+                      <DocProductThumb photoUrl={p.photo_url} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-700 truncate">{p.name}</p>
+                        {p.sku && <p className="text-[10px] text-slate-400 font-mono">{p.sku}</p>}
+                      </div>
+                    </button>
+                  ))}
+                  {query.trim() && !searching && results.length === 0 && (
+                    <p className="text-xs text-slate-400 text-center py-4">Nenhum produto encontrado.</p>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50">
+                <DocProductThumb photoUrl={product.photo_url} />
+                <p className="text-sm font-semibold text-slate-700 truncate">{product.name}</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-500 block mb-1.5">Título do recurso *</label>
+                <input autoFocus value={label} onChange={e => setLabel(e.target.value)}
+                  placeholder="Ex: Manual de Montagem, Instruções de Uso, Vídeo de Montagem..."
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-500 block mb-1.5">Tipo</label>
+                <div className="flex gap-2">
+                  {[['link', 'Link (URL)'], ['file', 'Arquivo (.html/.pdf)']].map(([k, l]) => (
+                    <button key={k} type="button" onClick={() => setKind(k)}
+                      className={`flex-1 text-xs font-semibold py-2 rounded-lg border transition-colors ${kind === k ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-200 text-slate-500'}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {kind === 'link' ? (
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 block mb-1.5">URL *</label>
+                  <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..."
+                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+                </div>
+              ) : (
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 block mb-1.5">Arquivo (.html ou .pdf, máx 10MB) *</label>
+                  <input type="file" accept=".html,.htm,.pdf" onChange={e => setFile(e.target.files?.[0] || null)}
+                    className="w-full text-sm" />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {product && (
+          <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
+            <button onClick={onClose} className="flex-1 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+              Cancelar
+            </button>
+            <button onClick={handleSave} disabled={!canSave || saving}
+              className="flex-1 py-2.5 text-sm font-medium text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-lg transition-colors flex items-center justify-center gap-2">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Adicionar
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Aba Manuais ─────────────────────────────────────────────────
+function ProductDocsTab() {
+  const { groups, loading, searchProducts, addResource, removeResource } = useProductDocs()
+  const [modalOpen, setModalOpen] = useState(false)
+  const [presetProduct, setPresetProduct] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  function openFor(product) { setPresetProduct(product); setModalOpen(true) }
+
+  async function handleSave(productId, payload) {
+    setSaving(true)
+    await addResource(productId, payload)
+    setSaving(false)
+    setModalOpen(false)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-500">
+          Manual, instruções e vídeo por produto — publicado em{' '}
+          <span className="font-mono text-xs text-slate-400">{DOC_SITE_BASE}/&lt;slug&gt;</span>
+        </p>
+        <button onClick={() => openFor(null)}
+          className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors shrink-0">
+          <Plus size={16} strokeWidth={1.5} />
+          Novo manual
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16 bg-white rounded-xl border border-slate-200">
+          <Loader2 size={24} className="animate-spin text-slate-400" />
+        </div>
+      ) : groups.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+          <FileText size={36} strokeWidth={1} className="mx-auto mb-3 text-slate-200" />
+          <p className="text-slate-500">Nenhum produto com manual cadastrado ainda</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {groups.map(g => (
+            <div key={g.product.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-3 bg-slate-50/60 border-b border-slate-100">
+                <DocProductThumb photoUrl={g.product.photo_url} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-800 truncate">{g.product.name}</p>
+                  <p className="text-[11px] text-slate-400 font-mono truncate">{DOC_SITE_BASE}/{g.product.slug}</p>
+                </div>
+                <a href={`${DOC_SITE_BASE}/${g.product.slug}`} target="_blank" rel="noopener noreferrer"
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors shrink-0">
+                  <ExternalLink size={14} strokeWidth={1.5} />
+                </a>
+                <button onClick={() => openFor(g.product)}
+                  className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-700 px-2 py-1.5 rounded-lg hover:bg-slate-100 shrink-0">
+                  <Plus size={12} /> Recurso
+                </button>
+              </div>
+              <div className="divide-y divide-slate-50">
+                {g.resources.map(r => (
+                  <div key={r.id} className="flex items-center gap-3 px-4 py-2.5">
+                    {r.kind === 'link' ? <Link2 size={14} className="text-sky-500 shrink-0" /> : <FileText size={14} className="text-violet-500 shrink-0" />}
+                    <span className="flex-1 text-sm font-medium text-slate-700 truncate">{r.label}</span>
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase shrink-0">{r.kind === 'link' ? 'Link' : 'Arquivo'}</span>
+                    <button onClick={() => removeResource(r.id)}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors shrink-0">
+                      <Trash2 size={13} strokeWidth={1.5} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {modalOpen && (
+        <DocResourceModal open={modalOpen} presetProduct={presetProduct} searchProducts={searchProducts}
+          onSave={handleSave} onClose={() => setModalOpen(false)} saving={saving} />
+      )}
+    </div>
+  )
+}
+
 // ── Página principal ───────────────────────────────────────────
 export function BioLinksPage() {
   const [links,    setLinks]    = useState([])
@@ -381,6 +619,7 @@ export function BioLinksPage() {
         <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
           {[
             { key: 'links',     label: 'Links',     icon: Link2     },
+            { key: 'manuais',   label: 'Manuais',   icon: FileText  },
             { key: 'analytics', label: 'Analytics', icon: BarChart2 },
           ].map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
@@ -466,6 +705,9 @@ export function BioLinksPage() {
             )}
           </div>
         )}
+
+        {/* ── ABA MANUAIS ── */}
+        {tab === 'manuais' && <ProductDocsTab />}
 
         {/* ── ABA ANALYTICS ── */}
         {tab === 'analytics' && (
