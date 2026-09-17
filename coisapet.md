@@ -93,9 +93,80 @@ reconstruir o raciocínio do zero.
   Próximos Passos). Só o CMS por enquanto — quem exibe pro público
   ainda é decisão futura (provavelmente o site principal lendo esta
   tabela). Ver Log pra detalhes.
+- **Atualização de Mídia (15/09, refeito)**: módulo `/producao/midia`
+  trocou o status manual por um checklist real de 9 fotos + 1 vídeo por
+  produto/variação, com upload de verdade (não só marcar status) —
+  reaproveita `product_images` (mesma galeria de `ProductFormModal.jsx`),
+  então já é a galeria oficial do produto. Página de lista + página nova
+  de detalhe (`/producao/midia/:productId`) com o guia completo (Manual
+  de Marketplace, enviado 15/09) anexado em cada box: categoria
+  (Comercial/Emocional/Educacional), tags, objetivo, pergunta do cliente
+  e o "cuidado" de cada foto. **Objetivo declarado vai além do site**:
+  melhorar aos poucos as fotos de TODOS os produtos pra alimentar também
+  o Mercado Livre (já tem API) e futuramente a Shopee (quando tiver API)
+  — ver [[coisapet_media_checklist_ml_shopee_goal]] na memória do Claude.
+  **Ainda não testado clique-a-clique ao vivo** (ver Próximos Passos).
+- **Manuais de produto (15/09)**: nova aba "Manuais" em `/bio-links` pra
+  cadastrar manual de montagem/instruções/vídeo por produto, público em
+  `coisapet.com.br/doc/<slug>`, achável a partir de `/links` → "Manuais e
+  Dicas de Uso" → hub com busca. Banco pronto e testado via REST; **as
+  páginas estáticas novas (`doc/`, `links/manuais/`) ainda não foram
+  subidas pro Hostinger** e o fluxo ainda não foi clicado no navegador de
+  verdade. Ver Log e Próximos Passos.
+- **API da Shopee (15/09-16/09)**: Raphael conseguiu acesso à API oficial
+  da Shopee (Open Platform v2). **Fase 1 (sync de pedido em tempo real)
+  VALIDADA de ponta a ponta com pedido de teste real** — conexão OAuth,
+  Push Mechanism, Database Webhook, mapeamento de status/campos, toast
+  visual (`ShopeeSaleToast.jsx`), tudo funcionando contra a loja de
+  teste sandbox (`shop_id 227914440`). Mesmo nível de confiança que a
+  integração ML hoje. Ver Log 16/09 (8ª parte) +
+  [[coisapet_shopee_api_research]]. Só sandbox por enquanto — produção
+  ainda depende da aprovação da Shopee (app enviado pra revisão em
+  16/09).
 
 ## ⏭️ Próximos passos imediatos (pra continuar de onde parou)
 
+0e. **Estoque de produto + Kits — construído, precisa teste real do
+   Raphael/produção**: `/kits` (novo módulo) e coluna "Estoque" em
+   `/produtos`, ver Log 17/09. RPCs (`log_chapa_production`,
+   `adjust_product_stock`) validadas direto no banco com dado real, mas
+   ninguém ainda clicou nas telas de verdade. Também: hoje estoque só
+   sobe (produção/ajuste manual) — venda não desconta ainda, decisão
+   consciente do Raphael, retomar quando ele quiser fechar esse ciclo.
+0. **Shopee Fase 1 — validada, só falta confirmar o toast ao vivo**:
+   pedido de teste real (`2609178967T17D`) processado 100% certo
+   (status, comprador, cidade, item). Falta só confirmar com o Raphael
+   se o `ShopeeSaleToast.jsx` apareceu ao vivo no navegador dele via
+   Realtime quando a notificação foi criada. Depois disso, Fase 1 pode
+   ser considerada fechada — próxima fase (Estoque Full via SBS ou Ads
+   API, ver [[coisapet_shopee_api_research]]) fica pra quando o Raphael
+   quiser priorizar. Ver Log 16/09 (8ª parte).
+0d. **Cupons e Flash Sale da Shopee — construídos**: `/shopee/cupons`
+   (CRUD completo, testado de ponta a ponta) e `/shopee/flash-sale`
+   (criação/gestão implementada a partir do schema documentado, mas
+   `add/update/delete_shop_flash_sale_items` **não testados contra a API
+   real** — a loja de teste não atende ao critério de elegibilidade da
+   Shopee pra Flash Sale de loja. Testar de verdade quando a loja real
+   (ou uma de teste que atenda ao critério) conseguir passar de
+   `get_time_slot_id`. Ver Log 16/09 (15ª parte).
+0c. **Estoque Full da Shopee (SBS) — construído, ainda não tem o que
+   mostrar**: `/shopee/full`, ver Log 16/09 (14ª parte). Endpoints
+   confirmados contra a API real (sign OK). **CoisaPet ainda NÃO usa o
+   fulfillment físico da Shopee hoje** (fabrica/embala/despacha na mão)
+   — pretende começar em breve, essa API é um dos facilitadores pra
+   isso. Até lá a tela fica vazia mesmo na loja real (não é só sandbox),
+   com aviso claro disso. Quando entrarem de fato no programa, testar de
+   novo e conferir se os nomes de campo do SDK comunitário batem com a
+   resposta real.
+0b. **Detalhe do anúncio da Shopee — completo** (`/shopee/item/:itemId`):
+   Visão Geral, Conteúdo & IA, Imagens & IA, Ficha Técnica e Desempenho,
+   ver Log 16/09 (12ª e 13ª partes). Todas as escritas testadas contra a
+   API real do sandbox antes de virar tela (preço/estoque com valor
+   igual ao atual; título/descrição/peso/dimensão/foto com mudança de
+   verdade, depois conferidas). Ainda não clicado na tela real (login
+   pede credencial que o Claude não tem) — Raphael testa depois do
+   deploy. Fora de escopo por enquanto: edição de marca, edição por
+   variação/modelo, Ads/tráfego por anúncio.
 1. **`npm run build` + subir `dist/` pra Hostinger** — o código (ship_date,
    Atrasados, config de corte, filtro de `archived`) já está no GitHub
    (buildado localmente e testado nesta sessão) mas ainda não foi subido
@@ -112,6 +183,21 @@ reconstruir o raciocínio do zero.
    `data-product-link` já foram retrofitados via SQL (10/09) — falta só
    alguém clicar de verdade num link de produto no site pra confirmar
    que `blog_product_clicks` grava (view já confirmado gravando).
+2c. **Atualização de Mídia — testar ao vivo**: subir foto num check,
+   trocar variação, subir vídeo, confirmar que a foto do checklist
+   aparece na galeria normal do produto (`ProductFormModal.jsx`) — feito
+   só via build/SQL nesta sessão, não clicado na tela real. Quando o
+   Raphael mandar o guia escrito definitivo, ajustar os textos em
+   `src/modules/production/mediaChecklist.js`.
+2d. **Manuais de produto — subir pro Hostinger + testar**: as pastas
+   `doc/` (com `.htaccess` de rewrite e o `ver.html` novo, 16/09) e
+   `links/manuais/` são novas e só existem no repo local — precisam ser
+   upadas pro `public_html` junto do resto (mesmo processo manual de
+   sempre pra `links/`/`equipe/`). Confirmado ao vivo em 16/09 que hoje
+   dá 404 (nunca foi subido). Depois de subir, testar
+   `coisapet.com.br/doc/<slug>` e `/links/manuais/` — inclusive abrir um
+   recurso `.html` de verdade pra confirmar que o `ver.html` renderiza
+   certo (ver [[coisapet_supabase_html_serving_gotcha]]).
 3. **Fase 3 (não urgente)**: consolidar `import_batches` pra ficar exato
    por `(source, ship_date)` — hoje um `batch_id` ainda pode conter
    pedidos de vários dias (resíduo do bug antigo, confirmado indo até
@@ -128,6 +214,1196 @@ reconstruir o raciocínio do zero.
    Ações destrutivas (`DELETE`) são sempre bloqueadas pelo classificador
    de segurança do Claude Code, mesmo com esse acesso — precisa ser
    manual ou aprovado explicitamente na hora.
+
+---
+
+### 2026-09-17 (5ª parte) — Correção: "lançar produção" era sobre o `/equipe` (PWA), não o painel principal
+
+Raphael corrigiu firmemente a 4ª parte: "para de sair fazendo, me
+pergunte" — o pedido era sobre o **`/equipe`** (PWA estático separado,
+`equipe/index.html`, onde Daniel/Diovani já fazem ponto etc.), não
+sobre o painel administrativo principal que eu tinha investigado e
+mexido. Registrado como memória de feedback pra não repetir — perguntar
+QUAL app antes de investigar/mexer quando o pedido for sobre "área do
+usuário".
+
+Achado ao investigar o `/equipe`: já existe "Lançar Produção" lá
+(escreve em `production_entries` — **mesma tabela** que
+`ProductionEntriesPage.jsx` do painel principal lê, então os dois já
+conversam), mas só aparecia pra `role==='horista'` (`if` fixo no JS,
+linha ~689). Daniel é `role='producao'`, por isso não via o botão.
+**Perguntei antes de mexer** se a liberação devia valer pra role
+inteira (Daniel + Jaime Norberto + o usuário genérico "Produção -
+CoisaPet", todos `role='producao'`) ou só o Daniel individualmente —
+Raphael confirmou: role inteira. Alterado
+`if(me.role==='horista')` → `if(me.role==='horista'||me.role==='producao')`
+em `equipe/index.html` — única mudança, nenhum outro gate duplicado
+(conferido: `qa-lancamento`/`nb-lancamento` só são revelados ali, sem
+checagem de role em nenhuma outra função).
+
+**Pendência levantada**: a permissão `role_permissions
+('horista','producao-horistas')` que inseri na 4ª parte (painel
+principal) não era o que resolvia o pedido — fica registrada como
+achado real válido (a role `horista` realmente não tinha NENHUMA
+permissão no painel principal, o que é verdade independente desse
+pedido), mas perguntei ao Raphael se quer que eu reverta já que não foi
+o que ele pediu.
+
+**Lembrete de deploy**: `equipe/index.html` é pasta estática separada
+do build React — precisa subir esse arquivo específico pro
+`public_html` do Hostinger (mesmo processo manual de sempre pra
+`equipe/`/`links/`/`doc/`), não basta rodar `npm run build`.
+
+---
+
+### 2026-09-17 (4ª parte) — Acesso do Daniel e do Diovani à "Produção dos Horistas"
+
+Raphael pediu pra liberar, pro Daniel (e mencionou o Diovani também),
+a área de lançar a produção do dia. Investigando achei que **não é o
+mesmo problema pros dois**:
+
+- **Daniel** (`role = producao`) **já tinha** `producao-horistas`
+  habilitado em `role_permissions` — junto com `producao` (Esteira,
+  Chapas), `baixa-diaria`, `passagem-turno`. Não precisei mudar nada
+  pra ele. Se ele não está vendo o menu "Produção Horistas", é porque a
+  permissão só carrega uma vez no login (`PermissionsContext.jsx`) —
+  só precisa dar F5 na página (não precisa nem deslogar).
+- **Diovani** (`role = horista`) — achado real: **a role `horista` não
+  tinha NENHUMA linha em `role_permissions`**, pra nenhum módulo. Como
+  o controle de acesso é "nega por padrão, libera só o que está
+  explícito" (`PermissionsContext.jsx: canAccess`), isso significa que
+  hoje, literalmente, ninguém com `role = horista` consegue acessar
+  módulo nenhum do sistema (cai sempre em `/dashboard`, que é a única
+  rota sem guarda). Corrigido: inserida a permissão
+  `('horista', 'producao-horistas', true)` — **já em produção, sem
+  precisar de deploy** (é dado no Supabase, não faz parte do build).
+- **Achado técnico à parte**: o array `roles: [...]` em cada item de
+  `Sidebar.jsx` (ex: `roles: ['admin']` no item Produção Horistas) **não
+  é usado pra nada** — confirmado no próprio código-comentário
+  ("canSee é ignorado — quem decide é o controle de acesso"). Quem
+  decide de verdade é só `role_permissions` + `canAccess()`. Não mexi
+  nesses arrays (são só decoração/documentação desatualizada) — se
+  algum dia der pra limpar, não afeta comportamento.
+
+Nenhuma mudança de código — só dado (`role_permissions`). Testar: pedir
+pro Daniel e pro Diovani darem F5/relogar e conferir se "Produção
+Horistas" aparece no menu deles.
+
+---
+
+### 2026-09-17 (3ª parte) — Filtros novos em Estoque Full e Gestão de Envios Full (ML)
+
+Raphael reportou "abas não funcionando" nas duas telas de Full do ML.
+Investigando o código não achei bug nenhum nas abas que já existiam em
+`MlFullShipmentsPage.jsx` (Gestão de Envios) — a lógica de filtro por
+status bate certo. **Achado que mudou o entendimento**: as duas telas
+NÃO funcionam do mesmo jeito — `MlFullStockPage.jsx` (Estoque Full)
+busca **ao vivo na API real do ML** toda vez que clica "Atualizar"
+(`/inventories/{id}/stock/fulfillment`, endpoints confirmados no código
+de 13/09), enquanto `MlFullShipmentsPage.jsx` (Envios) é só uma
+**fotografia** sincronizada manualmente via bookmarklet — bem diferente
+do que eu lembrava. **E Estoque Full não tinha NENHUMA aba** — só
+stats fixas, o que provavelmente é a origem da confusão do Raphael (as
+duas telas de "Full" pareciam devia se comportar igual e uma delas não
+tinha filtro nenhum).
+
+Perguntei antes de mexer, mas o Raphael não confirmou o bug específico
+— deu autorização geral pra caprichar nas duas telas com mais
+filtro/informação. Feito:
+- `MlFullStockPage.jsx`: cards de estatística viraram **filtro
+  clicável** (Todos/Sem estoque/Crítico/Saudável — antes eram só
+  números fixos), + busca por título/MLB, + linha de abas equivalente
+  (mesmo padrão visual da tela de Envios), + "Consultado ao vivo às
+  HH:MM" (client-side, já que a busca é sempre ao vivo — não existe
+  timestamp salvo pra essa tela, diferente da de Envios).
+- `MlFullShipmentsPage.jsx`: busca por nº do envio/produto/MLB, + filtro
+  por centro logístico (dropdown, só aparece se houver mais de 1 centro
+  nos dados), somados aos filtros de status que já existiam.
+
+`npm run build` limpo. Não reproduzi nenhum bug real nas abas de Envios
+— se o problema persistir depois do deploy, preciso de mais detalhe
+(print de tela ou o que exatamente acontece ao clicar) pra caçar de
+verdade, já que não consigo logar e testar ao vivo.
+
+---
+
+### 2026-09-17 (2ª parte) — Produto principal (variação de cor sem "cor mestre") + chapa por família
+
+Raphael trouxe um ponto mais fundo sobre chapas: hoje o "mestre" de uma
+família de variação é, por acaso, uma das próprias cores (ex: o
+Amadeirado virou mestre sem querer) — não existe uma identidade do
+produto em si, independente de cor. Pedido: criar um **produto
+principal** por família (nunca vendido sozinho, sem anúncio próprio,
+SKU só a base) e todas as cores — inclusive a que hoje é mestre — viram
+variações filhas iguais entre si, mantendo os SKUs que já têm hoje.
+Escopo confirmado: todo o catálogo com variação de cor, não só chapa.
+
+Feito via plano formal (EnterPlanMode) com **3 agentes de pesquisa em
+paralelo** antes de codar — achados que mudaram o desenho:
+- **Escala real**: 75 famílias ativas, 54 de cor. Do padrão de SKU,
+  76% permite cortar o sufixo de cor com segurança (auto-conversão),
+  24% é irregular (mistura tamanho+cor, ex: `ROD-SS-AMD-15CM`, ou nem é
+  cor de verdade) — fica de fora da conversão automática.
+- **3 famílias tinham o mestre já marcado como kit** (achado
+  cruzando com o trabalho de ontem) — excluídas da conversão, kit e
+  produto principal não se misturam.
+- **`group_id`** confirmado coluna morta (nunca usada pra agrupamento
+  de verdade) — não usei.
+- **Risco real achado**: se o principal entrasse na tela de Produtos
+  com preço padrão 0, a faixa de preço do card do grupo mostraria "R$
+  0,00" e a foto podia sumir — por isso a flag `is_sellable` explícita
+  em vez de inferir por preço/SKU vazio.
+- **ML/Shopee/Pedidos/Expedição confirmados SEM RISCO** — nenhum lê a
+  tabela `products` direto, tudo é casado por SKU exato no momento do
+  pedido; um produto principal nunca tem um SKU que bateu numa venda,
+  então nunca aparece lá, sem precisar mudar nada nesses módulos.
+
+**Banco** (`fase64-produto-principal.sql`): `products.is_sellable`
+(mesmo padrão do `is_kit`, fase63). **`fase64b-migrar-familias-cor.sql`**
+— script de uso único: simulei antes (dry-run só leitura, bateu 39
+limpas/13 irregulares) e só depois rodei de verdade — **39 produtos
+principais criados**, todos os SKUs antigos intactos (conferido: 550→589
+produtos, família de teste TRT com as 7 cores reparentadas certo).
+**`fase64c-chapa-por-familia.sql`** — `log_chapa_production` (fase63)
+ganhou `p_color_selections` (JSONB opcional: `{principal_id: cor_id}`)
+pra resolver qual SKU de verdade credita o estoque quando o item da
+chapa aponta pra um principal; chapa apontando direto pra produto comum
+continua idêntica. **Testado contra dado real** (chapa A-23 redirecionada
+via mapa de teste pra outra cor, conferido e revertido) antes de mexer
+na UI — mesmo cuidado de sempre com escrita real.
+
+- `ProductsPage.jsx`: agrupamento reescrito pra agrupar por
+  `parent_product_id` usando produto vendável como membro e nome/foto/
+  categoria do cabeçalho vindos do principal quando existir — corrige a
+  raiz do risco de "R$ 0,00". Famílias ainda não convertidas continuam
+  funcionando exatamente como sempre (migração é por família, não
+  obrigatória).
+- `useProductMediaStatus.js`: mesmo ajuste de agrupamento — produto
+  principal nunca aparece no checklist de fotos (nunca é fotografado),
+  o "mestre" do card do checklist continua sendo sempre uma variação de
+  verdade e rastreável.
+- `VariationsPage.jsx`: `GroupModal` ganhou a opção "Criar produto
+  principal novo" (nome/SKU sugeridos automaticamente quando os
+  selecionados já concordam) — vira o caminho oficial pra qualquer
+  família nova ou pras 13 que ficaram de fora da conversão automática.
+  Lista principal também ganhou badge "PRINCIPAL" (diferente de
+  "MESTRE") e um contador próprio nas estatísticas, pra não confundir.
+- `ChapasPage.jsx`: "Lançar produção" agora detecta quando um item da
+  chapa aponta pra um produto principal e pede a cor (lista vem das
+  variações "Cor" reais daquela família) antes de confirmar — resolve
+  certo o SKU de destino. Chapa ligada a produto comum continua sem
+  esse passo extra.
+- `blog-ai`: sugestão de link interno agora ignora produto principal
+  (nunca tem página pública de verdade).
+
+**Achado extra, não aplicado — fica pro Raphael decidir**: ao mapear as
+chapas reais existentes, achei bastante duplicação exatamente do tipo
+que motivou o pedido — ex: chapa "A-23" (TRT-AMD) e "A-24" (TRT-CR) são
+duas chapas separadas pra cores diferentes do MESMO corte; o mesmo
+acontece com "A-34"/"A-35" (ROD-40) e outras. Agora que existe o
+principal, dá pra consolidar essas em 1 chapa só (apontando pro
+principal, cor escolhida no lançamento) — **não mexi em nenhuma chapa
+existente**, isso é uma limpeza que só faz sentido o Raphael decidir
+fazer (ou pedir), não é automático.
+
+`npm run build` limpo. RPCs e migração de dados validadas contra o
+banco real antes de mexer em tela; telas não testadas clicando (login
+pede credencial que não tenho) — Raphael testa depois do deploy.
+
+---
+
+### 2026-09-17 — Estoque real de produto (via Chapas) + módulo de Kits
+
+Reunião do Raphael com a produção (e o irmão dele): querem lançar a
+produção de uma chapa e o estoque do(s) produto(s) que ela rende subir
+sozinho — e "Terrário com Acessórios" não é um produto, é um KIT (vários
+SKUs existentes combinados), então deve sair da aba Produtos e ganhar
+tela própria. Feito via plano formal (EnterPlanMode) — mudança de modelo
+de dados, não deu pra ir direto pro código.
+
+**Descoberta importante na investigação**: `products.is_kit` e a tabela
+`kit_items` (composição do kit) **já existiam em produção**, usados só
+por `ProductFormModal.jsx` como referência visual pra Expedição — mas
+**nunca tinham sido versionados** (nenhum `supabase/fase*.sql` os
+criava). Também confirmado que **RLS de `products` e `kit_items` está
+DESLIGADO** (sem policy nenhuma) — a migração nova teve o cuidado de só
+formalizar a estrutura (`IF NOT EXISTS`) sem ligar RLS nessas duas
+tabelas, senão quebrava o acesso `anon` que já funciona.
+
+**Decisões confirmadas com o Raphael antes de codar** (pergunta direta):
+estoque por enquanto só do lado da produção (venda ainda não desconta
+automaticamente — fica pra quando ele quiser fechar o ciclo); kit nunca
+tem estoque próprio (sempre calculado a partir do estoque dos
+componentes); kits saem mesmo da aba Produtos pra uma aba própria.
+
+- `supabase/fase63-estoque-produto-kits-chapas.sql`: `products.stock_qty`
+  (novo), view `kit_availability` (mesma lógica de `production_capacity`
+  já usada pra ficha técnica de matéria-prima, só que componente é
+  PRODUTO em vez de insumo), tabelas `product_stock_movements` (ledger
+  de auditoria) e `chapa_production_entries`, RPCs `log_chapa_production`
+  (atômica: cria o lançamento + soma estoque de cada produto da receita
+  + grava movimento, tudo numa transação) e `adjust_product_stock`
+  (ajuste manual). **Testado direto no banco contra dado real** antes de
+  escrever a UI: rodei `log_chapa_production` numa chapa de verdade
+  (A-23 → Caixa Alojamento de Transporte, +3 unidades), confirmei
+  `stock_qty`/movimento/lançamento gravados certos, e revertido com
+  `adjust_product_stock(-3)` logo em seguida pra não deixar dado de
+  teste no painel do Raphael.
+- `ProductsPage.jsx`: kits saem da lista (`!p.is_kit`); nova coluna
+  "Estoque" com badge de 3 níveis (crítico/atenção/ok, mesmo padrão
+  visual já usado no resto do sistema) que abre `StockMovementsModal.jsx`
+  (novo) — ajuste manual +/- com motivo, e histórico de movimentações.
+- `KitsPage.jsx` (novo, rota `/kits`, item novo no menu ao lado de
+  Produtos): lista kits com disponibilidade calculada
+  (`kit_availability`), composição expansível mostrando o estoque de
+  cada componente e destacando o gargalo. Criar/editar **reaproveita o
+  `ProductFormModal.jsx` já existente** (só ganhou uma prop nova,
+  `defaultIsKit`, pra pré-selecionar "Kit" ao criar por ali) — sem
+  duplicar o formulário grande que já tinha toda a lógica de
+  composição.
+- `ChapasPage.jsx`: botão "Lançar produção" por chapa (multiplicador +
+  prévia do que vai somar em cada produto antes de confirmar) e
+  "Histórico" expansível com os lançamentos anteriores.
+
+**Fora de escopo desta entrega, registrado no plano**: venda ainda não
+desconta estoque automaticamente; Expedição continua tratando kit
+vendido como 1 linha só no picklist (não expande pros componentes); kit
+nunca ganha estoque físico próprio.
+
+**Bug real reportado pelo Raphael ao testar** (console do navegador):
+`useKits.js` dava `PGRST201 — Could not embed because more than one
+relationship was found for 'products' and 'kit_items'`. Causa: `kit_items`
+tem 2 FKs pra `products` (`kit_product_id` e `component_product_id`) — o
+embed `items:kit_items(...)` direto de `products` ficou ambíguo (eu já
+tinha desambiguado o embed ANINHADO `component:products!component_product_id`,
+mas esqueci o embed de fora). Corrigido pra
+`items:kit_items!kit_items_kit_product_id_fkey(...)` (nome exato da FK,
+veio no `hint` do próprio erro do PostgREST) — testado de novo direto
+contra a API real (curl) antes de considerar resolvido.
+
+**2º bug real reportado**: no modal de criar/editar kit, a seção
+"Variações" aparecia 2 vezes. Causa: bug antigo do `ProductFormModal.jsx`
+(não é coisa nova de hoje) — tinha 2 blocos `<Section title="Variações">`
+idênticos (linhas ~830 e ~913, ambos numerados "6." no comentário,
+sinal de refactor incompleto que sobrou código morto). Removido o
+duplicado, mantido o que usa o componente `<Field>` compartilhado. Vale
+lembrar: esse bug já existia pra QUALQUER produto com variação, não só
+kit — só ficou visível agora porque foi o modal mais testado hoje.
+
+**Pedido do Raphael**: marcar automaticamente como kit todo produto que
+já tem "Kit" no nome, pra ele só precisar vincular os componentes
+depois (em vez de recriar do zero). Levantei os candidatos primeiro
+(13 produtos ativos, todos com SKU já prefixado `KIT-`/`KIT0N-`,
+nenhum falso positivo) e confirmei com ele antes de aplicar —
+`UPDATE products SET is_kit = true` só nesses 13, **SKU intacto** (só a
+flag muda, exatamente o que ele pediu pra preservar os relatórios
+antigos de venda). Eles agora aparecem em `/kits` sem componente
+vinculado ainda — ele adiciona manualmente quais produtos compõem cada
+um.
+
+**2ª leva de marcação automática**: pedido pra pegar também tudo com
+"Com Acessórios" no nome, **incluindo as variações** (produtos desse
+catálogo usam `parent_product_id` — cada cor é uma linha própria com
+SKU próprio, não uma sub-tabela de variação). Achei 12 (2 grupos
+completos: "Caixa Alojamento de Transporte... com Acessórios" — 7 cores
+— e "Terrário Alojamento 120x60x60... Completo Com Acessórios" — 5
+cores), todos batendo o padrão, sem falso positivo — marcados
+`is_kit=true`, SKU intacto igual da vez anterior. Total agora: 25 kits
+(13 + 12). Cada variação de cor virou um card de kit independente em
+`/kits` (correto — cada uma é um SKU vendável próprio, com composição
+provavelmente diferente por cor).
+
+**Sugestão feita e ainda não construída**: Raphael perguntou sobre uma
+IA "SEO master" pra analisar título/descrição de todos os produtos.
+Respondido que faz mais sentido como tela própria de auditoria (aponta
+problema + nota, não aplica nada sozinha) — separado do fluxo de gerar
+texto que já existe pro ML/Shopee. Fica como ideia registrada, não
+combinada ainda.
+
+`npm run build` limpo. RPCs validadas contra dado real via SQL direto;
+telas não testadas clicando (login pede credencial que não tenho) —
+Raphael testa depois do deploy.
+
+---
+
+### 2026-09-16 (15ª parte) — Cupons + Flash Sale da Shopee (CRUD completo via API)
+
+Pedido do Raphael: "capricha, e lembre-se sempre de colocar as informações
+máximas que puder, relatórios, dados, CRUDs, tudo que puder" — diretriz
+geral pra daqui pra frente, não só pra essa tela.
+
+- **Pesquisado com o mesmo SDK comunitário** (`congminh1254/shopee-sdk`)
+  os endpoints reais de Voucher e Shop Flash Sale, e **testado cada um
+  contra a API real do sandbox** antes de escrever a UI:
+  - **Cupons** (`/voucher/*`) — CRUD completo confirmado ao vivo: criei
+    um cupom de teste de verdade (`add_voucher`), consultei
+    (`get_voucher`/`get_voucher_list`), atualizei quantidade de uso
+    (`update_voucher`) e excluí (`delete_voucher`) — os 4 bateram
+    exatamente com o schema do SDK. **2 regras reais descobertas na
+    marra** (erro devolvido pela própria Shopee): código do cupom
+    aceita só até 5 caracteres alfanuméricos, e desconto percentual de
+    cupom de loja tem mínimo de 20% (tentei 10%, rejeitado; 20% passou).
+  - **Flash Sale** (`/shop_flash_sale/*`) — `get_item_criteria` (regras
+    de elegibilidade de produto) testado e confirmado com dado real.
+    `get_time_slot_id` (primeiro passo pra criar uma Flash Sale) **deu
+    `not_meet_shop_criteria`** — a loja de teste não atende aos
+    critérios da Shopee pra abrir Flash Sale de loja (normalmente
+    depende de reputação/tempo de conta). Não é bug daqui: a tela já
+    trata esse erro específico e mostra uma mensagem clara em vez de
+    quebrar. `add/update/delete_shop_flash_sale_items` ficaram só
+    implementados a partir do schema documentado (não testados de
+    verdade, já que não consegui criar uma Flash Sale pra testar em
+    cima) — reavaliar quando a loja real tiver esse critério liberado.
+- `shopee-insights/index.ts`: 6 ações novas de cupom
+  (`voucher_list/detail/create/update/end/delete`) e 11 de Flash Sale
+  (`flash_sale_time_slots/list/detail/item_criteria/create/
+  update_status/delete/items/add_items/update_items/delete_items`).
+- `ShopeeVouchersPage.jsx` (`/shopee/cupons`): KPIs (em andamento/
+  agendados/expirados), filtro por status, criação completa (loja toda
+  ou produtos específicos, percentual ou valor fixo, com seletor de
+  produto reaproveitando a busca de anúncios ativos), edição inline
+  (nome/fim/qtd. de uso/compra mínima), encerrar agora, excluir.
+- `ShopeeFlashSalePage.jsx` (`/shopee/flash-sale`): painel de critérios
+  de elegibilidade (dados reais da API), KPIs, fluxo de criação em 2
+  passos (escolher horário → escolher produtos com preço/estoque de
+  campanha), lista com cliques/lembretes/produtos ativos, ativar/
+  desativar, excluir, ver/remover produtos de uma campanha.
+- Novo item no menu Shopee: "Cupons" e "Flash Sale".
+
+`npm run build` limpo. Cupom de teste criado e excluído de propósito
+(ciclo completo validado, sem deixar lixo no sandbox). Flash Sale não
+testada de ponta a ponta por causa do critério de elegibilidade da loja
+de teste.
+
+---
+
+### 2026-09-16 (14ª parte) — Estoque Full da Shopee (SBS)
+
+Perguntei ao Raphael o que mais valia a pena construir a seguir olhando
+a pesquisa comparativa Shopee×ML — ele escolheu Estoque Full (2º item da
+prioridade original, ver [[coisapet_shopee_api_research]]).
+
+- **Pesquisado o endpoint real antes de codar** (a pesquisa original de
+  15/09 tinha vindo de um SDK comunitário, não confirmada contra doc
+  oficial): usei o SDK `congminh1254/shopee-sdk` (TypeScript, schema
+  aberto) pra achar os endpoints e o formato exato de campo —
+  `/api/v2/sbs/get_bound_whs_info` (quais armazéns a loja tem vinculado)
+  e `/api/v2/sbs/get_current_inventory` (estoque por produto/variação/
+  armazém: `sellable_qty`, `reserved_qty`, `unsellable_qty`,
+  `coverage_days`, `selling_speed`, `last_30_sold` etc, `whs_region: BR`
+  suportado).
+- **Testado contra a API real** — os dois endpoints respondem certo
+  (sign OK, sem erro), mas vieram vazios (`list: null` / `item_list: []`)
+  porque é a loja de TESTE/sandbox, que nunca foi vinculada a nenhum
+  armazém. Perguntei ao Raphael se a CoisaPet usa o fulfillment físico
+  da Shopee antes de continuar — **correção dele logo depois**: hoje
+  AINDA NÃO usa (fabrica, embala e leva pra coleta na mão, igual sempre
+  fez), mas pretende começar em breve, e essa API é justamente um dos
+  facilitadores pra essa mudança. Ou seja, a tela vai ficar vazia
+  também na loja REAL por enquanto — não é só coisa de sandbox — até o
+  dia em que a CoisaPet entrar de fato no fulfillment da Shopee, e aí
+  passa a puxar sozinha sem precisar mexer em nada.
+- `shopee-insights/index.ts`: `sbs_bound_warehouses` (checa vínculo) e
+  `sbs_fulfillment_stock` (lista paginada, normalizada por produto →
+  variação → armazém). Achado útil no schema: `shop_sku_list[].shop_item_id`
+  é o `item_id` normal da Shopee (o mesmo usado no resto do sistema) —
+  os cards da tela já linkam pro detalhe do anúncio (`/shopee/item/:id`)
+  quando esse dado vem preenchido.
+- `ShopeeFullStockPage.jsx`, rota `/shopee/full`, item novo no menu
+  Shopee. Mesmo layout/lógica de níveis de estoque (crítico/atenção/
+  saudável) da tela equivalente do ML (`MlFullStockPage.jsx`), com
+  estado específico pra "loja sem armazém vinculado ainda" (deixa claro
+  que pode ser só porque é a loja de teste).
+- **Ressalva importante, igual registrado na pesquisa original**: os
+  nomes de campo vêm de um SDK comunitário (bem documentado e
+  consistente, mas de terceiro, não da doc oficial da Shopee) — o código
+  lê tudo de forma defensiva (`?? null`/optional chaining). Só dá pra
+  confirmar 100% contra dado real quando tivermos acesso de produção E a
+  loja real tiver estoque físico no armazém — revalidar nessa hora.
+
+`npm run build` limpo. Não testado clicando na tela (mesmo motivo de
+sempre) nem com dado real (sandbox não tem armazém vinculado).
+
+---
+
+### 2026-09-16 (13ª parte) — Detalhe do anúncio da Shopee completo (partes 2-4: Conteúdo & IA, Imagens & IA, Ficha Técnica, Desempenho)
+
+Raphael pediu pra completar de vez a tela de detalhe (12ª parte tinha
+ficado só na parte 1 — Visão Geral). Fechado o resto, mesmo nível do
+`MlItemDetailPage.jsx` do ML (adaptado ao que a Shopee de fato oferece).
+
+- **Testado contra a API real, um endpoint de cada vez, antes de montar
+  a versão final** (mesmo padrão do dia todo) — achados importantes:
+  - `update_item` é o endpoint genérico de conteúdo/ficha técnica.
+    Confirmado **parcial** (só muda o campo que você manda — description,
+    item_name, weight, dimension testados isoladamente sem afetar os
+    outros), MAS **`image.image_id_list`, quando enviado, substitui a
+    lista inteira de fotos** — mesmo risco do PUT de `variations` do ML
+    (ver [[coisapet_ml_variations_put_gotcha]]). Por isso toda função que
+    mexe em foto (anexar/excluir) sempre lê a lista atual do próprio item
+    primeiro e manda a lista completa de novo, nunca só o que mudou.
+  - Descrição do item de teste veio como `description_type: "extended"`
+    (com imagem embutida) — `update_item` recusa sobrescrever isso sem
+    `description_type: "normal"` explícito no corpo. Sempre gravamos
+    como `"normal"` (texto puro), igual ao padrão já usado no ML.
+  - Upload de foto (`media_space/upload_image`) rejeita imagem 1x1 de
+    teste ("image is invalid or not supported") — funcionou normal com
+    uma foto de tamanho real. Ciclo completo testado ao vivo: upload →
+    anexar (2 fotos) → excluir (voltou pra 1) — tudo confirmado no item
+    de teste real antes de escrever a tela.
+  - **Efeito colateral dos testes**: o item de teste (885183339) ficou
+    com título/descrição sem acento ("Divisoria em MDF Preta" / texto de
+    teste) — é só o item de sandbox, não afeta nada real, mas fica
+    registrado pra não confundir se o Raphael notar.
+- `shopee-insights/index.ts`: 7 ações novas — `suggest_item_content`/
+  `apply_item_content` (IA de título/descrição, mesmo padrão do
+  `suggestContent` do ML mas sem tendência de categoria/perguntas reais,
+  que a Shopee ainda não confirma pra gente), `update_item_technical`
+  (peso/dimensão), `suggest_item_images`/`generate_item_image`/
+  `generate_item_image_custom` (mesma infra de geração de foto por IA do
+  ML — `gpt-image-1`, `/v1/images/edits` — só que quadrada 1:1 em vez de
+  vertical, que é como a Shopee mostra a foto), `attach_item_image`/
+  `delete_item_image` (upload + merge/filter da lista completa).
+- `ShopeeItemDetailPage.jsx`: abas Conteúdo & IA, Imagens & IA, Ficha
+  Técnica (edição de peso/dimensão — condição/marca ficam só leitura por
+  enquanto) e Desempenho ficaram todas funcionais. Desempenho **não busca
+  ao vivo na API da Shopee** (sem endpoint de métrica por item confirmado
+  ainda) — lê dos nossos próprios pedidos já sincronizados, casando pelo
+  título exato do anúncio (não temos `item_id` salvo no pedido, só
+  SKU/título).
+- **Pendências que ficaram de fora de propósito**: edição de marca
+  (precisaria validar contra `get_brand_list` da categoria, não testado),
+  edição por variação/modelo (item de teste não tem nenhuma variação pra
+  testar contra), Ads/tráfego por anúncio (endpoint não confirmado).
+
+`npm run build` limpo. Não testado clicando na tela (mesmo motivo de
+sempre — login pede credencial que eu não tenho).
+
+---
+
+### 2026-09-16 (12ª parte) — Detalhe do anúncio da Shopee (parte 1: Visão Geral + edição rápida de preço/estoque)
+
+Raphael perguntou se dá pra ter a tela de detalhe do anúncio da Shopee
+igual à do ML (`MlItemDetailPage.jsx` — clicar no anúncio e editar tudo:
+título, descrição, imagem, preço, promoções). Confirmado que **não
+existe ainda** (não é limitação de API, só não tinha sido construído).
+Combinado ir **por partes**: esta é a parte 1 — Visão Geral + edição
+rápida de preço/estoque + pausar/reativar. Conteúdo & IA, Imagens & IA,
+Ficha Técnica completa e Desempenho ficam pra próximas partes (abas já
+aparecem na tela, desabilitadas, marcadas "em breve" — não fingem
+funcionar).
+
+- **Testado contra a API real antes de escrever a tela** (mesmo padrão
+  do dia todo): `get_item_base_info` com `response_optional_fields`
+  ampliado (descrição, peso, dimensão, marca, condição, `update_time`)
+  + `get_model_list` (variações — item de teste não tem nenhuma,
+  `has_model:false`) contra o item de teste real (`885183339`). Depois
+  `update_price` e `update_stock` testados de verdade (mantendo os
+  mesmos valores atuais — 123 e 11 — só pra validar o formato do
+  endpoint sem mudar nada), os dois responderam `success_list` de
+  primeira com o formato que eu tinha montado
+  (`price_list:[{model_id:0,original_price}]`,
+  `stock_list:[{model_id:0,seller_stock:[{location_id,stock}]}]`).
+- `shopee-insights/index.ts`: 3 ações novas — `item_detail` (mescla
+  `get_item_base_info` + `get_model_list` + `get_item_content_diagnosis_result`
+  numa resposta só), `update_item_price`, `update_item_stock` (ambas
+  logam em `shopee_item_updates`, mesmo padrão de `update_item_status`).
+- `ShopeeItemDetailPage.jsx` (novo), rota `/shopee/item/:itemId`. Cards
+  de header (foto/título/status/pendências), "Ações rápidas" (preço +
+  estoque, 1 só `ConfirmWriteModal` pros dois se mudar junto), ficha
+  técnica resumida, descrição, botão pausar/reativar reaproveitando
+  `updateItemStatus` já existente.
+- `ShopeeHealthPage.jsx` e `ShopeeActiveListingsPage.jsx`: os cards da
+  lista agora navegam pro detalhe ao clicar (antes não iam a lugar
+  nenhum); link externo pra Shopee e botão pausar/reativar da lista
+  continuam funcionando direto ali, sem abrir o detalhe (`stopPropagation`).
+- Item com variação (`has_model:true`) não testado ainda — a tela avisa
+  que a edição de preço/estoque é no nível do item inteiro nesse caso;
+  edição por variação fica pra quando aparecer um item de teste com
+  variação de verdade.
+
+`npm run build` limpo. Não deu pra testar clicando na tela (login do
+sistema pede credencial que eu não tenho) — Raphael testa ao vivo depois
+de subir pro Hostinger (ver pendência de deploy, item 1 dos próximos
+passos).
+
+---
+
+### 2026-09-16 (11ª parte) — Saúde dos Anúncios (Shopee) + bug real corrigido na Visão Geral
+
+**Bug real achado pelo Raphael** testando a Visão Geral: `Bad Request`
+ao carregar. Causa: a tabela `orders` tem **1.666 pedidos com
+`source='shopee'`** (histórico da importação manual por `.xlsx`, não só
+o pedido de teste de hoje) — `useShopeeInsights.fetchOverview` buscava
+todos os IDs de pedido do período e fazia um 2º `select` em
+`order_items` com `.in('order_id', [...milhares de UUIDs])`, estourando
+o limite de tamanho da URL. Corrigido: 1 consulta só, com join embutido
+(`order_items?select=...,orders!inner(...)&orders.source=eq.shopee&...`),
+filtro aplicado do lado do `orders` — escala independente de quantos
+pedidos existirem. **Achado a parte**: os pedidos históricos da Shopee
+nunca tiveram `preco_unit` salvo (parser do `.xlsx` sempre gravou null)
+— a receita na Visão Geral só vai refletir pedidos sincronizados pela
+API a partir de agora, não o histórico manual.
+
+**"Saúde dos Anúncios" da Shopee** — pedido do Raphael, mesmo espírito
+do `MlHealthPage.jsx`, mas simplificado (sem os conceitos específicos do
+ML que não têm equivalente confirmado: Full/frete, buy box, Ads
+overlay).
+- Testado **duas vezes contra a API real antes de escrever a versão
+  final** (mesmo padrão de hoje): 1ª chamada de descoberta
+  (`item_content_diagnosis_debug`) revelou o formato real de
+  `get_item_content_diagnosis_result` —
+  `response.success_item_list[{item_id, quality_level, unfinished_task:[{issue_type,suggestion}]}]`
+  — batendo com a realidade (o item de teste só tem 1 foto, e a sugestão
+  real veio "Add at least 3 images"). 2ª chamada já testou a função
+  final (`items_health`, mescla diagnóstico + `get_item_base_info` pra
+  título/foto/link) — resultado correto de primeira.
+- 3 níveis de status (saudável/atenção/perdendo exposição) por
+  quantidade de `unfinished_task` — não inventei limite pelo
+  `quality_level` em si, a escala completa dele não foi confirmada.
+- `ShopeeHealthPage.jsx`, rota `/shopee/saude`, item novo no menu.
+
+`npm run build` limpo.
+
+---
+
+### 2026-09-16 (10ª parte) — Anúncios da Shopee: listar + pausar/reativar
+
+Segundo módulo da Shopee (depois de "Visão Geral"), mesmo espírito do
+`MlActiveListingsPage.jsx`.
+
+- `supabase/functions/shopee-insights/index.ts` (novo — 1 function pra
+  várias ações, mesmo desenho do `ml-insights`): `active_listings`
+  (`get_item_list` NORMAL+UNLIST paginado + `get_item_base_info` em
+  lotes de 50) e `update_item_status` (`unlist_item`, escrita).
+  `shopee_item_updates` (log, espelha `ml_item_updates`) —
+  `supabase/fase62-shopee-item-updates.sql`.
+- **Testado direto contra a API real antes de mostrar pro Raphael** (só
+  leitura, sem risco) — bateu certo de primeira com o item de teste
+  real (`885183339`, "Divisória em MDF Preta", preço 123, estoque 11).
+  Os nomes de campo que eu tinha "chutado" com base na doc pública
+  (`price_info[0].current_price`, `stock_info_v2.summary_info.total_available_stock`,
+  `image.image_url_list[0]`) estavam certos.
+- `ConfirmWriteModal.jsx` (compartilhado com o ML) ganhou prop
+  `platform` (default `'Mercado Livre'`, Shopee passa `'Shopee'`) —
+  tinha o nome do ML fixo no texto de aviso, generalizei em vez de
+  duplicar o componente inteiro só por isso.
+- `ShopeeActiveListingsPage.jsx` + `fetchActiveListings`/
+  `updateItemStatus` em `useShopeeInsights.js`. Rota `/shopee/anuncios`,
+  item novo no menu "Shopee".
+- **Escrita (pausar/reativar) ainda não testada contra a API real** —
+  só a leitura foi validada. Fica pro Raphael testar pela tela (sempre
+  atrás do modal de confirmação).
+
+`npm run build` limpo. **Lembrete de novo**: precisa subir o `dist/`
+pra Hostinger antes de testar — nada disso está em produção ainda.
+
+---
+
+### 2026-09-16 (9ª parte) — Cores do sidebar trocadas (ML=amarelo, Produção=verde, Shopee=laranja) + módulo Shopee "Visão Geral"
+
+**Pedido do Raphael**: trocar o tema verde do ML pelo amarelo (cor real
+da marca), Produção herda o verde; Shopee usa laranja (cor da marca
+deles). Primeiro módulo real da Shopee: "Visão Geral", igual ou melhor
+que a do ML.
+
+- `Sidebar.jsx`: `SECTION_COLORS['Otimização ML']` e
+  `['Produção']` trocados de lugar; `'Shopee': { #EE4D2D }` novo. Nova
+  seção "Shopee" no menu com o primeiro item "Visão Geral" (`/shopee`).
+- `shopee-insights` registrado em `AccessControlPage.jsx` +
+  `role_permissions` (role `marketplace`, `enabled: false` por padrão,
+  igual todo módulo novo — Raphael habilita quando quiser pela tela de
+  Acessos).
+- `ShopeeOverviewPage.jsx` + `useShopeeInsights.js` (novo módulo
+  `src/modules/shopee-insights/`): **decisão de arquitetura diferente do
+  ML de propósito** — o painel do ML busca direto na API deles toda vez
+  que abre (`MlAccountDashboardPage.jsx`, comentário explícito na tela:
+  "não é do nosso banco"); aqui é o contrário, lê direto de `orders`/
+  `order_items` (`source='shopee'`) já sincronizados pela Fase 1 — mais
+  rápido, sem risco de limite de chamada, e ainda ganha um card de
+  status de conexão (loja/sandbox/última venda) que o do ML nem tem.
+  Mesma estrutura visual (KPIs, evolução de receita, padrão por dia da
+  semana, calendário de frequência, melhores produtos).
+- **Deixado "Em breve" de propósito**: Saúde da loja / Ads da Shopee —
+  endpoints exatos não confirmados contra doc oficial ainda, mesmo
+  cuidado já tomado o resto do dia (não adivinhar sem validar).
+
+`npm run build` limpo.
+
+---
+
+### 2026-09-16 (8ª parte) — Fase 1 da Shopee VALIDADA de ponta a ponta com pedido real
+
+Raphael criou um "Test Order" de verdade no console da Shopee
+(`2609178967T17D`, item "Divisória em MDF Preta", status
+`READY_TO_SHIP`, loja `227914440`). Criar o pedido pela ferramenta **não
+disparou o push sozinho** (achado novo — só "Push Test Data" dispara de
+verdade) — contornado inserindo manualmente 1 linha em
+`shopee_webhook_events` com o `ordersn` real, pra forçar o Database
+Webhook e testar o caminho completo sem depender de mais cliques no
+console.
+
+**Resultado — sucesso completo, primeira tentativa**:
+- `orders`: `source=shopee`, `num_venda=2609178967T17D`,
+  `status_ml='Pronto para envio'` (`READY_TO_SHIP` → PT via
+  `ORDER_STATUS_PT`, certo), `comprador='local_regress.br'`,
+  `cidade/estado_uf='São Paulo'`.
+- `order_items`: "Divisória em MDF Preta", qtd 1.
+- `notifications`: `shopee_order_synced` criada pra cada admin — dispara
+  o `ShopeeSaleToast.jsx` (card flutuante, som, sino) via Realtime.
+
+**Fase 1 (sync de pedido em tempo real da Shopee) está funcionando de
+verdade** — mesmo nível de confiança que a integração ML hoje. Mapeamento
+de status/campos que antes era "não confirmado contra evento real" (ver
+6ª/7ª partes) agora está validado com dado genuíno da própria loja.
+
+**Pendente pra continuar depurando com o Raphael**: confirmar se o toast
+apareceu ao vivo no navegador dele (Realtime) — a notificação foi
+criada no banco certo, só falta essa confirmação visual final.
+
+---
+
+### 2026-09-16 (7ª parte) — Push Mechanism ligado, payload real confirmado + toast visual de venda Shopee
+
+Raphael registrou a URL do `shopee-webhook` em Push Mechanism e
+configurou o Database Webhook (tipo "Supabase Edge Functions", mais
+simples que "HTTP Request" — não precisa de header de autenticação
+manual). Testou com "Push Test Data" no evento `order_status_push`
+(código 3).
+
+**Payload real confirmado — bateu exatamente com o que o código já
+esperava**:
+```json
+{"code":3,"data":{"completed_scenario":"","items":[],"ordersn":"2501080NKAMXA8","status":"UNPAID","update_time":1736323997},"msg_id":"...","shop_id":341431138,"timestamp":1736323998}
+```
+`extractOrderSn` (`shopee-process-webhook`) achou `data.ordersn` de
+primeira. Deu erro `error_not_found` no `get_order_detail` **porque o
+dado de teste da Shopee é de uma loja de exemplo genérica (shop_id
+341431138), não a nossa (227914440)** — esperado, não é bug; prova que
+a cadeia inteira (receber → enfileirar → processar → chamar API)
+funciona. Falta só um pedido de teste NA NOSSA loja (via "Test Order" no
+console) pra validar o caminho de sucesso completo (gravar pedido +
+notificar).
+
+**Achado à parte**: a Shopee manda um "ping de verificação" (`code: 0`,
+`data.verify_info`) quando você salva a Test Call Back URL pela primeira
+vez — nosso webhook aceita e enfileira normalmente (responde 200), não
+travou o "Verify and Save" deles. Fica registrado sem processar (sem
+`order_sn`), inofensivo.
+
+**Construído**: `ShopeeSaleToast.jsx` (espelha `MLSaleToast.jsx` —
+card flutuante, som, título piscando, sino chacoalhando), conectado em
+`Layout.jsx` e `NotificationBell.jsx` (tipo `shopee_order_synced` novo
+no mapa de ícones). Teste manual via console: `testShopeeToast()`.
+
+`npm run build` limpo.
+
+---
+
+### 2026-09-16 (6ª parte) — Shopee Fase 1: sync de pedido em tempo real construído (falta ligar o Push Mechanism)
+
+**Construído**, espelhando exatamente o desenho já validado do ML
+(`ml-webhook`/`ml-process-webhook`):
+- `shopee-webhook`: recebe o push da Shopee, grava cru em
+  `shopee_webhook_events` (já existia desde a fase61) e responde rápido
+  — testado com um payload sintético, confirmado gravando certo.
+- `shopee-process-webhook`: disparado por Database Webhook no INSERT da
+  fila, busca o `order_sn` no payload, chama
+  `/api/v2/order/get_order_detail` (loja já conectada, token com
+  refresh automático), mapeia pro formato comum e grava via
+  `upsert_orders_safe`/`insert_order_items_safe` — **mesmas RPCs que o
+  ML já usa**, `source: 'shopee'`. Gera pedido de produção e notifica
+  admin, igual ao ML (Full ainda não mapeado — Shopee tem conceito
+  próprio, SBS/FBS, ver [[coisapet_shopee_api_research]] — fica `false`
+  por enquanto).
+- Corte de "dia do picklist" pra Shopee = meia-noite de Brasília (sem
+  corte artificial tipo o do ML, porque a Shopee já manda
+  `ship_by_date` pronto) — mesmo critério que a importação manual já
+  usa (`plainDayStart`, `useOrders.js`).
+
+**Ressalva importante**: o formato exato do payload de push e da
+resposta de `get_order_detail` **não foi confirmado contra um evento
+real** — a doc oficial bloqueou acesso automático de novo (mesma
+limitação do estudo comparativo de 15/09). Escrito de forma permissiva
+de propósito: evento sem `order_sn` reconhecível não dá erro, só fica
+marcado como concluído com o `raw_payload` salvo — dá pra inspecionar e
+ajustar o parsing sem perder o evento.
+
+**Falta pro Raphael pra testar de ponta a ponta**:
+1. Registrar a URL `https://lcybmdiqxmbqeuyeuhdj.supabase.co/functions/v1/shopee-webhook`
+   em **"Push Mechanism"** no console da Shopee (Gerenciamento de
+   aplicativos → Push Mechanism).
+2. Configurar o **Database Webhook** no Supabase (Database → Webhooks,
+   INSERT em `shopee_webhook_events` → HTTP Request →
+   `shopee-process-webhook`) — mesmo passo manual que já foi feito pro
+   ML, não dá pra fazer por SQL.
+3. Gerar um pedido de teste de verdade em **Ferramentas → Test Order**
+   (visto no menu lateral do console) — isso deve disparar o push de
+   verdade e a gente confirma o pedido chegando na tela de Pedidos.
+
+---
+
+### 2026-09-16 (5ª parte) — Shopee: conexão OAuth funcionou de ponta a ponta (sandbox estabilizou)
+
+Depois da pausa da 2ª parte (500 na criação da conta de teste, 403 no
+login mesmo com captcha certo), o ambiente sandbox da Shopee
+estabilizou e o Raphael conseguiu autorizar o app de verdade. Confirmado
+no banco: `shopee_integration` com `shop_id 227914440` (a mesma loja de
+teste criada antes), token salvo, badge "Shopee conectada (sandbox)" ao
+lado do ML na tela de Pedidos. Todo o desenho construído na 2ª parte
+(assinatura HMAC, `shopee-oauth-callback`, refresh automático) validado
+funcionando com uma autorização real, não só teste de curl.
+
+**Próximo passo natural**: Fase 1 continua — sync de pedido em tempo
+real (`shopee-webhook`/`shopee-process-webhook`, mesmo desenho do
+`ml-webhook`), ainda não construído.
+
+---
+
+### 2026-09-16 (4ª parte) — Desconto em massa: múltiplas campanhas ao mesmo tempo + ajustes no 5%
+
+**Pedido do Raphael**: quer 5% de desconto mesmo (já conseguiu aplicar
+em outros anúncios depois do fix do arredondamento — confirmado
+funcionando) e perguntou se dava pra ter 2 campanhas ativas ao mesmo
+tempo (ex: "Super Promo" 10% em uns itens + "Promoçãozinha" 5% em
+outros).
+
+- Tirei a trava que eu tinha posto forçando mínimo 10% (excesso de
+  zelo meu, sem necessidade — o bug real já era só o arredondamento,
+  corrigido na 3ª parte).
+- `MlPromotionsPage.jsx` reescrita: a tela pegava só a PRIMEIRA
+  campanha `SELLER_CAMPAIGN` ativa (`.find()`) — agora lista TODAS
+  (`.filter()`), cada uma como um card independente
+  (`BulkDiscountCampaignCard`, componente novo) com seu próprio
+  carregamento de itens/seleção/%/busca/confirmação. Botão "+ Nova
+  campanha" sempre disponível, não só quando não tem nenhuma.
+- `sellerCampaignLastChange` (edge function + hook) ganhou parâmetro
+  opcional `promotion_id` — sem isso, o "última alteração" de uma
+  campanha vazava pra todas as outras (o log era filtrado só por
+  `promotion_type`, não por campanha específica).
+- **Não sabemos ainda se a API do ML permite item repetido em 2
+  campanhas simultâneas** — não travei nada tentando adivinhar essa
+  regra (doc bloqueou acesso automático de novo). Segue a filosofia já
+  estabelecida: erro real do ML aparece isolado por item quando o
+  Raphael testar de verdade.
+
+`npm run build` limpo.
+
+---
+
+### 2026-09-16 (3ª parte) — Desconto em massa (ML): 2 bugs reais corrigidos — "já com desconto" era mentira + rejeição por desconto abaixo de 5%
+
+**Reportado pelo Raphael**: aba "Desconto em massa" (Campanhas &
+Promoções) tinha 232 itens listados como "JÁ COM DESCONTO" numa campanha
+ativa, mas ele não achava o desconto em nenhum produto real; o link de
+cada item também não levava pro anúncio de verdade; e a lista pra
+selecionar produtos (embaixo) aparecia vazia.
+
+**Causa raiz (achada sem precisar de gravação real — só lendo o que a
+tela já tinha em tela)**: `promotion_candidates` da API do ML devolve
+**todo item elegível** pra aquela campanha, não só quem já entrou —
+confirmado pelo próprio rótulo "Candidato" ao lado de cada um dos 232 no
+print (`ITEM_STATUS_LABEL.candidate = 'Candidato'`, já existia no
+código, só não estava sendo respeitado). A tela tratava qualquer item
+retornado por esse endpoint como "já descontado", e por tabela excluía
+esses 232 "candidatos" (quase o catálogo inteiro) da lista de seleção
+— por isso ela aparecia vazia. `bulkLastChange` mostrando "Nenhuma
+alteração registrada ainda" já era a pista de que nada tinha sido
+gravado de verdade.
+
+**Corrigido** (`MlPromotionsPage.jsx`):
+- `loadBulkDiscount()` agora filtra `status !== 'candidate'` antes de
+  guardar em `bulkCampaignItems` — só quem realmente está
+  `pending`/`started` conta como "já com desconto" e entra na lista de
+  exclusão da seleção.
+- Link de cada item na lista "já com desconto" passou a usar o
+  `permalink` real (buscado em `bulkItems`, que já vem de
+  `active_listings`) em vez de montar `produto.mercadolivre.com.br/ID`
+  na mão — esse formato sem hífen não é uma URL válida do ML.
+
+**Testado ao vivo pelo Raphael logo em seguida**: selecionou 2 itens
+com 5% e levou erro real do ML —
+`MINIMUM_DISCOUNT_PERCENT: Discount final Price must be more than 5
+Percent`. **3º bug, achado na hora**: `computeDiscountedPrice` usava
+`Math.round` pra arredondar o preço final em centavos — isso pode
+arredondar o preço PRA CIMA (ex: R$62,90 a 5% off = R$59,755 → arredonda
+pra R$59,76 → desconto real vira 4,99%, não 5%), e o ML exige desconto
+**maior que** o mínimo, não igual. Trocado pra `Math.floor` (sempre
+arredonda o preço pra baixo, nunca deixa o desconto real ficar abaixo do
+pedido). Também travado de verdade o campo de %: o `min={10}` do input
+era só visual (não bloqueava digitar 5) — agora tem `onBlur` que força
+de volta pra 10 se digitar abaixo disso.
+
+`npm run build` limpo. Ainda não confirmado se o `SELLER_CAMPAIGN`
+produz o visual "de/por" (riscado + badge) na página do produto quando
+aplicado de verdade — nenhum desconto genuíno tinha sido aplicado até
+agora (era tudo candidato fantasma). Próximo teste do Raphael com os
+bugs corrigidos vai confirmar isso.
+
+---
+
+### 2026-09-16 (2ª parte) — Shopee: app criado, OAuth de conexão funcionando (Fase 1 iniciada)
+
+**Feito junto com o Raphael**, passo a passo pelo console da Shopee
+(open.shopee.com): criado o app "Sistema Coisa Pet" (categoria "Sistema
+interno do vendedor"), enviado pra revisão de produção (resultado em
+24h), e já com credenciais de **teste** liberadas na hora (`Test
+Partner_id: 1244669`, `Test API Partner Key`) — guardadas como secrets
+no Supabase (`SHOPEE_PARTNER_ID`, `SHOPEE_PARTNER_KEY`, mesmo padrão do
+`ML_CLIENT_ID`/`ML_CLIENT_SECRET`).
+
+**Construído** (primeira peça da Fase 1 do plano — ver
+[[coisapet_shopee_api_research]]):
+- `shopee_integration` (token da loja conectada), `shopee_connection_status()`/
+  `shopee_disconnect()` (SECURITY DEFINER, expõe só status pro front) e
+  `shopee_webhook_events` (fila, ainda não processada — próxima etapa) —
+  ver `supabase/fase61-shopee-integracao.sql`. Mesmo desenho do
+  `ml_integration`.
+- `supabase/functions/_shared/shopee.ts`: assinatura HMAC-SHA256
+  (`partner_id + api_path + timestamp`, hex) — diferente do ML, que não
+  assina nada. `getValidIntegration`/refresh automático, `shopeeFetch`
+  genérico pra próxima fase.
+- `shopee-oauth-callback`: **diferente do `ml-oauth-callback`** — a
+  Shopee exige o link de autorização assinado com a `partner_key`
+  (secreta), então não dá pra montar esse link no front (como fazemos
+  com o ML, cujo `client_id` não é secreto). A mesma function faz os 2
+  papéis: sem `code` na query = monta o link assinado e redireciona;
+  com `code` = troca por token e salva.
+- `ShopeeConnect.jsx` — botão "Conectar Shopee" ao lado do do ML, em
+  Pedidos (`OrdersPage.jsx`).
+
+**Incidente real durante o desenvolvimento**: primeira tentativa deu
+`{"error":"error_sign","message":"Wrong sign."}` repetidamente. A causa
+**não era a fórmula da assinatura** (essa já estava certa) — era o
+**domínio do ambiente sandbox**. Usei
+`partner.test-stable.shopeemobile.com` (aparece em várias fontes
+secundárias/SDKs comunitários que pesquisei) mas o domínio real, **só
+confirmado com print da documentação oficial que o Raphael mandou**
+(`open.shopee.com/developer-guide/20`), é
+`https://openplatform.sandbox.test-stable.shopee.sg`. Corrigido e
+**testado de ponta a ponta via curl**: o redirect final da Shopee agora
+é uma tela de login de verdade, não mais erro de assinatura. Lição:
+fontes secundárias sobre API de terceiro podem estar desatualizadas ou
+cobrir domínio errado — quando disponível, sempre preferir a
+documentação oficial (nem que seja via print, se o fetch automático não
+alcançar).
+
+**Pendente pro Raphael**: criar uma **Conta de teste - Sandbox** no
+console da Shopee (Ferramentas → Conta de teste) — sem isso não dá pra
+completar o login de autorização de verdade (as credenciais de teste só
+autenticam contra loja de teste, não contra a loja real da CoisaPet).
+Depois disso, clicar em "Conectar Shopee" na tela de Pedidos do sistema
+e testar o fluxo completo ao vivo.
+
+---
+
+### 2026-09-16 — Manuais de produto: 404 no ar + Supabase não serve .html renderizável
+
+**Reportado pelo Raphael**: subiu um manual de teste (aba "Manuais") e
+clicando no link deu 404. Também perguntou se dava pra fazer o Apache
+"interpretar" o `.html` já que talvez o Supabase não suportasse servir
+isso direto.
+
+**Causa 1 (o 404)**: as pastas novas `doc/` e `links/manuais/` (criadas
+na sessão de 15/09) nunca foram de fato subidas pro Hostinger — só
+existiam no repo local. Confirmado ao vivo: `coisapet.com.br/doc/` e
+`/links/manuais/` respondem 404 em produção. **Continua pendente** — só
+eu subir código, quem sobe pro `public_html` é o Raphael (mesmo processo
+manual de sempre).
+
+**Causa 2 (achado real, a pergunta dele estava certa)**: testei direto —
+o Supabase Storage **recusa servir um `.html` com content-type
+renderizável**, mesmo mandando `contentType: 'text/html'` no upload.
+Sempre devolve `text/plain` + `X-Content-Type-Options: nosniff`. Isso é
+proteção deliberada deles contra XSS (domínio de storage é compartilhado
+entre todos os clientes Supabase) — não é bug nosso, nem tem como
+contornar mandando header diferente. PDF não tem essa restrição.
+Detalhe registrado em [[coisapet_supabase_html_serving_gotcha]] na
+memória do Claude, pra não redescobrir isso do zero numa sessão futura.
+
+**Corrigido:**
+- `useProductDocs.js`: upload de arquivo passa a fixar `contentType`
+  pela extensão (`.pdf`→`application/pdf`, `.html`→`text/html`) em vez
+  de confiar no `file.type` do navegador — o navegador às vezes manda
+  vazio pra `.html`, e sem isso o supabase-js cai pra `text/plain`
+  mesmo na metadata.
+- Novo `doc/ver.html`: visualizador que busca o `.html` bruto via
+  `fetch().text()` (isso funciona normal, o bloqueio é só em servir com
+  content-type certo) e desenha num `<iframe sandbox>` isolado, no nosso
+  próprio domínio — exatamente a ideia que o Raphael sugeriu ("fazer o
+  Apache interpretar"). `doc/index.html` agora manda recurso `kind=file`
+  com extensão `.html`/`.htm` pro visualizador em vez de linkar direto
+  pro Supabase; `.pdf` continua linkando direto (esse o Supabase serve
+  certo).
+- O manual de teste que ele já tinha subido (`Substrato Aspen`) foi
+  corrigido diretamente via API do Supabase (re-upload do mesmo conteúdo
+  em outro path, já que o `content_type` antigo tinha ficado errado e o
+  Supabase não permite `UPDATE` de objeto existente com as policies
+  atuais — só insert/select/delete).
+
+**Ainda pendente**: Raphael subir `doc/` (incluindo `.htaccess` e o novo
+`ver.html`) e `links/manuais/` pro `public_html` da Hostinger — só depois
+disso dá pra testar o fluxo completo ao vivo.
+
+---
+
+### 2026-09-15 (10ª parte) — Raphael conseguiu acesso à API da Shopee: estudo comparativo com ML feito
+
+**Pedido do Raphael**: conseguiu acesso à API oficial da Shopee (Shopee
+Open Platform, v2) e pediu um estudo — o que a API oferece, comparado
+com tudo que já foi construído pra Mercado Livre no sistema, e o que dá
+pra fazer a mais.
+
+**Feito**: pesquisa via subagente (fork), comparando por área funcional
+(Pedidos, Anúncios, Imagens, Ads, Cupons/Promoções, Chat/Perguntas,
+Reputação/Saúde, Estoque Full/Logística, Webhooks). Detalhe completo e
+fontes salvos na memória do Claude
+([[coisapet_shopee_api_research]]) — resumo rápido:
+
+- **Ganhos reais que o ML não tem**: Ads/Impulsionamento gerenciável via
+  API (no ML é só leitura, confirmado antes), Estoque Full com API real
+  (SBS/FBS, sem precisar de scraping como fizemos pro ML), criar cupom
+  via API, recovery de webhook perdido, nota fiscal (NF-e) integrada ao
+  pedido.
+- **Continua igual**: automação de resposta a chat/perguntas por IA —
+  existe Chat API na Shopee, mas não vem liberada por padrão, precisa
+  pedir acesso extra.
+- **Ressalva**: não deu pra acessar `open.shopee.com` direto (fetch
+  falhou) — pesquisa usou um SDK comunitário (`congminh1254/shopee-sdk`)
+  como proxy da API oficial. Estrutura geral tem confiança boa; detalhes
+  finos de payload precisam ser conferidos na doc oficial antes de
+  codar, agora que há acesso real.
+- **Prioridade sugerida pra Fase 1** (mesma lógica do ML — pedido
+  primeiro): (1) sync de pedido em tempo real, (2) Estoque Full via SBS,
+  (3) Ads API, (4) Cupom/Flash Sale via API, (5) Chat API por último.
+
+**Pendência**: Raphael vai criar o app da Shopee e passar as credenciais
+da API amanhã (16/09) pra começar a Fase 1 de verdade.
+
+---
+
+### 2026-09-15 (9ª parte) — Manuais/instruções/vídeo por produto: coisapet.com.br/doc/&lt;slug&gt;
+
+Pedido do Raphael: começar a subir manual de montagem, instruções de uso
+e link de vídeo por produto, com URL amigável, cadastrado na mão no
+painel (mesmo padrão de `bio_links`) — e achável a partir do `/links`
+público sem listar todo produto lá, só uma entrada "Manuais e Dicas de
+Uso" levando pra um hub à parte com busca. Plano revisado com ele antes
+(1 pergunta: abrir cada recurso como link direto em nova aba — confirmado
+— em vez de embutir/iframe).
+
+**Construído:**
+- Tabela nova `product_doc_resources` (produto → N recursos: manual,
+  instruções, vídeo... cada um `kind='link'` — URL externa tipo YouTube —
+  ou `kind='file'` — upload de `.html`/`.pdf`) + bucket `product-docs` —
+  ver `supabase/fase60-product-docs.sql`. Usa `products.slug`, que já
+  existia 100% populado (550/550 produtos ativos) — não precisou de
+  coluna nova pra isso.
+- Painel interno: nova aba **"Manuais"** dentro de `/bio-links`
+  (`BioLinksPage.jsx`) — busca produto, adiciona recurso (link ou
+  arquivo), lista por produto com link "Ver página" e remoção.
+- Público (fora do build React, mesmo molde de `links/index.html`):
+  `doc/index.html` + `doc/.htaccess` (rewrite `/doc/<slug>` → index.html,
+  lê o slug de `location.pathname`) e `links/manuais/index.html` (hub
+  estilo linktree com busca client-side, lista todo produto com pelo
+  menos 1 recurso).
+- **Achado importante**: RLS está **desligada** na tabela `products`
+  (`relrowsecurity=false`) — as policies existentes lá (`autenticados_*`)
+  não fazem nada na prática, a tabela já é 100% aberta pro `anon`. Foi
+  assim que confirmei que as páginas públicas novas conseguem ler
+  produto por slug sem precisar de policy nova nessa tabela.
+- Adicionada a entrada "Manuais e Dicas de Uso" em `bio_links`
+  (categoria `geral`, aponta pra `/links/manuais/`) — zero código novo em
+  `links/index.html`, só uma linha na tabela, mesmo fluxo de sempre.
+
+**Testado**: consultas reais via REST com a `anon key` (produto por slug,
+recursos por produto, embed produto↔recursos pro hub) — todas retornaram
+certo, testado com uma linha real inserida e removida em seguida.
+`npm run build` limpo. **Não testado no navegador de verdade** (painel
+nem páginas públicas) e **as páginas estáticas novas (`doc/`,
+`links/manuais/`) ainda não foram subidas pro Hostinger** — só existem
+localmente/no repo por enquanto.
+
+**Escopo combinado pra essa primeira leva** (começar simples, melhorar
+depois): sem upload em massa, sem preview antes de publicar, sem
+analytics de clique nos docs.
+
+---
+
+### 2026-09-15 (8ª parte) — Priorização semanal na lista de Atualização de Mídia
+
+Pedido do Raphael: separar na lista os produtos já combinados pra Isa
+trabalhar essa semana (meta informal: 3 a 5 por vez) dos demais, sem
+duplicar entre as duas áreas.
+
+- `product_media_status` ganhou `is_priority` + `prioritized_at` — ver
+  `supabase/fase59-media-priority.sql`.
+- Lista (`MediaControlPage.jsx`) virou 2 blocos empilhados (não abas —
+  optei por isso pra dar pra ver "o que fazer essa semana" e navegar o
+  catálogo completo na mesma rolagem, sem alternar aba): caixa "Priorizados
+  esta semana" (destaque âmbar, com a meta "3 a 5" escrita) em cima, e "A
+  priorizar" com todo o resto embaixo — um produto nunca aparece nas duas
+  ao mesmo tempo. Estrela em cada card liga/desliga a prioridade
+  (otimista, sem precisar abrir o produto).
+- Prioridade é por grupo (mestre + variações contam como 1 card na
+  lista, mesma granularidade que já existia) — não dá pra priorizar só
+  uma variação específica sem priorizar o produto todo. Se isso virar
+  problema real (ex: só uma cor precisa de sessão nova), avaliar depois.
+
+`npm run build` limpo.
+
+---
+
+### 2026-09-15 (7ª parte) — Cache dos exemplos entre produtos + hover-zoom no carrossel
+
+Dois ajustes pedidos pelo Raphael sobre o carrossel de referência (6ª
+parte): (1) cache — os exemplos são os mesmos em qualquer produto e
+raríssimo vão mudar, não fazia sentido recarregar do banco toda vez que
+trocava de produto; (2) ver a imagem maior sem precisar clicar/abrir
+modal.
+
+- `useGuideExamples.js`: cache em variável de módulo (`cachedBySlot`),
+  fora do hook — busca 1x por sessão (troca de produto só reusa o que já
+  tem), só refaz a busca depois de um upload/remoção de verdade. URLs
+  assinadas passaram a usar o cache já existente do app
+  (`getSignedUrl`/`invalidateSignedUrl` de `signedUrlCache.js`, mesmo
+  usado no resto do sistema) em vez de gerar de novo sempre.
+- `GuideExampleCarousel.jsx`: hover-zoom — passar o mouse por cima do
+  carrossel mostra a imagem atual bem maior flutuando por cima (sem
+  clique, sem modal), some ao tirar o mouse.
+
+`npm run build` limpo.
+
+---
+
+### 2026-09-15 (6ª parte) — Galeria de exemplos virou mini carrossel por check (não modal solto)
+
+Raphael separou as imagens dos 5 guias prontos (uma por check, até 5 por
+slot) e pediu pra ficarem visíveis direto na linha de cada check, ao lado
+do box de upload, em vez do modal geral da 5ª parte — carrossel pagina
+1 imagem por vez ("2/5") pra Isa ver a inspiração daquele tipo de foto
+sem sair da tela.
+
+- `media_guide_examples` ganhou `check_slot` (1-9) — ver
+  `supabase/fase58-guide-examples-per-slot.sql`.
+- `useGuideExamples.js` reescrito: carrega tudo de uma vez e agrupa por
+  slot (`bySlot`), em vez de lista solta.
+- `GuideExamplesModal.jsx` (5ª parte) removido; novo
+  `GuideExampleCarousel.jsx` — carrossel compacto (mesma proporção 4:5 do
+  box de upload) embutido na linha de cada check em
+  `MediaChecklistPage.jsx`, com paginação, adicionar e remover.
+- Box de upload encurtado (`w-24 sm:w-28`, antes `w-28 sm:w-32`) pra abrir
+  espaço na linha.
+
+`npm run build` limpo. Raphael ainda precisa subir as imagens separadas,
+check por check, pelo "+" do carrossel — não é mais um botão único de
+galeria geral.
+
+---
+
+### 2026-09-15 (5ª parte) — Proporção 4:5 + galeria de exemplos visuais do guia
+
+Raphael mandou 5 guias prontos (exemplos gerados por IA pra Kit 3
+Acessórios, Substrato Aspen, Banheirinha de Terra, Rodinha Silenciosa,
+Terrário) e pediu: (1) trocar a proporção recomendada de 1:1 pra **4:5
+(1080×1350px)** — slot de upload e o texto do banner em
+`MediaChecklistPage.jsx` ajustados; (2) anexar essas imagens de exemplo
+no módulo pra consulta visual.
+
+**Limitação encontrada**: imagens coladas direto no chat não viram
+arquivo acessível pra mim — não dá pra "salvar" elas no sistema
+sozinho. Construí a galeria (`media_guide_examples`, tabela nova — ver
+`supabase/fase57-guide-examples.sql`, reaproveita bucket
+`product-photos` em `guide-examples/`) com upload próprio
+(`GuideExamplesModal.jsx` + `useGuideExamples.js`), botão "Ver exemplos
+do guia" tanto na lista quanto no detalhe. **O Raphael ainda precisa subir
+essas 5 imagens manualmente pelo botão** — não é uma pendência de código,
+é só a próxima ação dele.
+
+`npm run build` limpo.
+
+---
+
+### 2026-09-15 (4ª parte) — Guia oficial de imagens (Manual de Marketplace) anexado em cada check + confirmado uso futuro pro ML/Shopee
+
+Raphael mandou o guia definitivo (imagem "Manual de Marketplace — Guia de
+Imagens para Produtos", 9 boxes com categoria/descrição/tags/objetivo/
+pergunta do cliente/cuidado). Troquei o placeholder da 3ª parte pelo texto
+real em `mediaChecklist.js` (agora com `category` C/E/ED/Opcional,
+`tags`, `objective`, `quote` e `warning` por check) e redesenhei
+`CheckCard` em `MediaChecklistPage.jsx`: saiu a grade 3×3 quadrada, entrou
+uma lista vertical (foto à esquerda, guia completo à direita — cabe muito
+mais texto). Adicionei também a "regra de ouro" do guia + padrão técnico
+(2000×2000px, 1:1) como banner fixo no topo da página.
+
+**Confirmado com o Raphael**: o objetivo não é só o site — é melhorar aos
+poucos as fotos de **todos** os produtos pra alimentar também o Mercado
+Livre (já tem API) e, quando a Shopee tiver API, lá também. Registrado em
+memória (`coisapet_media_checklist_ml_shopee_goal`) pra não se perder em
+sessão futura — qualquer feature de sync de imagem pro ML deve ler dessas
+mesmas fotos (`product_images.check_slot`), não pedir upload duplicado.
+
+`npm run build` limpo. Upload/troca de variação/vídeo ainda não testados
+clicando na tela real (mesma pendência da 3ª parte).
+
+---
+
+### 2026-09-15 (3ª parte) — "Controle de Atualização dos Produtos" refeito: checklist de 9 fotos + 1 vídeo por produto/variação
+
+**Pedido do Raphael**: o módulo antigo (tabela com status manual de vídeo/
+foto/previsão/status geral) ia ser abandonado — surgiu um guia padrão de
+9 fotos por produto (imagem que ele mandou: Hero, Ambientada+Pet, O que
+acompanha, Dimensões, Benefícios, Detalhes construtivos, Uso/
+Enriquecimento, Compatibilidade, Comparativo) + 1 vídeo de 10s, e a Isa
+(Atendimento) precisa subir as fotos de verdade no sistema (não só marcar
+status), escolhendo a variação certa quando o produto tiver mais de uma.
+
+**Construído** (plano revisado com o Raphael antes de mexer — ver
+`~/.claude/plans/replicated-snuggling-flurry.md` nesta máquina, só
+local):
+- **Reaproveitada `product_images`** (galeria já existente, usada hoje só
+  em `ProductFormModal.jsx`, bucket `product-photos`) em vez de criar
+  tabela paralela — nova coluna `check_slot` (1-9, índice único parcial
+  por produto). Assim os uploads da Isa **já viram a galeria oficial do
+  produto**, pronta pro site ler quando isso for decidido (mesma situação
+  do Blog: existe internamente, site ainda não lê).
+- `product_media_status`: removidos `video_status`, `photo_status`,
+  `video_forecast`, `overall_status` (confirmado sem uso fora do módulo);
+  adicionados `video_url`/`video_uploaded_at`. Mantidos feedback de
+  montagem e observações, sem mudança de comportamento.
+- Bucket novo `product-videos` (público, mp4/mov/webm, até 80MB) + RLS
+  `anon` espelhando `product-photos`. Ver `supabase/fase56-media-checklist.sql`.
+- Variação = a mesma linha `products` já usada em `ProductsPage.jsx`
+  (agrupamento por `parent_product_id`) — não precisou de coluna nova.
+  Página de detalhe mostra pills pra trocar entre variações do mesmo
+  grupo.
+- Tela de lista (`/producao/midia`) virou cards com progresso ("6/9 fotos"
+  + ícone de vídeo) em vez da tabela larga de colunas. Clique abre página
+  própria nova `/producao/midia/:productId` (rota nova, decisão do
+  Raphael — não modal) com a grade 3×3 dos 9 checks (cada um com
+  título/legenda do guia + dica dinâmica quando o produto já tem o dado
+  estruturado, ex: dimensões, acessórios, espécies compatíveis — dados da
+  fase 54) e o card de vídeo.
+- **Textos dos 9 checks são placeholder** (copiados da imagem que ele
+  mandou) — Raphael disse que vai mandar o guia escrito definitivo depois
+  pra ajustar; ficou isolado em `src/modules/production/mediaChecklist.js`
+  de propósito, pra ser 1 arquivo só de editar.
+
+**Testado**: `npm run build` passou limpo, migration aplicada e conferida
+em produção (colunas, índice único, bucket). **Não testado clique-a-clique
+na tela real** (upload de foto/vídeo, troca de variação) — confirmar na
+próxima sessão antes de passar pra Isa usar.
+
+---
+
+### 2026-09-15 (2ª parte) — CoisaDecor: novo status de pagamento "Cobrado"
+
+Pedido do Raphael: separar contas já cobradas do cliente mas que ele
+ainda não começou a pagar (diferente de "parcial", que já tem valor pago
+> 0). Novo status `cobrado` entre "Em aberto" e "Pago parcial" no Kanban,
+formulário e KPIs de `CoisaDecorPage.jsx`. Constraint
+`coisadecor_orders_payment_status_check` atualizada em produção — ver
+`supabase/fase55-coisadecor-status-cobrado.sql`. `npm run build` limpo.
 
 ---
 
