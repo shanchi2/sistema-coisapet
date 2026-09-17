@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Plus, Pencil, Trash2, X, Check, Loader2,
   Phone, User, ChevronLeft, ChevronRight, ChevronDown,
-  Wrench, CheckCircle, Gift, Zap, Upload, FileText, ExternalLink,
+  Wrench, CheckCircle, Gift, Zap, Upload, FileText, ExternalLink, Clock,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Modal }    from '../../components/ui/Modal'
@@ -30,6 +30,7 @@ function waLink(phone) {
 // ── Configurações das colunas Kanban ─────────────────────────────
 const COLUMNS = [
   { id:'em_aberto', label:'Em aberto',      color:'#ef4444', bg:'bg-rose-50/60',    Icon: Zap         },
+  { id:'cobrado',   label:'Cobrado',        color:'#f97316', bg:'bg-orange-50/60',  Icon: Clock       },
   { id:'parcial',   label:'Pago parcial',   color:'#f59e0b', bg:'bg-amber-50/60',   Icon: ChevronRight},
   { id:'pago',      label:'Pago completo',  color:'#10b981', bg:'bg-emerald-50/60', Icon: CheckCircle },
 ]
@@ -37,6 +38,7 @@ const COLUMNS = [
 // ── Config pagamento ──────────────────────────────────────────────
 const PAY_CFG = {
   em_aberto: { label:'Em aberto',     dot:'bg-rose-500',    badge:'bg-rose-50 text-rose-600'      },
+  cobrado:   { label:'Cobrado',       dot:'bg-orange-500',  badge:'bg-orange-50 text-orange-600'  },
   parcial:   { label:'Pago parcial',  dot:'bg-amber-400',   badge:'bg-amber-50 text-amber-700'    },
   pago:      { label:'Pago completo', dot:'bg-emerald-500', badge:'bg-emerald-50 text-emerald-600' },
 }
@@ -223,7 +225,7 @@ function OrderModal({ open, onClose, onSave, initial, initialItems, loading }) {
         {/* Status pagamento */}
         <div>
           <label className="form-label">Status de pagamento</label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {Object.entries(PAY_CFG).map(([k,v]) => (
               <button key={k} type="button" onClick={() => set('payment_status', k)}
                 className={`flex items-center gap-2 p-2.5 rounded-xl border-2 text-xs font-semibold transition-all
@@ -647,7 +649,7 @@ export function CoisaDecorPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <div className="card p-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
             <Zap size={18} className="text-slate-500" strokeWidth={1.5}/>
@@ -662,6 +664,15 @@ export function CoisaDecorPage() {
             <p className="text-xs font-semibold text-slate-400">Em aberto</p>
             <p className="text-2xl font-black text-rose-600">{emAberto}</p>
             <p className="text-[10px] text-slate-400">{fmtC(receber)} a receber</p>
+          </div>
+        </div>
+        <div className="card p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
+            <Clock size={18} className="text-orange-500" strokeWidth={1.5}/>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-400">Cobrado</p>
+            <p className="text-2xl font-black text-orange-600">{orders.filter(o=>o.payment_status==='cobrado').length}</p>
           </div>
         </div>
         <div className="card p-4 flex items-center gap-3">
@@ -691,7 +702,7 @@ export function CoisaDecorPage() {
           <Loader2 size={24} className="animate-spin text-slate-400"/>
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-5">
+        <div className="grid grid-cols-4 gap-5">
           {COLUMNS.map((col, colIndex) => {
             const colOrders = byCol(col.id)
             return (
