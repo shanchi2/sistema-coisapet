@@ -5,7 +5,7 @@ import { AlertTriangle, Loader2 } from 'lucide-react'
 // sempre mostrar o que vai mudar e pedir confirmação de verdade (não o
 // confirm() nativo do navegador, fácil de clicar sem ler) antes de
 // gravar algo que fica visível pros clientes na hora.
-export function ConfirmWriteModal({ open, title, description, detail, confirmLabel = 'Sim, aplicar no Mercado Livre', confirming, onConfirm, onCancel }) {
+export function ConfirmWriteModal({ open, title, description, detail, confirmLabel = 'Sim, aplicar no Mercado Livre', confirming, onConfirm, onCancel, platform = 'Mercado Livre' }) {
   if (!open) return null
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={onCancel}>
@@ -25,7 +25,7 @@ export function ConfirmWriteModal({ open, title, description, detail, confirmLab
           </div>
         )}
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
-          Isso muda o anúncio real, visível pros seus clientes no Mercado Livre agora mesmo.
+          Isso muda o anúncio real, visível pros seus clientes {platform === 'Mercado Livre' ? 'no' : 'na'} {platform} agora mesmo.
         </p>
         <div className="flex justify-end gap-2">
           <button onClick={onCancel} disabled={confirming}

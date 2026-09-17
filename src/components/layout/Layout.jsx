@@ -5,6 +5,7 @@ import { Header } from './Header'
 import { Menu } from 'lucide-react'
 import { ChatWidget } from '../chat/ChatWidget'
 import { MLSaleToast } from '../notifications/MLSaleToast'
+import { ShopeeSaleToast } from '../notifications/ShopeeSaleToast'
 import { ChatLayoutProvider, useChatLayout, DOCKED_WIDTH } from '../../contexts/ChatLayoutContext'
 
 const PAGE_TITLES = {
@@ -86,6 +87,7 @@ function LayoutInner() {
 
       <ChatWidget />
       <MLSaleToast />
+      <ShopeeSaleToast />
     </div>
   )
 }

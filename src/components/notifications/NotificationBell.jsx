@@ -25,6 +25,7 @@ const TYPE_CFG = {
   task_moved:    { icon: ArrowRight,    color: 'text-amber-500',  bg: 'bg-amber-50',   label: 'Tarefa movida'       },
   task_comment:  { icon: MessageCircle, color: 'text-emerald-500',bg: 'bg-emerald-50', label: 'Novo comentário'     },
   ml_order_synced: { icon: ShoppingBag, color: 'text-amber-600',  bg: 'bg-amber-50',   label: 'Venda no ML'         },
+  shopee_order_synced: { icon: ShoppingBag, color: 'text-orange-600', bg: 'bg-orange-50', label: 'Venda na Shopee'  },
 }
 
 export function NotificationBell() {
@@ -36,16 +37,21 @@ export function NotificationBell() {
   const [ringing,  setRinging]  = useState(false)
   const ref = useRef(null)
 
-  // Reage ao aviso de venda nova do ML (disparado em MLSaleToast.jsx) —
-  // o sino "chacoalha" alguns instantes, além do badge de não-lidas
-  // normal que já vem do INSERT em `notifications` logo abaixo.
+  // Reage ao aviso de venda nova do ML e da Shopee (disparado em
+  // MLSaleToast.jsx/ShopeeSaleToast.jsx) — o sino "chacoalha" alguns
+  // instantes, além do badge de não-lidas normal que já vem do INSERT
+  // em `notifications` logo abaixo.
   useEffect(() => {
     function onPing() {
       setRinging(true)
       setTimeout(() => setRinging(false), 1000)
     }
     window.addEventListener('ml-sale-ping', onPing)
-    return () => window.removeEventListener('ml-sale-ping', onPing)
+    window.addEventListener('shopee-sale-ping', onPing)
+    return () => {
+      window.removeEventListener('ml-sale-ping', onPing)
+      window.removeEventListener('shopee-sale-ping', onPing)
+    }
   }, [])
 
   const unread = notifs.filter(n => !n.read).length

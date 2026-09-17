@@ -7,8 +7,8 @@ import {
   TrendingUp, Calendar, FileSpreadsheet, MessageSquare, MessagesSquare,
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
   PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
-  HeartPulse, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film,
-  Briefcase, Crown, Bookmark,
+  HeartPulse, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film, Zap,
+  Briefcase, Crown, Bookmark, Component,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
@@ -39,6 +39,17 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    label: 'Shopee',
+    items: [
+      { to: '/shopee',          moduleKey: 'shopee-insights', icon: LayoutDashboard, label: 'Visão Geral', roles: ['admin','marketplace'] },
+      { to: '/shopee/anuncios', moduleKey: 'shopee-insights', icon: Store,           label: 'Anúncios',    roles: ['admin','marketplace'] },
+      { to: '/shopee/saude',    moduleKey: 'shopee-insights', icon: HeartPulse,      label: 'Saúde dos Anúncios', roles: ['admin','marketplace'] },
+      { to: '/shopee/full',     moduleKey: 'shopee-insights', icon: Warehouse,       label: 'Estoque Full', roles: ['admin','marketplace'] },
+      { to: '/shopee/cupons',     moduleKey: 'shopee-insights', icon: Ticket, label: 'Cupons', roles: ['admin','marketplace'] },
+      { to: '/shopee/flash-sale', moduleKey: 'shopee-insights', icon: Zap,    label: 'Flash Sale', roles: ['admin','marketplace'] },
+    ],
+  },
+  {
     label: 'Blog',
     items: [
       { to: '/blog', moduleKey: 'blog', icon: Newspaper, label: 'Posts', roles: ['admin','marketplace'] },
@@ -54,6 +65,7 @@ const NAV_SECTIONS = [
       { to: '/materia-prima',  moduleKey: 'materiais',    icon: Boxes,          label: 'Matéria-Prima',     roles: ['admin','administrativo','producao','marketplace'] },
       { to: '/packaging',      moduleKey: 'packaging',    icon: Package,        label: 'Embalagem',         roles: ['admin','administrativo','producao'] },
       { to: '/produtos',       moduleKey: 'produtos',     icon: Package,        label: 'Produtos',          roles: ['admin','administrativo','producao','marketplace'] },
+      { to: '/kits',           moduleKey: 'produtos',     icon: Component,      label: 'Kits',               roles: ['admin','administrativo','producao','marketplace'] },
       { to: '/variacoes',      moduleKey: 'produtos',     icon: Layers,         label: 'Variações',         roles: ['admin','administrativo','marketplace'] },
       { to: '/producao',       moduleKey: 'producao',     icon: Factory,        label: 'Produção',          roles: ['admin','administrativo','producao'] },
       { to: '/producao/chapas', moduleKey: 'producao',    icon: Layers,         label: 'Chapas',            roles: ['admin','administrativo','producao'] },
@@ -146,9 +158,13 @@ const ESCRITORIO_SECTIONS = [
 // 'light' pro ícone/texto do item ativo (tom mais claro da mesma cor)
 const SECTION_COLORS = {
   'Favoritos':        { base: '#F43F5E', light: '#FCA5B8' }, // rose
-  'Otimização ML':    { base: '#10B981', light: '#6EE7B7' }, // emerald
+  // ML é amarelo (cor real da marca) e Produção fica com o verde que
+  // era do ML antes — troca pedida pelo Raphael (16/09), faz mais
+  // sentido com a identidade visual de cada marketplace.
+  'Otimização ML':    { base: '#F59E0B', light: '#FCD34D' }, // amber
+  'Shopee':           { base: '#EE4D2D', light: '#FDBA74' }, // laranja Shopee
   'Blog':              { base: '#6366F1', light: '#A5B4FC' }, // indigo
-  'Produção':         { base: '#F59E0B', light: '#FCD34D' }, // amber
+  'Produção':         { base: '#10B981', light: '#6EE7B7' }, // emerald
   'Recursos Humanos': { base: '#8B5CF6', light: '#C4B5FD' }, // violeta
   'Gestão':           { base: '#0EA5E9', light: '#7DD3FC' }, // azul
   'Diretoria':        { base: '#D946EF', light: '#F0ABFC' }, // magenta
@@ -160,6 +176,7 @@ const DEFAULT_SECTION_COLOR = SECTION_COLORS['Favoritos']
 const SECTION_ICONS = {
   'Favoritos':        Bookmark,
   'Otimização ML':    TrendingUp,
+  'Shopee':           ShoppingBag,
   'Blog':              Newspaper,
   'Produção':         Factory,
   'Recursos Humanos': Users,

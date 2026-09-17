@@ -13,6 +13,7 @@ import { ChangePasswordPage }    from './modules/auth/ChangePasswordPage'
 import { DashboardPage }         from './modules/dashboard/DashboardPage'
 import { MaterialsPage }         from './modules/materials/MaterialsPage'
 import { ProductsPage }          from './modules/products/ProductsPage'
+import { KitsPage }              from './modules/products/KitsPage'
 import { FinancialPage }         from './modules/financial/FinancialPage'
 import { FinanceiroDiretoriaPage } from './modules/financial/FinanceiroDiretoriaPage'
 import { DrivePage }             from './modules/drive/DrivePage'
@@ -24,6 +25,7 @@ import { AuditPage }             from './modules/audit/AuditPage'
 import { ProductionPage }        from './modules/production/ProductionPage'
 import { ChapasPage }            from './modules/production/ChapasPage'
 import { MediaControlPage }      from './modules/production/MediaControlPage'
+import { MediaChecklistPage }    from './modules/production/MediaChecklistPage'
 import { OrdersPage }            from './modules/orders/OrdersPage'
 import PickListShopee            from './modules/orders/PickListShopee'
 import { ExpedicaoPage }         from './modules/shipping/ExpedicaoPage'
@@ -59,6 +61,13 @@ import { BioLinksPage } from './modules/links/BioLinksPage'
 import { ChecklistPage } from './modules/checklist/ChecklistPage'
 import { ReviewsPage } from './modules/reviews/ReviewsPage'
 import { MlAccountDashboardPage } from './modules/ml-insights/MlAccountDashboardPage'
+import { ShopeeOverviewPage } from './modules/shopee-insights/ShopeeOverviewPage'
+import { ShopeeActiveListingsPage } from './modules/shopee-insights/ShopeeActiveListingsPage'
+import { ShopeeHealthPage } from './modules/shopee-insights/ShopeeHealthPage'
+import { ShopeeItemDetailPage } from './modules/shopee-insights/ShopeeItemDetailPage'
+import { ShopeeFullStockPage } from './modules/shopee-insights/ShopeeFullStockPage'
+import { ShopeeVouchersPage } from './modules/shopee-insights/ShopeeVouchersPage'
+import { ShopeeFlashSalePage } from './modules/shopee-insights/ShopeeFlashSalePage'
 import { MlTrafficPage } from './modules/ml-insights/MlTrafficPage'
 import { MlHealthPage } from './modules/ml-insights/MlHealthPage'
 import { MlUpdatesHistoryPage } from './modules/ml-insights/MlUpdatesHistoryPage'
@@ -133,6 +142,7 @@ export default function App() {
                 <Route path="/producao"       element={<GuardedRoute moduleKey="producao"><ProductionPage /></GuardedRoute>} />
                 <Route path="/producao/chapas" element={<GuardedRoute moduleKey="producao"><ChapasPage /></GuardedRoute>} />
                 <Route path="/producao/midia"  element={<GuardedRoute moduleKey="controle-midia"><MediaControlPage /></GuardedRoute>} />
+                <Route path="/producao/midia/:productId" element={<GuardedRoute moduleKey="controle-midia"><MediaChecklistPage /></GuardedRoute>} />
                 <Route path="/baixa-diaria"   element={<GuardedRoute moduleKey="baixa-diaria"><BaixaDiariaPage /></GuardedRoute>} />
                 <Route path="/passagem-turno" element={<GuardedRoute moduleKey="producao"><PassagemTurnoPage /></GuardedRoute>} />
                 <Route path="/manutencao"     element={<GuardedRoute moduleKey="manutencao"><MaintenancePage /></GuardedRoute>} />
@@ -146,6 +156,13 @@ export default function App() {
 
                 {/* Otimização ML */}
                 <Route path="/ml"                element={<GuardedRoute moduleKey="ml-insights"><MlAccountDashboardPage /></GuardedRoute>} />
+                <Route path="/shopee"            element={<GuardedRoute moduleKey="shopee-insights"><ShopeeOverviewPage /></GuardedRoute>} />
+                <Route path="/shopee/anuncios"    element={<GuardedRoute moduleKey="shopee-insights"><ShopeeActiveListingsPage /></GuardedRoute>} />
+                <Route path="/shopee/saude"       element={<GuardedRoute moduleKey="shopee-insights"><ShopeeHealthPage /></GuardedRoute>} />
+                <Route path="/shopee/item/:itemId" element={<GuardedRoute moduleKey="shopee-insights"><ShopeeItemDetailPage /></GuardedRoute>} />
+                <Route path="/shopee/full"        element={<GuardedRoute moduleKey="shopee-insights"><ShopeeFullStockPage /></GuardedRoute>} />
+                <Route path="/shopee/cupons"      element={<GuardedRoute moduleKey="shopee-insights"><ShopeeVouchersPage /></GuardedRoute>} />
+                <Route path="/shopee/flash-sale"  element={<GuardedRoute moduleKey="shopee-insights"><ShopeeFlashSalePage /></GuardedRoute>} />
                 <Route path="/ml/trafego"        element={<GuardedRoute moduleKey="ml-insights"><MlTrafficPage /></GuardedRoute>} />
                 <Route path="/ml/saude"          element={<GuardedRoute moduleKey="ml-insights"><MlHealthPage /></GuardedRoute>} />
                 <Route path="/ml/saude/:itemId"  element={<GuardedRoute moduleKey="ml-insights"><MlItemDetailPage /></GuardedRoute>} />
@@ -169,6 +186,7 @@ export default function App() {
                 {/* Catálogo */}
                 <Route path="/materia-prima"  element={<GuardedRoute moduleKey="materiais"><MaterialsPage /></GuardedRoute>} />
                 <Route path="/produtos"       element={<GuardedRoute moduleKey="produtos"><ProductsPage /></GuardedRoute>} />
+                <Route path="/kits"           element={<GuardedRoute moduleKey="produtos"><KitsPage /></GuardedRoute>} />
                 <Route path="/fornecedores"   element={<GuardedRoute moduleKey="fornecedores"><SuppliersPage /></GuardedRoute>} />
 
                 {/* Gestão */}

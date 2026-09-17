@@ -10,6 +10,7 @@ import {
 import { useOrders, fetchImportEvents, fetchBatchShipDates, fetchBatchesByIds, checkBatchBeforeDelete, deleteBatchOrders } from './hooks/useOrders'
 import { FeiraCombinadaModal } from './FeiraCombinadaModal'
 import { MercadoLivreConnect } from './MercadoLivreConnect'
+import { ShopeeConnect } from './ShopeeConnect'
 import { CutoffSettingsModal } from './CutoffSettingsModal'
 import toast from 'react-hot-toast'
 import { OrdersReportsTab } from './OrdersReportsTab'
@@ -651,6 +652,7 @@ export function OrdersPage() {
         </div>
         <div className="flex items-center gap-2">
           {canSeeValues && <MercadoLivreConnect />}
+          {canSeeValues && <ShopeeConnect />}
           <button onClick={() => setManualOpen(true)} className="btn-secondary">
             <Plus size={16}/> Pedido manual
           </button>

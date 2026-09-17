@@ -14,6 +14,7 @@ const MODULES = [
   { key: 'reunioes',     label: 'Reuniões',        section: 'Principal',     icon: '🗓️' },
   { key: 'ml-insights',  label: 'Otimização ML',   section: 'Otimização ML', icon: '🩺' },
   { key: 'ml-historico', label: 'Histórico de Atualizações (ML)', section: 'Otimização ML', icon: '📜' },
+  { key: 'shopee-insights', label: 'Shopee',        section: 'Shopee',        icon: '🛍️' },
   { key: 'blog',         label: 'Blog',            section: 'Blog',          icon: '📝' },
   { key: 'producao',     label: 'Produção',        section: 'Produção',      icon: '🏭' },
   { key: 'manutencao',   label: 'Manutenção',      section: 'Produção',      icon: '🔧' },
