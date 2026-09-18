@@ -2,11 +2,19 @@ name: Deploy CoisaPet para a Hostinger
 
 # Roda toda vez que dá push na main — builda o app React e manda o
 # resultado (+ as pastas estáticas que hoje sobem na mão via FileZilla)
-# direto pro public_html via FTP. Precisa de 3 secrets configurados em
+# direto pro public_html via FTP. Precisa de 6 secrets configurados em
 # Settings > Secrets and variables > Actions: FTP_HOST, FTP_USERNAME,
 # FTP_PASSWORD (conta FTP "CoisaPet", trocada em 18/09 — já entra
-# DIRETO dentro da public_html de verdade, confirmado no FileZilla;
-# ver coisapet.md).
+# DIRETO dentro da public_html de verdade, confirmado no FileZilla) +
+# VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_ML_CLIENT_ID (o Vite
+# embute essas variáveis no bundle NA HORA DO BUILD — sem elas como
+# secret aqui, o build roda sem erro mas o app quebra em runtime com
+# "supabaseUrl is required", porque o .env.local só existe na máquina
+# local, nunca no GitHub; achado real em produção 18/09, ver
+# coisapet.md). Valores iguais ao `.env.local` local — anon key e
+# client ID já são públicos por natureza (vão pro bundle do navegador
+# de qualquer forma), não são segredo de verdade, só usamos secret
+# aqui por organização.
 on:
   push:
     branches: [main]
@@ -30,6 +38,10 @@ jobs:
 
       - name: Builda o app (gera dist/)
         run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_ML_CLIENT_ID: ${{ secrets.VITE_ML_CLIENT_ID }}
 
       # ── App React (dist/) → public_html/sistema/ ──────────────────
       # A conta FTP "CoisaPet" já ABRE DIRETO dentro da public_html de
