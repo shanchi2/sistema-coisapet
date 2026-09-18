@@ -21,8 +21,12 @@ reconstruir o raciocínio do zero.
   manual do `.xlsx` (que continua existindo como plano B).
 - **Importação manual do `.xlsx`** (ML e Shopee): continua funcionando
   exatamente como sempre funcionou, sem mudanças de comportamento.
-- **Shopee**: ainda 100% manual — a API da Shopee não foi integrada
-  (só a do ML, até agora).
+- **Shopee**: integrada via API própria desde 16/09 (sandbox) e **Live
+  desde 18/09** (app aprovado pra produção) — ver bullet mais abaixo.
+- **Deploy**: desde 17/09, `git push` na `main` builda e sobe sozinho pro
+  Hostinger via GitHub Actions (`.github/workflows/deploy.yml`) — não
+  depende mais de FileZilla manual pro app React/`equipe`/`links`/`doc`.
+  Ver Log 17/09 (8ª parte).
 - **Projeto Supabase**: `lcybmdiqxmbqeuyeuhdj` (região Ohio/East US). CLI já
   linkado nessa pasta.
 - **Kanban Operacional**: qualquer usuário vê a task de qualquer um (decisão
@@ -113,16 +117,30 @@ reconstruir o raciocínio do zero.
   páginas estáticas novas (`doc/`, `links/manuais/`) ainda não foram
   subidas pro Hostinger** e o fluxo ainda não foi clicado no navegador de
   verdade. Ver Log e Próximos Passos.
-- **API da Shopee (15/09-16/09)**: Raphael conseguiu acesso à API oficial
+- **Estoque real de produto + Kits + Produto principal (17/09)**: chapa
+  lançada em produção credita sozinha o estoque do(s) produto(s) que
+  ela rende (`/produtos`, coluna Estoque); "Kit" virou tipo próprio
+  (`is_kit`), com módulo dedicado `/kits` (disponibilidade calculada
+  pelos componentes, nunca estoque próprio) — SKUs antigos preservados
+  pros relatórios de venda. Famílias de variação de cor (54 no
+  catálogo) ganharam a opção de um **produto principal** sem cor
+  (`is_sellable=false`, nunca vendido, só agrupador) — 39 famílias já
+  convertidas automaticamente, 13 com SKU irregular ficam pra conversão
+  manual via `VariationsPage.jsx` quando o Raphael quiser. Ver Log
+  17/09 (todas as partes) + [[coisapet_stock_and_kits_model]].
+- **API da Shopee (15/09-18/09)**: Raphael conseguiu acesso à API oficial
   da Shopee (Open Platform v2). **Fase 1 (sync de pedido em tempo real)
   VALIDADA de ponta a ponta com pedido de teste real** — conexão OAuth,
   Push Mechanism, Database Webhook, mapeamento de status/campos, toast
-  visual (`ShopeeSaleToast.jsx`), tudo funcionando contra a loja de
-  teste sandbox (`shop_id 227914440`). Mesmo nível de confiança que a
-  integração ML hoje. Ver Log 16/09 (8ª parte) +
-  [[coisapet_shopee_api_research]]. Só sandbox por enquanto — produção
-  ainda depende da aprovação da Shopee (app enviado pra revisão em
-  16/09).
+  visual (`ShopeeSaleToast.jsx`); Cupons e Flash Sale (CRUD) e Estoque
+  Full (SBS) também construídos. Tudo validado contra sandbox
+  (`shop_id 227914440`). **18/09: app aprovado pra produção** —
+  credenciais Live já configuradas nos secrets (`SHOPEE_PARTNER_ID`/
+  `SHOPEE_PARTNER_KEY`/`SHOPEE_API_BASE`), bug real corrigido
+  (`is_sandbox` gravava fixo em `true`). Falta só o Raphael clicar
+  "Conectar Shopee" de novo em Pedidos autorizando a LOJA REAL (a
+  conexão sandbox antiga é substituída sozinha). Ver Log 18/09 e
+  [[coisapet_shopee_api_research]].
 
 ## ⏭️ Próximos passos imediatos (pra continuar de onde parou)
 
@@ -167,10 +185,23 @@ reconstruir o raciocínio do zero.
    pede credencial que o Claude não tem) — Raphael testa depois do
    deploy. Fora de escopo por enquanto: edição de marca, edição por
    variação/modelo, Ads/tráfego por anúncio.
-1. **`npm run build` + subir `dist/` pra Hostinger** — o código (ship_date,
-   Atrasados, config de corte, filtro de `archived`) já está no GitHub
-   (buildado localmente e testado nesta sessão) mas ainda não foi subido
-   pro site. A parte do banco já está ativa em produção independente disso.
+1. ~~`npm run build` + subir `dist/` pra Hostinger~~ **OBSOLETO desde
+   17/09** — `git push` na `main` já builda e sobe sozinho (GitHub
+   Actions + FTP, ver Log 17/09 8ª parte). Só falta confirmar com o
+   Raphael que o site real ficou atualizado depois da correção do bug de
+   caminho aninhado (`public_html/public_html/...`) — e, se sim, ele
+   pode apagar a pasta aninhada velha no servidor via FileZilla (lixo
+   inofensivo, não afeta o site).
+1b. **Shopee: reconectar com a loja real** — credenciais Live já
+   configuradas (18/09), falta só clicar "Conectar Shopee" em Pedidos e
+   autorizar a loja de verdade (troca a conexão sandbox sozinha). Depois
+   de reconectado, revalidar Estoque Full (só mostra dado quando a
+   CoisaPet entrar no fulfillment de verdade) e elegibilidade de Flash
+   Sale de loja (pode ser diferente da loja de teste). Ver Log 18/09.
+1c. **13 famílias de cor com SKU irregular** — não entraram na conversão
+   automática pra produto principal (17/09); conversão manual, uma de
+   cada vez, pela opção "Criar produto principal novo" em
+   `VariationsPage.jsx`, sem pressa.
 2. **Blog: decidir como o site principal vai ler os posts publicados**
    (`blog_posts.status='published'`) — API própria, leitura direta do
    Supabase, ou outra coisa. Ainda não decidido (Raphael disse "depois eu
@@ -214,6 +245,116 @@ reconstruir o raciocínio do zero.
    Ações destrutivas (`DELETE`) são sempre bloqueadas pelo classificador
    de segurança do Claude Code, mesmo com esse acesso — precisa ser
    manual ou aprovado explicitamente na hora.
+
+---
+
+### 2026-09-18 — Shopee: app aprovado pra produção, credenciais Live configuradas
+
+Raphael recebeu `Partner_id`/`Partner Key` **Live** (produção) da
+Shopee. Configurado nos secrets do Supabase: `SHOPEE_PARTNER_ID`,
+`SHOPEE_PARTNER_KEY` (novos valores) e `SHOPEE_API_BASE` trocado de
+sandbox pra `https://partner.shopeemobile.com`.
+
+**Bug real encontrado e corrigido na hora**: `shopee-oauth-callback`
+gravava `is_sandbox: true` **fixo** no insert de `shopee_integration`
+(resquício de quando só existia credencial de teste) — corrigido pra
+derivar de `SHOPEE_API_BASE` (`.includes('sandbox')`) e deployado. Sem
+essa correção, uma conexão de produção apareceria como "(sandbox)" na
+tela de Pedidos.
+
+Existe uma conexão sandbox antiga em `shopee_integration` (loja de
+teste, `shop_id 227914440`, expira hoje) que não serve mais contra a
+API Live — não removida via SQL direto (bloqueada pelo classificador de
+segurança do Claude Code como "mass delete" numa tabela de 1 linha,
+falso positivo). Não é bloqueante: o próprio `shopee-oauth-callback` já
+apaga qualquer conexão anterior antes de salvar a nova, então basta o
+Raphael clicar em "Conectar Shopee" de novo em Pedidos e autorizar com
+a **loja real** — a troca acontece sozinha.
+
+Toda a Fase 1 (sync de pedido), Cupons, Flash Sale e Estoque Full (SBS)
+já estavam construídos e validados em sandbox (16/09-17/09) — só
+faltava a aprovação pra virar produção de verdade. Ver
+[[coisapet_shopee_api_research]] (memória do Claude, atualizada com os
+detalhes técnicos).
+
+---
+
+### 2026-09-17 (8ª parte) — CI/CD: deploy automático pro Hostinger via GitHub Actions
+
+Pedido do Raphael: eliminar o upload manual via FileZilla — `git push`
+deveria buildar e subir sozinho pro servidor. Descoberto um remote
+GitHub já configurado mas nunca usado (`shanchi2/sistema-coisapet`,
+contradizendo uma nota antiga no `CLAUDE.md` que dizia "sem remoto") —
+usado como base em vez de criar um repositório novo.
+
+Criado `.github/workflows/deploy.yml`: builda (`npm ci` + `npm run
+build`) e sobe via `SamKirkland/FTP-Deploy-Action@v4.3.5` em 4 passos
+(app React de `dist/`, mais as pastas estáticas `equipe/`, `links/`,
+`doc/` que não fazem parte do build do Vite), disparado em todo push na
+`main` (+ `workflow_dispatch` pra rodar manual). Raphael criou uma
+conta FTP dedicada pro deploy na Hostinger (login/senha próprios, não a
+conta principal) e guardou como GitHub Secrets (`FTP_HOST`,
+`FTP_USERNAME`, `FTP_PASSWORD`).
+
+Commitado todo o trabalho acumulado do dia (8 commits temáticos) + o
+workflow. **2 obstáculos reais no caminho do push, nenhum deles bug de
+código**:
+1. O classificador de segurança do próprio Claude Code bloqueou o
+   primeiro `git push` (`[Out-of-Place Publication]`) — não é erro,
+   é uma camada de segurança da sessão; passou quando o Raphael pediu o
+   comando diretamente de novo.
+2. Depois disso, um 403 real do GitHub: `Permission ... denied to
+   shanchi-mtz` — as credenciais git desta máquina são de uma conta sem
+   acesso de escrita ao repositório (dono é outra conta, `shanchi2`).
+   Resolvido pelo próprio Raphael adicionando `shanchi-mtz` como
+   colaborador no repositório.
+
+Push concluído, workflow disparado manualmente pela aba Actions,
+confirmado "Success" (print do Raphael). **Só que o deploy foi pra
+pasta errada**: a conta FTP dedicada já entra direto dentro de
+`public_html` (assim como o Raphael configurou ao criá-la), mas os
+`server-dir` do workflow ainda tinham o prefixo `./public_html/`
+redundante — resultado: `public_html/public_html/public_html/...`
+(achado pelo Raphael via print do FileZilla). **Confirmado inofensivo**:
+o site real (raiz de verdade, com `assets`/`blog`/`equipe`/`links`/etc.)
+não foi tocado — só criou uma pasta nova e inútil, o
+`FTP-Deploy-Action` não apaga nada que não subiu por ele
+(`dangerous-clean-slate` é `false` por padrão). Corrigido removendo o
+prefixo redundante dos 4 `server-dir`, commitado e re-enviado. Falta
+confirmar com o Raphael que o próximo deploy realmente atualiza a raiz
+certa — e, depois disso, ele pode limpar a pasta aninhada velha no
+servidor (opcional, só estética).
+
+---
+
+### 2026-09-17 (7ª parte) — Auditoria de usuários: categorias por role + desativação de conta de teste
+
+Raphael pediu uma listagem de como estavam as categorias/roles de todos
+os usuários do sistema hoje — levantado via `system_users` +
+`role_permissions`, agrupado por role, com um alerta sobre uma conta de
+teste ativa ("000 TESTE") fora do padrão dos demais usuários reais.
+Raphael confirmou e pediu pra desativar — feito via `deactivate_system_user`
+(RPC própria do app, não `DELETE` direto), mantendo o histórico
+associado a ela intacto.
+
+---
+
+### 2026-09-17 (6ª parte) — Achado durante o trabalho de produto principal: 7 SKUs marcados "Kit" por engano, revertidos
+
+Registro retroativo de algo que aconteceu durante a investigação que
+levou ao "produto principal" (ver 2ª parte): ao mapear a família "Caixa
+Alojamento de Transporte... Com Acessórios" (marcada `is_kit=true` na
+leva de marcação automática do dia, ver entrada sem "parte" mais
+abaixo), ficou claro que ela **não é um kit de verdade** — é uma peça
+única, fabricada direto por chapa (achado cruzando com `chapa_items`).
+A marcação automática por nome ("Com Acessórios") deu falso positivo
+nessa família. Confirmado com o Raphael ("É peça única da chapa") antes
+de reverter — `UPDATE products SET is_kit = false` nos 7 SKUs da
+família, voltando pro fluxo normal de estoque via chapa. Contagem de
+kits caiu de 25 pra 18 depois da correção. Esse achado foi um dos
+gatilhos que expôs a contradição maior (chapa apontando pra um produto
+que "acidentalmente" também tinha virado kit) e motivou a conversa mais
+funda sobre produto principal logo depois.
 
 ---
 
