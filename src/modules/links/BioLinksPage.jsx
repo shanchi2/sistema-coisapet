@@ -4,11 +4,12 @@ import {
   Link2, Plus, Pencil, Trash2, X, Check, GripVertical,
   Eye, EyeOff, Search, ExternalLink, Save, Loader2,
   BarChart2, MousePointerClick, TrendingUp, Calendar,
-  FileText, Package, ArrowLeft,
+  FileText, Package, ArrowLeft, Wand2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useSignedUrl } from '../../lib/signedUrlCache'
 import { useProductDocs } from './hooks/useProductDocs'
+import { ManualGeneratorTab } from './ManualGeneratorTab'
 import { todayISO, toISODateBR } from '../../lib/dateBR'
 
 const DOC_SITE_BASE = 'https://coisapet.com.br/doc'
@@ -619,9 +620,10 @@ export function BioLinksPage() {
         {/* Abas */}
         <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
           {[
-            { key: 'links',     label: 'Links',     icon: Link2     },
-            { key: 'manuais',   label: 'Manuais',   icon: FileText  },
-            { key: 'analytics', label: 'Analytics', icon: BarChart2 },
+            { key: 'links',     label: 'Links',            icon: Link2     },
+            { key: 'manuais',   label: 'Manuais',          icon: FileText  },
+            { key: 'gerador',   label: 'Gerador de Manual', icon: Wand2    },
+            { key: 'analytics', label: 'Analytics',        icon: BarChart2 },
           ].map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -709,6 +711,9 @@ export function BioLinksPage() {
 
         {/* ── ABA MANUAIS ── */}
         {tab === 'manuais' && <ProductDocsTab />}
+
+        {/* ── ABA GERADOR DE MANUAL ── */}
+        {tab === 'gerador' && <ManualGeneratorTab />}
 
         {/* ── ABA ANALYTICS ── */}
         {tab === 'analytics' && (
