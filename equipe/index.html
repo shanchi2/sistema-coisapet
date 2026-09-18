@@ -75,13 +75,26 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);height
 .screens{flex:1;overflow:hidden;position:relative}
 .scr{position:absolute;inset:0;display:none;flex-direction:column;overflow-y:auto;overscroll-behavior:contain}
 .scr.on{display:flex}
-.cnt{padding:20px var(--px) calc(var(--sb) + 88px)}
-.bn{position:fixed;bottom:0;left:0;right:0;padding:0 var(--px) calc(var(--sb) + 8px);padding-top:0;}
-.bn-inner{background:rgba(26,13,4,.92);border:1px solid var(--bdr2);border-radius:24px;display:flex;backdrop-filter:blur(24px);overflow:hidden;box-shadow:0 -4px 32px rgba(0,0,0,.4),0 8px 32px rgba(0,0,0,.3);}
-.nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 4px;border:none;background:none;cursor:pointer;color:var(--muted);font-family:'Inter',sans-serif;font-size:9px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;transition:color .2s;position:relative;}
+.cnt{padding:20px var(--px) calc(var(--sb) + 32px)}
+.nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 4px;border:none;background:none;cursor:pointer;color:var(--muted);font-family:'Inter',sans-serif;font-size:9px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;transition:color .2s,background .15s;position:relative;}
 .nb.on{color:var(--gold)}
 .nb-dot{position:absolute;top:10px;right:calc(50% - 16px);width:7px;height:7px;border-radius:50%;background:var(--gold);display:none;border:2px solid #1a0d04;}
 .nb-dot.show{display:block}
+/* Menu flutuante (FAB) + painel lateral — substitui a barra inferior
+   antiga (18/09). Reaproveita a classe .nb (mesma lógica de clique/
+   estado ativo já existente), só sobrescreve o layout pra lista
+   vertical em vez de barra horizontal de ícones. */
+.fab{position:fixed;bottom:calc(var(--sb) + 20px);right:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--pri-l),var(--pri));border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 24px rgba(142,81,16,.5),0 2px 10px rgba(0,0,0,.35);z-index:40;transition:transform .15s;}
+.fab:active{transform:scale(.92)}
+.drawer-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:49;opacity:0;pointer-events:none;transition:opacity .25s;}
+.drawer-ov.on{opacity:1;pointer-events:auto;}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(82vw,320px);background:var(--bg2);border-left:1px solid var(--bdr2);z-index:50;transform:translateX(100%);transition:transform .3s cubic-bezier(.32,.72,0,1);display:flex;flex-direction:column;padding:calc(var(--st) + 18px) 0 calc(var(--sb) + 18px);overflow-y:auto;box-shadow:-12px 0 40px rgba(0,0,0,.45);}
+.drawer.on{transform:translateX(0);}
+.dr-hd{font-size:11px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);padding:0 22px 14px;}
+.drawer .nb{flex:none;flex-direction:row;justify-content:flex-start;width:100%;padding:14px 22px;font-size:14px;font-weight:700;letter-spacing:0;text-transform:none;gap:14px;}
+.drawer .nb:active{background:var(--card)}
+.drawer .nb.on{background:var(--card2)}
+.drawer .nb .nb-notif,.drawer .nb .nb-dot{position:static;margin-left:auto;}
 .card{background:var(--card);border:1px solid var(--bdr);border-radius:20px;padding:18px;margin-bottom:12px;}
 .card-hi{background:var(--card2);border:1px solid var(--bdr2);border-radius:20px;padding:18px;margin-bottom:12px;}
 .card-gold{background:linear-gradient(135deg,rgba(207,158,40,.14),rgba(207,158,40,.06));border:1px solid rgba(207,158,40,.28);border-radius:20px;padding:18px;margin-bottom:12px;}
@@ -519,37 +532,47 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);height
       </div>
     </div>
   </div>
-  <div class="bn" style="padding-bottom:calc(var(--sb) + 12px);padding-top:12px">
-    <div class="bn-inner">
-      <button class="nb on" id="nb-home" onclick="goTo('home',this)">
-        <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        Início<div class="nb-dot" id="dot-home"></div><div class="nb-notif" id="notif-dot"></div>
-      </button>
-      <button class="nb" onclick="goTo('ponto',this)">
-        <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Ponto
-      </button>
-      <button class="nb" onclick="goTo('horas',this)">
-        <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Horas
-      </button>
-      <button class="nb" onclick="goTo('cal',this)">
-        <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/><line x1="16" y1="14" x2="16" y2="14"/></svg>Calendário
-      </button>
-      <button class="nb" onclick="goTo('ferias',this)">
-        <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Férias
-      </button>
-      <button class="nb" onclick="goTo('mensagens',this);loadMensagens()">
-        <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Mensagens<div class="nb-notif" id="notif-msg-dot"></div>
-      </button>
-      <button class="nb" onclick="goTo('chat',this);openChatList()">
-        <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 12a4 4 0 014-4h6a4 4 0 010 8H7l-4 3v-3z"/></svg>Chat<div class="nb-notif" id="notif-chat-dot"></div>
-      </button>
-      <button class="nb" onclick="goTo('mais',this)">
-        <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Mais
-      </button>
-      <button class="nb" id="nb-lancamento" onclick="goTo('lancamento',this)" style="display:none">
-        <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>Produção
-      </button>
-    </div>
+  <!-- Menu flutuante (FAB) + painel lateral — substitui a barra inferior
+       antiga (18/09: com 9 itens ela estourava a largura da tela e o
+       último — Produção — ficava cortado/inacessível fora da vista,
+       mesmo já "visível" via JS; achado real ao investigar por que o
+       Daniel não via o botão). Reaproveita 100% a lógica de navegação
+       que já existia (goTo(), ids, toggle de visibilidade) — só troca
+       o CONTAINER visual de barra horizontal pra lista vertical. -->
+  <button class="fab" id="fab-menu" onclick="openDrawer()" aria-label="Menu">
+    <svg width="24" height="24" viewBox="0 0 24 24" stroke="#fff" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+  </button>
+  <div class="drawer-ov" id="drawer-ov" onclick="closeDrawer()"></div>
+  <div class="drawer" id="drawer">
+    <div class="dr-hd">Menu</div>
+    <button class="nb on" id="nb-home" onclick="goTo('home',this);closeDrawer()">
+      <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Início<div class="nb-dot" id="dot-home"></div><div class="nb-notif" id="notif-dot"></div>
+    </button>
+    <button class="nb" onclick="goTo('ponto',this);closeDrawer()">
+      <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Ponto
+    </button>
+    <button class="nb" onclick="goTo('horas',this);closeDrawer()">
+      <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Banco de Horas
+    </button>
+    <button class="nb" onclick="goTo('cal',this);closeDrawer()">
+      <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/><line x1="16" y1="14" x2="16" y2="14"/></svg>Calendário
+    </button>
+    <button class="nb" onclick="goTo('ferias',this);closeDrawer()">
+      <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Férias
+    </button>
+    <button class="nb" onclick="goTo('mensagens',this);loadMensagens();closeDrawer()">
+      <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Mensagens<div class="nb-notif" id="notif-msg-dot"></div>
+    </button>
+    <button class="nb" onclick="goTo('chat',this);openChatList();closeDrawer()">
+      <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 12a4 4 0 014-4h6a4 4 0 010 8H7l-4 3v-3z"/></svg>Chat<div class="nb-notif" id="notif-chat-dot"></div>
+    </button>
+    <button class="nb" onclick="goTo('mais',this);closeDrawer()">
+      <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Mais
+    </button>
+    <button class="nb" id="nb-lancamento" onclick="goTo('lancamento',this);closeDrawer()" style="display:none">
+      <svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>Produção
+    </button>
   </div>
 </div>
 <div class="ann-modal-ov" id="ann-modal-ov" onclick="closeAnnModal(event)">
@@ -703,6 +726,9 @@ function tick(){
   const gr=document.getElementById('gr');if(gr)gr.textContent=g+', '+me.name.split(' ')[0]+'.'
   const cl=document.getElementById('clk');if(cl)cl.textContent=n.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})+' · '+n.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})
 }
+
+function openDrawer(){document.getElementById('drawer').classList.add('on');document.getElementById('drawer-ov').classList.add('on')}
+function closeDrawer(){document.getElementById('drawer').classList.remove('on');document.getElementById('drawer-ov').classList.remove('on')}
 
 function goTo(id,btn){
   // Empurra estado no histórico para capturar botão voltar
