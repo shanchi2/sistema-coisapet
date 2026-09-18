@@ -30,6 +30,11 @@ jobs:
         run: npm run build
 
       # ── App React (dist/) → raiz do public_html ──────────────────
+      # A conta FTP dedicada já entra DIRETO dentro de public_html
+      # (foi criada apontando o "Diretório" pra lá) — por isso os
+      # caminhos abaixo NUNCA mencionam "public_html" de novo, senão
+      # cria uma pasta public_html dentro de public_html (bug real
+      # encontrado em 17/09, achado pelo Raphael no FileZilla).
       - name: Deploy — app React
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -37,7 +42,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./dist/
-          server-dir: ./public_html/
+          server-dir: ./
           exclude: |
             **/.git*
             **/.git*/**
@@ -53,7 +58,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./equipe/
-          server-dir: ./public_html/equipe/
+          server-dir: ./equipe/
 
       - name: Deploy — /links (bio links + manuais)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -62,7 +67,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./links/
-          server-dir: ./public_html/links/
+          server-dir: ./links/
 
       - name: Deploy — /doc (manuais de produto)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -71,4 +76,4 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./doc/
-          server-dir: ./public_html/doc/
+          server-dir: ./doc/
