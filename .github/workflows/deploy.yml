@@ -4,7 +4,8 @@ name: Deploy CoisaPet para a Hostinger
 # resultado (+ as pastas estáticas que hoje sobem na mão via FileZilla)
 # direto pro public_html via FTP. Precisa de 3 secrets configurados em
 # Settings > Secrets and variables > Actions: FTP_HOST, FTP_USERNAME,
-# FTP_PASSWORD (conta FTP dedicada pro deploy, ver coisapet.md).
+# FTP_PASSWORD (conta FTP "CoisaPet", trocada em 18/09 — Diretório é a
+# raiz do domínio, um nível ACIMA do public_html; ver coisapet.md).
 on:
   push:
     branches: [main]
@@ -30,20 +31,23 @@ jobs:
         run: npm run build
 
       # ── App React (dist/) → public_html/sistema/ ──────────────────
-      # A conta FTP dedicada já entra DIRETO dentro de public_html
-      # (foi criada apontando o "Diretório" pra lá) — por isso os
-      # caminhos abaixo NUNCA mencionam "public_html" de novo, senão
-      # cria uma pasta public_html dentro de public_html (bug real
-      # encontrado em 17/09, achado pelo Raphael no FileZilla).
+      # BUG REAL #3 (achado 18/09, o de verdade desta vez): a conta FTP
+      # dedicada original ("deploy") tinha o Diretório configurado pra
+      # uma pasta "public_html" que era, ela mesma, FAKE — uma pasta
+      # com esse nome só que criada POR DENTRO da public_html real
+      # (resíduo do primeiro deploy com bug, 17/09). Como FTP usa chroot
+      # na pasta configurada, nenhum server-dir deste workflow conseguia
+      # "escapar" dali pra cima — não importa o que eu escrevesse aqui,
+      # nunca ia cair na raiz de verdade. O Raphael achou o problema real
+      # comparando as duas pastas no FileZilla e trocou pra uma 3ª conta
+      # FTP ("CoisaPet") cujo Diretório é um nível ACIMA do public_html
+      # (a raiz do domínio) — por isso agora todo server-dir abaixo
+      # precisa incluir "public_html/" nele.
       #
-      # BUG REAL #2 (achado 18/09): vite.config.js builda com
-      # base:'/sistema' (dist/index.html referencia /sistema/assets/...),
-      # mas este step subia pra RAIZ da conta (server-dir: ./) — nunca
-      # tocava a pasta /sistema/ de verdade, que é onde o app é servido.
-      # Resultado: nenhum deploy automático desde a criação do workflow
-      # (17/09) realmente atualizou o app em produção — confirmado 18/09
-      # comparando o hash do bundle JS ao vivo (index-kcwHMrxV.js) com
-      # os hashes gerados a cada build local do dia, nenhum batia.
+      # (Bugs #1 e #2, já corrigidos antes deste, ficam só de histórico:
+      # #1 era o "public_html/" duplicado quando ainda usávamos a conta
+      # antiga; #2 era o app React não apontar pra /sistema/, que
+      # vite.config.js exige via base:'/sistema'.)
       - name: Deploy — app React
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -51,7 +55,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./dist/
-          server-dir: ./sistema/
+          server-dir: ./public_html/sistema/
           exclude: |
             **/.git*
             **/.git*/**
@@ -67,7 +71,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./equipe/
-          server-dir: ./equipe/
+          server-dir: ./public_html/equipe/
 
       - name: Deploy — /links (bio links + manuais)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -76,7 +80,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./links/
-          server-dir: ./links/
+          server-dir: ./public_html/links/
 
       - name: Deploy — /doc (manuais de produto)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -85,4 +89,4 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./doc/
-          server-dir: ./doc/
+          server-dir: ./public_html/doc/
