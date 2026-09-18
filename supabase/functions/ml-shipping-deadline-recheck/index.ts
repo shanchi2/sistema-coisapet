@@ -24,6 +24,13 @@ import { adminClient, getValidIntegration, mlFetch } from '../_shared/mercadoliv
 
 const BATCH_LIMIT = 30
 
+// DD/MM, só pra montar a nota legível do badge (Fase 66) — data já vem
+// como 'YYYY-MM-DD' (coluna DATE), sem timezone pra considerar aqui.
+function fmtBR(dateStr: string) {
+  const [, m, d] = dateStr.split('-')
+  return `${d}/${m}`
+}
+
 serve(async () => {
   const db = adminClient()
   try {
@@ -63,6 +70,10 @@ serve(async () => {
             shipping_deadline: bufferingDate,
             ship_date: bufferingDate,
             shipping_deadline_checked_at: new Date().toISOString(),
+            ...(changed ? {
+              day_auto_corrected: true,
+              day_auto_corrected_note: `Dia corrigido automaticamente: era ${fmtBR(o.ship_date)}, o prazo real da transportadora é ${fmtBR(bufferingDate)}.`,
+            } : {}),
           }).eq('id', o.id)
           if (changed) corrections.push({ num_venda: o.num_venda, from: o.ship_date, to: bufferingDate })
         } else {

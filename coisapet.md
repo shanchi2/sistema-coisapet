@@ -45,8 +45,14 @@ reconstruir o raciocínio do zero.
   como reserva pra quando esse prazo não vem (ex: importado por `.xlsx`);
   Shopee usa a própria "Data prevista de envio" do arquivo. Expedição/
   Picklist/Histórico todos leem por `ship_date` agora, não mais por
-  `batch_id`. Aviso permanente de "Atrasados" na Expedição, independente
-  de qual dia está aberto na tela. **Pedido em pacote do ML agora vira 1
+  `batch_id` — **exceto `/pick-list` (o PDF de verdade), que só foi
+  corrigido em 18/09** (ver Log 18/09 2ª parte — filtrava só por
+  `batch_id`, podia misturar pedido de outro dia/arquivado). Aviso
+  permanente de "Atrasados" na Expedição, independente de qual dia está
+  aberto na tela. ML e Shopee agora têm cron de recheck (18/09, Fase
+  34/67) que corrige `ship_date` sozinho quando o prazo real só fica
+  disponível depois da criação — badge âmbar na Expedição quando isso
+  acontece. **Pedido em pacote do ML agora vira 1
   pedido só** (era N, um por produto — corrigido 26/08). Constraint
   `UNIQUE(source,num_venda)` confirmada existente em produção. Pedido
   Full confirmado excluído do picklist (só aparece na aba Pedidos).
@@ -202,6 +208,15 @@ reconstruir o raciocínio do zero.
    automática pra produto principal (17/09); conversão manual, uma de
    cada vez, pela opção "Criar produto principal novo" em
    `VariationsPage.jsx`, sem pressa.
+1d. **Picklist/Expedição alinhados (18/09) — testar clicando de
+   verdade**: 3 causas corrigidas (ver Log 18/09 2ª parte) — `/pick-list`
+   agora filtra `ship_date`/`archived`, cron de recheck novo pro Shopee,
+   badge de "dia corrigido automaticamente" na Expedição. Tudo
+   verificado via SQL/curl direto, mas ninguém clicou nas telas ainda.
+   Pedir pro Vini: gerar um picklist de um lote misturado de verdade
+   (ou aguardar um novo aparecer) e confirmar que só vem o dia certo, e
+   ficar de olho no badge âmbar na Expedição na próxima correção
+   automática (ML ou Shopee).
 2. **Blog: decidir como o site principal vai ler os posts publicados**
    (`blog_posts.status='published'`) — API própria, leitura direta do
    Supabase, ou outra coisa. Ainda não decidido (Raphael disse "depois eu
@@ -276,6 +291,89 @@ já estavam construídos e validados em sandbox (16/09-17/09) — só
 faltava a aprovação pra virar produção de verdade. Ver
 [[coisapet_shopee_api_research]] (memória do Claude, atualizada com os
 detalhes técnicos).
+
+---
+
+### 2026-09-18 (2ª parte) — Pedidos/Picklist/Expedição: 3 causas reais de pedido indo pro dia errado, corrigidas
+
+Vini (produção) reportou pedido do dia seguinte aparecendo no picklist
+de hoje, e o contrário também, "agora com a Shopee também". Raphael:
+Pedidos e Picklist/Expedição são as telas mais críticas do sistema hoje,
+pediu pra deixar "alinhadinhas e perfeitas". Investigação a fundo (com
+agente de pesquisa mapeando todo consumidor de `ship_date` no front)
+achou **3 causas reais**, indo pro código via plano formal
+(EnterPlanMode):
+
+**Causa #1 (a mais provável de ser o que o Vini via todo dia)**:
+`PickListShopee.jsx` (rota `/pick-list`, botão "🖨️ Gerar Picklist" em
+Pedidos) — a tela que gera o PDF de verdade usado no chão de produção —
+buscava pedidos só por `batch_id`, **sem filtrar `ship_date` nem
+`archived`**, diferente de toda outra tela (que já passa por
+`fetchShippingOrders`/`fetchOverdueOrders` em `useShipping.js`, essas
+sim corretas). Como `import_batches` ainda agrupa por dia de
+IMPORTAÇÃO/sync, não por dia de envio (bug residual já documentado,
+"Fase 3" nesta lista), um `batch_id` pode conter pedidos de vários dias
+— **confirmado com dado real do banco antes de mexer em código**: o
+lote `fe696eeb-afbe-493b-84bb-cc88b8688ee6` (ML, 21 pedidos, nenhum
+arquivado, portanto 100% ativo) tem pedidos espalhados por **5 `ship_date`
+diferentes** (14, 15, 16, 17 e 21/09) debaixo do mesmo `batch_id` — se
+alguém tivesse clicado "Gerar Picklist" nele, o PDF sairia com 5 dias
+misturados. Bate exatamente com o sintoma relatado.
+
+Corrigido: `loadOrdersFromBatch` agora filtra `archived=false` e resolve
+o `ship_date` majoritário do lote (mesma técnica de
+`resolveBatchShipDates`, `useOrders.js`), deixando de fora quem não
+bate — com um aviso novo na tela ("N pedido(s) deste lote são de outro
+dia e não entraram neste picklist — confira a Expedição") em vez de
+sumir/misturar silenciosamente.
+
+**Causa #2**: o ML já tem uma rede de segurança (`ml-shipping-deadline-recheck`,
+Fase 34) pra quando o prazo real de envio só fica disponível DEPOIS do
+pedido criado — a Shopee não tinha equivalente. Se `ship_by_date` vier
+vazio no push inicial (SLA ainda não calculado pela Shopee), o pedido
+ficava pra sempre no dia errado (`upsert_orders_safe` não atualiza
+`ship_date` em pushes seguintes, de propósito, desde a Fase 20).
+Construída `shopee-shipping-deadline-recheck` (nova edge function,
+espelha a do ML quase 1:1, mesma janela 2h-48h) +
+`fase67-shopee-shipping-deadline-recheck-cron.sql` (cron a cada 3h,
+deslocado 90min do horário do ML pra não bater as duas chamadas de API
+junto). Testado manualmente via curl contra as duas functions (ML e
+Shopee) depois do deploy — ambas responderam certo, sem pedido
+pendente pra rechecar no momento (esperado, Shopee acabou de
+reconectar com a loja real hoje).
+
+**Causa #3**: quando o cron do ML corrige um pedido, isso só gerava uma
+notificação genérica solta (`ml_shipping_deadline_corrected` não estava
+mapeada em `NotificationBell.jsx`, caía no ícone/label fallback de
+"Nova tarefa") — do ponto de vista de quem confere o picklist ao longo
+do turno, parecia bug fantasma. `fase66-ship-date-auto-corrected-indicator.sql`:
+2 colunas novas (`day_auto_corrected`, `day_auto_corrected_note`) —
+ambos os crons (ML editado + Shopee novo) setam essas colunas só quando
+o dia de um pedido REALMENTE muda depois de já calculado. Badge novo em
+`ExpedicaoPage.jsx` (detalhe + card da lista), reaproveitando o mesmo
+padrão visual/fluxo já usado pra `needs_attention` (cancelamento pós-
+separação) — com botão "Marcar como revisado". `NotificationBell.jsx`
+ganhou ícone/label próprios pras 2 notificações (ML e Shopee) em vez do
+fallback genérico.
+
+**Achado à parte, fora de escopo, registrado pro Raphael decidir**:
+`ProductionPage.jsx`, `PassagemTurnoPage.jsx` e `BaixaDiariaPage.jsx`
+calculam "hoje" via `new Date().toISOString()` (UTC) enquanto
+Expedição/Pedidos usam data local — isso faz "hoje" virar às 21h BRT
+nas telas de Produção em vez de meia-noite (~3h/dia de mismatch). Não é
+causa do bug relatado (Produção lê `production_orders`, tabela própria,
+desacoplada de `orders.ship_date`) — troca simples de helper, baixo
+risco, fica pra uma entrega separada se o Raphael quiser.
+
+`npm run build` limpo. Migrações aplicadas e conferidas via
+`information_schema`; cron do Shopee agendado e confirmado
+(`cron.schedule` retornou id novo); as 2 edge functions (Shopee nova +
+ML editada) deployadas e testadas manualmente via curl. **Faltam
+testes clicando na tela de verdade** (login pede credencial que o
+Claude não tem) — Raphael testa depois do deploy: gerar um picklist de
+um lote que hoje é conhecido por misturar dias, e observar o badge
+âmbar aparecer na Expedição na próxima vez que algum cron corrigir um
+pedido de verdade.
 
 ---
 

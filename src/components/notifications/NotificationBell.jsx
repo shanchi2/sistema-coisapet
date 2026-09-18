@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import { Bell, Check, CheckCheck, X, ClipboardList, MessageCircle, ArrowRight, UserPlus, ExternalLink, ShoppingBag } from 'lucide-react'
+import { Bell, Check, CheckCheck, X, ClipboardList, MessageCircle, ArrowRight, UserPlus, ExternalLink, ShoppingBag, Calendar } from 'lucide-react'
 
 function getSession() {
   try { return JSON.parse(localStorage.getItem('coisapet_session') || '{}') } catch { return {} }
@@ -26,6 +26,8 @@ const TYPE_CFG = {
   task_comment:  { icon: MessageCircle, color: 'text-emerald-500',bg: 'bg-emerald-50', label: 'Novo comentário'     },
   ml_order_synced: { icon: ShoppingBag, color: 'text-amber-600',  bg: 'bg-amber-50',   label: 'Venda no ML'         },
   shopee_order_synced: { icon: ShoppingBag, color: 'text-orange-600', bg: 'bg-orange-50', label: 'Venda na Shopee'  },
+  ml_shipping_deadline_corrected:     { icon: Calendar, color: 'text-amber-600', bg: 'bg-amber-50', label: 'Prazo ML corrigido'     },
+  shopee_shipping_deadline_corrected: { icon: Calendar, color: 'text-amber-600', bg: 'bg-amber-50', label: 'Prazo Shopee corrigido' },
 }
 
 export function NotificationBell() {

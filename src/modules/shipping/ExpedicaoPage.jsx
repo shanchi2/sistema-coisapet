@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Check, Package, PartyPopper, RefreshCw, ShoppingCart, ShoppingBag, PenLine, Minus, Plus, ClipboardList, ChevronLeft, ChevronRight, Calendar, Target, AlertTriangle, History, Lock } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useSignedUrl } from '../../lib/signedUrlCache'
-import { fetchShippingOrders, toggleItemPicked, fetchShippingDayCounts, fetchSaturdayTarget, activateSaturdayTarget, clearNeedsAttention, closeShippingDay, fetchShippingClosures, fetchOverdueOrders, resolveBatchId } from './hooks/useShipping'
+import { fetchShippingOrders, toggleItemPicked, fetchShippingDayCounts, fetchSaturdayTarget, activateSaturdayTarget, clearNeedsAttention, clearDayAutoCorrected, closeShippingDay, fetchShippingClosures, fetchOverdueOrders, resolveBatchId } from './hooks/useShipping'
 import { fetchGathering, saveGatheringItem, sendShortageReport } from './hooks/usePicklistGathering'
 import { fetchPackagingBoxes, fetchOrderPackaging, confirmOrderPackaging } from './hooks/usePackaging'
 import toast from 'react-hot-toast'
@@ -222,6 +222,19 @@ export function ExpedicaoPage() {
     try {
       await clearNeedsAttention(orderId)
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, needs_attention: false } : o))
+      toast.success('Marcado como revisado.')
+    } catch (err) {
+      toast.error('Erro ao marcar como revisado: ' + err.message)
+    }
+  }
+
+  // Marca como revisado o aviso de "dia corrigido automaticamente" (cron
+  // de recheck do ML/Shopee, Fase 66) — some o badge até um recheck
+  // futuro corrigir o mesmo pedido de novo.
+  async function handleClearDayCorrected(orderId) {
+    try {
+      await clearDayAutoCorrected(orderId)
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, day_auto_corrected: false, day_auto_corrected_note: null } : o))
       toast.success('Marcado como revisado.')
     } catch (err) {
       toast.error('Erro ao marcar como revisado: ' + err.message)
@@ -533,6 +546,16 @@ export function ExpedicaoPage() {
               </button>
             </div>
           )}
+          {openOrder.day_auto_corrected && (
+            <div className="rounded-xl bg-amber-500 text-white px-4 py-3">
+              <p className="text-sm font-black flex items-center gap-1.5"><Calendar size={16} strokeWidth={3} /> Dia de envio corrigido automaticamente</p>
+              <p className="text-xs text-white/90 mt-1">{openOrder.day_auto_corrected_note || 'O prazo real chegou depois do pedido criado e o dia deste pedido foi ajustado sozinho.'}</p>
+              <button onClick={() => handleClearDayCorrected(openOrder.id)}
+                className="mt-2 text-xs font-bold bg-white text-amber-700 px-3 py-1.5 rounded-lg">
+                Marcar como revisado
+              </button>
+            </div>
+          )}
           {openOrder.notes && <p className="text-base text-amber-700 bg-amber-50 rounded-xl px-4 py-3 font-semibold">⚠ {openOrder.notes}</p>}
 
           <div className="flex flex-col gap-3">
@@ -778,6 +801,11 @@ export function ExpedicaoPage() {
                   {o.needs_attention && (
                     <span className="flex items-center gap-1 text-[11px] font-black px-2 py-1 rounded-full bg-rose-600 text-white w-fit mt-1.5">
                       <AlertTriangle size={12} strokeWidth={3} /> CANCELADO APÓS SEPARADO — VERIFICAR
+                    </span>
+                  )}
+                  {o.day_auto_corrected && (
+                    <span className="flex items-center gap-1 text-[11px] font-black px-2 py-1 rounded-full bg-amber-500 text-white w-fit mt-1.5">
+                      <Calendar size={12} strokeWidth={3} /> DIA CORRIGIDO AUTOMATICAMENTE
                     </span>
                   )}
                   {orderHasPlaquinhaAlert(o) && (

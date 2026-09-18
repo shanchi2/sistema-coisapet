@@ -17,7 +17,7 @@ function isCancelledStatus(estado) {
 export async function fetchShippingOrders(source, shipDate) {
   const { data, error } = await supabase
     .from('orders')
-    .select('id, num_venda, comprador, cidade, estado_uf, status_ml, notes, source, batch_id, ship_date, is_full, needs_attention, items:order_items(id, titulo, sku, variacao, qty, obs_item, picked, picked_at)')
+    .select('id, num_venda, comprador, cidade, estado_uf, status_ml, notes, source, batch_id, ship_date, is_full, needs_attention, day_auto_corrected, day_auto_corrected_note, items:order_items(id, titulo, sku, variacao, qty, obs_item, picked, picked_at)')
     .eq('source', source)
     .eq('ship_date', shipDate)
     .eq('archived', false)
@@ -65,6 +65,19 @@ export async function toggleItemPicked(itemId, picked) {
 // (é um estado real que ainda não foi resolvido, não só um alerta pontual).
 export async function clearNeedsAttention(orderId) {
   const { error } = await supabase.from('orders').update({ needs_attention: false }).eq('id', orderId)
+  if (error) throw error
+}
+
+// Staff confirmou que já viu o aviso de "dia corrigido automaticamente"
+// (ml-shipping-deadline-recheck / shopee-shipping-deadline-recheck,
+// Fase 66) — tira o badge da tela. Se um recheck futuro corrigir o
+// mesmo pedido de novo, o badge volta (mesmo espírito do
+// clearNeedsAttention: é histórico do que já foi revisado, não some
+// pra sempre sozinho).
+export async function clearDayAutoCorrected(orderId) {
+  const { error } = await supabase.from('orders')
+    .update({ day_auto_corrected: false, day_auto_corrected_note: null })
+    .eq('id', orderId)
   if (error) throw error
 }
 
@@ -145,7 +158,7 @@ export async function fetchOverdueOrders() {
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const { data, error } = await supabase
     .from('orders')
-    .select('id, num_venda, comprador, source, ship_date, batch_id, status_ml, is_full, needs_attention, items:order_items(id, picked)')
+    .select('id, num_venda, comprador, source, ship_date, batch_id, status_ml, is_full, needs_attention, day_auto_corrected, day_auto_corrected_note, items:order_items(id, picked)')
     .eq('archived', false)
     .lt('ship_date', todayStr)
 
