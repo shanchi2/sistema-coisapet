@@ -51,12 +51,19 @@ serve(async (req) => {
     // qualquer conexão anterior antes de salvar a nova (mesmo padrão do ML).
     await db.from('shopee_integration').delete().neq('id', '00000000-0000-0000-0000-000000000000')
 
+    // is_sandbox reflete o ambiente configurado no momento da conexão
+    // (SHOPEE_API_BASE) — antes ficava fixo em `true` (resquício de quando
+    // só existiam credenciais de teste); agora que temos credenciais Live
+    // (18/09) precisa refletir a realidade, senão a tela mostraria
+    // "(sandbox)" pra uma conexão de produção.
+    const isSandbox = (Deno.env.get('SHOPEE_API_BASE') || '').includes('sandbox')
+
     const { error: insErr } = await db.from('shopee_integration').insert({
       shop_id:       shopId,
       access_token:  tok.access_token,
       refresh_token: tok.refresh_token,
       expires_at:    new Date(Date.now() + tok.expire_in * 1000).toISOString(),
-      is_sandbox:    true,
+      is_sandbox:    isSandbox,
     })
     if (insErr) throw insErr
 
