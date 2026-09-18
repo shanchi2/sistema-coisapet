@@ -29,12 +29,21 @@ jobs:
       - name: Builda o app (gera dist/)
         run: npm run build
 
-      # ── App React (dist/) → raiz do public_html ──────────────────
+      # ── App React (dist/) → public_html/sistema/ ──────────────────
       # A conta FTP dedicada já entra DIRETO dentro de public_html
       # (foi criada apontando o "Diretório" pra lá) — por isso os
       # caminhos abaixo NUNCA mencionam "public_html" de novo, senão
       # cria uma pasta public_html dentro de public_html (bug real
       # encontrado em 17/09, achado pelo Raphael no FileZilla).
+      #
+      # BUG REAL #2 (achado 18/09): vite.config.js builda com
+      # base:'/sistema' (dist/index.html referencia /sistema/assets/...),
+      # mas este step subia pra RAIZ da conta (server-dir: ./) — nunca
+      # tocava a pasta /sistema/ de verdade, que é onde o app é servido.
+      # Resultado: nenhum deploy automático desde a criação do workflow
+      # (17/09) realmente atualizou o app em produção — confirmado 18/09
+      # comparando o hash do bundle JS ao vivo (index-kcwHMrxV.js) com
+      # os hashes gerados a cada build local do dia, nenhum batia.
       - name: Deploy — app React
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -42,7 +51,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./dist/
-          server-dir: ./
+          server-dir: ./sistema/
           exclude: |
             **/.git*
             **/.git*/**
