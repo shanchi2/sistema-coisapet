@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { useAudit }       from './hooks/useAudit'
 import { supabase }       from '../../lib/supabase'
+import { todayISO }       from '../../lib/dateBR'
 
 const PAGE_SIZE = 30
 
@@ -196,7 +197,7 @@ export function AuditPage() {
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a'); a.href = url
-    a.download = `coisapet-historico-${new Date().toISOString().split('T')[0]}.csv`
+    a.download = `coisapet-historico-${todayISO()}.csv`
     a.click(); URL.revokeObjectURL(url)
   }
 

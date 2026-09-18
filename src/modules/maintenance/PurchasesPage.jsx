@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { todayISO } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 const CAT_CFG = {
@@ -29,7 +30,7 @@ const EMPTY_FORM = {
 
 // ── Modal de conclusão de compra ──────────────────────────────
 function CompleteModal({ task, onClose, onConfirm }) {
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayISO()
   const [value,  setValue]  = useState('')
   const [date,   setDate]   = useState(today)
   const [saving, setSaving] = useState(false)
@@ -406,7 +407,7 @@ export function PurchasesPage() {
   }
 
   async function handleCompleteCompra({ value, date }) {
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayISO()
     await supabase.from('maintenance_tasks')
       .update({ status:'concluido', purchase_value: value||null, purchase_date: date||today, completed_at: date||today, updated_at: new Date().toISOString() })
       .eq('id', completingTask.id)

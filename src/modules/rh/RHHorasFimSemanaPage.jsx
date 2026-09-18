@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { CalendarDays, FileDown, Calendar, Pencil, X, DollarSign, Check } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { fmtTime, fmtH, Avatar, PageHeader, LoadingCard, EmptyState } from './rhHelpers'
+import { currentMonthISO } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 const fmtBRL = v => (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -277,7 +278,7 @@ export function RHHorasFimSemanaPage({ embedded = false } = {}) {
   const [records,   setRecords]   = useState([])
   const [loading,   setLoading]   = useState(true)
   const [selEmp,    setSelEmp]    = useState('')
-  const [month,     setMonth]     = useState(() => new Date().toISOString().slice(0, 7)) // YYYY-MM
+  const [month,     setMonth]     = useState(() => currentMonthISO()) // YYYY-MM
   const [generating,setGenerating]= useState(false)
   const [editModal, setEditModal] = useState(null) // { date, records }
   const [editingRate, setEditingRate] = useState(false)

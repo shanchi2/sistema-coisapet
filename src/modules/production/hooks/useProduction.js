@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { todayISO } from '../../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 function getSession() {
@@ -35,7 +36,7 @@ export function useProduction() {
   // recarregam ESSA data, não sempre "hoje", senão quem estivesse
   // olhando o histórico de outro dia voltava pra hoje sem querer a cada
   // clique.
-  const currentDateRef = useRef(new Date().toISOString().split('T')[0])
+  const currentDateRef = useRef(todayISO())
 
   // ── Busca os lotes com itens de UM dia (Fase 40: antes buscava TODO
   //    o histórico já criado, sem filtro — 3.173 itens acumulados desde
@@ -72,7 +73,7 @@ export function useProduction() {
     // 1. Cria o lote
     const { data: order, error: orderErr } = await supabase
       .from('production_orders')
-      .insert({ source, date: date || new Date().toISOString().split('T')[0], notes, created_by: session.id })
+      .insert({ source, date: date || todayISO(), notes, created_by: session.id })
       .select('id')
       .single()
 

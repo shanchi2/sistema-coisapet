@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Clock, LogIn, LogOut, Coffee, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { fmtTime, fmtDate, fmtH, Avatar, PageHeader, LoadingCard, EmptyState } from './rhHelpers'
+import { todayISO } from '../../lib/dateBR'
 
 const PUNCH_CFG = {
   entrada:      { label: 'Entrada',      bg: 'bg-emerald-100', text: 'text-emerald-700', dot: '#22c55e', Icon: LogIn    },
@@ -222,7 +223,7 @@ export function RHPontoPage({ embedded = false } = {}) {
   const [employees, setEmployees] = useState([])
   const [records,   setRecords]   = useState([])
   const [loading,   setLoading]   = useState(true)
-  const [selDate,   setSelDate]   = useState(new Date().toISOString().split('T')[0])
+  const [selDate,   setSelDate]   = useState(todayISO())
   const [selEmp,    setSelEmp]    = useState('')
 
   useEffect(() => { loadEmployees() }, [])
@@ -275,7 +276,7 @@ export function RHPontoPage({ embedded = false } = {}) {
       <div className="flex flex-wrap gap-3 items-center">
         <div className="flex items-center gap-2">
           <input type="date" className="input w-auto" value={selDate} onChange={e => setSelDate(e.target.value)} />
-          <button onClick={() => setSelDate(new Date().toISOString().split('T')[0])}
+          <button onClick={() => setSelDate(todayISO())}
             className="btn-secondary text-xs px-3 py-2">Hoje</button>
           <button onClick={() => {
             const d = new Date(selDate)

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { todayISO } from '../../../lib/dateBR'
 
 
 import toast from 'react-hot-toast'
@@ -287,7 +288,7 @@ export function useSystemUsers() {
       .select('id, due_date')
       .eq('employee_id', empId)
       .eq('status', 'pendente')
-      .gte('due_date', today.toISOString().split('T')[0])
+      .gte('due_date', todayISO())
 
     if (existing?.length) {
       await supabase.from('director_entries')

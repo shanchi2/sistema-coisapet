@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
 import toast from 'react-hot-toast'
 import { parseCurrency } from '../../../lib/masks'
+import { todayISO } from '../../../lib/dateBR'
 
 // Retorna sessão completa do usuário logado
 function getSession() {
@@ -336,7 +337,7 @@ export function useBills() {
 
   // Reativa uma conta cancelada
   async function reactivate(bill) {
-    const today     = new Date().toISOString().split('T')[0]
+    const today     = todayISO()
     const newStatus = bill.due_date < today ? 'vencido' : 'aberto'
     const { error } = await supabase
       .from('bills')

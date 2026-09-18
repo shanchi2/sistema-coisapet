@@ -8,6 +8,7 @@ import { usePurchaseBoard } from './hooks/usePurchaseBoard'
 import { useSuppliers } from '../financial/hooks/useSuppliers'
 import { supabase } from '../../lib/supabase'
 import { useSignedUrl } from '../../lib/signedUrlCache'
+import { todayISO } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 function fmtDT(d) {
@@ -23,8 +24,6 @@ function fmtPreco(v) {
   if (!n || isNaN(n)) return null
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
-function todayISO() { return new Date().toISOString().slice(0, 10) }
-
 const COLUMNS = [
   { key: 'a_comprar', label: 'A Comprar', icon: Package,       color: '#F43F5E', bg: 'bg-rose-50' },
   { key: 'comprado',  label: 'Comprado',  icon: ShoppingCart,  color: '#F59E0B', bg: 'bg-amber-50' },

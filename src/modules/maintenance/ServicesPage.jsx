@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { todayISO } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 // ── Configurações ──────────────────────────────────────────────
@@ -33,7 +34,7 @@ const SERVICES_DEFAULT = { ...EMPTY_FORM, type: 'servico' }
 
 // ── Modal de conclusão de compra ──────────────────────────────
 function CompleteModal({ task, onClose, onConfirm }) {
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayISO()
   const [value, setValue] = useState('')
   const [date,  setDate]  = useState(today)
   const [saving,setSaving]= useState(false)
@@ -521,7 +522,7 @@ export function ServicesPage() {
       return
     }
     // Serviço concluído ou qualquer reabertura — salva data automaticamente
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayISO()
     await supabase.from('maintenance_tasks')
       .update({
         status:       newStatus,
@@ -533,7 +534,7 @@ export function ServicesPage() {
   }
 
   async function handleCompleteCompra({ value, date }) {
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayISO()
     await supabase.from('maintenance_tasks')
       .update({
         status:         'concluido',

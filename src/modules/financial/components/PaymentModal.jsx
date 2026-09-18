@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Upload, FileText, Image, X, Plus, Trash2, Paperclip, CheckCircle2 } from 'lucide-react'
 import { Modal }         from '../../../components/ui/Modal'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
+import { todayISO }      from '../../../lib/dateBR'
 
 const ACCEPTED = ['application/pdf','image/jpeg','image/png','image/webp']
 const MAX_SIZE  = 10 * 1024 * 1024
@@ -123,7 +124,7 @@ export function PaymentModal({
   onUpload, onRemoveAttachment, onGetUrl,
   loading = false
 }) {
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayISO()
   const [amount,   setAmount]   = useState('')
   const [paidAt,   setPaidAt]   = useState(today)
   const [notes,    setNotes]    = useState('')

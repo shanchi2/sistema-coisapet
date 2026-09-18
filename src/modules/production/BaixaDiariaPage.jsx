@@ -5,10 +5,11 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { todayISO } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 // ─── Helpers ──────────────────────────────────────────────────────
-const today    = () => new Date().toISOString().split('T')[0]
+const today    = () => todayISO()
 const fmtDate  = d => !d ? '—' : new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short',year:'numeric'})
 const fmtQty   = (v,u) => `${Number(v).toLocaleString('pt-BR')} ${u??''}`
 

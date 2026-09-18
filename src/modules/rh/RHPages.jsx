@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase'
 import { fmtDate, fmtDT, fmtH, Avatar, Badge, PageHeader, LoadingCard, EmptyState, getSession, viewStorageFile } from './rhHelpers'
 import { Modal } from '../../components/ui/Modal'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { currentMonthISO } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 // ─── BANCO DE HORAS ───────────────────────────────────────────────
@@ -14,7 +15,7 @@ export function RHHorasPage() {
   const [employees, setEmployees] = useState([])
   const [data,      setData]      = useState([])
   const [loading,   setLoading]   = useState(true)
-  const [selMonth,  setSelMonth]  = useState(new Date().toISOString().slice(0,7))
+  const [selMonth,  setSelMonth]  = useState(currentMonthISO())
 
   useEffect(() => { loadEmployees() }, [])
   useEffect(() => { if (employees.length) calcHours() }, [selMonth, employees])

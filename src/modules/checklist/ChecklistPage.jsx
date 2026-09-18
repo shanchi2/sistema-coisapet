@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { todayISO } from '../../lib/dateBR'
 import {
   CheckSquare, Square, ChevronLeft, ChevronRight,
   Plus, Pencil, Trash2, X, Save, Loader2, Users,
@@ -22,7 +23,7 @@ function fmtDateFull(date) {
 }
 
 function todayStr() {
-  return new Date().toISOString().split('T')[0]
+  return todayISO()
 }
 
 function addDays(dateStr, n) {

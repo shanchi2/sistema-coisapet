@@ -17,6 +17,7 @@ import { OrdersReportsTab } from './OrdersReportsTab'
 import { useProducts }  from '../products/hooks/useProducts'
 import { EmptyState }   from '../../components/ui/EmptyState'
 import { useAuth }      from '../../contexts/AuthContext'
+import { todayISO }     from '../../lib/dateBR'
 
 // ─── Helpers ─────────────────────────────────────────────────────
 function fmtPreco(v) {
@@ -34,7 +35,6 @@ function fmtTimeOnly(d) {
   return new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
-function todayISO() { return new Date().toISOString().split('T')[0] }
 function addDays(iso, n) {
   const d = new Date(iso + 'T12:00:00')
   d.setDate(d.getDate() + n)

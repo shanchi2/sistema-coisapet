@@ -3,6 +3,7 @@ import { Tag, Loader2, AlertTriangle, ExternalLink, Zap, Gift, ArrowLeft, LogOut
 import toast from 'react-hot-toast'
 import { useMlInsights } from './hooks/useMlInsights'
 import { ConfirmWriteModal } from './ConfirmWriteModal'
+import { todayISO } from '../../lib/dateBR'
 
 function fmtMoney(v) {
   if (v == null || Number.isNaN(v)) return '—'
@@ -38,7 +39,7 @@ const WRITABLE_TYPES = new Set(['DEAL'])
 const STATUS_LABEL = { pending: 'Pendente', started: 'Ativa', finished: 'Encerrada' }
 const ITEM_STATUS_LABEL = { candidate: 'Candidato', pending: 'Aguardando início', started: 'Participando', finished: 'Encerrado' }
 
-function todayISODate() { return new Date().toISOString().slice(0, 10) }
+function todayISODate() { return todayISO() }
 function addDaysISODate(dateStr, days) {
   const d = new Date(`${dateStr}T00:00:00`)
   d.setDate(d.getDate() + days)

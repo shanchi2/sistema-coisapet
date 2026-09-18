@@ -7,14 +7,15 @@ import {
 import { supabase } from '../../lib/supabase'
 import { Modal } from '../../components/ui/Modal'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { todayISO, toISODateBR } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 // ─── Helpers ──────────────────────────────────────────────────────
 const fmtDate      = d => !d ? '—' : new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})
 const fmtDateFull  = d => !d ? '—' : new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})
 const fmtDateShort = d => !d ? '—' : new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})
-const today        = () => new Date().toISOString().split('T')[0]
-const subDays      = n => { const d=new Date(); d.setDate(d.getDate()-n); return d.toISOString().split('T')[0] }
+const today        = () => todayISO()
+const subDays      = n => { const d=new Date(); d.setDate(d.getDate()-n); return toISODateBR(d) }
 
 function getSession(){
   try{ return JSON.parse(localStorage.getItem('coisapet_session')||'{}') }catch{ return {} }

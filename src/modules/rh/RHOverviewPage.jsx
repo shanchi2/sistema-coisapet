@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Users, Clock, Calendar, FileText, AlertTriangle, TrendingUp } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { fmtTime, fmtDate, Avatar, Badge, PageHeader, LoadingCard } from './rhHelpers'
+import { todayISO } from '../../lib/dateBR'
 
 function KpiCard({ icon: Icon, label, value, sub, color, onClick }) {
   const colors = {
@@ -37,7 +38,7 @@ export function RHOverviewPage() {
 
   async function load() {
     setLoading(true)
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayISO()
 
     const [empR, recR, vacR, cerR] = await Promise.all([
       supabase.from('system_users').select('id,name,role,job_title,active').eq('active',true).order('name'),

@@ -5,6 +5,7 @@ import { fmtH, PageHeader, LoadingCard, Avatar } from './rhHelpers'
 import { RHPontoPage } from './RHPontoPage'
 import { RHPontoSemanalPage } from './RHPontoSemanalPage'
 import { RHHorasFimSemanaPage } from './RHHorasFimSemanaPage'
+import { todayISO } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -34,7 +35,7 @@ function isHomeOfficeDay(empId, dateStr, isHoliday) {
   if (dateStr < HOME_OFFICE_START) return false
   // Só conta quando o dia já aconteceu — dia futuro fica em branco
   // igual qualquer outro dia, sem "adiantar" horas que ainda não vieram.
-  if (dateStr > new Date().toISOString().split('T')[0]) return false
+  if (dateStr > todayISO()) return false
   const dow = new Date(dateStr + 'T12:00:00').getDay()
   return dow === 4 || dow === 5 // quinta, sexta
 }
@@ -484,7 +485,7 @@ function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, isHo
           </div>
         ) : (() => {
           // Sem registro — dia útil passado = mostra o débito
-          const today = new Date().toISOString().split('T')[0]
+          const today = todayISO()
           const isPast = date < today
           const isDebt = !isWeekend && !isHoliday && !isVacation && isPast && targetMin > 0
           return isDebt ? (

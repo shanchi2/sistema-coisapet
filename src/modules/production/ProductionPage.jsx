@@ -12,9 +12,9 @@ import { ConfirmDialog }    from '../../components/ui/ConfirmDialog'
 import { EmptyState }       from '../../components/ui/EmptyState'
 import { useAuth }          from '../../contexts/AuthContext'
 import { useSignedUrl }     from '../../lib/signedUrlCache'
+import { todayISO }         from '../../lib/dateBR'
 
 // ─── Helpers ─────────────────────────────────────────────────────
-function todayISO() { return new Date().toISOString().split('T')[0] }
 function addDays(iso, n) {
   const d = new Date(iso + 'T12:00:00')
   d.setDate(d.getDate() + n)

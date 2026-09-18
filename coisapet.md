@@ -123,6 +123,11 @@ reconstruir o raciocínio do zero.
   páginas estáticas novas (`doc/`, `links/manuais/`) ainda não foram
   subidas pro Hostinger** e o fluxo ainda não foi clicado no navegador de
   verdade. Ver Log e Próximos Passos.
+- **Fuso horário (18/09)**: `src/lib/dateBR.js` — SEMPRE usar
+  `todayISO()`/`currentMonthISO()`/`toISODateBR()` de lá pra calcular
+  "hoje"/"este mês", nunca `new Date().toISOString().split('T')[0]`
+  (isso é UTC, erra por ~3h todo fim de tarde/noite BRT). Corrigido em
+  25 arquivos, ver Log 18/09 (4ª parte).
 - **Estoque real de produto + Kits + Produto principal (17/09)**: chapa
   lançada em produção credita sozinha o estoque do(s) produto(s) que
   ela rende (`/produtos`, coluna Estoque); "Kit" virou tipo próprio
@@ -374,6 +379,64 @@ Claude não tem) — Raphael testa depois do deploy: gerar um picklist de
 um lote que hoje é conhecido por misturar dias, e observar o badge
 âmbar aparecer na Expedição na próxima vez que algum cron corrigir um
 pedido de verdade.
+
+---
+
+### 2026-09-18 (4ª parte) — Push Mechanism Live configurado + validado, e correção do fuso horário em 25 telas
+
+**Push Mechanism da Shopee**: as 2 causas anteriores (2ª parte) já
+deixavam tudo pronto do nosso lado, mas nenhuma venda real da Shopee
+estava chegando — confirmado com o Raphael que 2 pedidos reais
+("A Enviar", print do painel da Shopee) não existiam em lugar nenhum
+do nosso banco. Causa raiz real: o Push Mechanism (aviso automático de
+venda nova) só tinha sido configurado pro app de TESTE em 16/09 — a
+Shopee trata Live/Produção como configuração própria, que precisou ser
+cadastrada do zero. Guiei o Raphael pela tela (URL de callback, área de
+serviço, Chave de Parceiro Live Push — gerada e guardada como secret
+`SHOPEE_LIVE_PUSH_KEY`, ainda não usada pra verificar assinatura, fica
+pra depois) e ativação do evento `order_status_push` (código 3).
+Validado com 3 testes reais disparados pelo próprio painel da Shopee
+(`order_tracking_push`, `order_status_push` 2x) — todos chegaram e
+processaram certo no banco (erro "pedido não encontrado" é esperado,
+mesmo padrão já visto no sandbox: a Shopee usa pedido de exemplo
+genérico nesses testes, não um pedido real da loja). **Pipeline 100%
+funcional pra produção** — falta só a confirmação final com uma venda
+de verdade.
+
+**Fuso horário — bug real em 25 arquivos**: ao mostrar um horário de
+evento no chat, exibi ele cru em UTC sem converter — assustou o
+Raphael (achou que era um bug de verdade). Na investigação, achei que
+a preocupação dele tinha fundamento: existe sim um bug real (não só de
+exibição) espalhado pelo código — telas que calculam "hoje"/"este mês"
+via `new Date().toISOString().split('T')[0]` (sempre UTC) em vez do
+horário de Brasília, fazendo "hoje" virar errado por ~3h todo fim de
+tarde/noite (21h-23h59 BRT já é "amanhã" em UTC). Já tinha achado esse
+padrão em 3 arquivos de Produção (registrado na 2ª parte, "fora de
+escopo") — o pedido do Raphael foi resolver geral, "sempre alinhar data
+e hora com o padrão nosso", incluindo relatórios e batidas de ponto.
+
+Varredura completa (`grep` por todo `src/`) achou o padrão em **25
+arquivos ativos** — concentração forte em RH/Ponto (Ponto, Ponto
+Semanal, Relatório, Horas Fim de Semana, RHPages), mais Produção,
+Financeiro, Manutenção, Compras, Pedidos e Promoções ML. Criado
+`src/lib/dateBR.js` (`todayISO()`, `currentMonthISO()`,
+`toISODateBR()`, `dayProgressPercent()`) — usa `Intl.DateTimeFormat`
+com `timeZone: 'America/Sao_Paulo'` explícito, correto
+independentemente do fuso do computador (mais robusto que confiar no
+relógio do SO). Trocado em todos os 25 arquivos — só o cálculo de
+"hoje"/"este mês"/"isToday", nunca os campos de timestamp completo
+(`updated_at`, `paid_at`, `reviewed_at` etc., que já estavam certos,
+`TIMESTAMPTZ` é seguro por natureza). Achado de bônus, real e
+consequente: `RHRelatorioPage.jsx` usava esse cálculo errado pra
+decidir se um dia sem batida de ponto vira "débito" de horas pro
+funcionário — com o bug, o sistema podia marcar um dia ainda em
+andamento como falta antes da hora. Também achados (e deixados de
+propósito) 3 arquivos **mortos** com o mesmo bug (`RHPage.jsx`,
+`RHPontoSemanalPage (1).jsx`, `TimesheetPage.jsx` — nenhum importado em
+lugar nenhum, superados pelos arquivos atuais) — não mexi neles.
+
+`npm run build` limpo. Não testado clicando (login pede credencial que
+o Claude não tem).
 
 ---
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Clock, ChevronLeft, ChevronRight, FileDown, Calendar, Pencil, X, DollarSign, Check } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { fmtTime, fmtH, Avatar, PageHeader, LoadingCard, EmptyState } from './rhHelpers'
+import { todayISO } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 const fmtBRL = v => (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -333,7 +334,7 @@ export function RHPontoSemanalPage({ embedded = false } = {}) {
   const [records,   setRecords]   = useState([])
   const [loading,   setLoading]   = useState(true)
   const [selEmp,    setSelEmp]    = useState('')
-  const [weekStart, setWeekStart] = useState(() => getMonday(new Date().toISOString().split('T')[0]))
+  const [weekStart, setWeekStart] = useState(() => getMonday(todayISO()))
   const [generating,setGenerating]= useState(false)
   const [editModal, setEditModal] = useState(null) // { date, records } ou null
   const [editingRate, setEditingRate] = useState(false)
@@ -430,7 +431,7 @@ export function RHPontoSemanalPage({ embedded = false } = {}) {
                 <button onClick={() => setWeekStart(w => addDays(w, 7))} className="btn-secondary text-xs px-3 py-2">
                   <ChevronRight size={14} />
                 </button>
-                <button onClick={() => setWeekStart(getMonday(new Date().toISOString().split('T')[0]))} className="btn-secondary text-xs px-3 py-2">
+                <button onClick={() => setWeekStart(getMonday(todayISO()))} className="btn-secondary text-xs px-3 py-2">
                   Semana atual
                 </button>
               </div>
@@ -512,7 +513,7 @@ export function RHPontoSemanalPage({ embedded = false } = {}) {
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {days.map(({ date, label, summary }) => {
-                      const isToday = date === new Date().toISOString().split('T')[0]
+                      const isToday = date === todayISO()
                       return (
                         <tr key={date} className={isToday ? 'bg-rose-50/40' : ''}>
                           <td className="py-2.5 pr-3">

@@ -9,6 +9,7 @@ import {
 import toast from 'react-hot-toast'
 import { useSignedUrl } from '../../lib/signedUrlCache'
 import { useProductDocs } from './hooks/useProductDocs'
+import { todayISO, toISODateBR } from '../../lib/dateBR'
 
 const DOC_SITE_BASE = 'https://coisapet.com.br/doc'
 
@@ -727,7 +728,7 @@ export function BioLinksPage() {
               const total   = clicks.length
               const byLink  = clicks.reduce((acc, cl) => { acc[cl.link_title] = (acc[cl.link_title]||0)+1; return acc }, {})
               const topLink = Object.entries(byLink).sort((a,b)=>b[1]-a[1])[0]
-              const today   = clicks.filter(cl => cl.clicked_at?.startsWith(new Date().toISOString().split('T')[0])).length
+              const today   = clicks.filter(cl => cl.clicked_at && toISODateBR(new Date(cl.clicked_at)) === todayISO()).length
               return (
                 <div className="grid grid-cols-3 gap-3">
                   {[

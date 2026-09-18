@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { todayISO } from '../../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 function getSession() {
@@ -619,7 +620,7 @@ export function useOrders() {
       }
 
       if (prodItems.length > 0) {
-        const today = new Date().toISOString().split('T')[0]
+        const today = todayISO()
         const { data: prodOrder, error: prodErr } = await supabase
           .from('production_orders')
           .insert({

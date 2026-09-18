@@ -7,6 +7,7 @@ import {
 import { useBills }             from '../financial/hooks/useBills'
 import { useExpenseCategories } from '../financial/hooks/useExpenseCategories'
 import { useSuppliers }         from '../financial/hooks/useSuppliers'
+import { todayISO, toISODateBR } from '../../lib/dateBR'
 
 // ─── Helpers ────────────────────────────────────────────────────
 function fmtCurrency(v) {
@@ -240,9 +241,9 @@ export function ReportsPage() {
 
   // ── Contas a vencer (próximos 30 dias) ───────────────────────
   const upcoming = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayISO()
     const d30   = new Date(); d30.setDate(d30.getDate() + 30)
-    const d30s  = d30.toISOString().split('T')[0]
+    const d30s  = toISODateBR(d30)
     return bills
       .filter(b => ['aberto','parcial','vencido'].includes(b.status))
       .filter(b => b.due_date <= d30s)

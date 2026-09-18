@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Modal }    from '../../components/ui/Modal'
+import { todayISO } from '../../lib/dateBR'
 import toast        from 'react-hot-toast'
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -403,7 +404,7 @@ export function FinanceiroDiretoriaPage() {
 
   async function handlePay(entry) {
     // Abre o modal de edição com status=pago para preencher comprovante
-    setEditing({ ...entry, status: 'pago', paid_at: new Date().toISOString().split('T')[0], paid_amount: entry.amount })
+    setEditing({ ...entry, status: 'pago', paid_at: todayISO(), paid_amount: entry.amount })
     setModal(true)
   }
 
