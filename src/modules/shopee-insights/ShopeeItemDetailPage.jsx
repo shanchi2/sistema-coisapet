@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft, ExternalLink, Loader2, AlertTriangle, CheckCircle2, AlertCircle, HelpCircle,
   ImageOff, Play, Pause, Save, Package, Sparkles, Images, ClipboardList, TrendingUp,
-  Wand2, Trash2, ZoomIn, X as XIcon, Plus,
+  Wand2, Trash2, ZoomIn, X as XIcon, Plus, Upload,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useShopeeInsights } from './hooks/useShopeeInsights'
@@ -90,6 +90,7 @@ export function ShopeeItemDetailPage() {
   const [attachingImage, setAttachingImage] = useState(false)
   const [deleteImageTarget, setDeleteImageTarget] = useState(null)
   const [deletingImage, setDeletingImage] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
   const [zoomImageUrl, setZoomImageUrl] = useState(null)
 
   // Ficha Técnica
@@ -263,6 +264,29 @@ export function ShopeeItemDetailPage() {
     } finally {
       setAttachingImage(false)
       setPendingAttachImage(false)
+    }
+  }
+
+  // Upload manual — sobe a própria foto, sem IA nenhuma no meio (18/09,
+  // pedido do Raphael: antes só dava pra adicionar foto gerada por IA).
+  // Mesma RPC attach_item_image já usada pra foto gerada.
+  async function handleManualUpload(file) {
+    if (!file) return
+    setUploadingImage(true)
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result).split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      await attachItemImage(item.item_id, base64)
+      toast.success('Foto adicionada ao anúncio!')
+      await load()
+    } catch (err) {
+      toast.error('Erro ao subir a foto: ' + err.message)
+    } finally {
+      setUploadingImage(false)
     }
   }
 
@@ -541,6 +565,14 @@ export function ShopeeItemDetailPage() {
         {tab === 'imagens' && (
           <div className="space-y-4">
             <Card icon={Images} title="Fotos do anúncio" caption={`${item.images.length} foto${item.images.length === 1 ? '' : 's'} — a Shopee recomenda pelo menos 3`}>
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-3 w-fit">
+                <label className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${uploadingImage ? 'bg-slate-200 text-slate-400' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'}`}>
+                  {uploadingImage ? <Loader2 size={13} className="animate-spin"/> : <Upload size={13}/>}
+                  {uploadingImage ? 'Enviando...' : 'Enviar foto própria'}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploadingImage}
+                    onChange={e => { handleManualUpload(e.target.files?.[0]); e.target.value = '' }}/>
+                </label>
+              </div>
               <div className="flex flex-wrap gap-3">
                 {item.images.map((url, i) => (
                   <div key={item.image_id_list[i]} className="relative group w-20 h-20 rounded-lg overflow-hidden border border-slate-200">
@@ -567,8 +599,8 @@ export function ShopeeItemDetailPage() {
               {!imageSuggestions ? (
                 <button onClick={handleSuggestImages} disabled={loadingImageSuggestions}
                   className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors">
-                  {loadingImageSuggestions ? <Loader2 size={15} className="animate-spin"/> : <Wand2 size={15}/>}
-                  {loadingImageSuggestions ? 'Gerando ideias...' : 'Sugerir ideias de foto'}
+                  {loadingImageSuggestions ? <Loader2 size={15} className="animate-spin"/> : <Sparkles size={15}/>}
+                  {loadingImageSuggestions ? 'Gerando ideias...' : 'Sugestão de prompts'}
                 </button>
               ) : (
                 <div className="space-y-4">
@@ -621,7 +653,7 @@ export function ShopeeItemDetailPage() {
                   )}
 
                   <button onClick={handleSuggestImages} disabled={loadingImageSuggestions} className="text-xs text-slate-400 hover:text-slate-600">
-                    Gerar novas ideias
+                    Gerar novas sugestões (chama a IA de novo)
                   </button>
                 </div>
               )}

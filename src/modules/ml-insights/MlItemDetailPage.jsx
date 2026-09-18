@@ -4,7 +4,7 @@ import {
   ArrowLeft, Loader2, AlertTriangle, ExternalLink, Save, DollarSign,
   Type, Image as ImageIcon, TrendingUp, Package, Star, HeartPulse,
   ClipboardList, Megaphone, CheckCircle2, XCircle, ChevronDown, Sparkles, Wand2, Truck,
-  Zap, Play, Pause, History, LayoutGrid, ImageOff, ArrowRight, X as XIcon, ZoomIn, Trash2, Plus, Link2, ArrowRightLeft,
+  Zap, Play, Pause, History, LayoutGrid, ImageOff, ArrowRight, X as XIcon, ZoomIn, Trash2, Plus, Link2, ArrowRightLeft, Upload,
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -180,7 +180,7 @@ export function MlItemDetailPage() {
   const navigate = useNavigate()
   const {
     loading, error, fetchItemDetail, applyAttributes, suggestContent, applyContent, updateItemFields, fetchItemUpdateHistory,
-    suggestItemImages, generateItemImage, generateItemImageCustom, attachItemImage, deleteItemImage, reorderVariationPicture, unlinkVariationPicture, moveVariationPicture,
+    loadItemGallery, suggestItemImages, generateItemImage, generateItemImageCustom, attachItemImage, deleteItemImage, reorderVariationPicture, unlinkVariationPicture, moveVariationPicture,
   } = useMlInsights()
   const [detail, setDetail] = useState(null)
   const [updateHistory, setUpdateHistory] = useState(null)
@@ -203,6 +203,8 @@ export function MlItemDetailPage() {
   const [confirmModal, setConfirmModal] = useState(null) // null | 'attributes' | 'content' | 'quick' | 'image' | 'delete_image' | 'move_image'
   const [highlightQuick, setHighlightQuick] = useState(false)
   const [imageSuggestions, setImageSuggestions] = useState(null)
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
   const [selectedPictureUrl, setSelectedPictureUrl] = useState(null)
   const [selectedVariationId, setSelectedVariationId] = useState(null)
   // Pra ONDE a imagem gerada vai (destino) — decoupled de qual foto foi
@@ -369,16 +371,66 @@ export function MlItemDetailPage() {
     }
   }
 
-  async function handleSuggestImages() {
+  // Só carrega a galeria de fotos reais do anúncio — SEM chamar IA
+  // nenhuma (18/09: separado do botão de sugestão, que antes disparava
+  // as duas coisas juntas e gastava token da OpenAI mesmo quando o
+  // Raphael só queria ver/gerenciar fotos ou subir uma manualmente).
+  async function handleLoadGallery() {
     try {
-      const res = await suggestItemImages(itemId)
-      setImageSuggestions(res)
+      const res = await loadItemGallery(itemId)
+      setImageSuggestions({ suggestions: [], questions_considered: [], ...res })
       setSelectedPictureUrl(res.pictures?.[0]?.url || null)
       setSelectedVariationId(null)
       setTargetVariationId(null)
       setGeneratedImage(null)
     } catch (err) {
+      toast.error('Erro ao carregar galeria: ' + err.message)
+    }
+  }
+
+  // Só a IA (sugestões de prompt) — chamado separado, só quando o
+  // botão "Sugestão de prompts" é clicado de propósito. Mescla no
+  // estado que já existe (a galeria não muda).
+  async function handleFetchSuggestions() {
+    setLoadingSuggestions(true)
+    try {
+      const res = await suggestItemImages(itemId)
+      setImageSuggestions(prev => ({ ...prev, suggestions: res.suggestions, questions_considered: res.questions_considered }))
+    } catch (err) {
       toast.error('Erro ao gerar sugestões de imagem: ' + err.message)
+    } finally {
+      setLoadingSuggestions(false)
+    }
+  }
+
+  // Upload manual — o Raphael/equipe sobe a própria foto, sem IA
+  // nenhuma no meio. Mesma RPC attach_item_image já usada pra fotos
+  // geradas, só que a origem do base64 é um arquivo local em vez de
+  // uma geração da OpenAI.
+  async function handleManualUpload(file) {
+    if (!file) return
+    setUploadingImage(true)
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result).split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const res = await attachItemImage(itemId, base64, targetVariationId ?? undefined)
+      const newPic = { id: res.picture_id, url: `data:${file.type};base64,${base64}` }
+      setImageSuggestions(prev => {
+        if (!prev) return prev
+        if (targetVariationId) {
+          return { ...prev, variations: prev.variations.map(v => v.id === targetVariationId ? { ...v, pictures: [...v.pictures, newPic] } : v) }
+        }
+        return { ...prev, general_pictures: [...(prev.general_pictures || []), newPic] }
+      })
+      toast.success('Foto adicionada ao anúncio!')
+    } catch (err) {
+      toast.error('Erro ao subir a foto: ' + err.message)
+    } finally {
+      setUploadingImage(false)
     }
   }
 
@@ -928,12 +980,12 @@ export function MlItemDetailPage() {
         {tab === 'images' && (
           <div className="space-y-4">
             {!imageSuggestions ? (
-              <Card icon={ImageIcon} title="Imagens & IA" caption="Galeria organizada por variação + sugestões e geração de foto real por IA"
-                help="Carrega a galeria de fotos do anúncio (organizada por variação) e sugere ideias de imagem com base nas perguntas reais de compradores e na ficha técnica. Só carregar não grava nada.">
-                <button onClick={handleSuggestImages} disabled={loading}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors">
-                  {loading ? <Loader2 size={15} className="animate-spin"/> : <Wand2 size={15}/>}
-                  {loading ? 'Analisando anúncio...' : 'Carregar galeria e sugestões'}
+              <Card icon={ImageIcon} title="Imagens" caption="Galeria organizada por variação — pra subir foto própria ou gerar por IA"
+                help="Carrega a galeria de fotos do anúncio (organizada por variação), sem nenhuma chamada de IA. Só carregar não grava nada. Sugestões de prompt por IA ficam num botão separado, dentro da tela, só quando você quiser usar.">
+                <button onClick={handleLoadGallery} disabled={loading}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors">
+                  {loading ? <Loader2 size={15} className="animate-spin"/> : <ImageIcon size={15}/>}
+                  {loading ? 'Carregando...' : 'Carregar galeria'}
                 </button>
               </Card>
             ) : (
@@ -943,6 +995,18 @@ export function MlItemDetailPage() {
                 <Card icon={ImageIcon} title="Galeria de fotos" caption={imageSuggestions.variations?.length > 0 ? 'Uma seção por variação — clique numa foto pra usar como base da próxima geração' : 'Clique numa foto pra usar como base da próxima geração'}
                   help="Cada foto pode ser vista em tamanho grande (lupa) ou excluída do anúncio real (lixeira) passando o mouse por cima. Clicar na própria foto só seleciona ela como referência pra gerar uma imagem nova — não grava nada.">
                   <div className="space-y-4">
+                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      <label className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${uploadingImage ? 'bg-slate-200 text-slate-400' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'}`}>
+                        {uploadingImage ? <Loader2 size={13} className="animate-spin"/> : <Upload size={13}/>}
+                        {uploadingImage ? 'Enviando...' : 'Enviar foto própria'}
+                        <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploadingImage}
+                          onChange={e => { handleManualUpload(e.target.files?.[0]); e.target.value = '' }}/>
+                      </label>
+                      <span className="text-[11px] text-slate-400">
+                        Vai entrar em: <b className="text-slate-500">{targetVariationId ? imageSuggestions.variations?.find(v => v.id === targetVariationId)?.label : 'Galeria geral (sem variação)'}</b>
+                        {' '}— clique numa variação abaixo pra trocar o destino.
+                      </span>
+                    </div>
                     {imageSuggestions.variations?.length > 0 && imageSuggestions.variations.map(v => (
                       <div key={v.id}>
                         <p className="text-xs font-semibold text-slate-600 mb-1.5">{v.label} <span className="text-slate-400 font-normal">({v.pictures.length} foto{v.pictures.length === 1 ? '' : 's'})</span></p>
@@ -1008,37 +1072,55 @@ export function MlItemDetailPage() {
                         </select>
                       </div>
                     )}
-                    {imageSuggestions.questions_considered?.length > 0 ? (
-                      <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                        <p className="font-semibold text-slate-600 mb-1">Perguntas reais de compradores consideradas ({imageSuggestions.questions_considered.length}):</p>
-                        <ul className="list-disc pl-4 space-y-0.5">
-                          {imageSuggestions.questions_considered.map((q, i) => <li key={i}>{q}</li>)}
-                        </ul>
+                    {!imageSuggestions.suggestions.length && !imageSuggestions.questions_considered.length ? (
+                      <div className="flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-lg px-3 py-3">
+                        <Wand2 size={16} className="text-violet-500 shrink-0"/>
+                        <p className="text-xs text-violet-700 flex-1">Nenhuma sugestão gerada ainda — isso chama a IA (gasta crédito). Só clique se realmente quiser ideias prontas.</p>
+                        <button onClick={handleFetchSuggestions} disabled={loadingSuggestions}
+                          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
+                          {loadingSuggestions ? <Loader2 size={13} className="animate-spin"/> : <Sparkles size={13}/>}
+                          Sugestão de prompts
+                        </button>
                       </div>
                     ) : (
-                      <p className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                        Esse anúncio ainda não tem perguntas de comprador — as sugestões abaixo vieram só da ficha técnica e da descrição.
-                      </p>
-                    )}
-
-                    <div className="space-y-2">
-                      {imageSuggestions.suggestions.map((s, i) => (
-                        <div key={i} className="flex items-start justify-between gap-3 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2.5">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">{s.title}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">{s.reason}</p>
+                      <>
+                        {imageSuggestions.questions_considered?.length > 0 ? (
+                          <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                            <p className="font-semibold text-slate-600 mb-1">Perguntas reais de compradores consideradas ({imageSuggestions.questions_considered.length}):</p>
+                            <ul className="list-disc pl-4 space-y-0.5">
+                              {imageSuggestions.questions_considered.map((q, i) => <li key={i}>{q}</li>)}
+                            </ul>
                           </div>
-                          <button onClick={() => handleGenerateFromSuggestion(s)} disabled={generatingImage || !selectedPictureUrl}
-                            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
-                            {generatingImage ? <Loader2 size={13} className="animate-spin"/> : <Wand2 size={13}/>}
-                            Gerar essa imagem
-                          </button>
+                        ) : (
+                          <p className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                            Esse anúncio ainda não tem perguntas de comprador — as sugestões abaixo vieram só da ficha técnica e da descrição.
+                          </p>
+                        )}
+
+                        <div className="space-y-2">
+                          {imageSuggestions.suggestions.map((s, i) => (
+                            <div key={i} className="flex items-start justify-between gap-3 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2.5">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-800">{s.title}</p>
+                                <p className="text-xs text-slate-500 mt-0.5">{s.reason}</p>
+                              </div>
+                              <button onClick={() => handleGenerateFromSuggestion(s)} disabled={generatingImage || !selectedPictureUrl}
+                                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
+                                {generatingImage ? <Loader2 size={13} className="animate-spin"/> : <Wand2 size={13}/>}
+                                Gerar essa imagem
+                              </button>
+                            </div>
+                          ))}
+                          {!imageSuggestions.suggestions.length && (
+                            <p className="text-sm text-slate-400">A IA não conseguiu montar sugestões dessa vez — tente de novo ou use o prompt personalizado abaixo.</p>
+                          )}
                         </div>
-                      ))}
-                      {!imageSuggestions.suggestions.length && (
-                        <p className="text-sm text-slate-400">A IA não conseguiu montar sugestões dessa vez — tente de novo ou use o prompt personalizado abaixo.</p>
-                      )}
-                    </div>
+
+                        <button onClick={handleFetchSuggestions} disabled={loadingSuggestions} className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2">
+                          Gerar novas sugestões (chama a IA de novo)
+                        </button>
+                      </>
+                    )}
 
                     <div className="flex gap-2 flex-col sm:flex-row pt-1 border-t border-slate-100">
                       <input type="text" value={customInstruction} onChange={e => setCustomInstruction(e.target.value)}
@@ -1051,8 +1133,8 @@ export function MlItemDetailPage() {
                       </button>
                     </div>
 
-                    <button onClick={handleSuggestImages} disabled={loading} className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2">
-                      Recarregar galeria e sugestões
+                    <button onClick={handleLoadGallery} disabled={loading} className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2">
+                      Recarregar galeria (sem IA)
                     </button>
                   </div>
                 </Card>

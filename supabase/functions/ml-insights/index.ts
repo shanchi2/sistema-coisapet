@@ -1090,27 +1090,16 @@ function buildImageSuggestPrompt(item: any, currentDescription: string, attrs: a
   ].filter(Boolean).join('\n\n')
 }
 
-async function suggestItemImages(integration: any, itemId: string) {
+// Só a galeria (fotos reais do anúncio, organizadas por variação) —
+// NENHUMA chamada de IA aqui. Separado de suggestItemImages em 18/09
+// (pedido do Raphael): antes um botão só fazia as duas coisas juntas,
+// gastando token da OpenAI toda vez que alguém só queria ver/gerenciar
+// as fotos ou subir uma imagem própria manualmente.
+async function loadItemGallery(integration: any, itemId: string) {
   const item = await mlFetch(
     `/items/${itemId}?attributes=id,title,category_id,attributes,pictures,variations`,
     integration.access_token,
   )
-
-  let currentDescription = ''
-  try {
-    const descRes = await mlFetch(`/items/${itemId}/description`, integration.access_token)
-    currentDescription = descRes.plain_text || ''
-  } catch { /* item pode não ter descrição cadastrada ainda — segue com string vazia */ }
-
-  const [[catAttrsResult], questions] = await Promise.all([
-    Promise.allSettled([mlFetch(`/categories/${item.category_id}/attributes`, integration.access_token)]),
-    fetchItemQuestions(integration, itemId),
-  ])
-  const catAttrs = catAttrsResult.status === 'fulfilled' ? catAttrsResult.value : []
-  const attrs = buildFullAttributes(item, catAttrs)
-
-  const prompt = buildImageSuggestPrompt(item, currentDescription, attrs, questions)
-  const result = await callOpenAI(prompt, IMAGE_SUGGEST_SYSTEM_PROMPT)
 
   const pictures = (item.pictures || []).map((p: any) => ({ id: p.id, url: p.secure_url || p.url })).filter((p: any) => p.url)
   const pictureUrlById = new Map(pictures.map((p: any) => [p.id, p.url]))
@@ -1152,11 +1141,41 @@ async function suggestItemImages(integration: any, itemId: string) {
   }))
 
   return {
-    suggestions: (result?.suggestions || []).filter((s: any) => s?.title && s?.prompt),
-    questions_considered: questions,
     pictures,
     general_pictures: generalPictures,
     variations,
+  }
+}
+
+// Só a IA (sugestões de foto) — chamada separada, só quando o botão
+// "Sugestão de prompts" é clicado de propósito (18/09). Não repete o
+// fetch de pictures/variations, isso já é responsabilidade de
+// loadItemGallery.
+async function suggestItemImages(integration: any, itemId: string) {
+  const item = await mlFetch(
+    `/items/${itemId}?attributes=id,title,category_id,attributes,pictures,variations`,
+    integration.access_token,
+  )
+
+  let currentDescription = ''
+  try {
+    const descRes = await mlFetch(`/items/${itemId}/description`, integration.access_token)
+    currentDescription = descRes.plain_text || ''
+  } catch { /* item pode não ter descrição cadastrada ainda — segue com string vazia */ }
+
+  const [[catAttrsResult], questions] = await Promise.all([
+    Promise.allSettled([mlFetch(`/categories/${item.category_id}/attributes`, integration.access_token)]),
+    fetchItemQuestions(integration, itemId),
+  ])
+  const catAttrs = catAttrsResult.status === 'fulfilled' ? catAttrsResult.value : []
+  const attrs = buildFullAttributes(item, catAttrs)
+
+  const prompt = buildImageSuggestPrompt(item, currentDescription, attrs, questions)
+  const result = await callOpenAI(prompt, IMAGE_SUGGEST_SYSTEM_PROMPT)
+
+  return {
+    suggestions: (result?.suggestions || []).filter((s: any) => s?.title && s?.prompt),
+    questions_considered: questions,
   }
 }
 
@@ -2646,6 +2665,9 @@ serve(async (req) => {
       case 'apply_content':
         if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
         return json(await applyContent(integration, db, body.item_id, body.title, body.description))
+      case 'load_item_gallery':
+        if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
+        return json(await loadItemGallery(integration, body.item_id))
       case 'suggest_item_images':
         if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
         return json(await suggestItemImages(integration, body.item_id))

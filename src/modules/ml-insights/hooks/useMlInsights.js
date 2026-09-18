@@ -164,6 +164,16 @@ export function useMlInsights() {
   )
 
   // ── Imagens & IA ──────────────────────────────────────────────────
+  // Só a galeria de fotos reais do anúncio — NENHUMA chamada de IA
+  // (18/09: separado de suggestItemImages pra abrir a aba/ver/subir
+  // foto manual não gastar token da OpenAI à toa).
+  const loadItemGallery = useCallback(
+    (itemId) => run(() => callMlInsights({ action: 'load_item_gallery', item_id: itemId })),
+    [run],
+  )
+
+  // Só a IA (sugestões de foto) — chamado separado, só quando o botão
+  // "Sugestão de prompts" é clicado de propósito.
   const suggestItemImages = useCallback(
     (itemId) => run(() => callMlInsights({ action: 'suggest_item_images', item_id: itemId })),
     [run],
@@ -366,7 +376,7 @@ export function useMlInsights() {
     draftAnswer,
     fetchAccountDashboard,
     suggestContent, applyContent,
-    suggestItemImages, generateItemImage, generateItemImageCustom, attachItemImage, deleteItemImage, reorderVariationPicture, unlinkVariationPicture, moveVariationPicture,
+    loadItemGallery, suggestItemImages, generateItemImage, generateItemImageCustom, attachItemImage, deleteItemImage, reorderVariationPicture, unlinkVariationPicture, moveVariationPicture,
     fetchClaimsByProduct,
     fetchAdsCoverage, fetchAdsDashboard,
     fetchPromotionInvites, fetchPromotionCandidates, promotionJoinItem, promotionLeaveItem, fetchCoupons,
