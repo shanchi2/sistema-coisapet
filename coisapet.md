@@ -23,10 +23,17 @@ reconstruir o raciocínio do zero.
   exatamente como sempre funcionou, sem mudanças de comportamento.
 - **Shopee**: integrada via API própria desde 16/09 (sandbox) e **Live
   desde 18/09** (app aprovado pra produção) — ver bullet mais abaixo.
-- **Deploy**: desde 17/09, `git push` na `main` builda e sobe sozinho pro
-  Hostinger via GitHub Actions (`.github/workflows/deploy.yml`) — não
-  depende mais de FileZilla manual pro app React/`equipe`/`links`/`doc`.
-  Ver Log 17/09 (8ª parte).
+- **Deploy**: `git push` na `main` builda e sobe sozinho pro Hostinger
+  via GitHub Actions (`.github/workflows/deploy.yml`) — não depende
+  mais de FileZilla manual pro app React/`equipe`/`links`/`doc`.
+  Criado em 17/09, mas **só funcionou de verdade a partir de 18/09**
+  (5ª parte) — o workflow existia e reportava "sucesso" desde 17/09,
+  mas por uma cadeia de causas reais (Vite builda com base `/sistema`,
+  conta FTP com diretório fantasma, cache de estado desatualizado da
+  FTP-Deploy-Action) nenhum deploy realmente atualizava produção antes
+  disso. Conta FTP usada agora: "CoisaPet" — entra DIRETO dentro da
+  `public_html` de verdade, `server-dir` NUNCA deve levar prefixo
+  `public_html/` (ver [[coisapet_ftp_trust_observation]]).
 - **Projeto Supabase**: `lcybmdiqxmbqeuyeuhdj` (região Ohio/East US). CLI já
   linkado nessa pasta.
 - **Kanban Operacional**: qualquer usuário vê a task de qualquer um (decisão
@@ -437,6 +444,74 @@ lugar nenhum, superados pelos arquivos atuais) — não mexi neles.
 
 `npm run build` limpo. Não testado clicando (login pede credencial que
 o Claude não tem).
+
+---
+
+### 2026-09-18 (5ª parte) — CI/CD: a saga da pasta `public_html` fantasma (causa raiz real, de vez)
+
+Entre a 2ª e a 4ª parte, corrigi a senha do Daniel não sendo aplicada
+ao editar colaborador (`UserFormModal.jsx`/`useSystemUsers.js` —
+`update()` montava o payload pro `system_users` mas nunca incluía
+`password`; o campo "Nova senha" da ficha era decorativo. Corrigido
+reaproveitando o RPC `change_user_password`, sem forçar
+`must_change_password=true` depois, já que aqui é o admin definindo a
+senha final de propósito).
+
+**O problema maior do dia**: o Raphael reportou que a correção do
+Daniel (liberar "Lançar Produção", feita em 17/09) nunca tinha
+funcionado pra ele de verdade. Investigando, confirmei via curl que o
+`/equipe` ao vivo continha o código de ANTES da correção — e o app
+React principal também estava servindo um bundle antigo, sem nenhuma
+das mudanças de hoje. **Nenhum deploy automático desde a criação do
+CI/CD (17/09) tinha realmente atualizado produção**, apesar de todo
+run aparecer "sucesso" no GitHub Actions.
+
+Investigação em camadas, cada uma achando um problema real e
+corrigindo, mas revelando outro por baixo:
+
+1. **Vite builda com `base:'/sistema'`** (`vite.config.js`) — o passo
+   de deploy do app React subia pra raiz da conta (`server-dir: ./`),
+   nunca tocava a pasta `/sistema/` de verdade. Corrigido pra
+   `./sistema/`.
+2. Mesmo corrigido, nada mudava — a **conta FTP dedicada original**
+   ("deploy") tinha o "Diretório" configurado, sem querer, pra uma
+   pasta `public_html` que era ela mesma FAKE (criada dentro da
+   `public_html` de verdade, resíduo do primeiro deploy com bug de
+   17/09). Como FTP usa chroot na pasta configurada, nenhum
+   `server-dir` conseguia escapar dali pra cima — o Raphael achou isso
+   comparando as duas pastas no FileZilla e criou uma **3ª conta FTP
+   ("CoisaPet")**, essa sim com o diretório certo.
+3. Ainda assim, o deploy do app React continuava "bem-sucedido" sem
+   subir nada — o Raphael conseguiu o log de texto do passo pra mim
+   (não tenho acesso a log bruto do Actions sem token), e ali estava:
+   um `.ftp-deploy-sync-state.json` (cache de estado da própria
+   `FTP-Deploy-Action`, guardado no servidor pra não reenviar tudo
+   sempre) **desatualizado**, fazendo a action achar que o conteúdo já
+   batia com o servidor e pular o upload de verdade, mesmo sem bater.
+4. **Erro meu, o mais caro**: o Raphael já tinha confirmado, direto
+   pelo FileZilla (conexão nova, sem navegar em nada), que a conta
+   "CoisaPet" abre DIRETO dentro da `public_html` de verdade — mas eu
+   mantive o prefixo `public_html/` no `server-dir` por teoria própria
+   em cima do texto do campo "Diretório" do hPanel (que não bateu com
+   o comportamento real da conta o dia inteiro). Isso recriou a mesma
+   pasta fantasma que ele tinha acabado de apagar — motivo de razão
+   (e frustração real, registrada como feedback: "você deve estar me
+   zoando... estou gastando créditos atoa"). Corrigido de vez
+   removendo o prefixo dos 4 `server-dir`, confiando na observação
+   direta dele em vez de recalcular teoria — ver
+   [[coisapet_ftp_trust_observation]] (memória nova, guarda essa
+   lição).
+
+**Confirmado ao vivo, de verdade desta vez**: hash do bundle JS do app
+mudou (`index-kcwHMrxV.js` → `index--7HFvd_P.js`, primeira mudança
+real do dia inteiro), `Last-Modified` bate com o horário exato do
+deploy, `/equipe` com a correção do Daniel presente
+(`role==='producao'`). **CI/CD funcionando de ponta a ponta agora** —
+todo `git push` builda e sobe sozinho, sem FileZilla manual.
+
+**Pendente, sem pressa**: apagar a pasta `public_html` fantasma que
+ficou (de novo) dentro da `public_html` de verdade — lixo inofensivo,
+o Raphael já sabe onde está e vai limpar quando quiser.
 
 ---
 
