@@ -1,21 +1,13 @@
 import { useCallback, useState } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { callAiFunction } from '../../../lib/aiFunctionClient'
 
+// ml-insights tem ações que chamam a OpenAI (sugestão de título/
+// descrição) misturadas com leitura pura de dados do ML — reaproveita
+// o helper compartilhado (extração de erro real + alerta de crédito/
+// limite de gasto da OpenAI, achado real 18/09) pra ambos os casos.
 async function callMlInsights(payload) {
-  const { data, error } = await supabase.functions.invoke('ml-insights', { body: payload })
-  if (error) {
-    // Edge Functions devolvem o corpo de erro em error.context quando é
-    // uma resposta 4xx/5xx — tenta extrair a mensagem real do ML antes de
-    // cair no genérico do supabase-js.
-    let msg = error.message
-    try {
-      const parsed = await error.context?.json?.()
-      if (parsed?.error) msg = parsed.error
-    } catch { /* ignora — usa a mensagem genérica mesmo */ }
-    throw new Error(msg)
-  }
-  if (data?.error) throw new Error(data.error)
-  return data
+  return callAiFunction('ml-insights', payload.action, payload)
 }
 
 // Varre TODOS os anúncios ativos em lotes de `limit`, chamando a mesma
