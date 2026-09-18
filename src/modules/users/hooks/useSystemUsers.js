@@ -230,6 +230,25 @@ export function useSystemUsers() {
       throw error
     }
 
+    // Troca a senha se alguém digitou uma nova no campo "Nova senha" da
+    // ficha — antes esse campo era só decorativo aqui (o `clean` acima
+    // nunca incluiu `password`), a senha digitada na mão nunca era
+    // aplicada de verdade. Reaproveita o mesmo RPC do "Resetar senha"
+    // (p_old_password=null = admin, sem precisar saber a senha atual),
+    // mas SEM forçar must_change_password=true depois — aqui é o admin
+    // definindo a senha final de propósito, não uma senha temporária.
+    if (payload.password?.trim()) {
+      const { data: pwData, error: pwError } = await supabase.rpc('change_user_password', {
+        p_user_id:      id,
+        p_old_password: null,
+        p_new_password: payload.password.trim(),
+      })
+      if (pwError || pwData?.error) {
+        toast.error(pwData?.error ?? 'Erro ao trocar a senha.')
+        throw pwError || new Error(pwData?.error)
+      }
+    }
+
     // Salva contatos múltiplos se fornecidos
     if (payload.contacts !== undefined) {
       await supabase.from('employee_contacts').delete().eq('employee_id', id)
