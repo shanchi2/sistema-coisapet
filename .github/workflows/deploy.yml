@@ -4,8 +4,9 @@ name: Deploy CoisaPet para a Hostinger
 # resultado (+ as pastas estáticas que hoje sobem na mão via FileZilla)
 # direto pro public_html via FTP. Precisa de 3 secrets configurados em
 # Settings > Secrets and variables > Actions: FTP_HOST, FTP_USERNAME,
-# FTP_PASSWORD (conta FTP "CoisaPet", trocada em 18/09 — Diretório é a
-# raiz do domínio, um nível ACIMA do public_html; ver coisapet.md).
+# FTP_PASSWORD (conta FTP "CoisaPet", trocada em 18/09 — já entra
+# DIRETO dentro da public_html de verdade, confirmado no FileZilla;
+# ver coisapet.md).
 on:
   push:
     branches: [main]
@@ -31,32 +32,15 @@ jobs:
         run: npm run build
 
       # ── App React (dist/) → public_html/sistema/ ──────────────────
-      # BUG REAL #3 (achado 18/09): a conta FTP dedicada original
-      # ("deploy") tinha o Diretório configurado pra uma pasta
-      # "public_html" que era, ela mesma, FAKE — uma pasta com esse
-      # nome só que criada POR DENTRO da public_html real (resíduo do
-      # primeiro deploy com bug, 17/09). Como FTP usa chroot na pasta
-      # configurada, nenhum server-dir deste workflow conseguia
-      # "escapar" dali pra cima. Trocado pra uma 3ª conta FTP
-      # ("CoisaPet") cujo Diretório é um nível ACIMA do public_html
-      # (a raiz do domínio) — por isso todo server-dir abaixo inclui
-      # "public_html/".
-      #
-      # BUG REAL #4 (achado 18/09, mesmo dia): mesmo com o caminho já
-      # certo, o deploy do app React continuava "bem-sucedido" sem
-      # atualizar nada — causa era um `.ftp-deploy-sync-state.json`
-      # (cache de estado da própria FTP-Deploy-Action) desatualizado
-      # dentro da pasta public_html fake, fazendo a action achar
-      # (errado) que o conteúdo já batia com o servidor e pular o
-      # upload de verdade. Resolvido apagando a pasta public_html fake
-      # inteira (com o estado velho e cópias soltas de sistema/equipe/
-      # doc/links) direto pelo FileZilla — sem estado antigo pra
-      # confiar, a action volta a comparar/enviar de verdade.
-      #
-      # (Bugs #1 e #2, já corrigidos antes destes, ficam só de
-      # histórico: #1 era o "public_html/" duplicado quando ainda
-      # usávamos a conta antiga; #2 era o app React não apontar pra
-      # /sistema/, que vite.config.js exige via base:'/sistema'.)
+      # A conta FTP "CoisaPet" já ABRE DIRETO dentro da public_html de
+      # verdade (confirmado pelo Raphael no FileZilla, 18/09 — conexão
+      # nova, sem navegar em nada, já mostra assets/blog/doc/equipe/
+      # etc. direto) — por isso NUNCA escrever "public_html/" de novo
+      # aqui, senão cria uma pasta public_html dentro de public_html
+      # (bug real, aconteceu mais de uma vez hoje até a gente confiar
+      # nessa observação em vez de ficar teorizando em cima do texto do
+      # campo "Diretório" do hPanel, que não bateu com o comportamento
+      # real da conta).
       - name: Deploy — app React
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -64,7 +48,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./dist/
-          server-dir: ./public_html/sistema/
+          server-dir: ./sistema/
           exclude: |
             **/.git*
             **/.git*/**
@@ -80,7 +64,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./equipe/
-          server-dir: ./public_html/equipe/
+          server-dir: ./equipe/
 
       - name: Deploy — /links (bio links + manuais)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -89,7 +73,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./links/
-          server-dir: ./public_html/links/
+          server-dir: ./links/
 
       - name: Deploy — /doc (manuais de produto)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -98,4 +82,4 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./doc/
-          server-dir: ./public_html/doc/
+          server-dir: ./doc/
