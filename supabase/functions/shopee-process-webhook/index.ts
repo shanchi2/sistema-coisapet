@@ -90,8 +90,11 @@ function shopeeBatchDayStart(now = new Date()): Date {
 }
 
 async function notifyNewOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<typeof mapShopeeOrderToCommon>, itemsToInsert: any[], cancelado: boolean) {
+  // 19/09 (pedido do Raphael): pop-up de venda em tempo real agora é só
+  // pra admin (diretoria) e producao — tirou administrativo dessa lista
+  // específica (continua vendo tudo normal pelo sininho).
   const { data: admins } = await db.from('system_users')
-    .select('id').in('role', ['admin', 'administrativo']).eq('active', true)
+    .select('id').in('role', ['admin', 'producao']).eq('active', true)
   if (!admins?.length) return
 
   const semSku = itemsToInsert.filter(it => !it.sku_encontrado).length

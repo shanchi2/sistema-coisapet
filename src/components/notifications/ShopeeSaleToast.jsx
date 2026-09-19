@@ -1,12 +1,16 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { ShoppingBag, X } from 'lucide-react'
+import { ShoppingBag, X, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 function getSession() {
   try { return JSON.parse(localStorage.getItem('coisapet_session') || '{}') } catch { return {} }
 }
+
+// Só admin (diretoria) e produção veem esses avisos — pedido do
+// Raphael, 19/09 (mesmo critério do MLSaleToast.jsx).
+const ALLOWED_ROLES = ['admin', 'producao']
 
 // Mesmo "cha-ching" do MLSaleToast.jsx — som já pensado pra não confundir
 // com o beep do chat, reaproveitado igual pra manter os dois avisos de
@@ -47,27 +51,73 @@ function flashTitle(message) {
   document.addEventListener('visibilitychange', onVisible)
 }
 
+const CLEAR_ALL_ID = 'shopee-sale-clear-all'
+
 // Mesmo padrão do MLSaleToast.jsx — card separado (não reaproveita o
 // mesmo componente) porque a marca é diferente (Shopee = laranja) e cada
 // plataforma tem seu próprio tipo de notificação (`shopee_order_synced`,
 // gravado por shopee-process-webhook). Montado uma vez em Layout.jsx.
+//
+// 19/09 (pedido do Raphael): mesmo ajuste do MLSaleToast.jsx — mostra
+// tudo que ainda não foi visto ao abrir a tela (não só daqui pra
+// frente), cada card fica até fechar manualmente, e ganhou "Limpar
+// tudo" quando tem mais de um pendente.
 export function ShopeeSaleToast() {
   const navigate = useNavigate()
+  const pendingRef = useRef(new Map())
 
   useEffect(() => {
     const me = getSession()
-    if (!me?.id) return
+    if (!me?.id || !ALLOWED_ROLES.includes(me.role)) return
 
-    function showSaleToast(n) {
-      if (navigator.vibrate) navigator.vibrate(60)
-      playSaleChime()
-      flashTitle('🛒 Novo pedido!')
-      window.dispatchEvent(new CustomEvent('shopee-sale-ping'))
-      toast.custom(t => <ShopeeSaleCard t={t} notification={n} onOpen={() => { navigate(n.link || '/pedidos'); toast.dismiss(t.id) }} />, {
-        position: 'bottom-right',
-        duration: 10000,
-      })
+    async function markRead(id) {
+      pendingRef.current.delete(id)
+      updateClearAllControl()
+      await supabase.from('notifications').update({ read: true }).eq('id', id)
     }
+
+    function updateClearAllControl() {
+      const n = pendingRef.current.size
+      if (n > 1) {
+        toast.custom(t => <ClearAllPill count={n} onClear={clearAll} />, { id: CLEAR_ALL_ID, position: 'bottom-right', duration: Infinity })
+      } else {
+        toast.dismiss(CLEAR_ALL_ID)
+      }
+    }
+
+    async function clearAll() {
+      const ids = [...pendingRef.current.keys()]
+      pendingRef.current.clear()
+      ids.forEach(id => toast.dismiss(id))
+      toast.dismiss(CLEAR_ALL_ID)
+      if (ids.length) await supabase.from('notifications').update({ read: true }).in('id', ids)
+    }
+
+    function showSaleToast(n, { playSound = true } = {}) {
+      pendingRef.current.set(n.id, true)
+      if (playSound) {
+        if (navigator.vibrate) navigator.vibrate(60)
+        playSaleChime()
+        flashTitle('🛒 Novo pedido!')
+        window.dispatchEvent(new CustomEvent('shopee-sale-ping'))
+      }
+      toast.custom(t => (
+        <ShopeeSaleCard t={t} notification={n}
+          onOpen={() => { markRead(n.id); navigate(n.link || '/pedidos'); toast.dismiss(n.id) }}
+          onClose={() => { markRead(n.id); toast.dismiss(n.id) }} />
+      ), { position: 'bottom-right', duration: Infinity, id: n.id })
+      updateClearAllControl()
+    }
+
+    // Ao abrir a tela: mostra tudo que ainda não foi visto, sem som
+    // (só a chegada em tempo real toca o "cha-ching").
+    async function loadUnseen() {
+      const { data } = await supabase.from('notifications')
+        .select('*').eq('user_id', me.id).eq('type', 'shopee_order_synced').eq('read', false)
+        .order('created_at', { ascending: true }).limit(30)
+      ;(data || []).forEach(n => showSaleToast(n, { playSound: false }))
+    }
+    loadUnseen()
 
     const channel = supabase
       .channel(`shopee-sale-toast:${me.id}`)
@@ -86,18 +136,28 @@ export function ShopeeSaleToast() {
     // Helper de teste visual — só mostra o card (+ som + título), não
     // grava nada no banco. Cole no console: testShopeeToast()
     window.testShopeeToast = (overrides = {}) => showSaleToast({
+      id: 'teste-' + Date.now(),
       body: 'João da Silva · São Paulo/SP\n3 itens · ✅ Vai pro picklist',
       link: '/pedidos',
       ...overrides,
     })
 
-    return () => { supabase.removeChannel(channel); delete window.testShopeeToast }
+    return () => { supabase.removeChannel(channel); delete window.testShopeeToast; toast.dismiss(CLEAR_ALL_ID) }
   }, [navigate])
 
   return null
 }
 
-function ShopeeSaleCard({ t, notification, onOpen }) {
+function ClearAllPill({ count, onClear }) {
+  return (
+    <button onClick={onClear}
+      className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg transition-colors">
+      <Trash2 size={13} /> Limpar tudo ({count})
+    </button>
+  )
+}
+
+function ShopeeSaleCard({ t, notification, onOpen, onClose }) {
   const [linha1, linha2] = (notification.body || '').split('\n')
   const cancelado = (linha2 || '').includes('🚫')
   const semSku    = (linha2 || '').includes('⚠️')
@@ -133,7 +193,7 @@ function ShopeeSaleCard({ t, notification, onOpen }) {
           )}
         </div>
         <button
-          onClick={e => { e.stopPropagation(); toast.dismiss(t.id) }}
+          onClick={e => { e.stopPropagation(); onClose() }}
           className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-black/5 transition-colors"
           aria-label="Fechar"
         >
