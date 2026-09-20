@@ -100,12 +100,17 @@ h1,h2,h3{font-family:"DM Serif Display",serif;font-weight:400}
   html{font-size:16px}
   .manual{width:100%}
   .container{padding-left:5mm;padding-right:5mm}
-  .hero{padding-top:7mm;padding-bottom:9mm}
-  .hero-main{grid-template-columns:1fr;gap:6mm}
-  .hero h1{font-size:2rem;line-height:1.05}
+  .hero{padding-top:6mm;padding-bottom:7mm}
+  .hero-main{grid-template-columns:1fr;gap:6mm;padding-top:6mm}
+  .hero h1{font-size:1.7rem;line-height:1.15;margin-top:1mm}
+  .hero p{font-size:.8rem}
   .hero-tags{justify-content:flex-start}
-  .about{grid-template-columns:1fr}
-  .about-copy{padding:7mm 5mm}
+  /* gap: .about nunca teve espaçamento entre as colunas (proposital no
+     desktop — foto colada no texto, efeito revista); empilhado no
+     celular isso virava foto grudada embaixo do texto, sem respiro
+     nenhum ("disputando espaço"). Achado 20/09. */
+  .about{grid-template-columns:1fr;gap:5mm}
+  .about-copy{padding:7mm 5mm 0 5mm}
   .about-copy p{max-width:100%}
   /* height fixo (não min-height): empilhado, a foto perde a altura que
      antes vinha "de graça" da coluna de texto ao lado (grid de 2
