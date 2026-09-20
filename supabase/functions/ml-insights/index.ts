@@ -6,6 +6,7 @@
 // usuário logado no sistema poder chamar.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { adminClient, getValidIntegration, mlFetch, mlWrite } from '../_shared/mercadolivre.ts'
+import { toISODateBR } from '../_shared/dateBR.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -1955,9 +1956,17 @@ async function fetchAccountRevenueFromMl(integration: any, days: number) {
   const avgTicket   = orderCount > 0 ? revenue / orderCount : 0
   const revenueChangePct = revenuePrev > 0 ? (revenue - revenuePrev) / revenuePrev : null
 
+  // toISODateBR (não slice/getDay direto): `order.date_created` vem da
+  // API do ML com fuso -04:00 (confirmado ao vivo, NÃO é -03:00 de
+  // Brasília nem UTC) — cortar a string direto pegava o dia nesse fuso
+  // errado, então venda entre meia-noite e 1h da manhã (Brasília) caía
+  // no dia ANTERIOR. Achado 20/09 (Raphael: total de ontem à noite
+  // batendo estranho com o de hoje de manhã — confirmado comparando a
+  // resposta bruta da API antes/depois da correção, ~R$1000 migrou de
+  // um dia pro outro só nessa correção).
   const byDay = new Map<string, { revenue: number; units: number }>()
   notCancelled(current).forEach((o: any) => {
-    const day = String(o.date_created).slice(0, 10)
+    const day = toISODateBR(new Date(o.date_created))
     const entry = byDay.get(day) ?? { revenue: 0, units: 0 }
     entry.revenue += o.total_amount || 0
     entry.units += itemUnits(o)
@@ -1969,7 +1978,9 @@ async function fetchAccountRevenueFromMl(integration: any, days: number) {
   const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
   const byWeekday = WEEKDAYS.map((label) => ({ label, revenue: 0 }))
   notCancelled(current).forEach((o: any) => {
-    const d = new Date(o.date_created).getDay()
+    // dia da semana em Brasília — new Date().getDay() usaria o fuso do
+    // servidor (UTC), errando perto da meia-noite igual o `day` acima.
+    const d = new Date(toISODateBR(new Date(o.date_created)) + 'T12:00:00').getDay()
     byWeekday[d].revenue += o.total_amount || 0
   })
 
@@ -1988,7 +1999,7 @@ async function fetchAccountRevenueFromMl(integration: any, days: number) {
 
   const calendar: { date: string; has_sale: boolean }[] = []
   for (let i = 29; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 86400000).toISOString().slice(0, 10)
+    const d = toISODateBR(new Date(now.getTime() - i * 86400000))
     calendar.push({ date: d, has_sale: byDay.has(d) })
   }
 
