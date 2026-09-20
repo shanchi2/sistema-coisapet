@@ -151,8 +151,9 @@ export function ShopeeSaleToast() {
 function ClearAllPill({ count, onClear }) {
   return (
     <button onClick={onClear}
-      className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg transition-colors">
-      <Trash2 size={13} /> Limpar tudo ({count})
+      className="w-64 max-w-[80vw] flex items-center justify-center gap-2 text-white text-xs font-black px-4 py-2.5 rounded-xl shadow-2xl transition-transform hover:scale-[1.03] active:scale-95"
+      style={{ background: 'linear-gradient(135deg, #F43F5E, #E11D48)', boxShadow: '0 8px 20px -6px rgba(225,29,72,.6)' }}>
+      <Trash2 size={14} /> Limpar tudo ({count})
     </button>
   )
 }
@@ -168,41 +169,41 @@ function ShopeeSaleCard({ t, notification, onOpen, onClose }) {
     <div
       onClick={onOpen}
       role="button"
-      className="cursor-pointer w-96 max-w-[92vw] bg-white rounded-2xl shadow-2xl border-2 overflow-hidden"
+      className="cursor-pointer w-64 max-w-[80vw] bg-white rounded-xl shadow-2xl border-2 overflow-hidden"
       style={{
         borderColor: accent,
         animation: `${t.visible ? 'shopee-toast-in' : 'shopee-toast-out'} .3s cubic-bezier(.2,.8,.2,1) forwards`,
-        boxShadow: `0 12px 32px -10px ${accent}55, 0 4px 12px -4px rgba(15,23,42,0.15)`,
+        boxShadow: `0 8px 20px -8px ${accent}55, 0 3px 8px -3px rgba(15,23,42,0.15)`,
       }}
     >
       <style>{`
         @keyframes shopee-toast-in  { 0% { opacity:0; transform:translateY(14px) scale(.94);} 60% { transform:translateY(-2px) scale(1.015);} 100% { opacity:1; transform:translateY(0) scale(1);} }
         @keyframes shopee-toast-out { from { opacity:1; transform:translateY(0) scale(1);} to { opacity:0; transform:translateY(8px) scale(.95);} }
       `}</style>
-      <div className="flex items-start gap-3.5 p-5" style={{ background: wash }}>
-        <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 text-2xl shadow-md" style={{ background: '#EE4D2D' }}>
+      <div className="flex items-start gap-2 p-2.5" style={{ background: wash }}>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm shadow-md" style={{ background: '#EE4D2D' }}>
           🛒
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[15px] font-black text-slate-800 leading-tight">Nova venda — Shopee!</p>
-          {linha1 && <p className="text-[13px] text-slate-600 mt-1 truncate font-semibold">{linha1}</p>}
+          <p className="text-[11px] font-black text-slate-800 leading-tight">Nova venda — Shopee!</p>
+          {linha1 && <p className="text-[10px] text-slate-600 mt-0.5 truncate font-semibold">{linha1}</p>}
           {linha2 && (
-            <p className="text-[13px] font-extrabold mt-1.5" style={{ color: accent }}>
+            <p className="text-[10px] font-extrabold mt-0.5 truncate" style={{ color: accent }}>
               {linha2}
             </p>
           )}
         </div>
         <button
           onClick={e => { e.stopPropagation(); onClose() }}
-          className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-black/5 transition-colors"
+          className="shrink-0 p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-black/5 transition-colors"
           aria-label="Fechar"
         >
-          <X size={16} />
+          <X size={13} />
         </button>
       </div>
-      <div className="px-5 py-3 bg-white">
-        <span className="flex items-center gap-1.5 text-xs font-bold" style={{ color: '#EE4D2D' }}>
-          <ShoppingBag size={13} /> Ver em Pedidos →
+      <div className="px-2.5 py-1.5 bg-white">
+        <span className="flex items-center gap-1 text-[10px] font-bold" style={{ color: '#EE4D2D' }}>
+          <ShoppingBag size={10} /> Ver em Pedidos →
         </span>
       </div>
     </div>
