@@ -252,7 +252,14 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
       }
     }
 
-    await notifyNewOrder(db, parsed, itemsToInsert, cancelado)
+    // Pacote (N produtos) = N eventos de webhook separados, um por produto
+    // (ver mapOrderToCommon) — sem essa checagem, cada produto do MESMO
+    // pacote disparava seu próprio pop-up/som, mesmo sendo uma venda só.
+    // `was_inserted` só é true na 1ª vez que essa `orders` (mesmo
+    // num_venda/pack_id) é criada — os produtos seguintes do pacote caem
+    // em UPDATE (upsert_orders_safe), não notificam de novo. Achado 19/09
+    // (pedido #17616993, 2 itens, pop-up + som duplicados).
+    if (savedOrder.was_inserted) await notifyNewOrder(db, parsed, itemsToInsert, cancelado)
   }
 
   // Recalcula os totais reais do lote — mesmo raciocínio de saveImportedOrders
