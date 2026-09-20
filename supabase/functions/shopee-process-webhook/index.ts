@@ -14,6 +14,7 @@
 // fica reprocessando) mas não perde o `raw_payload` pra investigar.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { adminClient, getValidIntegration, shopeeFetch } from '../_shared/shopee.ts'
+import { toISODateBR } from '../_shared/dateBR.ts'
 
 const ORDER_STATUS_PT: Record<string, string> = {
   UNPAID:              'Aguardando pagamento',
@@ -57,8 +58,11 @@ function mapShopeeOrderToCommon(order: any) {
     data:       order.create_time ? new Date(order.create_time * 1000).toISOString() : null,
     // Shopee manda o prazo próprio de envio (ship_by_date) — igual já
     // fazemos na importação manual (parseShopeeXlsx), sem corte de
-    // horário artificial tipo o do ML.
-    shipping_deadline: order.ship_by_date ? new Date(order.ship_by_date * 1000).toISOString().slice(0, 10) : null,
+    // horário artificial tipo o do ML. `ship_by_date` é epoch UTC — usa
+    // o dia em Brasília (toISODateBR), nunca o dia em UTC direto (achado
+    // 19/09: pedido perto da meia-noite ia pro dia seguinte no
+    // Picklist/Expedição por causa disso).
+    shipping_deadline: order.ship_by_date ? toISODateBR(new Date(order.ship_by_date * 1000)) : null,
     estado,
     desc:       null,
     comprador:  order.buyer_username || addr.name || null,
@@ -187,7 +191,7 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
   if (hasNewItems) {
     if (!cancelado) {
       const { data: prodOrder, error: prodErr } = await db.from('production_orders')
-        .insert({ source: 'shopee', date: new Date().toISOString().split('T')[0], import_batch_id: batchId, notes: `Sincronizado via API — pedido ${parsed.num}` })
+        .insert({ source: 'shopee', date: toISODateBR(new Date()), import_batch_id: batchId, notes: `Sincronizado via API — pedido ${parsed.num}` })
         .select('id').single()
       if (!prodErr && prodOrder) {
         await db.from('production_order_items').insert(itemsToInsert.map(it => ({

@@ -6,6 +6,7 @@
 // roda no browser (hook React) e isso aqui roda no servidor.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { adminClient, getValidIntegration, mlFetch } from '../_shared/mercadolivre.ts'
+import { toISODateBR } from '../_shared/dateBR.ts'
 
 // ⚠️ Mapeamento a CONFIRMAR no spike de descoberta (Fase 0 do plano):
 // comparar contra pedidos reais antes de ligar em produção. Errar o
@@ -236,7 +237,7 @@ async function saveOrder(db: ReturnType<typeof adminClient>, parsed: ReturnType<
     // de distribuição dele, a CoisaPet não tem esse pedido fisicamente.
     if (!cancelado && !parsed.is_full) {
       const { data: prodOrder, error: prodErr } = await db.from('production_orders')
-        .insert({ source: 'ml', date: new Date().toISOString().split('T')[0], import_batch_id: batchId, notes: `Sincronizado via API — pedido ${parsed.num}` })
+        .insert({ source: 'ml', date: toISODateBR(new Date()), import_batch_id: batchId, notes: `Sincronizado via API — pedido ${parsed.num}` })
         .select('id').single()
       if (!prodErr && prodOrder) {
         await db.from('production_order_items').insert(itemsToInsert.map(it => ({

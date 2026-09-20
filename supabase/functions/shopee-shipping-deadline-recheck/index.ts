@@ -16,6 +16,7 @@
 // cron fecha esse buraco, igual o ml-shipping-deadline-recheck já faz.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { adminClient, getValidIntegration, shopeeFetch } from '../_shared/shopee.ts'
+import { toISODateBR } from '../_shared/dateBR.ts'
 
 const BATCH_LIMIT = 30
 
@@ -57,7 +58,9 @@ serve(async () => {
         })
         const order = detail?.response?.order_list?.[0]
         const shipByDate: number | null = order?.ship_by_date ?? null
-        const shipByDateStr = shipByDate ? new Date(shipByDate * 1000).toISOString().slice(0, 10) : null
+        // ship_by_date é epoch UTC — dia em Brasília, nunca o dia em UTC
+        // direto (mesmo achado do shopee-process-webhook, 19/09).
+        const shipByDateStr = shipByDate ? toISODateBR(new Date(shipByDate * 1000)) : null
         checkedCount++
 
         if (shipByDateStr) {
