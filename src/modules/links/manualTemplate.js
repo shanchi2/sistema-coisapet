@@ -33,10 +33,11 @@ h1,h2,h3{font-family:"DM Serif Display",serif;font-weight:400}
 .topbar img{height:22px}
 .brand{font-size:1.2rem;font-weight:700;letter-spacing:.4px}
 .guide{color:#b89d88;font-size:.6rem;font-weight:600;text-transform:uppercase;letter-spacing:1.5px}
-.hero-main{padding-top:10mm;display:grid;grid-template-columns:1.25fr .75fr;gap:12mm;align-items:end}
+.hero-main{padding-top:10mm}
 .hero-label{color:var(--caramel);font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1.7px}
-.hero h1{margin-top:2mm;font-size:4.3rem;line-height:.95}
-.hero p{max-width:110mm;margin-top:4mm;color:#d8c8ba;font-size:.85rem;line-height:1.6}
+.hero h1{margin-top:2mm;font-size:2.5rem;line-height:1.1}
+.hero-sub-row{margin-top:6mm;display:grid;grid-template-columns:1.25fr .75fr;gap:12mm;align-items:end}
+.hero p{max-width:110mm;color:#d8c8ba;font-size:.85rem;line-height:1.6}
 .hero-tags{display:flex;flex-wrap:wrap;gap:2mm;justify-content:flex-end}
 .hero-tags span{padding:5px 9px;border:1px solid rgba(255,255,255,.17);font-size:.58rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:#d9c5b5}
 .about{display:grid;grid-template-columns:1.15fr .85fr;border-bottom:1px solid var(--line)}
@@ -101,7 +102,8 @@ h1,h2,h3{font-family:"DM Serif Display",serif;font-weight:400}
   .manual{width:100%}
   .container{padding-left:5mm;padding-right:5mm}
   .hero{padding-top:6mm;padding-bottom:7mm}
-  .hero-main{grid-template-columns:1fr;gap:6mm;padding-top:6mm}
+  .hero-main{padding-top:6mm}
+  .hero-sub-row{grid-template-columns:1fr;gap:4mm;margin-top:4mm}
   .hero h1{font-size:1.7rem;line-height:1.15;margin-top:1mm}
   .hero p{font-size:.8rem}
   .hero-tags{justify-content:flex-start}
@@ -143,12 +145,14 @@ export function buildManualHtml({ productName, imageUrl, sections = {} }) {
 <section class="hero"><div class="container">
   <div class="topbar"><img src="${LOGO_URL}" alt="Coisa Pet"/><div class="guide">Guia de preparo e uso seguro</div></div>
   <div class="hero-main">
-    <div>
+    <div class="hero-title-row">
       ${s.tagline ? `<div class="hero-label">${escapeHtml(s.tagline)}</div>` : ''}
       <h1>${escapeHtml(productName || 'Produto CoisaPet')}</h1>
-      ${s.hero_intro ? `<p>${escapeHtml(s.hero_intro)}</p>` : ''}
     </div>
-    ${Array.isArray(s.tags) && s.tags.length ? `<div class="hero-tags">${s.tags.map(t => `<span>${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+    <div class="hero-sub-row">
+      <div>${s.hero_intro ? `<p>${escapeHtml(s.hero_intro)}</p>` : ''}</div>
+      ${Array.isArray(s.tags) && s.tags.length ? `<div class="hero-tags">${s.tags.map(t => `<span>${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+    </div>
   </div>
 </div></section>`
 
