@@ -11,76 +11,84 @@ function escapeHtml(s) {
 const STYLE = `
 :root{--coffee:#35170a;--terracotta:#7b3f22;--caramel:#b8794e;--cream:#f3e5c4;--cream-light:#faf1dd;--paper:#fffaf0;--white:#fffdf8;--ink:#32180d;--muted:#796457;--line:#dfd0bb}
 *{box-sizing:border-box;margin:0;padding:0}
-html{background:#d9d5cf}
+/* Todo font-size abaixo é em rem — a "escala" do manual inteiro é 1
+   número só (o font-size do html). Na tela usa um valor grande, legível
+   de verdade (achado 20/09: fonte original tava pensada só pra impressão
+   em A4, ilegível na tela — parecia "caixas muito largas com pouco texto"
+   porque o texto é que tava minúsculo, não o espaço em excesso). Na
+   impressão/PDF volta pro tamanho original (10px de base), que é o
+   design aprovado pro papel. */
+html{background:#d9d5cf;font-size:19px}
+@media(max-width:640px){html{font-size:16px}}
 body{font-family:"DM Sans",sans-serif;color:var(--ink);line-height:1.45}
-.manual{width:210mm;margin:20px auto;background:var(--paper);box-shadow:0 18px 50px rgba(0,0,0,.14)}
+.manual{width:210mm;max-width:100%;margin:20px auto;background:var(--paper);box-shadow:0 18px 50px rgba(0,0,0,.14)}
 .container{padding-left:14mm;padding-right:14mm}
 h1,h2,h3{font-family:"DM Serif Display",serif;font-weight:400}
 .section{padding-top:11mm;padding-bottom:11mm}
-.section-title{margin-bottom:6mm;display:flex;justify-content:space-between;align-items:flex-end;gap:10mm}
-.section-title h2{font-size:22px;line-height:1}
-.section-title p{max-width:85mm;font-size:7px;line-height:1.55;color:var(--muted);text-align:right}
-.label{display:block;margin-bottom:2mm;color:var(--terracotta);font-size:6px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px}
+.section-title{margin-bottom:6mm;display:flex;justify-content:space-between;align-items:flex-end;gap:10mm;flex-wrap:wrap}
+.section-title h2{font-size:2.2rem;line-height:1}
+.section-title p{max-width:85mm;font-size:.7rem;line-height:1.55;color:var(--muted);text-align:right}
+.label{display:block;margin-bottom:2mm;color:var(--terracotta);font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px}
 .hero{background:var(--coffee);color:var(--cream);padding-top:10mm;padding-bottom:12mm}
 .topbar{display:flex;align-items:center;justify-content:space-between;padding-bottom:7mm;border-bottom:1px solid rgba(255,255,255,.12)}
 .topbar img{height:22px}
-.brand{font-size:12px;font-weight:700;letter-spacing:.4px}
-.guide{color:#b89d88;font-size:6px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px}
+.brand{font-size:1.2rem;font-weight:700;letter-spacing:.4px}
+.guide{color:#b89d88;font-size:.6rem;font-weight:600;text-transform:uppercase;letter-spacing:1.5px}
 .hero-main{padding-top:10mm;display:grid;grid-template-columns:1.25fr .75fr;gap:12mm;align-items:end}
-.hero-label{color:var(--caramel);font-size:6px;font-weight:700;text-transform:uppercase;letter-spacing:1.7px}
-.hero h1{margin-top:2mm;font-size:43px;line-height:.95}
-.hero p{max-width:110mm;margin-top:4mm;color:#d8c8ba;font-size:8.5px;line-height:1.6}
+.hero-label{color:var(--caramel);font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1.7px}
+.hero h1{margin-top:2mm;font-size:4.3rem;line-height:.95}
+.hero p{max-width:110mm;margin-top:4mm;color:#d8c8ba;font-size:.85rem;line-height:1.6}
 .hero-tags{display:flex;flex-wrap:wrap;gap:2mm;justify-content:flex-end}
-.hero-tags span{padding:5px 9px;border:1px solid rgba(255,255,255,.17);font-size:5.8px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:#d9c5b5}
+.hero-tags span{padding:5px 9px;border:1px solid rgba(255,255,255,.17);font-size:.58rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:#d9c5b5}
 .about{display:grid;grid-template-columns:1.15fr .85fr;border-bottom:1px solid var(--line)}
 .about-copy{padding:11mm 10mm 11mm 14mm}
-.about-copy h2{font-size:22px;line-height:1.05}
-.about-copy p{margin-top:4mm;max-width:105mm;font-size:8px;line-height:1.65;color:var(--muted)}
+.about-copy h2{font-size:2.2rem;line-height:1.05}
+.about-copy p{margin-top:4mm;max-width:105mm;font-size:.8rem;line-height:1.65;color:var(--muted)}
 .about-image{min-height:55mm;background:#e8d5b4;display:flex;align-items:center;justify-content:center;text-align:center;overflow:hidden}
 .about-image img{width:100%;height:100%;object-fit:cover}
-.about-image strong{display:block;color:var(--terracotta);font-family:"DM Serif Display",serif;font-size:14px;font-weight:400}
-.about-image span{display:block;margin-top:1mm;color:#9d795f;font-size:5.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.4px}
+.about-image strong{display:block;color:var(--terracotta);font-family:"DM Serif Display",serif;font-size:1.4rem;font-weight:400}
+.about-image span{display:block;margin-top:1mm;color:#9d795f;font-size:.55rem;font-weight:700;text-transform:uppercase;letter-spacing:1.4px}
 .benefits{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:3mm}
 .card{border:1px solid var(--line);background:var(--white);padding:5mm}
-.card-number{display:block;margin-bottom:5mm;color:var(--caramel);font-family:"DM Serif Display",serif;font-size:18px}
-.card h3{font-family:"DM Sans",sans-serif;font-size:8px;font-weight:700}
-.card p{margin-top:2mm;color:var(--muted);font-size:6.5px;line-height:1.5}
+.card-number{display:block;margin-bottom:5mm;color:var(--caramel);font-family:"DM Serif Display",serif;font-size:1.8rem}
+.card h3{font-family:"DM Sans",sans-serif;font-size:.8rem;font-weight:700}
+.card p{margin-top:2mm;color:var(--muted);font-size:.65rem;line-height:1.5}
 .compatibility-section{background:var(--cream-light)}
 .animals{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);background:var(--paper)}
 .animal{padding:5mm;min-height:25mm;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
-.animal small{color:var(--caramel);font-family:"DM Serif Display",serif;font-size:13px}
-.animal strong{display:block;margin-top:1mm;font-size:7.5px}
-.animal span{display:block;margin-top:1mm;color:var(--muted);font-size:6px}
+.animal small{color:var(--caramel);font-family:"DM Serif Display",serif;font-size:1.3rem}
+.animal strong{display:block;margin-top:1mm;font-size:.75rem}
+.animal span{display:block;margin-top:1mm;color:var(--muted);font-size:.6rem}
 .alert{margin-top:3mm;padding:5mm 6mm;display:grid;grid-template-columns:35mm 1fr;gap:6mm;align-items:center;background:var(--coffee);color:var(--cream)}
-.alert small{color:var(--caramel);font-size:5.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px}
-.alert strong{display:block;margin-top:1mm;font-size:8px}
-.alert p{color:#d9c9bc;font-size:6.5px;line-height:1.5}
+.alert small{color:var(--caramel);font-size:.55rem;font-weight:700;text-transform:uppercase;letter-spacing:1.2px}
+.alert strong{display:block;margin-top:1mm;font-size:.8rem}
+.alert p{color:#d9c9bc;font-size:.65rem;line-height:1.5}
 .usage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:3mm}
 .usage{background:var(--cream-light);padding:5mm;min-height:35mm}
-.usage-number{color:var(--terracotta);font-family:"DM Serif Display",serif;font-size:18px}
-.usage strong{display:block;margin-top:4mm;font-size:7.5px}
-.usage p{margin-top:1.5mm;color:var(--muted);font-size:6.2px;line-height:1.45}
+.usage-number{color:var(--terracotta);font-family:"DM Serif Display",serif;font-size:1.8rem}
+.usage strong{display:block;margin-top:4mm;font-size:.75rem}
+.usage p{margin-top:1.5mm;color:var(--muted);font-size:.62rem;line-height:1.45}
 .amount{padding-top:8mm;padding-bottom:8mm;background:var(--terracotta);color:#fff}
 .amount-inner{display:grid;grid-template-columns:.8fr 1.2fr;gap:12mm;align-items:center}
-.amount small{color:#edc0a4;font-size:5.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.4px}
-.amount h2{margin-top:1mm;font-size:18px}
+.amount small{color:#edc0a4;font-size:.55rem;font-weight:700;text-transform:uppercase;letter-spacing:1.4px}
+.amount h2{margin-top:1mm;font-size:1.8rem}
 .formula{padding:5mm;border:1px solid rgba(255,255,255,.25);text-align:center}
-.formula-main{font-size:10px;font-weight:700;letter-spacing:.3px}
-.formula p{margin-top:2mm;color:#f2d8c8;font-size:5.7px}
+.formula-main{font-size:1rem;font-weight:700;letter-spacing:.3px}
+.formula p{margin-top:2mm;color:#f2d8c8;font-size:.57rem}
 .care-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:3mm}
 .care-card{padding:5mm;border:1px solid var(--line);background:var(--white)}
 .care-card.dark{border-color:var(--coffee);background:var(--coffee);color:var(--cream)}
 .care-card .label{margin-bottom:3mm}
-.care-card h3{font-family:"DM Sans",sans-serif;font-size:8px;font-weight:700}
+.care-card h3{font-family:"DM Sans",sans-serif;font-size:.8rem;font-weight:700}
 .care-card ul{list-style:none;margin-top:3mm}
-.care-card li{position:relative;margin-top:2mm;padding-left:3.5mm;color:var(--muted);font-size:6.3px;line-height:1.45}
+.care-card li{position:relative;margin-top:2mm;padding-left:3.5mm;color:var(--muted);font-size:.63rem;line-height:1.45}
 .care-card.dark li{color:#d8c8ba}
 .care-card li:before{content:"";position:absolute;left:0;top:3px;width:1.4mm;height:1.4mm;background:var(--caramel)}
 .footer{padding-top:8mm;padding-bottom:8mm;background:var(--cream)}
 .footer-inner{display:flex;justify-content:space-between;align-items:center}
 .footer .brand{color:var(--coffee)}
-.footer p{color:#806553;font-size:5.8px;text-transform:uppercase;letter-spacing:1.2px}
-@media print{html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}.manual{margin:0;box-shadow:none}}
+.footer p{color:#806553;font-size:.58rem;text-transform:uppercase;letter-spacing:1.2px}
+@media print{html{font-size:10px;background:#fff}body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}.manual{margin:0;box-shadow:none;max-width:none}}
 @media(max-width:850px){html{background:#fff}body{overflow-x:auto}.manual{margin:0 auto}}
 `
 

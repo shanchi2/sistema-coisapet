@@ -18,13 +18,26 @@
     font-family:-apple-system,sans-serif;font-size:12px;font-weight:600;
     padding:8px 12px;border-radius:10px;backdrop-filter:blur(4px);
   }
+  .pdf-btn{
+    position:fixed;top:12px;right:12px;z-index:10;
+    background:#b8794e;color:#fff;border:0;cursor:pointer;
+    font-family:-apple-system,sans-serif;font-size:12px;font-weight:700;
+    padding:8px 14px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.35);
+    display:none;align-items:center;gap:6px;
+  }
+  .pdf-btn:active{transform:scale(.96)}
+  @media print{.back,.pdf-btn{display:none!important}}
 </style>
 </head>
 <body>
 <a href="#" id="back-link" class="back">← Voltar</a>
+<button id="pdf-btn" class="pdf-btn" type="button">⬇ Baixar PDF</button>
 <div id="msg" class="msg">Carregando manual…</div>
 <!-- srcdoc sem allow-same-origin/allow-scripts: o HTML upado roda isolado,
-     sem acesso ao nosso domínio nem execução de script embutido. -->
+     sem acesso ao nosso domínio nem execução de script embutido. print()
+     no contentWindow continua funcionando mesmo sandboxed (fica na lista
+     de métodos cross-origin permitidos por spec) — é assim que o botão
+     de PDF aqui fora consegue imprimir só o conteúdo do manual. -->
 <iframe id="frame" sandbox="allow-popups"></iframe>
 
 <script>
@@ -57,11 +70,17 @@ async function load() {
     frame.srcdoc = html
     frame.style.display = 'block'
     msg.style.display = 'none'
+    document.getElementById('pdf-btn').style.display = 'inline-flex'
   } catch (e) {
     msg.textContent = 'Erro ao carregar o manual. Tente novamente.'
   }
 }
 load()
+
+document.getElementById('pdf-btn').addEventListener('click', () => {
+  const frame = document.getElementById('frame')
+  frame.contentWindow?.print()
+})
 </script>
 </body>
 </html>
