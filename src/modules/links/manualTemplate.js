@@ -19,7 +19,6 @@ const STYLE = `
    impressão/PDF volta pro tamanho original (10px de base), que é o
    design aprovado pro papel. */
 html{background:#d9d5cf;font-size:19px}
-@media(max-width:640px){html{font-size:16px}}
 body{font-family:"DM Sans",sans-serif;color:var(--ink);line-height:1.45}
 .manual{width:210mm;max-width:100%;margin:20px auto;background:var(--paper);box-shadow:0 18px 50px rgba(0,0,0,.14)}
 .container{padding-left:14mm;padding-right:14mm}
@@ -89,7 +88,37 @@ h1,h2,h3{font-family:"DM Serif Display",serif;font-weight:400}
 .footer .brand{color:var(--coffee)}
 .footer p{color:#806553;font-size:.58rem;text-transform:uppercase;letter-spacing:1.2px}
 @media print{html{font-size:10px;background:#fff}body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}.manual{margin:0;box-shadow:none;max-width:none}}
-@media(max-width:850px){html{background:#fff}body{overflow-x:auto}.manual{margin:0 auto}}
+@media(max-width:850px){html{background:#fff}.manual{margin:0 auto}}
+/* Celular (achado 20/09: o layout em grade de N colunas — cards,
+   compatibilidade, hero lado a lado — ficava espremido/ilegível numa
+   tela estreita, mesmo já com fonte maior). Empilha tudo em 1 coluna e
+   reduz os respiros de página (pensados pra A4/desktop) pra caber sem
+   desperdiçar tela. grid-template-columns tem !important porque cada
+   card recebe a contagem de colunas inline (style=) na hora de montar
+   o HTML — sem isso o inline vence a media query. */
+@media(max-width:680px){
+  html{font-size:16px}
+  .manual{width:100%}
+  .container{padding-left:5mm;padding-right:5mm}
+  .hero{padding-top:7mm;padding-bottom:9mm}
+  .hero-main{grid-template-columns:1fr;gap:6mm}
+  .hero h1{font-size:2.6rem}
+  .hero-tags{justify-content:flex-start}
+  .about{grid-template-columns:1fr}
+  .about-copy{padding:7mm 5mm}
+  .about-copy p{max-width:100%}
+  .about-image{min-height:40mm}
+  .section{padding-top:8mm;padding-bottom:8mm}
+  .section-title{flex-direction:column;align-items:flex-start;gap:2mm}
+  .section-title p{text-align:left;max-width:100%}
+  .benefits,.usage-grid,.care-grid{grid-template-columns:1fr!important}
+  .animals{grid-template-columns:1fr}
+  .animal{border-right:0}
+  .alert{grid-template-columns:1fr;gap:3mm;text-align:center}
+  .amount-inner{grid-template-columns:1fr;gap:5mm;text-align:center}
+  .formula{margin:0 auto}
+  .footer-inner{flex-direction:column;gap:3mm;text-align:center}
+}
 `
 
 const LOGO_URL = 'https://lcybmdiqxmbqeuyeuhdj.supabase.co/storage/v1/object/public/manuals/logos/logo-coisapet-2026.png'
