@@ -16,7 +16,7 @@ const ALLOWED_ROLES = ['admin', 'producao']
 // Som próprio do ML (arquivo enviado pelo Raphael, 19/09) — fica em
 // public/sounds/ pra servir direto, sem passar pelo bundler. Se não
 // carregar por algum motivo, cai no "cha-ching" sintético de reserva.
-const ML_SOUND_URL = `${import.meta.env.BASE_URL}sounds/mercadolivre.mp3`
+const ML_SOUND_URL = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/sounds/mercadolivre.mp3`
 
 function playSaleChime() {
   try {

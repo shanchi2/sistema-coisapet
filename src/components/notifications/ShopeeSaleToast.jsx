@@ -16,7 +16,7 @@ const ALLOWED_ROLES = ['admin', 'producao']
 // public/sounds/ pra servir direto, sem passar pelo bundler. Se não
 // carregar por algum motivo, cai no "cha-ching" sintético de reserva
 // (mesmo padrão do MLSaleToast.jsx).
-const SHOPEE_SOUND_URL = `${import.meta.env.BASE_URL}sounds/shopee.mp3`
+const SHOPEE_SOUND_URL = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/sounds/shopee.mp3`
 
 function playSaleChime() {
   try {
