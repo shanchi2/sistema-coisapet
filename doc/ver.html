@@ -26,19 +26,25 @@
     display:none;align-items:center;gap:6px;
   }
   .pdf-btn:active{transform:scale(.96)}
-  @media print{.back,.pdf-btn{display:none!important}}
+  @media print{
+    .back,.pdf-btn,.msg{display:none!important}
+    html,body{background:#fff;height:auto}
+    iframe{height:auto!important}
+  }
 </style>
 </head>
 <body>
 <a href="#" id="back-link" class="back">← Voltar</a>
 <button id="pdf-btn" class="pdf-btn" type="button">⬇ Baixar PDF</button>
 <div id="msg" class="msg">Carregando manual…</div>
-<!-- srcdoc sem allow-same-origin/allow-scripts: o HTML upado roda isolado,
-     sem acesso ao nosso domínio nem execução de script embutido. print()
-     no contentWindow continua funcionando mesmo sandboxed (fica na lista
-     de métodos cross-origin permitidos por spec) — é assim que o botão
-     de PDF aqui fora consegue imprimir só o conteúdo do manual. -->
-<iframe id="frame" sandbox="allow-popups"></iframe>
+<!-- sandbox com allow-same-origin mas SEM allow-scripts: o HTML upado
+     continua sem conseguir rodar nenhum script embutido (é isso que
+     protege contra XSS), só ganhamos leitura do DOM dele daqui de fora
+     pra medir a altura real na hora de imprimir — sem isso o PDF saía
+     cortado numa tela só (iframe.contentWindow.print() é instável em
+     navegador de celular, principalmente Safari/iPad — achado 20/09,
+     Raphael reportou o botão não funcionando no tablet). -->
+<iframe id="frame" sandbox="allow-popups allow-same-origin"></iframe>
 
 <script>
 const SUPABASE_URL = 'https://lcybmdiqxmbqeuyeuhdj.supabase.co'
@@ -79,7 +85,23 @@ load()
 
 document.getElementById('pdf-btn').addEventListener('click', () => {
   const frame = document.getElementById('frame')
-  frame.contentWindow?.print()
+  // Expande o iframe pra altura real do conteúdo antes de imprimir —
+  // senão só sai a primeira tela (a impressão trata "height:100%" como
+  // a altura da janela, não do documento inteiro). Restaura depois.
+  let originalHeight = frame.style.height
+  try {
+    const h = frame.contentDocument.documentElement.scrollHeight
+    frame.style.height = h + 'px'
+  } catch (e) { /* segue sem expandir — melhor tentar imprimir do que travar */ }
+
+  function restore() {
+    frame.style.height = originalHeight
+    window.removeEventListener('afterprint', restore)
+  }
+  window.addEventListener('afterprint', restore)
+  setTimeout(restore, 5000) // rede de segurança — nem todo navegador dispara afterprint
+
+  window.print()
 })
 </script>
 </body>
