@@ -102,12 +102,17 @@ h1,h2,h3{font-family:"DM Serif Display",serif;font-weight:400}
   .container{padding-left:5mm;padding-right:5mm}
   .hero{padding-top:7mm;padding-bottom:9mm}
   .hero-main{grid-template-columns:1fr;gap:6mm}
-  .hero h1{font-size:2.6rem}
+  .hero h1{font-size:2rem;line-height:1.05}
   .hero-tags{justify-content:flex-start}
   .about{grid-template-columns:1fr}
   .about-copy{padding:7mm 5mm}
   .about-copy p{max-width:100%}
-  .about-image{min-height:40mm}
+  /* height fixo (não min-height): empilhado, a foto perde a altura que
+     antes vinha "de graça" da coluna de texto ao lado (grid de 2
+     colunas com align-items:stretch) — sem isso o img.height:100% não
+     tem base pra calcular e a foto sai do tamanho natural dela, que
+     pode ser enorme. Achado 20/09. */
+  .about-image{height:55vw;min-height:auto;max-height:280px}
   .section{padding-top:8mm;padding-bottom:8mm}
   .section-title{flex-direction:column;align-items:flex-start;gap:2mm}
   .section-title p{text-align:left;max-width:100%}
