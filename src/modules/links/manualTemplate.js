@@ -18,7 +18,7 @@ const STYLE = `
    porque o texto é que tava minúsculo, não o espaço em excesso). Na
    impressão/PDF volta pro tamanho original (10px de base), que é o
    design aprovado pro papel. */
-html{background:#d9d5cf;font-size:19px}
+html{background:#d9d5cf;font-size:19px;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{font-family:"DM Sans",sans-serif;color:var(--ink);line-height:1.45}
 .manual{width:210mm;max-width:100%;margin:20px auto;background:var(--paper);box-shadow:0 18px 50px rgba(0,0,0,.14)}
 .container{padding-left:14mm;padding-right:14mm}
