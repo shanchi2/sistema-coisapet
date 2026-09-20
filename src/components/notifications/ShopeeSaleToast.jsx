@@ -12,10 +12,24 @@ function getSession() {
 // Raphael, 19/09 (mesmo critério do MLSaleToast.jsx).
 const ALLOWED_ROLES = ['admin', 'producao']
 
-// Mesmo "cha-ching" do MLSaleToast.jsx — som já pensado pra não confundir
-// com o beep do chat, reaproveitado igual pra manter os dois avisos de
-// venda consistentes entre si.
+// Som próprio da Shopee (arquivo enviado pelo Raphael, 19/09) — fica em
+// public/sounds/ pra servir direto, sem passar pelo bundler. Se não
+// carregar por algum motivo, cai no "cha-ching" sintético de reserva
+// (mesmo padrão do MLSaleToast.jsx).
+const SHOPEE_SOUND_URL = `${import.meta.env.BASE_URL}sounds/shopee.mp3`
+
 function playSaleChime() {
+  try {
+    const audio = new Audio(SHOPEE_SOUND_URL)
+    audio.volume = 0.7
+    audio.play().catch(() => playFallbackChime())
+  } catch {
+    playFallbackChime()
+  }
+}
+
+// Reserva — usado se o mp3 não existir/não carregar.
+function playFallbackChime() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
     ;[{ freq: 1046.5, start: 0 }, { freq: 1318.5, start: 0.09 }].forEach(({ freq, start }) => {

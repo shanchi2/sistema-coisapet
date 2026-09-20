@@ -13,10 +13,24 @@ function getSession() {
 // (na prática só quem tinha notificação no banco: admin+administrativo).
 const ALLOWED_ROLES = ['admin', 'producao']
 
-// "Cha-ching" curto — duas notas subindo (dó-mi), gerado na hora, sem
-// depender de arquivo de áudio. Timbre diferente do bipe único do chat
-// (ChatWidget.jsx), de propósito, pra não confundir os dois avisos.
+// Som próprio do ML (arquivo enviado pelo Raphael, 19/09) — fica em
+// public/sounds/ pra servir direto, sem passar pelo bundler. Se não
+// carregar por algum motivo, cai no "cha-ching" sintético de reserva.
+const ML_SOUND_URL = `${import.meta.env.BASE_URL}sounds/mercadolivre.mp3`
+
 function playSaleChime() {
+  try {
+    const audio = new Audio(ML_SOUND_URL)
+    audio.volume = 0.7
+    audio.play().catch(() => playFallbackChime())
+  } catch {
+    playFallbackChime()
+  }
+}
+
+// Reserva — usado se o mp3 não existir/não carregar. Duas notas
+// subindo (dó-mi), gerado na hora, sem depender de arquivo de áudio.
+function playFallbackChime() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
     ;[{ freq: 1046.5, start: 0 }, { freq: 1318.5, start: 0.09 }].forEach(({ freq, start }) => {
