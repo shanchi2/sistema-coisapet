@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { toISODateBR } from '../../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 // ─── Busca todas as linhas de uma consulta, contornando o limite
@@ -39,7 +40,7 @@ function buildReport(orders, items) {
   const byDayMap = new Map()
   orders.forEach(o => {
     if (!o.data_venda) return
-    const day = o.data_venda.slice(0, 10) // YYYY-MM-DD
+    const day = toISODateBR(new Date(o.data_venda)) // dia em Brasília, não UTC
     if (!byDayMap.has(day)) {
       byDayMap.set(day, { date: day, ml: 0, shopee: 0, manual: 0, total: 0 })
     }

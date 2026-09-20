@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { toISODateBR } from '../../lib/dateBR'
 import {
   ClipboardList, Receipt, ClipboardCheck, MessageSquare, AlertTriangle,
   ArrowRight, Package, Users, Calendar, PackageSearch, Wrench,
@@ -252,7 +253,7 @@ export function DashboardPage() {
   const chartMap = {}
   ordersWeek.forEach(o => {
     if (!o.data_venda) return
-    const day = o.data_venda.slice(0, 10)
+    const day = toISODateBR(new Date(o.data_venda))
     if (!chartMap[day]) chartMap[day] = { date: day, ml: 0, shopee: 0, manual: 0 }
     if (chartMap[day][o.source] !== undefined) chartMap[day][o.source]++
   })

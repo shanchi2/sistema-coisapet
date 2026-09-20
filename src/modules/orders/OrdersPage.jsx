@@ -17,7 +17,7 @@ import { OrdersReportsTab } from './OrdersReportsTab'
 import { useProducts }  from '../products/hooks/useProducts'
 import { EmptyState }   from '../../components/ui/EmptyState'
 import { useAuth }      from '../../contexts/AuthContext'
-import { todayISO }     from '../../lib/dateBR'
+import { todayISO, toISODateBR } from '../../lib/dateBR'
 
 // ─── Helpers ─────────────────────────────────────────────────────
 function fmtPreco(v) {
@@ -41,13 +41,18 @@ function addDays(iso, n) {
   return d.toISOString().split('T')[0]
 }
 function dayGroupLabel(dateStr) {
+  if (dateStr === todayISO()) return 'Hoje'
+  if (dateStr === addDays(todayISO(), -1)) return 'Ontem'
   const d = new Date(dateStr + 'T12:00:00')
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1)
-  const dOnly = new Date(d); dOnly.setHours(0, 0, 0, 0)
-  if (dOnly.getTime() === today.getTime()) return 'Hoje'
-  if (dOnly.getTime() === yesterday.getTime()) return 'Ontem'
   return d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
+}
+// Dia (em Brasília) do pedido, a partir do timestamp UTC salvo em
+// `data_venda` — nunca cortar os 10 primeiros caracteres do ISO direto:
+// isso pega o dia em UTC, e pedido das 21h-23h59 (BRT) já vira "amanhã"
+// nesse corte. Achado 19/09 pelo Raphael (pedidos da noite iam pro dia
+// seguinte na tela de Pedidos).
+function dayKeyBR(dataVenda) {
+  return dataVenda ? toISODateBR(new Date(dataVenda)) : ''
 }
 
 function getStatusCfg(estado) {
@@ -604,14 +609,14 @@ export function OrdersPage() {
   const isToday = viewDate === todayISO()
 
   const dayFiltered = useMemo(
-    () => filtered.filter(o => (o.data_venda || '').slice(0, 10) === viewDate),
+    () => filtered.filter(o => dayKeyBR(o.data_venda) === viewDate),
     [filtered, viewDate]
   )
 
   const groupedByDay = useMemo(() => {
     const map = {}
     filtered.forEach(o => {
-      const key = (o.data_venda || '').slice(0, 10) || 'sem-data'
+      const key = dayKeyBR(o.data_venda) || 'sem-data'
       if (!map[key]) map[key] = []
       map[key].push(o)
     })
