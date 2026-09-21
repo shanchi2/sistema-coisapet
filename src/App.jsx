@@ -58,6 +58,7 @@ import { RHHorasPage, RHFeriasPage, RHAtestadosPage, RHAvisosPage, RHHoleritesPa
 import { VariationsPage } from './modules/products/VariationsPage'
 import { ProductionEntriesPage } from './modules/production/ProductionEntriesPage'
 import { BioLinksPage } from './modules/links/BioLinksPage'
+import { BlogBannersPage } from './modules/blog/BlogBannersPage'
 import { ChecklistPage } from './modules/checklist/ChecklistPage'
 import { ReviewsPage } from './modules/reviews/ReviewsPage'
 import { MlAccountDashboardPage } from './modules/ml-insights/MlAccountDashboardPage'
@@ -228,6 +229,7 @@ export default function App() {
                 <Route path="/directors" element={<GuardedRoute moduleKey="directors"><DirectorsPage /></GuardedRoute>} />
                 <Route path="/producao-horistas" element={<GuardedRoute moduleKey="producao-horistas"><ProductionEntriesPage /></GuardedRoute>} />
                 <Route path="/bio-links" element={<GuardedRoute moduleKey="bio-links"><BioLinksPage /></GuardedRoute>} />
+                <Route path="/blog-banners" element={<GuardedRoute moduleKey="blog-banners"><BlogBannersPage /></GuardedRoute>} />
 
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Route>

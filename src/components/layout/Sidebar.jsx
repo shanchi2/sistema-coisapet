@@ -119,6 +119,7 @@ const NAV_SECTIONS = [
       { to: '/cofre',                moduleKey: 'cofre',           icon: Lock,       label: 'Cofre de Senhas',   roles: ['admin'] },
       { to: '/grupos-chat',          moduleKey: 'grupos-chat',     icon: MessagesSquare, label: 'Grupos de Chat', roles: ['admin'] },
       { to: '/bio-links',            moduleKey: 'bio-links',       icon: Link2,          label: 'Links da Bio',       roles: ['admin'] },
+      { to: '/blog-banners',         moduleKey: 'blog-banners',    icon: Megaphone,      label: 'Banners do Blog',    roles: ['admin'] },
       { to: '/historico',            moduleKey: 'historico',       icon: History,    label: 'Histórico',          roles: ['admin'] },
       { to: '/acesso',               moduleKey: 'acesso',          icon: Shield,              label: 'Controle de Acesso', roles: ['admin'] },
       { to: '/cliques',              moduleKey: 'acesso',          icon: MousePointerClick,   label: 'Cliques no Site',    roles: ['admin'] },
