@@ -252,6 +252,20 @@ serve(async (req) => {
     const order = detail?.response?.order_list?.[0]
     if (!order) throw new Error(`Pedido ${orderSn} não veio na resposta de get_order_detail`)
 
+    // Pedido ainda não pago (order_status UNPAID) — sem essa checagem
+    // entrava normal: gerava produção, aparecia no picklist e disparava
+    // o pop-up de venda antes de saber se o cliente ia pagar de
+    // verdade. Mesmo achado do lado do ML (21/09, Vini/Raphael) — a
+    // Shopee já manda um status explícito pra isso, mais fácil que o
+    // ML (lá só dava pra confirmar pela tag `not_paid`).
+    if (order.order_status === 'UNPAID') {
+      await db.from('shopee_webhook_events').update({
+        status: 'done', processed_at: new Date().toISOString(),
+        error_msg: 'Ignorado: pedido ainda não pago (order_status UNPAID) — reprocessa quando a Shopee confirmar o pagamento.',
+      }).eq('id', record.id)
+      return new Response('OK (não pago, ignorado)', { status: 200 })
+    }
+
     const parsed = mapShopeeOrderToCommon(order)
     await saveOrder(db, parsed)
 

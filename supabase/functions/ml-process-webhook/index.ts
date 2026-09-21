@@ -291,6 +291,28 @@ serve(async (req) => {
   try {
     const integration = await getValidIntegration(db)
     const order    = await mlFetch(record.resource, integration.access_token)
+
+    // Pedido ainda não pago (boleto/pix aguardando, por ex.) — o ML já
+    // cria a etiqueta de envio e dispara o webhook ANTES da confirmação
+    // de pagamento, e o `order.status` nesse meio-tempo não é
+    // 'cancelled' (só vira isso depois, se o pagamento nunca vier).
+    // Sem essa checagem, o pedido entrava normal: gerava produção,
+    // aparecia no picklist e disparava o pop-up de venda, tudo antes
+    // de saber se o cliente ia pagar de verdade. Achado 21/09 (Vini/
+    // Raphael, pedido real confirmado: #2000017091049480, nunca pago,
+    // cancelado pelo ML depois, mas já tinha gerado produção aqui).
+    // A tag `not_paid` do ML é o sinal mais confiável — aparece tanto
+    // em pedido pendente quanto no cancelado por falta de pagamento
+    // (`order.status === 'cancelled'` já cobre o cancelado; isso aqui
+    // cobre o meio-tempo antes de cancelar).
+    if (Array.isArray(order.tags) && order.tags.includes('not_paid')) {
+      await db.from('ml_webhook_events').update({
+        status: 'done', processed_at: new Date().toISOString(),
+        error_msg: 'Ignorado: pedido ainda não pago (tag not_paid) — reprocessa quando o ML confirmar o pagamento.',
+      }).eq('id', record.id)
+      return new Response('OK (não pago, ignorado)', { status: 200 })
+    }
+
     const shipment = order.shipping?.id
       ? await mlFetch(`/shipments/${order.shipping.id}`, integration.access_token, { 'x-format-new': 'true' })
       : null
