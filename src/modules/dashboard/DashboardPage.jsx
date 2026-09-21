@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { toISODateBR } from '../../lib/dateBR'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import {
   ClipboardList, Receipt, ClipboardCheck, MessageSquare, AlertTriangle,
   ArrowRight, Package, Users, Calendar, PackageSearch, Wrench,
@@ -112,16 +113,22 @@ export function DashboardPage() {
 
       const queries = {}
 
-      // Pedidos do mês (por plataforma) — pra quem lida com pedidos
+      // Pedidos do mês (por plataforma) — pra quem lida com pedidos.
+      // Paginado (21/09): o mês passado fechou com 954 pedidos, a 46 do
+      // teto silencioso de 1000 linhas do PostgREST — sem paginar, os
+      // KPIs daqui iam começar a contar a menos sozinhos, sem erro
+      // nenhum na tela (mesmo bug achado na Visão Geral da Shopee).
       if (canSeeOrders) {
-        queries.orders = supabase.from('orders')
+        queries.orders = fetchAllRows((from, to) => supabase.from('orders')
           .select('id, source, data_venda, status_ml')
           .gte('data_venda', startMonth)
-          .then(r => r.data ?? [])
-        queries.ordersWeek = supabase.from('orders')
+          .order('id', { ascending: true })
+          .range(from, to))
+        queries.ordersWeek = fetchAllRows((from, to) => supabase.from('orders')
           .select('id, source, data_venda')
           .gte('data_venda', start7d)
-          .then(r => r.data ?? [])
+          .order('id', { ascending: true })
+          .range(from, to))
       }
 
       // Orçamentos do mês

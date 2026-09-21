@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { fetchAllRows } from '../../../lib/fetchAllRows'
 
 // Mesmo padrão do callMlInsights (useMlInsights.js) — extrai a mensagem
 // real de erro do corpo da resposta da Edge Function.
@@ -51,19 +52,29 @@ export function useShopeeInsights() {
       const periodStart = new Date(now.getTime() - days * 86400000)
       const prevStart    = new Date(now.getTime() - 2 * days * 86400000)
 
-      // 1 consulta só, com o join embutido (order_items -> orders) e o
-      // filtro de período aplicado do lado de `orders` — evita montar uma
-      // lista de IDs e fazer um 2º round-trip com `.in()` gigante (a
-      // Shopee já tem histórico grande da importação manual por .xlsx —
-      // uma lista de milhares de IDs na URL estourava o limite e dava
-      // "Bad Request", bug real achado em 16/09).
-      const { data: rows, error: rowsErr } = await supabase
+      // Join embutido (order_items -> orders) com o filtro de período
+      // aplicado do lado de `orders` — evita montar uma lista de IDs e
+      // fazer um 2º round-trip com `.in()` gigante (a Shopee já tem
+      // histórico grande da importação manual por .xlsx — uma lista de
+      // milhares de IDs na URL estourava o limite e dava "Bad Request",
+      // bug real achado em 16/09).
+      //
+      // PAGINADO (21/09): sem isso o PostgREST cortava em 1000 linhas
+      // silenciosamente (confirmado ao vivo: `Content-Range: 0-999/2018`
+      // em 60 dias de Shopee). Pior: como não havia ordenação, o corte
+      // caía JUSTO no dia mais recente — o Raphael viu a receita de hoje
+      // despencar pra quase zero no gráfico enquanto a venda real do dia
+      // passava de R$3 mil. `.order()` garante ordem estável entre as
+      // páginas; sem ele a paginação pode repetir/pular linha.
+      const rows = await fetchAllRows((from, to) => supabase
         .from('order_items')
         .select('order_id, titulo, sku, qty, preco_unit, orders!inner(id, data_venda, status_ml, comprador)')
         .eq('orders.source', 'shopee')
         .gte('orders.data_venda', prevStart.toISOString())
         .lte('orders.data_venda', now.toISOString())
-      if (rowsErr) throw rowsErr
+        .order('order_id', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to))
 
       const orders = new Map()
       const itemsByOrder = new Map()
