@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { ShoppingBag, X, Trash2, ArrowRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { isSaleSoundMuted } from '../../lib/soundPrefs'
 
 function getSession() {
   try { return JSON.parse(localStorage.getItem('coisapet_session') || '{}') } catch { return {} }
@@ -19,6 +20,7 @@ const ALLOWED_ROLES = ['admin', 'producao']
 const ML_SOUND_URL = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/sounds/mercadolivre.mp3`
 
 function playSaleChime() {
+  if (isSaleSoundMuted()) return // autofalante desligado no Header — pedido do Raphael, 21/09
   try {
     const audio = new Audio(ML_SOUND_URL)
     audio.volume = 0.7

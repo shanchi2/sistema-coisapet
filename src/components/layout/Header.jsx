@@ -1,5 +1,6 @@
 import { useAuth } from '../../contexts/AuthContext'
 import { NotificationBell } from '../notifications/NotificationBell'
+import { SaleSoundToggle } from '../notifications/SaleSoundToggle'
 
 const ROLE_LABELS = {
   admin:          'Diretor',
@@ -30,6 +31,7 @@ export function Header({ title }) {
 
       {/* Direita — não encolhe */}
       <div className="flex items-center gap-3 shrink-0">
+        <SaleSoundToggle />
         <NotificationBell />
 
         <div className="w-px h-6 bg-slate-100" />
