@@ -319,7 +319,7 @@ function Column({ col, tasks, users, onEdit, onDelete, onMoveStatus, onNew, onVi
 export function PurchasesPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const { create: createBill } = useBills()
+  const { create: createBill, addPayment: addBillPayment } = useBills()
   const [tasks,          setTasks]          = useState([])
   const [users,          setUsers]          = useState([])
   const [loading,        setLoading]        = useState(true)
@@ -440,6 +440,22 @@ export function PurchasesPage() {
       const total    = isArray ? payload.reduce((s, p) => s + Number(p.amount || 0), 0) : payload.amount
       const billIds  = await createBill(payload)
       const billId   = Array.isArray(billIds) ? billIds[0] : billIds
+
+      // Compra marcada como "Comprado" aqui já aconteceu de verdade —
+      // diferente do resto do Financeiro (onde uma conta nasce em
+      // aberto e alguém paga depois), essa já nasce PAGA. Só se aplica
+      // à conta simples: parcelamento continua em aberto normalmente
+      // (parcela futura não foi paga ainda, óbvio). Pedido do Raphael,
+      // 22/09: "já pode ir como pago, não em atraso".
+      if (!isArray) {
+        try {
+          await addBillPayment(billId, { amount: total, paid_at: first.due_date, notes: 'Pago automaticamente — registrado como já comprado.' })
+        } catch {
+          // Conta já foi criada — só o registro de pagamento falhou;
+          // fica em aberto e dá pra pagar manual no Financeiro.
+        }
+      }
+
       await supabase.from('maintenance_tasks').update({
         status: 'concluido',
         purchase_value: total,
