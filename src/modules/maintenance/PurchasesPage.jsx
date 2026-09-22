@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ShoppingCart, Plus, X, Check, Loader2,
@@ -328,6 +328,14 @@ export function PurchasesPage() {
   const [billModal,      setBillModal]      = useState(false)
   const [billSaving,     setBillSaving]     = useState(false)
   const [buyingTask,     setBuyingTask]     = useState(null)
+  // Referência estável — sem isso, um objeto literal novo a cada render
+  // (mesmo com o mesmo conteúdo) faria o BillFormModal achar que o
+  // prefill "mudou" e resetar o formulário sozinho (ver comentário no
+  // useEffect do BillFormModal, fase69/22-09).
+  const billPrefill = useMemo(
+    () => buyingTask ? { description: buyingTask.title, notes: buyingTask.description || '' } : null,
+    [buyingTask]
+  )
   const [filterCategory, setFilterCategory] = useState('')
   const [filterAssigned, setFilterAssigned] = useState('')
 
@@ -550,7 +558,7 @@ export function PurchasesPage() {
         onClose={() => { setBillModal(false); setBuyingTask(null) }}
         onSave={handleSaveBillForTask}
         loading={billSaving}
-        prefill={buyingTask ? { description: buyingTask.title, notes: buyingTask.description || '' } : null}
+        prefill={billPrefill}
       />
     </div>
   )

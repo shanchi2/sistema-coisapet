@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { RefreshCw, AlertCircle } from 'lucide-react'
 import { Modal }          from '../../../components/ui/Modal'
 import { maskCurrency, parseCurrency } from '../../../lib/masks'
@@ -57,8 +57,18 @@ export function BillFormModal({ open, onClose, onSave, initial = null, prefill =
   const [mainFile,     setMainFile]     = useState(null)
   // arquivo único para conta simples ou boleto geral do parcelamento
 
+  // Reseta o formulário só na BORDA DE SUBIDA de `open` (false → true),
+  // nunca de novo enquanto o modal já está aberto. Antes o efeito também
+  // dependia de `initial`/`prefill` por referência — como quem chama
+  // esse modal (ex: PurchasesPage, fase69) monta `prefill` como um
+  // objeto literal novo a cada render, e o pai re-renderiza sozinho em
+  // segundo plano (useBills() faz polling a cada 30s), o formulário
+  // inteiro — incluindo o anexo já selecionado — podia ser apagado no
+  // meio do preenchimento, sem o usuário fazer nada de errado. Achado
+  // 22/09 (Raphael: "anexo carrega, modal recarrega e perde tudo").
+  const wasOpen = useRef(false)
   useEffect(() => {
-    if (open) {
+    if (open && !wasOpen.current) {
       setErrors({})
       setMainFile(null)
       setInstallments([])
@@ -76,6 +86,7 @@ export function BillFormModal({ open, onClose, onSave, initial = null, prefill =
         custom_interval: 30,
       } : { ...EMPTY, description: prefill?.description ?? '', notes: prefill?.notes ?? '' })
     }
+    wasOpen.current = open
   }, [open, initial, prefill])
 
   function set(field, value) {
