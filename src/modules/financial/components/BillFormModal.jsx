@@ -40,7 +40,13 @@ const EMPTY = {
   custom_interval: 30,
 }
 
-export function BillFormModal({ open, onClose, onSave, initial = null, loading = false }) {
+// `prefill` (opcional) só toca description/notes e SÓ se aplica quando
+// `initial` é null — pré-preenche o formulário de conta NOVA (ex: vindo
+// de "marcar como comprado" em Compras, fase69) sem entrar em modo
+// edição. Se usássemos `initial` pra isso, `isEditing` viraria true e
+// escondia o campo de anexo/boleto (ver abaixo) — o oposto do que se
+// quer ao criar a conta a partir de uma compra.
+export function BillFormModal({ open, onClose, onSave, initial = null, prefill = null, loading = false }) {
   const { suppliers }  = useSuppliers()
   const { categories } = useExpenseCategories()
 
@@ -68,9 +74,9 @@ export function BillFormModal({ open, onClose, onSave, initial = null, loading =
         installment_qty: 2,
         interval_days:  30,
         custom_interval: 30,
-      } : EMPTY)
+      } : { ...EMPTY, description: prefill?.description ?? '', notes: prefill?.notes ?? '' })
     }
-  }, [open, initial])
+  }, [open, initial, prefill])
 
   function set(field, value) {
     setForm(p => ({ ...p, [field]: value }))

@@ -1,12 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   ShoppingCart, Plus, X, Check, Loader2,
-  Filter, CheckCircle2, Circle, Pencil, Trash2, AlertTriangle,
-  ChevronLeft, ChevronRight, ChevronUp, ChevronDown,
+  Filter, CheckCircle2, Pencil, Trash2, AlertTriangle,
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Paperclip, ExternalLink,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { todayISO } from '../../lib/dateBR'
+import { FileUploadArea } from '../../components/ui/FileUploadArea'
+import { useSignedUrl } from '../../lib/signedUrlCache'
+import { BillFormModal } from '../financial/components/BillFormModal'
+import { useBills } from '../financial/hooks/useBills'
 import toast from 'react-hot-toast'
 
 const CAT_CFG = {
@@ -28,68 +33,25 @@ const EMPTY_FORM = {
   completed_at: '', purchase_value: '', purchase_date: '',
 }
 
-// ── Modal de conclusão de compra ──────────────────────────────
-function CompleteModal({ task, onClose, onConfirm }) {
-  const today = todayISO()
-  const [value,  setValue]  = useState('')
-  const [date,   setDate]   = useState(today)
-  const [saving, setSaving] = useState(false)
-
-  async function handleConfirm() {
-    setSaving(true)
-    const numValue = value
-      ? parseFloat(value.replace(/\./g,'').replace(',','.'))
-      : null
-    await onConfirm({ value: numValue, date })
-    setSaving(false)
-  }
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100">
-        <div className="px-6 py-4 border-b border-slate-100">
-          <h3 className="font-bold text-slate-800">Registrar compra</h3>
-          <p className="text-sm text-slate-400 mt-0.5 truncate">{task.title}</p>
-        </div>
-        <div className="p-6 flex flex-col gap-4">
-          <div>
-            <label className="form-label">Valor pago <span className="text-slate-400 font-normal">(opcional)</span></label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
-              <input type="text" className="input pl-8" placeholder="0,00" value={value}
-                onChange={e => {
-                  const digits = e.target.value.replace(/\D/g,'')
-                  if (!digits) { setValue(''); return }
-                  setValue((parseInt(digits,10)/100).toLocaleString('pt-BR',{minimumFractionDigits:2}))
-                }}/>
-            </div>
-          </div>
-          <div>
-            <label className="form-label">Data da compra</label>
-            <input type="date" className="input" value={date} onChange={e => setDate(e.target.value)}/>
-            <p className="text-[11px] text-slate-400 mt-1">Padrão: hoje. Altere se a compra foi em outra data.</p>
-          </div>
-        </div>
-        <div className="px-6 py-4 border-t border-slate-100 flex gap-2 justify-end">
-          <button onClick={onClose} className="btn-secondary">Cancelar</button>
-          <button onClick={handleConfirm} disabled={saving} className="btn-primary">
-            {saving ? <Loader2 size={15} className="animate-spin"/> : <ShoppingCart size={15}/>}
-            Marcar como comprado
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+const ATTACHMENT_BUCKET = 'purchase-attachments'
 
 // ── Modal de criação/edição ────────────────────────────────────
+// Só cobre "A Comprar"/"Prioridade" — marcar como Comprado agora é um
+// fluxo à parte que cria uma conta de verdade no Financeiro (ver
+// PurchasesPage.handleMarkAsBought), não um campo aqui dentro.
 function TaskModal({ open, onClose, onSave, users, initial }) {
   const isEditing = !!initial?.id
+  const isBought  = initial?.status === 'concluido'
   const [form, setForm]   = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const [attachmentFile, setAttachmentFile] = useState(null) // novo arquivo a subir
+  const [removeAttachment, setRemoveAttachment] = useState(false) // marcou pra tirar o atual
+  const existingAttachmentUrl = useSignedUrl(ATTACHMENT_BUCKET, !removeAttachment ? initial?.attachment_path : null)
 
   useEffect(() => {
     if (!open) return
+    setAttachmentFile(null)
+    setRemoveAttachment(false)
     setForm(initial ? {
       title:          initial.title          ?? '',
       description:    initial.description    ?? '',
@@ -110,7 +72,7 @@ function TaskModal({ open, onClose, onSave, users, initial }) {
   async function handleSave() {
     if (!form.title.trim()) { toast.error('Título obrigatório'); return }
     setSaving(true)
-    await onSave({ ...form, assigned_to: form.assigned_to || null })
+    await onSave({ ...form, assigned_to: form.assigned_to || null, attachmentFile, removeAttachment })
     setSaving(false)
     onClose()
   }
@@ -119,7 +81,7 @@ function TaskModal({ open, onClose, onSave, users, initial }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-100">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-100 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="font-bold text-slate-800 text-lg flex items-center gap-2">
             <ShoppingCart size={18} className="text-amber-500"/>
@@ -129,26 +91,29 @@ function TaskModal({ open, onClose, onSave, users, initial }) {
         </div>
 
         <div className="p-6 flex flex-col gap-4">
-          {/* Status */}
+          {/* Status — só Pendente/Prioridade aqui. "Comprado" vira uma
+              conta de verdade no Financeiro, via ação dedicada no card
+              (ver PurchasesPage.handleMoveStatus). */}
           <div>
             <label className="form-label">Status</label>
-            <div className="grid grid-cols-3 gap-2">
-              <button onClick={() => set('status', 'pendente')}
-                className={`flex items-center gap-2 p-3 rounded-xl border-2 text-sm font-semibold transition-all
-                  ${form.status === 'pendente' ? 'bg-amber-50 text-amber-600 border-amber-300' : 'border-slate-200 text-slate-400 hover:border-slate-300'}`}>
-                <ShoppingCart size={15}/> A Comprar
-              </button>
-              <button onClick={() => set('status', 'prioridade')}
-                className={`flex items-center gap-2 p-3 rounded-xl border-2 text-sm font-semibold transition-all
-                  ${form.status === 'prioridade' ? 'bg-rose-50 text-rose-600 border-rose-300' : 'border-slate-200 text-slate-400 hover:border-slate-300'}`}>
-                <AlertTriangle size={15}/> Prioridade
-              </button>
-              <button onClick={() => set('status', 'concluido')}
-                className={`flex items-center gap-2 p-3 rounded-xl border-2 text-sm font-semibold transition-all
-                  ${form.status === 'concluido' ? 'bg-emerald-50 text-emerald-600 border-emerald-300' : 'border-slate-200 text-slate-400 hover:border-slate-300'}`}>
-                <CheckCircle2 size={15}/> Comprado
-              </button>
-            </div>
+            {isBought ? (
+              <div className="flex items-center gap-2 p-3 rounded-xl border-2 border-emerald-300 bg-emerald-50 text-emerald-700 text-sm font-semibold">
+                <CheckCircle2 size={15}/> Comprado — vinculado a uma conta no Financeiro
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => set('status', 'pendente')}
+                  className={`flex items-center gap-2 p-3 rounded-xl border-2 text-sm font-semibold transition-all
+                    ${form.status === 'pendente' ? 'bg-amber-50 text-amber-600 border-amber-300' : 'border-slate-200 text-slate-400 hover:border-slate-300'}`}>
+                  <ShoppingCart size={15}/> A Comprar
+                </button>
+                <button onClick={() => set('status', 'prioridade')}
+                  className={`flex items-center gap-2 p-3 rounded-xl border-2 text-sm font-semibold transition-all
+                    ${form.status === 'prioridade' ? 'bg-rose-50 text-rose-600 border-rose-300' : 'border-slate-200 text-slate-400 hover:border-slate-300'}`}>
+                  <AlertTriangle size={15}/> Prioridade
+                </button>
+              </div>
+            )}
           </div>
 
           <div>
@@ -179,32 +144,34 @@ function TaskModal({ open, onClose, onSave, users, initial }) {
               value={form.description} onChange={e => set('description', e.target.value)}/>
           </div>
 
-          {/* Campos de compra — só quando concluído */}
-          {form.status === 'concluido' && (
-            <div className="flex flex-col gap-3 p-3 rounded-xl border bg-amber-50 border-amber-200">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">🛒 Dados da compra</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="form-label">Valor pago (R$)</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
-                    <input type="text" className="input pl-8" placeholder="0,00"
-                      value={form.purchase_value}
-                      onChange={e => {
-                        const digits = e.target.value.replace(/\D/g,'')
-                        if (!digits) { set('purchase_value',''); return }
-                        set('purchase_value',(parseInt(digits,10)/100).toLocaleString('pt-BR',{minimumFractionDigits:2}))
-                      }}/>
-                  </div>
-                </div>
-                <div>
-                  <label className="form-label">Data da compra</label>
-                  <input type="date" className="input" value={form.purchase_date}
-                    onChange={e => set('purchase_date', e.target.value)}/>
+          {/* Anexo de referência — foto do item, orçamento, print de
+              anúncio, etc. Diferente do comprovante da compra em si
+              (esse fica no Financeiro, junto da conta). */}
+          <div>
+            {initial?.attachment_path && !removeAttachment && !attachmentFile ? (
+              <div>
+                <label className="form-label">Anexo</label>
+                <div className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
+                  <Paperclip size={18} className="text-slate-400 shrink-0" />
+                  <a href={existingAttachmentUrl || '#'} target="_blank" rel="noopener noreferrer"
+                    className="flex-1 min-w-0 text-sm font-semibold text-sky-600 hover:underline truncate">
+                    {initial.attachment_name || 'Ver anexo'}
+                  </a>
+                  <button type="button" onClick={() => setRemoveAttachment(true)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all shrink-0">
+                    <X size={15} />
+                  </button>
                 </div>
               </div>
-            </div>
-          )}
+            ) : (
+              <FileUploadArea
+                file={attachmentFile}
+                onChange={f => { setAttachmentFile(f); setRemoveAttachment(false) }}
+                label="Anexo (opcional)"
+                hint="Foto do item, orçamento, print de anúncio — PDF, JPG ou PNG"
+              />
+            )}
+          </div>
         </div>
 
         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
@@ -220,11 +187,12 @@ function TaskModal({ open, onClose, onSave, users, initial }) {
 }
 
 // ── Card individual ────────────────────────────────────────────
-function TaskCard({ task, users, onEdit, onDelete, onMoveStatus }) {
+function TaskCard({ task, users, onEdit, onDelete, onMoveStatus, onViewBill }) {
   const [expanded, setExpanded] = useState(false)
   const cat      = CAT_CFG[task.category] ?? CAT_CFG.outros
   const assigned = users.find(u => u.id === task.assigned_to)
   const isDone   = task.status === 'concluido'
+  const attachmentUrl = useSignedUrl(ATTACHMENT_BUCKET, expanded ? task.attachment_path : null)
 
   const STATUS_ORDER = ['pendente','prioridade','concluido']
   const currentIdx = STATUS_ORDER.indexOf(task.status)
@@ -245,6 +213,7 @@ function TaskCard({ task, users, onEdit, onDelete, onMoveStatus }) {
         <p className={`text-sm font-semibold flex-1 min-w-0 truncate ${isDone ? 'line-through text-slate-400' : 'text-slate-800'}`}>
           {task.title}
         </p>
+        {task.attachment_path && <Paperclip size={12} className="text-slate-300 shrink-0" />}
         <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
           <button disabled={!canGoLeft}
             onClick={() => canGoLeft && onMoveStatus(task, STATUS_ORDER[currentIdx - 1])}
@@ -267,10 +236,23 @@ function TaskCard({ task, users, onEdit, onDelete, onMoveStatus }) {
         <div className="px-3.5 pb-3.5 flex flex-col gap-2.5 border-t border-slate-100 pt-3">
           {task.description && <p className="text-xs text-slate-500 leading-relaxed">{task.description}</p>}
 
+          {task.attachment_path && (
+            <a href={attachmentUrl || '#'} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-[11px] font-semibold text-sky-600 hover:underline w-fit">
+              <Paperclip size={12} /> {task.attachment_name || 'Ver anexo'}
+            </a>
+          )}
+
           {isDone && (task.purchase_value || task.purchase_date) && (
-            <div className="flex flex-wrap gap-2 p-2 rounded-lg bg-amber-50 text-[10px] font-semibold text-amber-700">
+            <div className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-emerald-50 text-[10px] font-semibold text-emerald-700">
               {task.purchase_value && <span>💰 R$ {Number(task.purchase_value).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>}
               {task.purchase_date  && <span>📅 {new Date(task.purchase_date+'T12:00:00').toLocaleDateString('pt-BR')}</span>}
+              {task.bill_id && (
+                <button onClick={e => { e.stopPropagation(); onViewBill() }}
+                  className="flex items-center gap-1 text-emerald-800 hover:underline ml-auto">
+                  Ver no Financeiro <ExternalLink size={10} />
+                </button>
+              )}
             </div>
           )}
 
@@ -301,7 +283,7 @@ function TaskCard({ task, users, onEdit, onDelete, onMoveStatus }) {
 }
 
 // ── Coluna ─────────────────────────────────────────────────────
-function Column({ col, tasks, users, onEdit, onDelete, onMoveStatus, onNew }) {
+function Column({ col, tasks, users, onEdit, onDelete, onMoveStatus, onNew, onViewBill }) {
   const Icon  = col.icon
   const items = tasks.filter(t => t.type === col.type && t.status === col.status)
 
@@ -325,7 +307,7 @@ function Column({ col, tasks, users, onEdit, onDelete, onMoveStatus, onNew }) {
           ? <div className="text-center py-8"><p className="text-xs text-slate-300 font-medium">Nenhum item</p></div>
           : items.map(task => (
               <TaskCard key={task.id} task={task} users={users}
-                onEdit={onEdit} onDelete={onDelete} onMoveStatus={onMoveStatus}/>
+                onEdit={onEdit} onDelete={onDelete} onMoveStatus={onMoveStatus} onViewBill={onViewBill}/>
             ))
         }
       </div>
@@ -336,13 +318,16 @@ function Column({ col, tasks, users, onEdit, onDelete, onMoveStatus, onNew }) {
 // ── Página principal ───────────────────────────────────────────
 export function PurchasesPage() {
   const { user } = useAuth()
+  const navigate = useNavigate()
+  const { create: createBill } = useBills()
   const [tasks,          setTasks]          = useState([])
   const [users,          setUsers]          = useState([])
   const [loading,        setLoading]        = useState(true)
   const [modal,          setModal]          = useState(false)
   const [editing,        setEditing]        = useState(null)
-  const [completeModal,  setCompleteModal]  = useState(false)
-  const [completingTask, setCompletingTask] = useState(null)
+  const [billModal,      setBillModal]      = useState(false)
+  const [billSaving,     setBillSaving]     = useState(false)
+  const [buyingTask,     setBuyingTask]     = useState(null)
   const [filterCategory, setFilterCategory] = useState('')
   const [filterAssigned, setFilterAssigned] = useState('')
 
@@ -363,24 +348,48 @@ export function PurchasesPage() {
     try { return JSON.parse(localStorage.getItem('coisapet_session')||'{}') } catch { return {} }
   }
 
+  // ── Sobe/remove o anexo de referência (não é o comprovante da
+  //    compra — esse mora no Financeiro, via bill_id) ──────────────
+  async function syncAttachment(taskId, { attachmentFile, removeAttachment }, currentPath) {
+    if (removeAttachment && currentPath) {
+      await supabase.storage.from(ATTACHMENT_BUCKET).remove([currentPath])
+      await supabase.from('maintenance_tasks').update({ attachment_path: null, attachment_name: null }).eq('id', taskId)
+      return
+    }
+    if (attachmentFile) {
+      if (currentPath) await supabase.storage.from(ATTACHMENT_BUCKET).remove([currentPath])
+      const ext  = attachmentFile.name.split('.').pop()
+      const path = `${taskId}/${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from(ATTACHMENT_BUCKET).upload(path, attachmentFile, { contentType: attachmentFile.type })
+      if (upErr) { toast.error('Compra salva, mas falhou o envio do anexo.'); return }
+      await supabase.from('maintenance_tasks').update({ attachment_path: path, attachment_name: attachmentFile.name }).eq('id', taskId)
+    }
+  }
+
   async function handleSave(form) {
     const s = getSession()
+    const { attachmentFile, removeAttachment, ...rest } = form
     const payload = {
-      ...form,
+      ...rest,
       type: 'aquisicao',
-      purchase_value: form.purchase_value
-        ? parseFloat(String(form.purchase_value).replace(/\./g,'').replace(',','.'))
+      purchase_value: rest.purchase_value
+        ? parseFloat(String(rest.purchase_value).replace(/\./g,'').replace(',','.'))
         : null,
-      purchase_date:  form.purchase_date  || null,
-      completed_at:   form.completed_at   || null,
+      purchase_date:  rest.purchase_date  || null,
+      completed_at:   rest.completed_at   || null,
       updated_at:     new Date().toISOString(),
     }
-    if (editing?.id) {
-      await supabase.from('maintenance_tasks').update(payload).eq('id', editing.id)
+    let taskId = editing?.id
+    if (taskId) {
+      await supabase.from('maintenance_tasks').update(payload).eq('id', taskId)
       toast.success('Compra atualizada!')
     } else {
-      await supabase.from('maintenance_tasks').insert({ ...payload, created_by: s.id ?? null })
+      const { data } = await supabase.from('maintenance_tasks').insert({ ...payload, created_by: s.id ?? null }).select('id').single()
+      taskId = data?.id
       toast.success('Compra criada!')
+    }
+    if (taskId && (attachmentFile || removeAttachment)) {
+      await syncAttachment(taskId, { attachmentFile, removeAttachment }, editing?.attachment_path)
     }
     setEditing(null)
     load()
@@ -388,6 +397,7 @@ export function PurchasesPage() {
 
   async function handleDelete(task) {
     if (!confirm(`Excluir "${task.title}"?`)) return
+    if (task.attachment_path) await supabase.storage.from(ATTACHMENT_BUCKET).remove([task.attachment_path])
     await supabase.from('maintenance_tasks').delete().eq('id', task.id)
     toast.success('Compra removida.')
     load()
@@ -395,24 +405,49 @@ export function PurchasesPage() {
 
   async function handleMoveStatus(task, newStatus) {
     if (newStatus === 'concluido') {
-      setCompletingTask(task)
-      setCompleteModal(true)
+      // Marcar como comprado agora abre o mesmo modal de "Nova Conta a
+      // Pagar" do Financeiro — a compra vira uma conta de verdade, não
+      // só uma mudança de status (pedido do Raphael, 22/09).
+      setBuyingTask(task)
+      setBillModal(true)
       return
     }
     // prioridade ou reabrir — sem modal
     const upd = { status: newStatus, updated_at: new Date().toISOString() }
-    if (newStatus !== 'concluido') { upd.purchase_value = null; upd.purchase_date = null; upd.completed_at = null }
+    if (newStatus !== 'concluido') { upd.purchase_value = null; upd.purchase_date = null; upd.completed_at = null; upd.bill_id = null }
     await supabase.from('maintenance_tasks').update(upd).eq('id', task.id)
     load()
   }
 
-  async function handleCompleteCompra({ value, date }) {
-    const today = todayISO()
-    await supabase.from('maintenance_tasks')
-      .update({ status:'concluido', purchase_value: value||null, purchase_date: date||today, completed_at: date||today, updated_at: new Date().toISOString() })
-      .eq('id', completingTask.id)
-    setCompleteModal(false); setCompletingTask(null)
-    load()
+  // ── Salva a conta no Financeiro E liga a compra a ela ────────────
+  async function handleSaveBillForTask(payload) {
+    setBillSaving(true)
+    try {
+      // payload pode ser 1 objeto (conta simples) OU um array (compra
+      // parcelada) — nesse caso createBill devolve 1 id por parcela;
+      // liga a compra à 1ª parcela e soma o valor total pra exibir no
+      // card (mesmo padrão de "valor total" já usado no resto da tela).
+      const isArray  = Array.isArray(payload)
+      const first    = isArray ? payload[0] : payload
+      const total    = isArray ? payload.reduce((s, p) => s + Number(p.amount || 0), 0) : payload.amount
+      const billIds  = await createBill(payload)
+      const billId   = Array.isArray(billIds) ? billIds[0] : billIds
+      await supabase.from('maintenance_tasks').update({
+        status: 'concluido',
+        purchase_value: total,
+        purchase_date:  first.due_date,
+        completed_at:   todayISO(),
+        bill_id:        billId,
+        updated_at:     new Date().toISOString(),
+      }).eq('id', buyingTask.id)
+      setBillModal(false)
+      setBuyingTask(null)
+      load()
+    } catch {
+      // useBills().create já mostra o toast de erro
+    } finally {
+      setBillSaving(false)
+    }
   }
 
   const filtered = tasks.filter(t =>
@@ -482,7 +517,7 @@ export function PurchasesPage() {
         )}
       </div>
 
-      {/* 2 colunas */}
+      {/* 3 colunas */}
       {loading ? (
         <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-slate-300"/></div>
       ) : (
@@ -493,15 +528,10 @@ export function PurchasesPage() {
               onDelete={handleDelete}
               onMoveStatus={handleMoveStatus}
               onNew={() => { setEditing(null); setModal(true) }}
+              onViewBill={() => navigate('/financeiro')}
             />
           ))}
         </div>
-      )}
-
-      {completeModal && completingTask && (
-        <CompleteModal task={completingTask}
-          onClose={() => { setCompleteModal(false); setCompletingTask(null) }}
-          onConfirm={handleCompleteCompra}/>
       )}
 
       <TaskModal
@@ -510,6 +540,17 @@ export function PurchasesPage() {
         onSave={handleSave}
         users={users}
         initial={editing ?? EMPTY_FORM}
+      />
+
+      {/* Mesmo modal de "Nova Conta a Pagar" do Financeiro — marcar
+          como comprado agora cria a conta de verdade, com fornecedor,
+          categoria, vencimento e comprovante (fase69). */}
+      <BillFormModal
+        open={billModal}
+        onClose={() => { setBillModal(false); setBuyingTask(null) }}
+        onSave={handleSaveBillForTask}
+        loading={billSaving}
+        prefill={buyingTask ? { description: buyingTask.title, notes: buyingTask.description || '' } : null}
       />
     </div>
   )

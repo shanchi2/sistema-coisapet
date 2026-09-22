@@ -206,6 +206,10 @@ export function useBills() {
     else         toast.success('Conta cadastrada!')
 
     await fetch()
+    // Devolve o(s) id(s) criado(s) — usado por quem precisa linkar a
+    // conta recém-criada a outra coisa (ex: Compras, fase69, liga a
+    // tarefa de compra à conta real do Financeiro).
+    return isArray ? ids : ids[0]
   }
 
   async function update(id, payload) {
