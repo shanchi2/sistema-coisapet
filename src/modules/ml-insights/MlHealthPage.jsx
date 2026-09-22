@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { HeartPulse, RefreshCw, Loader2, AlertTriangle, CheckCircle2, AlertCircle, HelpCircle, ExternalLink, DollarSign, Megaphone, Truck, Package, ImageOff } from 'lucide-react'
+import { HeartPulse, RefreshCw, Loader2, AlertTriangle, CheckCircle2, AlertCircle, HelpCircle, ExternalLink, DollarSign, Megaphone, Truck, Package, ImageOff, Search, X } from 'lucide-react'
 import { useMlInsights } from './hooks/useMlInsights'
+import { mlHealthCache } from './healthPageCache'
 
 // A API do ML às vezes devolve o thumbnail em http:// puro — o site roda
 // em https, então isso vira mixed content bloqueado pelo navegador.
@@ -50,10 +51,17 @@ function StatusBadge({ status }) {
 export function MlHealthPage() {
   const navigate = useNavigate()
   const { loading, progress, error, fetchItemsHealth, fetchAttributesAudit, fetchPriceScan, fetchAdsCoverage } = useMlInsights()
-  const [rows, setRows] = useState(null) // null = nunca escaneado ainda
-  const [priceMap, setPriceMap] = useState(null) // item_id -> { price, suggested_price, price_to_win_status } | null
-  const [adsSet, setAdsSet] = useState(null) // Set(item_id) com campanha ativa | null = nunca verificado
-  const [shippingFilter, setShippingFilter] = useState('all')
+  // Estado inicial vem do cache em memória (module-level, sobrevive a
+  // sair/voltar da tela) — só fica null de verdade na 1ª visita da
+  // sessão (ou depois de um F5). Ver healthPageCache.js.
+  const [rows, setRows] = useState(mlHealthCache.rows)
+  const [priceMap, setPriceMap] = useState(mlHealthCache.priceMap)
+  const [adsSet, setAdsSet] = useState(mlHealthCache.adsSet)
+  const [shippingFilter, setShippingFilterState] = useState(mlHealthCache.shippingFilter)
+  const [search, setSearchState] = useState(mlHealthCache.search)
+
+  function setShippingFilter(v) { mlHealthCache.shippingFilter = v; setShippingFilterState(v) }
+  function setSearch(v) { mlHealthCache.search = v; setSearchState(v) }
 
   const scan = useCallback(async () => {
     const [health, audit] = await Promise.all([fetchItemsHealth(), fetchAttributesAudit()])
@@ -66,6 +74,7 @@ export function MlHealthPage() {
         pending_count: h.pending_count ?? 0,
         pending:       h.pending ?? [],
         title:         a?.title ?? h.raw?.item_title ?? null,
+        sku:           a?.sku ?? null,
         permalink:     a?.permalink ?? null,
         thumbnail:     secureThumb(a?.thumbnail),
         missing_count: a?.missing_count ?? 0,
@@ -80,19 +89,27 @@ export function MlHealthPage() {
       if (rx !== ry) return rx - ry
       return y.missing_count - x.missing_count
     })
+    mlHealthCache.rows = merged
     setRows(merged)
   }, [fetchItemsHealth, fetchAttributesAudit])
 
-  useEffect(() => { scan() }, []) // eslint-disable-line react-hooks/exhaustive-deps -- só ao entrar na tela, "Atualizar" cobre refresh manual
+  // Só escaneia sozinho se o cache ainda estiver vazio (1ª vez na
+  // sessão) — voltar pra essa tela depois de já ter escaneado usa o
+  // que já tem. "Atualizar" continua disponível pra forçar um novo scan.
+  useEffect(() => { if (mlHealthCache.rows === null) scan() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const scanPrice = useCallback(async () => {
     const data = await fetchPriceScan()
-    setPriceMap(new Map(data.map(d => [d.item_id, d])))
+    const map = new Map(data.map(d => [d.item_id, d]))
+    mlHealthCache.priceMap = map
+    setPriceMap(map)
   }, [fetchPriceScan])
 
   const scanAds = useCallback(async () => {
     const data = await fetchAdsCoverage()
-    setAdsSet(new Set(data.item_ids || []))
+    const set = new Set(data.item_ids || [])
+    mlHealthCache.adsSet = set
+    setAdsSet(set)
   }, [fetchAdsCoverage])
 
   const counts = rows ? {
@@ -106,10 +123,18 @@ export function MlHealthPage() {
   // o card de Ads do detalhe) — dentro disso mantém a ordem por status.
   const displayRows = useMemo(() => {
     if (!rows) return []
-    const filtered = rows.filter(r => matchesShippingFilter(r.shipping, shippingFilter))
+    const term = search.trim().toLowerCase()
+    let filtered = rows.filter(r => matchesShippingFilter(r.shipping, shippingFilter))
+    if (term) {
+      filtered = filtered.filter(r =>
+        r.title?.toLowerCase().includes(term)
+        || r.item_id?.toLowerCase().includes(term)
+        || r.sku?.toLowerCase().includes(term)
+      )
+    }
     if (!adsSet) return filtered
     return [...filtered].sort((a, b) => (adsSet.has(b.item_id) ? 1 : 0) - (adsSet.has(a.item_id) ? 1 : 0))
-  }, [rows, adsSet, shippingFilter])
+  }, [rows, adsSet, shippingFilter, search])
 
   const total = rows?.length || 0
 
@@ -206,9 +231,24 @@ export function MlHealthPage() {
           </div>
         )}
 
-        {/* Filtro de frete/Full */}
+        {/* Busca + filtro de frete/Full */}
         {rows !== null && rows.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[220px] max-w-sm">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar por título, SKU ou ID..."
+                className="w-full text-sm bg-white border border-slate-200 rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:border-emerald-300"
+              />
+              {search && (
+                <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500">
+                  <X size={14}/>
+                </button>
+              )}
+            </div>
             <span className="text-xs font-semibold text-slate-400 uppercase">Frete:</span>
             {SHIPPING_FILTERS.map(f => (
               <button key={f.key} onClick={() => setShippingFilter(f.key)}
@@ -239,7 +279,7 @@ export function MlHealthPage() {
         ) : displayRows.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
             <Truck size={32} strokeWidth={1} className="mx-auto mb-3 text-slate-200"/>
-            <p className="text-slate-400">Nenhum anúncio bate com esse filtro de frete</p>
+            <p className="text-slate-400">{search.trim() ? 'Nenhum anúncio bate com essa busca' : 'Nenhum anúncio bate com esse filtro de frete'}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { HeartPulse, RefreshCw, Loader2, AlertTriangle, CheckCircle2, AlertCircle, HelpCircle, ExternalLink, ImageOff } from 'lucide-react'
+import { HeartPulse, RefreshCw, Loader2, AlertTriangle, CheckCircle2, AlertCircle, HelpCircle, ExternalLink, ImageOff, Search, X } from 'lucide-react'
 
 import { useShopeeInsights } from './hooks/useShopeeInsights'
+import { shopeeHealthCache } from './healthPageCache'
 
 const SHOPEE_ORANGE = '#EE4D2D'
 
@@ -27,7 +28,12 @@ function StatusBadge({ status }) {
 export function ShopeeHealthPage() {
   const navigate = useNavigate()
   const { loading, error, fetchItemsHealth } = useShopeeInsights()
-  const [rows, setRows] = useState(null) // null = nunca escaneado ainda
+  // Estado inicial vem do cache em memória — só null de verdade na 1ª
+  // visita da sessão (ou depois de F5). Ver healthPageCache.js.
+  const [rows, setRows] = useState(shopeeHealthCache.rows)
+  const [search, setSearchState] = useState(shopeeHealthCache.search)
+
+  function setSearch(v) { shopeeHealthCache.search = v; setSearchState(v) }
 
   const scan = useCallback(async () => {
     const health = await fetchItemsHealth()
@@ -37,10 +43,13 @@ export function ShopeeHealthPage() {
       if (ra !== rb) return ra - rb
       return b.pending_count - a.pending_count
     })
+    shopeeHealthCache.rows = sorted
     setRows(sorted)
   }, [fetchItemsHealth])
 
-  useEffect(() => { scan() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // Só escaneia sozinho se o cache ainda estiver vazio (1ª vez na
+  // sessão) — "Atualizar" continua disponível pra forçar um novo scan.
+  useEffect(() => { if (shopeeHealthCache.rows === null) scan() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const counts = rows ? {
     unhealthy: rows.filter(r => r.status === 'unhealthy').length,
@@ -48,6 +57,13 @@ export function ShopeeHealthPage() {
     healthy:   rows.filter(r => r.status === 'healthy').length,
   } : null
   const total = rows?.length || 0
+
+  const displayRows = useMemo(() => {
+    if (!rows) return []
+    const term = search.trim().toLowerCase()
+    if (!term) return rows
+    return rows.filter(r => r.title?.toLowerCase().includes(term) || r.item_id?.toString().includes(term))
+  }, [rows, search])
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
@@ -114,6 +130,29 @@ export function ShopeeHealthPage() {
           </div>
         )}
 
+        {/* Busca */}
+        {rows !== null && rows.length > 0 && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[220px] max-w-sm">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar por título ou ID..."
+                className="w-full text-sm bg-white border border-slate-200 rounded-xl pl-9 pr-8 py-2 focus:outline-none"
+                style={{ borderColor: search ? SHOPEE_ORANGE : undefined }}
+              />
+              {search && (
+                <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500">
+                  <X size={14}/>
+                </button>
+              )}
+            </div>
+            <span className="text-xs text-slate-400 ml-auto">{displayRows.length} de {rows.length} anúncio{rows.length > 1 ? 's' : ''}</span>
+          </div>
+        )}
+
         {/* Lista */}
         {rows === null ? (
           <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
@@ -126,9 +165,14 @@ export function ShopeeHealthPage() {
             <CheckCircle2 size={32} strokeWidth={1} className="mx-auto mb-3 text-slate-200"/>
             <p className="text-slate-400">Nenhum anúncio ativo encontrado</p>
           </div>
+        ) : displayRows.length === 0 ? (
+          <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+            <Search size={32} strokeWidth={1} className="mx-auto mb-3 text-slate-200"/>
+            <p className="text-slate-400">Nenhum anúncio bate com essa busca</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-            {rows.map(r => {
+            {displayRows.map(r => {
               const statusInfo = STATUS_INFO[r.status] ?? UNKNOWN_STATUS
               return (
               <div key={r.item_id} onClick={() => navigate(`/shopee/item/${r.item_id}`)}

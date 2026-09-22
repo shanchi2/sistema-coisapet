@@ -215,8 +215,12 @@ async function attributesAudit(integration: any, offset: number, limit: number) 
           .map((a: any) => a.id),
       )
       const missing = required.filter((a: any) => !filledIds.has(a.id)).map((a: any) => ({ id: a.id, name: a.name }))
+      // SKU já vem de graça em `item.attributes` (já buscado acima pra
+      // achar os atributos preenchidos) — extrai pra dar pra pesquisar
+      // por ele na tela de Saúde dos Anúncios, sem chamada extra à API.
+      const sku = (item.attributes || []).find((a: any) => a.id === 'SELLER_SKU')?.value_name ?? null
       return {
-        item_id: id, title: item.title, category_id: categoryId, missing_count: missing.length, missing,
+        item_id: id, title: item.title, sku, category_id: categoryId, missing_count: missing.length, missing,
         shipping: extractShippingInfo(item), permalink: item.permalink || null, thumbnail: item.thumbnail || null,
       }
     } catch (err) {
