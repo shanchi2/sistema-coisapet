@@ -119,8 +119,11 @@ export function DashboardPage() {
       // KPIs daqui iam começar a contar a menos sozinhos, sem erro
       // nenhum na tela (mesmo bug achado na Visão Geral da Shopee).
       if (canSeeOrders) {
+        // total_brl/total_value também: só pro card "Vendas por
+        // plataforma" (só diretor vê) — mesmo fallback já usado no
+        // Pedidos (total_value > 0 ? total_value : total_brl).
         queries.orders = fetchAllRows((from, to) => supabase.from('orders')
-          .select('id, source, data_venda, status_ml')
+          .select('id, source, data_venda, status_ml, total_brl, total_value')
           .gte('data_venda', startMonth)
           .order('id', { ascending: true })
           .range(from, to))
@@ -247,9 +250,25 @@ export function DashboardPage() {
 
   const ordersCancelled = orders.filter(o => (o.status_ml || '').toLowerCase().includes('cancelad')).length
   const ordersActive    = orders.length - ordersCancelled
-  const ordersByPlatform = orders
-    .filter(o => !(o.status_ml || '').toLowerCase().includes('cancelad'))
+  const activeOrders    = orders.filter(o => !(o.status_ml || '').toLowerCase().includes('cancelad'))
+  const ordersByPlatform = activeOrders
     .reduce((acc, o) => { acc[o.source] = (acc[o.source] || 0) + 1; return acc }, { ml: 0, shopee: 0, manual: 0 })
+
+  // Vendas por plataforma (valor + qtd) — só o que o Raphael pediu
+  // ver no dashboard de diretor: "quanto e quantos venderam por
+  // plataforma". Mesmo fallback de valor já usado no Pedidos
+  // (total_value > 0 ? total_value : total_brl).
+  const salesByPlatform = activeOrders.reduce((acc, o) => {
+    const key = acc[o.source] ? o.source : 'manual'
+    const value = Number(o.total_value) > 0 ? Number(o.total_value) : Number(o.total_brl) || 0
+    acc[key].value += value
+    acc[key].count += 1
+    return acc
+  }, {
+    ml:     { value: 0, count: 0 },
+    shopee: { value: 0, count: 0 },
+    manual: { value: 0, count: 0 },
+  })
 
   const budgetsTotal = budgets.reduce((a, b) => a + (parseFloat(b.total) || 0), 0)
 
@@ -337,6 +356,44 @@ export function DashboardPage() {
           <StatCard icon={AlertTriangle} label="Estoque crítico" value={materialsCritical.length} color="#EF4444" to="/materia-prima" />
         )}
       </div>
+
+      {/* Vendas por plataforma (valor + qtd) — só diretor, pedido do
+          Raphael: quanto (R$) e quantos (pedidos) venderam por
+          plataforma, sem mais nada junto. */}
+      {isDirectorView && (
+        <div className="card">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-slate-800" style={{ fontFamily: 'Nunito,sans-serif', fontWeight: 700, fontSize: '15px' }}>
+                Vendas por plataforma
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">Valor total e quantidade de pedidos no mês</p>
+            </div>
+            <Link to="/pedidos" className="flex items-center gap-1 text-xs font-semibold text-rose-400 hover:text-rose-500">
+              Ver tudo <ArrowRight size={13} />
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[
+              { key: 'ml',     label: 'Mercado Livre', emoji: '🛒' },
+              { key: 'shopee', label: 'Shopee',         emoji: '🛍️' },
+              { key: 'manual', label: 'Manual',         emoji: '📝' },
+            ].map(p => {
+              const s = salesByPlatform[p.key]
+              return (
+                <div key={p.key} className="rounded-xl border border-slate-100 p-4"
+                  style={{ borderLeft: `4px solid ${PLATFORM_COLORS[p.key]}` }}>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{p.emoji} {p.label}</p>
+                  <p className="text-xl font-black text-slate-800 mt-1.5" style={{ fontFamily: 'Nunito,sans-serif' }}>
+                    {fmtPreco(s.value)}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">{s.count} pedido{s.count !== 1 ? 's' : ''}</p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Painéis inferiores */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
