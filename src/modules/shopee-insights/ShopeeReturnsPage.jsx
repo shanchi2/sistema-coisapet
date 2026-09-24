@@ -62,8 +62,11 @@ function StatusBadge({ status }) {
 
 // Ações só fazem sentido enquanto a solicitação ainda pode ser
 // respondida pelo vendedor — nos outros status (já pago/cancelado/
-// encerrado) não faz sentido mostrar Disputar/Confirmar.
-const ACTIONABLE_STATUSES = new Set(['REQUESTED', 'PROCESSING'])
+// encerrado) não faz sentido mostrar Disputar/Confirmar. A doc da
+// Shopee confirma que dispute() vale pra REQUESTED, PROCESSING e
+// ACCEPTED (esse último é o "aceito, aguardando validação/devolução do
+// vendedor" — ainda dá tempo de agir).
+const ACTIONABLE_STATUSES = new Set(['REQUESTED', 'PROCESSING', 'ACCEPTED'])
 
 function DisputeModal({ open, onClose, ret, getDisputeReasons, disputeReturn, onDone }) {
   const [reasons, setReasons] = useState([])
