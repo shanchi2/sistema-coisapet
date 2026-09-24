@@ -285,7 +285,13 @@ function TaskCard({ task, users, onEdit, onDelete, onMoveStatus, onViewBill }) {
 // ── Coluna ─────────────────────────────────────────────────────
 function Column({ col, tasks, users, onEdit, onDelete, onMoveStatus, onNew, onViewBill }) {
   const Icon  = col.icon
-  const items = tasks.filter(t => t.type === col.type && t.status === col.status)
+  let items = tasks.filter(t => t.type === col.type && t.status === col.status)
+  // Coluna "Comprado": mais recente comprado primeiro (data real da
+  // compra, não a data em que o card foi criado no quadro). Cai pra
+  // completed_at se por algum motivo purchase_date não foi preenchida.
+  if (col.status === 'concluido') {
+    items = [...items].sort((a, b) => (b.purchase_date || b.completed_at || '').localeCompare(a.purchase_date || a.completed_at || ''))
+  }
 
   return (
     <div className="flex flex-col gap-3 min-h-[400px]">
