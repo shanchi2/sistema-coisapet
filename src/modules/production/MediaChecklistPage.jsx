@@ -13,6 +13,8 @@ import { MEDIA_CHECKLIST, CATEGORIES } from './mediaChecklist'
 import { GuideExampleCarousel } from './GuideExampleCarousel'
 import { GeneratedSlotImageModal } from './GeneratedSlotImageModal'
 import { canGenerateSlot } from './generateSlotImage'
+import { AiSlotImageModal } from './AiSlotImageModal'
+import { AI_SLOTS } from './aiSlotPrompts'
 
 // Só os slots 3 (o que acompanha) e 4 (dimensões) têm dado real o
 // suficiente no cadastro do produto pra gerar sozinho, sem IA.
@@ -28,12 +30,13 @@ function ProductThumb({ photoUrl }) {
 // objetivo/pergunta do cliente e o "cuidado" quando existe) ao lado do
 // slot de upload — pra Isa nunca precisar sair da tela pra lembrar o que
 // aquela foto precisa comunicar.
-function CheckCard({ item, data, onUpload, onRemove, hint, examples, onAddExample, onRemoveExample, product, heroPhotoPath, onGenerate }) {
+function CheckCard({ item, data, onUpload, onRemove, hint, examples, onAddExample, onRemoveExample, product, heroPhotoPath, onGenerate, onGenerateAi }) {
   const inputRef = useRef()
   const [busy, setBusy] = useState(false)
   const Icon = item.icon
   const cat = CATEGORIES[item.category]
   const canGenerate = GENERATABLE_SLOTS.includes(item.slot) && canGenerateSlot(item.slot, product, heroPhotoPath)
+  const canGenerateAi = AI_SLOTS.includes(item.slot) && !!heroPhotoPath
 
   async function handleFile(e) {
     const file = e.target.files?.[0]
@@ -76,6 +79,12 @@ function CheckCard({ item, data, onUpload, onRemove, hint, examples, onAddExampl
           <button onClick={() => onGenerate(item.slot)} disabled={busy}
             className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-center gap-1 py-1 rounded-lg bg-rose-500 text-white text-[10px] font-bold hover:bg-rose-600 transition-colors">
             <Wand2 size={11} /> Gerar
+          </button>
+        )}
+        {canGenerateAi && (
+          <button onClick={() => onGenerateAi(item.slot)} disabled={busy}
+            className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-center gap-1 py-1 rounded-lg bg-violet-500 text-white text-[10px] font-bold hover:bg-violet-600 transition-colors">
+            <Wand2 size={11} /> Gerar IA
           </button>
         )}
         <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
@@ -230,6 +239,7 @@ export function MediaChecklistPage() {
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [noteOpen, setNoteOpen] = useState(false)
   const [genSlot, setGenSlot] = useState(null) // 3 | 4 | null — slot sendo gerado agora
+  const [aiGenSlot, setAiGenSlot] = useState(null) // 1 | 2 | 7 | 9 | null — slot sendo gerado com IA agora
 
   if (loading || !product) {
     return (
@@ -292,7 +302,7 @@ export function MediaChecklistPage() {
             onUpload={uploadCheckPhoto} onRemove={removeCheckPhoto}
             examples={examplesBySlot[item.slot]}
             onAddExample={uploadExample} onRemoveExample={removeExample}
-            product={product} heroPhotoPath={checks[1]?.photo_url} onGenerate={setGenSlot} />
+            product={product} heroPhotoPath={checks[1]?.photo_url} onGenerate={setGenSlot} onGenerateAi={setAiGenSlot} />
         ))}
       </div>
 
@@ -334,6 +344,9 @@ export function MediaChecklistPage() {
       <GeneratedSlotImageModal open={!!genSlot} slot={genSlot} product={product}
         heroPhotoPath={checks[1]?.photo_url} onClose={() => setGenSlot(null)}
         onUse={async file => { await uploadCheckPhoto(genSlot, file); setGenSlot(null) }} />
+      <AiSlotImageModal open={!!aiGenSlot} slot={aiGenSlot} product={product}
+        heroPhotoPath={checks[1]?.photo_url} onClose={() => setAiGenSlot(null)}
+        onUse={async file => { await uploadCheckPhoto(aiGenSlot, file); setAiGenSlot(null) }} />
     </div>
   )
 }

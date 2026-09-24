@@ -2620,6 +2620,29 @@ serve(async (req) => {
         }
         return json({ item, siblings })
       }
+      case 'item_variations_debug': {
+        // Leitura crua das variações do item — usado quando precisa
+        // corrigir algo pontual (ex: nome de variação com erro de
+        // digitação) sem arriscar um PUT parcial. Ver
+        // 'update_item_variations' logo abaixo: NUNCA mandar um
+        // subconjunto de variações num PUT, isso apaga as outras de
+        // verdade (incidente real 14/09).
+        if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
+        const item = await mlFetch(`/items/${body.item_id}?attributes=id,title,variations`, integration.access_token)
+        return json({ item_id: item.id, title: item.title, variations: item.variations })
+      }
+      case 'update_item_variations': {
+        // Escrita — SEMPRE disparada por confirmação explícita do
+        // usuário. O array `variations` recebido deve ser o array
+        // COMPLETO do item (buscado antes via item_variations_debug),
+        // nunca um subconjunto — um PUT parcial em variations apaga as
+        // que não foram enviadas.
+        if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
+        if (!Array.isArray(body.variations) || !body.variations.length) return json({ error: 'variations (array completo) obrigatório' }, 400)
+        const updated = await mlWrite(`/items/${body.item_id}`, integration.access_token, 'PUT', { variations: body.variations })
+        await logItemUpdate(db, body.item_id, 'variations', { count: body.variations.length })
+        return json({ ok: true, item_id: body.item_id, variations: updated.variations })
+      }
       case 'item_detail':
         if (!body.item_id) return json({ error: 'item_id obrigatório' }, 400)
         return json(await itemDetail(integration, body.item_id, db))
