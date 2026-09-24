@@ -24,6 +24,8 @@ const MODULES = [
   { key: 'checklist',    label: 'Checklist Diário',section: 'Produção',      icon: '✅' },
   { key: 'producao-horistas', label: 'Lançamento de Produção (Horistas)', section: 'Produção', icon: '⏱️' },
   { key: 'compra-lousa', label: 'Compra da Lousa', section: 'Produção', icon: '🛍️' },
+  { key: 'pedidos-materia-prima', label: 'Pedidos de Matéria-Prima', section: 'Produção', icon: '🪵' },
+  { key: 'conferencia-materia-prima', label: 'Conferência de Matéria-Prima', section: 'Produção', icon: '📋' },
   { key: 'controle-midia', label: 'Atualização de Mídia', section: 'Produção', icon: '🎬' },
   { key: 'produtos',     label: 'Produtos',        section: 'Catálogo',      icon: '🐾' },
   { key: 'materiais',    label: 'Matéria-Prima',   section: 'Catálogo',      icon: '🪵' },

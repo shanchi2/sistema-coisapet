@@ -78,6 +78,7 @@ const NAV_SECTIONS = [
       { to: '/servicos',        moduleKey: 'manutencao',   icon: ShoppingCart,   label: 'Serviços', roles: ['admin','administrativo','producao'] },
       { to: '/baixa-diaria',   moduleKey: 'baixa-diaria', icon: PackageMinus,   label: 'Baixa Diária',      roles: ['admin','administrativo','producao'] },
       { to: '/compra-lousa',   moduleKey: 'compra-lousa', icon: ShoppingBag,    label: 'Compra da Lousa',   roles: ['admin','administrativo','producao'] },
+      { to: '/pedidos-materia-prima', moduleKey: 'pedidos-materia-prima', icon: Layers, label: 'Pedidos de Matéria-Prima', roles: ['admin','administrativo'] },
       { to: '/producao-horistas', moduleKey: 'producao-horistas', icon: Clock, label: 'Produção Horistas', roles: ['admin'] },
       { to: '/passagem-turno', moduleKey: 'producao',     icon: ClipboardList,  label: 'Passagem de Turno', roles: ['admin','administrativo','producao'] },
       { to: '/avaliacoes', moduleKey: 'avaliacoes', icon: Star, label: 'Avaliações', roles: ['admin','administrativo','atendimento'] },
