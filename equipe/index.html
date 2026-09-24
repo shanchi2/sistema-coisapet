@@ -479,6 +479,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);height
       <div class="card-hi" style="margin-bottom:14px">
         <span class="lbl">Lançar itens produzidos</span>
         <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+          <div>
+            <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Data da produção (já vem com hoje, mas dá pra trocar)</span>
+            <input type="date" class="fib" id="lanc-date" style="width:100%" onchange="loadLancamentos()"/>
+          </div>
           <input type="number" class="fib" id="lanc-qtd" placeholder="Quantidade" min="1" style="width:100%"/>
           <input type="text"   class="fib" id="lanc-prod" placeholder="Produto (ex: Rodinha 20cm Preta)" style="width:100%"/>
           <input type="text"   class="fib" id="lanc-obs"  placeholder="Observação (opcional)" style="width:100%"/>
@@ -488,7 +492,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);height
 
       <!-- Lista do dia -->
       <div class="card">
-        <span class="lbl">Lançamentos de hoje</span>
+        <span class="lbl" id="lanc-list-lbl">Lançamentos de hoje</span>
         <div id="lanc-list" style="margin-top:10px">
           <div class="empty"><p>Nenhum lançamento ainda hoje.</p></div>
         </div>
@@ -1882,15 +1886,28 @@ function openDayDetail(dateStr) {
 }
 
 // ── Lançamento de Produção (horista) ─────────────────────────
+// Data em fuso de Brasília de verdade (não new Date().toISOString(),
+// que é UTC e vira o dia cedo demais à noite — mesma pegadinha já
+// corrigida no sistema principal, ver dateBR.js). O campo de data vem
+// pré-preenchido com "hoje" certo, mas o Daniel/Diovani podem trocar —
+// pedido do Raphael, 25/09: lançamento feito depois da meia-noite (ou
+// esquecido pro dia seguinte) precisa poder contar pro dia certo, não
+// só sempre "hoje".
+function todayBR(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date())}
+
 async function loadLancamentos(){
-  const today=new Date().toISOString().split('T')[0]
+  const dateInput=document.getElementById('lanc-date')
+  if(!dateInput.value)dateInput.value=todayBR()
+  const date=dateInput.value
+  const isToday=date===todayBR()
+  document.getElementById('lanc-list-lbl').textContent=isToday?'Lançamentos de hoje':`Lançamentos de ${new Date(date+'T12:00:00').toLocaleDateString('pt-BR')}`
   const{data}=await db.from('production_entries')
-    .select('*').eq('employee_id',me.id).eq('date',today)
+    .select('*').eq('employee_id',me.id).eq('date',date)
     .order('created_at',{ascending:false})
   const el=document.getElementById('lanc-list')
   const tot=document.getElementById('lanc-total')
   if(!data||data.length===0){
-    el.innerHTML='<div class="empty"><p>Nenhum lançamento ainda hoje.</p></div>'
+    el.innerHTML=`<div class="empty"><p>Nenhum lançamento ainda ${isToday?'hoje':'nesse dia'}.</p></div>`
     tot.style.display='none'
     return
   }
@@ -1907,7 +1924,7 @@ async function loadLancamentos(){
       </button>
     </div>`
   }).join('')
-  tot.textContent=`Total hoje: ${totalQtd} itens produzidos`
+  tot.textContent=`Total ${isToday?'hoje':'nesse dia'}: ${totalQtd} itens produzidos`
   tot.style.display='block'
 }
 
@@ -1915,15 +1932,15 @@ async function doLancamento(){
   const qtd=parseInt(document.getElementById('lanc-qtd').value)
   const prod=document.getElementById('lanc-prod').value.trim()
   const obs=document.getElementById('lanc-obs').value.trim()
+  const date=document.getElementById('lanc-date').value||todayBR()
   if(!qtd||qtd<1){toast('Informe a quantidade');return}
   if(!prod){toast('Informe o produto');return}
   const btn=document.getElementById('lanc-btn')
   btn.disabled=true;btn.textContent='Salvando…'
-  const today=new Date().toISOString().split('T')[0]
   const{error}=await db.from('production_entries').insert({
     employee_id:me.id,
     employee_name:me.name,
-    date:today,
+    date:date,
     quantity:qtd,
     product_name:prod,
     notes:obs||null
