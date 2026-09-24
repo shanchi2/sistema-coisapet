@@ -65,6 +65,7 @@ import { MlAccountDashboardPage } from './modules/ml-insights/MlAccountDashboard
 import { ShopeeOverviewPage } from './modules/shopee-insights/ShopeeOverviewPage'
 import { ShopeeActiveListingsPage } from './modules/shopee-insights/ShopeeActiveListingsPage'
 import { ShopeeHealthPage } from './modules/shopee-insights/ShopeeHealthPage'
+import { ShopeeReturnsPage } from './modules/shopee-insights/ShopeeReturnsPage'
 import { ShopeeItemDetailPage } from './modules/shopee-insights/ShopeeItemDetailPage'
 import { ShopeeFullStockPage } from './modules/shopee-insights/ShopeeFullStockPage'
 import { ShopeeVouchersPage } from './modules/shopee-insights/ShopeeVouchersPage'
@@ -160,6 +161,7 @@ export default function App() {
                 <Route path="/shopee"            element={<GuardedRoute moduleKey="shopee-insights"><ShopeeOverviewPage /></GuardedRoute>} />
                 <Route path="/shopee/anuncios"    element={<GuardedRoute moduleKey="shopee-insights"><ShopeeActiveListingsPage /></GuardedRoute>} />
                 <Route path="/shopee/saude"       element={<GuardedRoute moduleKey="shopee-insights"><ShopeeHealthPage /></GuardedRoute>} />
+                <Route path="/shopee/retornos"    element={<GuardedRoute moduleKey="shopee-insights"><ShopeeReturnsPage /></GuardedRoute>} />
                 <Route path="/shopee/item/:itemId" element={<GuardedRoute moduleKey="shopee-insights"><ShopeeItemDetailPage /></GuardedRoute>} />
                 <Route path="/shopee/full"        element={<GuardedRoute moduleKey="shopee-insights"><ShopeeFullStockPage /></GuardedRoute>} />
                 <Route path="/shopee/cupons"      element={<GuardedRoute moduleKey="shopee-insights"><ShopeeVouchersPage /></GuardedRoute>} />

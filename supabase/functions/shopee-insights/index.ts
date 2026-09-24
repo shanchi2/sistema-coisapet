@@ -628,6 +628,49 @@ async function deleteFlashSaleItems(integration: any, db: ReturnType<typeof admi
   return res
 }
 
+// ── Retornos e pedidos cancelados (Fase, 24/09) ──────────────────────
+// Espelha a tela "Retornos e Pedidos cancelados" do Seller Center.
+// Leitura + as 2 ações que aparecem lá (Disputar / Finalizar sem
+// disputas e reembolsar) — sempre atrás de confirmação explícita na
+// tela, nunca em lote. Campos de resposta ainda não confirmados 100%
+// ao vivo (documentação pública da v2, formato pode variar um pouco) —
+// normaliza com fallback em vários nomes possíveis.
+async function returnsList(integration: any, params: { page_no: number; page_size: number; status?: string }) {
+  const query: Record<string, string> = {
+    page_no: String(params.page_no || 1),
+    page_size: String(Math.min(params.page_size || 40, 100)),
+  }
+  if (params.status && params.status !== 'ALL') query.status = params.status
+  const res = await shopeeFetch('/api/v2/returns/get_return_list', integration, query)
+  const list = res?.response?.return ?? res?.return ?? []
+  return { results: list, more: !!(res?.response?.more ?? res?.more) }
+}
+
+async function returnDetail(integration: any, returnSn: string) {
+  const res = await shopeeFetch('/api/v2/returns/get_return_detail', integration, { return_sn: returnSn })
+  return res?.response ?? res
+}
+
+async function returnDisputeReasons(integration: any, returnSn: string) {
+  const res = await shopeeFetch('/api/v2/returns/get_return_dispute_reason', integration, { return_sn: returnSn })
+  return res?.response ?? res
+}
+
+async function returnConfirm(integration: any, db: ReturnType<typeof adminClient>, returnSn: string) {
+  const res = await shopeeWrite('/api/v2/returns/confirm', integration, { return_sn: returnSn })
+  await db.from('shopee_item_updates').insert({ item_id: returnSn, action: 'return_confirm', detail: {} })
+  return { ok: true, return_sn: returnSn, raw: res }
+}
+
+async function returnDispute(
+  integration: any, db: ReturnType<typeof adminClient>, returnSn: string,
+  payload: { email: string; dispute_reason: string; dispute_text_reason?: string; images?: string[] },
+) {
+  const res = await shopeeWrite('/api/v2/returns/dispute', integration, { return_sn: returnSn, ...payload })
+  await db.from('shopee_item_updates').insert({ item_id: returnSn, action: 'return_dispute', detail: payload })
+  return { ok: true, return_sn: returnSn, raw: res }
+}
+
 async function itemPerformance(db: ReturnType<typeof adminClient>, title: string) {
   const since90 = new Date(Date.now() - 90 * 86400000).toISOString()
   const { data: rows, error } = await db
@@ -762,6 +805,24 @@ serve(async (req) => {
       case 'flash_sale_delete_items':
         if (!body.flash_sale_id || !body.item_ids) return json({ error: 'flash_sale_id e item_ids obrigatórios' }, 400)
         return json(await deleteFlashSaleItems(integration, db, Number(body.flash_sale_id), body.item_ids))
+
+      case 'returns_list':
+        return json(await returnsList(integration, { page_no: Number(body.page_no || 1), page_size: Number(body.page_size || 40), status: body.status }))
+      case 'return_detail':
+        if (!body.return_sn) return json({ error: 'return_sn obrigatório' }, 400)
+        return json(await returnDetail(integration, String(body.return_sn)))
+      case 'return_dispute_reasons':
+        if (!body.return_sn) return json({ error: 'return_sn obrigatório' }, 400)
+        return json(await returnDisputeReasons(integration, String(body.return_sn)))
+      case 'return_confirm':
+        if (!body.return_sn) return json({ error: 'return_sn obrigatório' }, 400)
+        return json(await returnConfirm(integration, db, String(body.return_sn)))
+      case 'return_dispute':
+        if (!body.return_sn || !body.email || !body.dispute_reason) return json({ error: 'return_sn, email e dispute_reason obrigatórios' }, 400)
+        return json(await returnDispute(integration, db, String(body.return_sn), {
+          email: body.email, dispute_reason: body.dispute_reason,
+          dispute_text_reason: body.dispute_text_reason, images: body.images,
+        }))
 
       default:
         return json({ error: `Ação desconhecida: ${body.action}` }, 400)

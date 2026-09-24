@@ -8,7 +8,7 @@ import {
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
   PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
   HeartPulse, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film, Zap,
-  Briefcase, Crown, Bookmark, Component,
+  Briefcase, Crown, Bookmark, Component, RotateCcw,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
@@ -44,6 +44,7 @@ const NAV_SECTIONS = [
       { to: '/shopee',          moduleKey: 'shopee-insights', icon: LayoutDashboard, label: 'Visão Geral', roles: ['admin','marketplace'] },
       { to: '/shopee/anuncios', moduleKey: 'shopee-insights', icon: Store,           label: 'Anúncios',    roles: ['admin','marketplace'] },
       { to: '/shopee/saude',    moduleKey: 'shopee-insights', icon: HeartPulse,      label: 'Saúde dos Anúncios', roles: ['admin','marketplace'] },
+      { to: '/shopee/retornos', moduleKey: 'shopee-insights', icon: RotateCcw,       label: 'Retornos', roles: ['admin','marketplace'] },
       { to: '/shopee/full',     moduleKey: 'shopee-insights', icon: Warehouse,       label: 'Estoque Full', roles: ['admin','marketplace'] },
       { to: '/shopee/cupons',     moduleKey: 'shopee-insights', icon: Ticket, label: 'Cupons', roles: ['admin','marketplace'] },
       { to: '/shopee/flash-sale', moduleKey: 'shopee-insights', icon: Zap,    label: 'Flash Sale', roles: ['admin','marketplace'] },
