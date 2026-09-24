@@ -33,6 +33,7 @@ const REASON_LABELS = {
   WRONG_ITEM:         'Recebi um produto errado',
   ITEM_MISSING:       'Faltou item no pedido',
   DAMAGED_OTHERS:     'Produto danificado',
+  BROKEN_PRODUCTS:    'Produto chegou quebrado',
   PHYSICAL_DMG:       'Dano físico no produto',
   FUNCTIONAL_DMG:     'Defeito de funcionamento',
   ITEM_NOT_FIT:       'Não serviu / não é compatível',
