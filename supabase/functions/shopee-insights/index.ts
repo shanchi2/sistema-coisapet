@@ -635,12 +635,14 @@ async function deleteFlashSaleItems(integration: any, db: ReturnType<typeof admi
 // tela, nunca em lote. Campos de resposta ainda não confirmados 100%
 // ao vivo (documentação pública da v2, formato pode variar um pouco) —
 // normaliza com fallback em vários nomes possíveis.
-async function returnsList(integration: any, db: ReturnType<typeof adminClient>, params: { page_no: number; page_size: number; status?: string }) {
+async function returnsList(integration: any, db: ReturnType<typeof adminClient>, params: { page_no: number; page_size: number; status?: string; create_time_from?: number; create_time_to?: number }) {
   const query: Record<string, string> = {
     page_no: String(params.page_no || 1),
     page_size: String(Math.min(params.page_size || 40, 100)),
   }
   if (params.status && params.status !== 'ALL') query.status = params.status
+  if (params.create_time_from) query.create_time_from = String(params.create_time_from)
+  if (params.create_time_to) query.create_time_to = String(params.create_time_to)
   const res = await shopeeFetch('/api/v2/returns/get_return_list', integration, query)
   let list = res?.response?.return ?? res?.return ?? []
 
@@ -656,6 +658,77 @@ async function returnsList(integration: any, db: ReturnType<typeof adminClient>,
     list = list.map((r: any) => ({ ...r, purchase_date: purchaseDateBySn[r.order_sn] || null }))
   }
   return { results: list, more: !!(res?.response?.more ?? res?.more) }
+}
+
+// Classificação financeira do resultado — mesma lógica usada no
+// relatório e (espelhada) no front pra colorir cada linha. REFUND_PAID
+// é a única certeza de "saiu dinheiro"; CANCELLED/REJECTED = pedido
+// encerrou sem reembolso (o valor ficou com a gente); o resto ou ainda
+// tá em aberto (precisa de ação/aguardando) ou é status raro/não
+// confirmado (cai em "outro", nunca chuta resultado financeiro errado).
+const LOST_STATUSES    = new Set(['REFUND_PAID'])
+const KEPT_STATUSES    = new Set(['CANCELLED', 'REJECTED'])
+const PENDING_STATUSES = new Set(['REQUESTED', 'PROCESSING', 'JUDGING', 'ACCEPTED'])
+
+// Relatório agregado (Fase, 24/09) — pedido do Raphael: total perdido
+// (reembolsado), total recuperado (sem reembolso) e o que ainda precisa
+// de ação, num período. Pagina até MAX_PAGES por segurança (teto de
+// ~3000 retornos) — se bater no teto, `truncated:true` avisa o front.
+async function returnsSummary(integration: any, days: number) {
+  const now = Math.floor(Date.now() / 1000)
+  const since = now - days * 86400
+  const PAGE_SIZE = 100
+  const MAX_CALLS = 40 // teto de segurança (até ~4000 retornos no período)
+
+  // Achado ao vivo (24/09): create_time_from sozinho funciona liso, mas
+  // combinado com create_time_to a Shopee devolve lista vazia sempre —
+  // mesmo dentro do limite de 15 dias entre os dois (bug/limitação não
+  // documentada, confirmado testando manualmente). Como o "até quando"
+  // do relatório é sempre "agora", nem precisa de create_time_to —
+  // só create_time_from resolve, sem o bug.
+  let all: any[] = []
+  let truncated = false
+  let pageNo = 1
+  while (pageNo <= MAX_CALLS) {
+    const res = await shopeeFetch('/api/v2/returns/get_return_list', integration, {
+      page_no: String(pageNo), page_size: String(PAGE_SIZE), create_time_from: String(since),
+    })
+    const list = res?.response?.return ?? res?.return ?? []
+    all = all.concat(list)
+    const more = !!(res?.response?.more ?? res?.more)
+    if (!more || list.length === 0) break
+    if (pageNo === MAX_CALLS) truncated = true
+    pageNo++
+  }
+
+  let lostAmount = 0, lostCount = 0, keptAmount = 0, keptCount = 0
+  let pendingAmount = 0, pendingCount = 0
+  let urgentCount = 0   // ainda dá tempo (due_date nos próximos 3 dias)
+  let overdueCount = 0  // prazo já passou, nunca respondido
+  const reasonCounts: Record<string, number> = {}
+
+  for (const r of all) {
+    const amt = Number(r.refund_amount) || 0
+    reasonCounts[r.reason] = (reasonCounts[r.reason] || 0) + 1
+    if (LOST_STATUSES.has(r.status)) { lostAmount += amt; lostCount++ }
+    else if (KEPT_STATUSES.has(r.status)) { keptAmount += amt; keptCount++ }
+    else if (PENDING_STATUSES.has(r.status)) {
+      pendingAmount += amt; pendingCount++
+      const daysLeft = r.due_date ? (r.due_date - now) / 86400 : null
+      if (daysLeft != null && daysLeft < 0) overdueCount++
+      else if (daysLeft != null && daysLeft <= 3) urgentCount++
+    }
+  }
+
+  return {
+    period_days: days,
+    total: all.length,
+    truncated,
+    lost:    { amount: lostAmount, count: lostCount },
+    kept:    { amount: keptAmount, count: keptCount },
+    pending: { amount: pendingAmount, count: pendingCount, urgent_count: urgentCount, overdue_count: overdueCount },
+    by_reason: Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([reason, count]) => ({ reason, count })),
+  }
 }
 
 async function returnDetail(integration: any, returnSn: string) {
@@ -819,7 +892,13 @@ serve(async (req) => {
         return json(await deleteFlashSaleItems(integration, db, Number(body.flash_sale_id), body.item_ids))
 
       case 'returns_list':
-        return json(await returnsList(integration, db, { page_no: Number(body.page_no || 1), page_size: Number(body.page_size || 40), status: body.status }))
+        return json(await returnsList(integration, db, {
+          page_no: Number(body.page_no || 1), page_size: Number(body.page_size || 40), status: body.status,
+          create_time_from: body.create_time_from ? Number(body.create_time_from) : undefined,
+          create_time_to: body.create_time_to ? Number(body.create_time_to) : undefined,
+        }))
+      case 'returns_summary':
+        return json(await returnsSummary(integration, Number(body.days || 90)))
       case 'return_detail':
         if (!body.return_sn) return json({ error: 'return_sn obrigatório' }, 400)
         return json(await returnDetail(integration, String(body.return_sn)))

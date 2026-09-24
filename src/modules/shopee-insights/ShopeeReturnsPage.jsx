@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  RotateCcw, Loader2, AlertTriangle, Clock, ChevronLeft, ChevronRight,
-  ShieldAlert, CheckCircle2, X, ExternalLink, CalendarDays, ArrowUpDown,
+  RotateCcw, Loader2, AlertTriangle, ChevronLeft, ChevronRight,
+  ShieldAlert, CheckCircle2, ExternalLink, CalendarDays, ArrowUpDown,
+  LayoutList, BarChart3, TrendingDown, TrendingUp, Clock, AlertCircle,
 } from 'lucide-react'
 import { useShopeeReturns } from './hooks/useShopeeReturns'
 import { Modal } from '../../components/ui/Modal'
@@ -9,37 +10,43 @@ import toast from 'react-hot-toast'
 
 const SHOPEE_ORANGE = '#EE4D2D'
 
-const STATUS_INFO = {
-  REQUESTED:    { label: 'Solicitado',                text: 'text-amber-700',   bg: 'bg-amber-50 border-amber-200' },
-  PROCESSING:   { label: 'Em processamento',           text: 'text-amber-700',   bg: 'bg-amber-50 border-amber-200' },
-  JUDGING:      { label: 'Em análise (mediação)',      text: 'text-orange-700',  bg: 'bg-orange-50 border-orange-200' },
-  ACCEPTED:     { label: 'Aceito — aguardando devolução', text: 'text-sky-700',  bg: 'bg-sky-50 border-sky-200' },
-  REFUND_PAID:  { label: 'Reembolso pago',             text: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
-  CLOSED:       { label: 'Encerrado',                  text: 'text-slate-600',  bg: 'bg-slate-50 border-slate-200' },
-  CANCELLED:    { label: 'Cancelado',                  text: 'text-slate-500',  bg: 'bg-slate-50 border-slate-200' },
-  REJECTED:     { label: 'Rejeitado',                  text: 'text-rose-700',   bg: 'bg-rose-50 border-rose-200' },
+// Status crus da Shopee — texto secundário (o que realmente guia a
+// tela agora é o "resultado financeiro", ver classifyOutcome).
+const STATUS_LABELS = {
+  REQUESTED: 'Solicitado', PROCESSING: 'Em processamento', JUDGING: 'Em análise (mediação)',
+  ACCEPTED: 'Aceito, aguardando devolução', REFUND_PAID: 'Reembolso pago', CLOSED: 'Encerrado',
+  CANCELLED: 'Cancelado', REJECTED: 'Rejeitado',
 }
 const STATUS_FILTERS = [
   ['ALL', 'Todos'], ['REQUESTED', 'Solicitado'], ['PROCESSING', 'Em processamento'],
   ['JUDGING', 'Em análise'], ['ACCEPTED', 'Aceito'], ['REFUND_PAID', 'Reembolso pago'],
   ['CLOSED', 'Encerrado'], ['CANCELLED', 'Cancelado'],
 ]
-// Só os códigos confirmados ao vivo na nossa conta (24/09) + os mais
-// comuns documentados publicamente — se aparecer um código novo, cai no
-// fallback (mostra o texto cru, nunca quebra a tela).
 const REASON_LABELS = {
-  CHANGE_MIND:       'Mudei de ideia',
-  NOT_RECEIPT:        'Não recebi o produto',
-  WRONG_ITEM:         'Recebi um produto errado',
-  ITEM_MISSING:       'Faltou item no pedido',
-  DAMAGED_OTHERS:     'Produto danificado',
-  BROKEN_PRODUCTS:    'Produto chegou quebrado',
-  PHYSICAL_DMG:       'Dano físico no produto',
-  FUNCTIONAL_DMG:     'Defeito de funcionamento',
-  ITEM_NOT_FIT:       'Não serviu / não é compatível',
-  EXPECTATION_FAILED: 'Diferente do esperado',
+  CHANGE_MIND: 'Mudei de ideia', NOT_RECEIPT: 'Não recebi o produto', WRONG_ITEM: 'Recebi um produto errado',
+  ITEM_MISSING: 'Faltou item no pedido', DAMAGED_OTHERS: 'Produto danificado', BROKEN_PRODUCTS: 'Produto chegou quebrado',
+  PHYSICAL_DMG: 'Dano físico no produto', FUNCTIONAL_DMG: 'Defeito de funcionamento',
+  ITEM_NOT_FIT: 'Não serviu / não é compatível', EXPECTATION_FAILED: 'Diferente do esperado',
+  EXPIRED_PRODUCT: 'Produto vencido',
 }
 const SOLUTION_LABELS = { 0: 'Devolução e Reembolso', 1: 'Apenas Reembolso' }
+
+// Mesma classificação financeira do backend (returnsSummary) — REFUND_PAID
+// é a única certeza de que saiu dinheiro; CANCELLED/REJECTED terminou sem
+// reembolso (o valor ficou com a gente); os "em aberto" ainda podem virar
+// qualquer um dos dois; o resto (CLOSED e afins) fica neutro de propósito
+// — nunca chuta se foi ganho ou perda sem ter certeza.
+const LOST_STATUSES    = new Set(['REFUND_PAID'])
+const KEPT_STATUSES    = new Set(['CANCELLED', 'REJECTED'])
+const ACTIONABLE_STATUSES = new Set(['REQUESTED', 'PROCESSING', 'ACCEPTED'])
+const PENDING_STATUSES    = new Set(['REQUESTED', 'PROCESSING', 'JUDGING', 'ACCEPTED'])
+
+function outcomeOf(status) {
+  if (LOST_STATUSES.has(status)) return 'lost'
+  if (KEPT_STATUSES.has(status)) return 'kept'
+  if (PENDING_STATUSES.has(status)) return 'pending'
+  return 'other'
+}
 
 function fmtPreco(v) {
   const n = parseFloat(v)
@@ -54,6 +61,10 @@ function fmtDateISO(iso) {
   if (!iso) return null
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
+function daysUntil(unixSec) {
+  if (!unixSec) return null
+  return Math.ceil((unixSec * 1000 - Date.now()) / 86400000)
+}
 
 const SORT_OPTIONS = [
   ['return_desc',   'Devolução — mais recente'],
@@ -63,34 +74,78 @@ const SORT_OPTIONS = [
 ]
 function sortRows(rows, sortKey) {
   const [field, dir] = sortKey.startsWith('return_') ? ['create_time', sortKey.slice(7)] : ['purchase_date', sortKey.slice(9)]
-  const sorted = [...rows].sort((a, b) => {
+  return [...rows].sort((a, b) => {
     const va = field === 'create_time' ? a.create_time : (a.purchase_date ? new Date(a.purchase_date).getTime() / 1000 : null)
     const vb = field === 'create_time' ? b.create_time : (b.purchase_date ? new Date(b.purchase_date).getTime() / 1000 : null)
     if (va == null && vb == null) return 0
-    if (va == null) return 1  // sem data da compra vai pro fim, nunca esconde a linha
+    if (va == null) return 1
     if (vb == null) return -1
     return dir === 'asc' ? va - vb : vb - va
   })
-  return sorted
-}
-function daysUntil(unixSec) {
-  if (!unixSec) return null
-  const diffMs = unixSec * 1000 - Date.now()
-  return Math.ceil(diffMs / 86400000)
 }
 
-function StatusBadge({ status }) {
-  const info = STATUS_INFO[status] || { label: status || '—', text: 'text-slate-500', bg: 'bg-slate-50 border-slate-200' }
-  return <span className={`inline-flex text-xs font-semibold px-2.5 py-1 rounded-full border ${info.text} ${info.bg}`}>{info.label}</span>
+// ── Selo único por linha — resolve de cara "perdemos, recuperamos, ou
+// ainda precisa de ação" (era a maior confusão da versão anterior, que
+// espalhava status + prazo em pedaços separados). ──────────────────
+function OutcomeBadge({ r }) {
+  const outcome = outcomeOf(r.status)
+  if (outcome === 'lost') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+        <TrendingDown size={13} /> Reembolsado — {fmtPreco(r.refund_amount)} perdido
+      </span>
+    )
+  }
+  if (outcome === 'kept') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+        <TrendingUp size={13} /> Sem reembolso — valor mantido
+      </span>
+    )
+  }
+  if (outcome === 'pending') {
+    const days = daysUntil(r.due_date)
+    const canAct = ACTIONABLE_STATUSES.has(r.status)
+    if (canAct && days !== null && days < 0) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+          <AlertCircle size={13} /> Prazo vencido — pode não dar mais pra agir
+        </span>
+      )
+    }
+    if (canAct && days !== null && days <= 3) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+          <Clock size={13} /> {days <= 0 ? 'Vence hoje' : `Vence em ${days}d`} — precisa agir
+        </span>
+      )
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">
+        <Clock size={13} /> {STATUS_LABELS[r.status] || 'Em aberto'}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+      {STATUS_LABELS[r.status] || r.status || 'Encerrado'}
+    </span>
+  )
 }
 
-// Ações só fazem sentido enquanto a solicitação ainda pode ser
-// respondida pelo vendedor — nos outros status (já pago/cancelado/
-// encerrado) não faz sentido mostrar Disputar/Confirmar. A doc da
-// Shopee confirma que dispute() vale pra REQUESTED, PROCESSING e
-// ACCEPTED (esse último é o "aceito, aguardando validação/devolução do
-// vendedor" — ainda dá tempo de agir).
-const ACTIONABLE_STATUSES = new Set(['REQUESTED', 'PROCESSING', 'ACCEPTED'])
+// Cor da barra lateral do card — reforça o mesmo sinal do selo, dá pra
+// escanear a lista inteira só pela faixa colorida à esquerda.
+function outcomeBorderColor(r) {
+  const outcome = outcomeOf(r.status)
+  if (outcome === 'lost') return '#f43f5e'
+  if (outcome === 'kept') return '#10b981'
+  if (outcome === 'pending') {
+    const days = daysUntil(r.due_date)
+    if (ACTIONABLE_STATUSES.has(r.status) && days !== null && days <= 3) return '#f59e0b'
+    return '#38bdf8'
+  }
+  return '#cbd5e1'
+}
 
 function DisputeModal({ open, onClose, ret, getDisputeReasons, disputeReturn, onDone }) {
   const [reasons, setReasons] = useState([])
@@ -145,7 +200,7 @@ function DisputeModal({ open, onClose, ret, getDisputeReasons, disputeReturn, on
           {loadingReasons ? (
             <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" /> Carregando motivos...</div>
           ) : reasons.length === 0 ? (
-            <p className="text-sm text-slate-400">Nenhum motivo de disputa disponível pra essa solicitação.</p>
+            <p className="text-sm text-slate-400">Nenhum motivo de disputa disponível pra essa solicitação (o prazo pode já ter passado).</p>
           ) : (
             <select value={reasonId} onChange={e => setReasonId(e.target.value)} className="input">
               <option value="">Selecione...</option>
@@ -202,8 +257,9 @@ function ConfirmReturnModal({ open, onClose, ret, confirmReturn, onDone }) {
   )
 }
 
-export function ShopeeReturnsPage() {
-  const { rows, loading, error, hasMore, page, status, fetchPage, getDisputeReasons, confirmReturn, disputeReturn } = useShopeeReturns()
+// ── Aba "Acompanhamento" — a lista, redesenhada ──────────────────────
+function AcompanhamentoTab({ shopee }) {
+  const { rows, loading, error, hasMore, page, status, fetchPage, getDisputeReasons, confirmReturn, disputeReturn } = shopee
   const [disputeTarget, setDisputeTarget] = useState(null)
   const [confirmTarget, setConfirmTarget] = useState(null)
   const [sortKey, setSortKey] = useState('return_desc')
@@ -211,8 +267,279 @@ export function ShopeeReturnsPage() {
   useEffect(() => { fetchPage(1, 'ALL') }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function reload() { fetchPage(page, status) }
-
   const sortedRows = useMemo(() => sortRows(rows, sortKey), [rows, sortKey])
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {STATUS_FILTERS.map(([key, label]) => (
+            <button key={key} onClick={() => fetchPage(1, key)} disabled={loading}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                status === key ? 'text-white border-transparent' : 'bg-white border-slate-200 text-slate-500 hover:border-orange-300'
+              }`}
+              style={status === key ? { background: SHOPEE_ORANGE } : undefined}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={reload} disabled={loading}
+            className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-orange-600 disabled:opacity-50">
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Atualizar
+          </button>
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 shrink-0">
+            <ArrowUpDown size={13} />
+            <select value={sortKey} onChange={e => setSortKey(e.target.value)}
+              className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none">
+              {SORT_OPTIONS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Legenda — deixa explícito o que cada cor quer dizer, de cara */}
+      <div className="flex items-center gap-4 flex-wrap text-[11px] text-slate-400 bg-white border border-slate-200 rounded-xl px-3 py-2">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Perdemos (reembolsado)</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Recuperamos (sem reembolso)</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Precisa agir logo</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-sky-400" /> Em aberto, sem urgência</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-slate-300" /> Encerrado / outro</span>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
+          <AlertTriangle size={15} /> {error}
+        </div>
+      )}
+
+      {loading && rows.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+          <Loader2 size={28} className="mx-auto mb-3 text-slate-300 animate-spin" />
+          <p className="text-slate-400">Carregando solicitações...</p>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+          <CheckCircle2 size={32} strokeWidth={1} className="mx-auto mb-3 text-slate-200" />
+          <p className="text-slate-400">Nenhuma solicitação nesse filtro</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {sortedRows.map(r => {
+            const item = r.item?.[0]
+            const extraItems = (r.item?.length || 0) - 1
+            const canAct = ACTIONABLE_STATUSES.has(r.status)
+            return (
+              <div key={r.return_sn} className="bg-white border border-slate-200 rounded-2xl p-4 border-l-4"
+                style={{ borderLeftColor: outcomeBorderColor(r) }}>
+                <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
+                  <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
+                    <span className="font-semibold text-slate-600">{r.user?.username || 'Comprador'}</span>
+                    <span>· Pedido {r.order_sn}</span>
+                    <span>· Retorno {r.return_sn}</span>
+                  </div>
+                  <OutcomeBadge r={r} />
+                </div>
+
+                <div className="flex items-center gap-4 flex-wrap mb-3 text-[11px] text-slate-400">
+                  <span className="flex items-center gap-1">
+                    <CalendarDays size={11} />
+                    Comprado em {fmtDateISO(r.purchase_date) || <span className="italic text-slate-300">não sincronizado</span>}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <CalendarDays size={11} />
+                    Devolução pedida em {fmtDate(r.create_time)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 items-start">
+                  <div className="flex gap-3">
+                    <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
+                      {item?.images?.[0] && <img src={item.images[0]} alt="" className="w-full h-full object-cover" />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-700 line-clamp-2">{item?.name || '—'}</p>
+                      {item?.item_sku && <p className="text-xs text-slate-400 font-mono mt-0.5">{item.item_sku}</p>}
+                      {extraItems > 0 && <p className="text-xs text-slate-400 mt-0.5">+{extraItems} outro{extraItems > 1 ? 's' : ''} item{extraItems > 1 ? 's' : ''}</p>}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase">Valor</p>
+                    <p className="text-sm font-bold text-slate-700">{fmtPreco(r.refund_amount)}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase">Motivo</p>
+                    <p className="text-sm text-slate-700">{REASON_LABELS[r.reason] || r.reason || '—'}</p>
+                    {r.text_reason && <p className="text-xs text-slate-400 mt-0.5 italic line-clamp-2">&ldquo;{r.text_reason}&rdquo;</p>}
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase">Solução</p>
+                    <p className="text-sm text-slate-700">{SOLUTION_LABELS[r.return_solution] ?? '—'}</p>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5 items-stretch lg:items-end shrink-0">
+                    {canAct ? (
+                      <>
+                        <button onClick={() => setDisputeTarget(r)}
+                          className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1 justify-end">
+                          <ShieldAlert size={12} /> Disputar
+                        </button>
+                        <button onClick={() => setConfirmTarget(r)}
+                          className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 justify-end">
+                          <CheckCircle2 size={12} /> Finalizar sem disputa
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-xs text-slate-300">Sem ação disponível</span>
+                    )}
+                    {r.tracking_number && (
+                      <a href={`https://www.17track.net/en/track?nums=${r.tracking_number}`} target="_blank" rel="noreferrer"
+                        className="text-[11px] text-slate-400 hover:text-slate-600 flex items-center gap-1 justify-end">
+                        <ExternalLink size={10} /> {r.tracking_number}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div className="flex items-center justify-center gap-3">
+          <button onClick={() => fetchPage(page - 1, status)} disabled={page <= 1 || loading}
+            className="flex items-center gap-1 text-sm font-semibold text-slate-500 disabled:opacity-30 hover:text-orange-600">
+            <ChevronLeft size={16} /> Anterior
+          </button>
+          <span className="text-sm text-slate-400">Página {page}</span>
+          <button onClick={() => fetchPage(page + 1, status)} disabled={!hasMore || loading}
+            className="flex items-center gap-1 text-sm font-semibold text-slate-500 disabled:opacity-30 hover:text-orange-600">
+            Próxima <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
+
+      <DisputeModal open={!!disputeTarget} ret={disputeTarget} onClose={() => setDisputeTarget(null)}
+        getDisputeReasons={getDisputeReasons} disputeReturn={disputeReturn}
+        onDone={() => { setDisputeTarget(null); reload() }} />
+      <ConfirmReturnModal open={!!confirmTarget} ret={confirmTarget} onClose={() => setConfirmTarget(null)}
+        confirmReturn={confirmReturn}
+        onDone={() => { setConfirmTarget(null); reload() }} />
+    </div>
+  )
+}
+
+// ── Aba "Relatório" — totais do período ──────────────────────────────
+const PERIOD_OPTIONS = [[90, '90 dias'], [180, '180 dias'], [365, '1 ano'], [730, '2 anos']]
+
+function KpiCard({ icon: Icon, label, value, sub, color, bg }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-4">
+      <div className="flex items-center gap-2.5 mb-2">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: bg }}>
+          <Icon size={15} style={{ color }} />
+        </div>
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
+      </div>
+      <p className="text-2xl font-black text-slate-800" style={{ fontFamily: 'Nunito,sans-serif' }}>{value}</p>
+      {sub && <p className="text-xs text-slate-400 mt-1">{sub}</p>}
+    </div>
+  )
+}
+
+function ReportTab({ shopee }) {
+  const { summary, summaryLoading, summaryError, fetchSummary } = shopee
+  const [days, setDays] = useState(365)
+
+  useEffect(() => { fetchSummary(days) }, [days]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm text-slate-500">Totais das solicitações de devolução pedidas nesse período</p>
+        <div className="flex items-center gap-1.5">
+          {PERIOD_OPTIONS.map(([d, label]) => (
+            <button key={d} onClick={() => setDays(d)} disabled={summaryLoading}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                days === d ? 'text-white border-transparent' : 'bg-white border-slate-200 text-slate-500 hover:border-orange-300'
+              }`}
+              style={days === d ? { background: SHOPEE_ORANGE } : undefined}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {summaryError && (
+        <div className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
+          <AlertTriangle size={15} /> {summaryError}
+        </div>
+      )}
+
+      {summaryLoading ? (
+        <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+          <Loader2 size={28} className="mx-auto mb-3 text-slate-300 animate-spin" />
+          <p className="text-slate-400">Somando as solicitações do período (pode levar um pouco)...</p>
+        </div>
+      ) : summary && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <KpiCard icon={TrendingDown} label="Perdemos (reembolsado)" color="#e11d48" bg="#fff1f2"
+              value={fmtPreco(summary.lost.amount)} sub={`${summary.lost.count} solicitaç${summary.lost.count === 1 ? 'ão' : 'ões'}`} />
+            <KpiCard icon={TrendingUp} label="Recuperamos (sem reembolso)" color="#059669" bg="#ecfdf5"
+              value={fmtPreco(summary.kept.amount)} sub={`${summary.kept.count} solicitaç${summary.kept.count === 1 ? 'ão' : 'ões'}`} />
+            <KpiCard icon={Clock} label="Em aberto — precisa de ação" color="#d97706" bg="#fffbeb"
+              value={fmtPreco(summary.pending.amount)} sub={`${summary.pending.count} solicitaç${summary.pending.count === 1 ? 'ão' : 'ões'} em aberto`} />
+            <KpiCard icon={AlertCircle} label="Vencendo ou já vencido" color="#dc2626" bg="#fef2f2"
+              value={summary.pending.urgent_count + summary.pending.overdue_count}
+              sub={`${summary.pending.overdue_count} vencido${summary.pending.overdue_count === 1 ? '' : 's'} · ${summary.pending.urgent_count} vencendo em até 3 dias`} />
+          </div>
+
+          {summary.truncated && (
+            <p className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              <AlertTriangle size={13} /> Esse período tem muita solicitação — os números acima podem estar incompletos (bateu no limite de segurança da busca). Tenta um período menor pra ver o total exato.
+            </p>
+          )}
+
+          <div className="bg-white border border-slate-200 rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart3 size={15} className="text-slate-400" />
+              <p className="text-sm font-bold text-slate-700">Principais motivos de devolução</p>
+            </div>
+            {summary.by_reason.length === 0 ? (
+              <p className="text-sm text-slate-400">Nenhuma solicitação nesse período.</p>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {summary.by_reason.map(({ reason, count }) => {
+                  const max = summary.by_reason[0].count
+                  return (
+                    <div key={reason} className="flex items-center gap-3">
+                      <span className="text-xs text-slate-600 w-48 shrink-0 truncate">{REASON_LABELS[reason] || reason}</span>
+                      <div className="flex-1 h-5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full flex items-center justify-end pr-1.5"
+                          style={{ width: `${Math.max((count / max) * 100, 6)}%`, background: SHOPEE_ORANGE }}>
+                          <span className="text-[10px] font-black text-white">{count}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+export function ShopeeReturnsPage() {
+  const shopee = useShopeeReturns()
+  const [tab, setTab] = useState('acompanhamento')
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
@@ -228,164 +555,23 @@ export function ShopeeReturnsPage() {
               <p className="text-sm text-slate-500">Acompanhamento de devoluções da Shopee, direto da API</p>
             </div>
           </div>
-          <button onClick={reload} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2.5 text-white text-sm font-medium rounded-xl disabled:opacity-60 transition-colors shadow-sm"
-            style={{ background: SHOPEE_ORANGE }}>
-            {loading ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
-            Atualizar
+        </div>
+
+        <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl p-1 w-fit">
+          <button onClick={() => setTab('acompanhamento')}
+            className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg transition-colors ${tab === 'acompanhamento' ? 'text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            style={tab === 'acompanhamento' ? { background: SHOPEE_ORANGE } : undefined}>
+            <LayoutList size={15} /> Acompanhamento
+          </button>
+          <button onClick={() => setTab('relatorio')}
+            className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg transition-colors ${tab === 'relatorio' ? 'text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            style={tab === 'relatorio' ? { background: SHOPEE_ORANGE } : undefined}>
+            <BarChart3 size={15} /> Relatório
           </button>
         </div>
 
-        {error && (
-          <div className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
-            <AlertTriangle size={15} /> {error}
-          </div>
-        )}
-
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {STATUS_FILTERS.map(([key, label]) => (
-              <button key={key} onClick={() => fetchPage(1, key)} disabled={loading}
-                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
-                  status === key ? 'text-white border-transparent' : 'bg-white border-slate-200 text-slate-500 hover:border-orange-300'
-                }`}
-                style={status === key ? { background: SHOPEE_ORANGE } : undefined}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 shrink-0">
-            <ArrowUpDown size={13} />
-            <select value={sortKey} onChange={e => setSortKey(e.target.value)}
-              className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none">
-              {SORT_OPTIONS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </select>
-          </div>
-        </div>
-
-        {loading && rows.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
-            <Loader2 size={28} className="mx-auto mb-3 text-slate-300 animate-spin" />
-            <p className="text-slate-400">Carregando solicitações...</p>
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
-            <CheckCircle2 size={32} strokeWidth={1} className="mx-auto mb-3 text-slate-200" />
-            <p className="text-slate-400">Nenhuma solicitação nesse filtro</p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {sortedRows.map(r => {
-              const item = r.item?.[0]
-              const extraItems = (r.item?.length || 0) - 1
-              const days = daysUntil(r.due_date)
-              const urgent = days !== null && days <= 3 && ACTIONABLE_STATUSES.has(r.status)
-              const canAct = ACTIONABLE_STATUSES.has(r.status)
-              return (
-                <div key={r.return_sn} className="bg-white border border-slate-200 rounded-2xl p-4">
-                  <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
-                    <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
-                      <span className="font-semibold text-slate-600">{r.user?.username || 'Comprador'}</span>
-                      <span>· Pedido {r.order_sn}</span>
-                      <span>· Retorno {r.return_sn}</span>
-                    </div>
-                    <StatusBadge status={r.status} />
-                  </div>
-
-                  <div className="flex items-center gap-4 flex-wrap mb-3 text-[11px] text-slate-400">
-                    <span className="flex items-center gap-1">
-                      <CalendarDays size={11} />
-                      Comprado em {fmtDateISO(r.purchase_date) || <span className="italic text-slate-300">não sincronizado</span>}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <CalendarDays size={11} />
-                      Devolução pedida em {fmtDate(r.create_time)}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 items-start">
-                    <div className="flex gap-3">
-                      <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
-                        {item?.images?.[0] && <img src={item.images[0]} alt="" className="w-full h-full object-cover" />}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-700 line-clamp-2">{item?.name || '—'}</p>
-                        {item?.item_sku && <p className="text-xs text-slate-400 font-mono mt-0.5">{item.item_sku}</p>}
-                        {extraItems > 0 && <p className="text-xs text-slate-400 mt-0.5">+{extraItems} outro{extraItems > 1 ? 's' : ''} item{extraItems > 1 ? 's' : ''}</p>}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase">Reembolso</p>
-                      <p className="text-sm font-bold text-emerald-600">{fmtPreco(r.refund_amount)}</p>
-                    </div>
-
-                    <div>
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase">Motivo</p>
-                      <p className="text-sm text-slate-700">{REASON_LABELS[r.reason] || r.reason || '—'}</p>
-                      {r.text_reason && <p className="text-xs text-slate-400 mt-0.5 italic line-clamp-2">&ldquo;{r.text_reason}&rdquo;</p>}
-                    </div>
-
-                    <div>
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase">Solução</p>
-                      <p className="text-sm text-slate-700">{SOLUTION_LABELS[r.return_solution] ?? '—'}</p>
-                      {days !== null && canAct && (
-                        <p className={`flex items-center gap-1 text-xs font-semibold mt-1 ${urgent ? 'text-rose-600' : 'text-slate-400'}`}>
-                          <Clock size={11} /> {days > 0 ? `Vence em ${days} dia${days > 1 ? 's' : ''}` : days === 0 ? 'Vence hoje' : 'Vencido'}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col gap-1.5 items-stretch lg:items-end shrink-0">
-                      {canAct ? (
-                        <>
-                          <button onClick={() => setDisputeTarget(r)}
-                            className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1 justify-end">
-                            <ShieldAlert size={12} /> Disputar
-                          </button>
-                          <button onClick={() => setConfirmTarget(r)}
-                            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 justify-end">
-                            <CheckCircle2 size={12} /> Finalizar sem disputa
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-xs text-slate-300">Sem ação disponível</span>
-                      )}
-                      {r.tracking_number && (
-                        <a href={`https://www.17track.net/en/track?nums=${r.tracking_number}`} target="_blank" rel="noreferrer"
-                          className="text-[11px] text-slate-400 hover:text-slate-600 flex items-center gap-1 justify-end">
-                          <ExternalLink size={10} /> {r.tracking_number}
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {rows.length > 0 && (
-          <div className="flex items-center justify-center gap-3">
-            <button onClick={() => fetchPage(page - 1, status)} disabled={page <= 1 || loading}
-              className="flex items-center gap-1 text-sm font-semibold text-slate-500 disabled:opacity-30 hover:text-orange-600">
-              <ChevronLeft size={16} /> Anterior
-            </button>
-            <span className="text-sm text-slate-400">Página {page}</span>
-            <button onClick={() => fetchPage(page + 1, status)} disabled={!hasMore || loading}
-              className="flex items-center gap-1 text-sm font-semibold text-slate-500 disabled:opacity-30 hover:text-orange-600">
-              Próxima <ChevronRight size={16} />
-            </button>
-          </div>
-        )}
+        {tab === 'acompanhamento' ? <AcompanhamentoTab shopee={shopee} /> : <ReportTab shopee={shopee} />}
       </div>
-
-      <DisputeModal open={!!disputeTarget} ret={disputeTarget} onClose={() => setDisputeTarget(null)}
-        getDisputeReasons={getDisputeReasons} disputeReturn={disputeReturn}
-        onDone={() => { setDisputeTarget(null); reload() }} />
-      <ConfirmReturnModal open={!!confirmTarget} ret={confirmTarget} onClose={() => setConfirmTarget(null)}
-        confirmReturn={confirmReturn}
-        onDone={() => { setConfirmTarget(null); reload() }} />
     </div>
   )
 }

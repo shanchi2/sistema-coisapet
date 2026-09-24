@@ -47,6 +47,23 @@ export function useShopeeReturns() {
     }
   }, [])
 
+  const [summary,        setSummary]        = useState(null)
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [summaryError,   setSummaryError]   = useState(null)
+
+  const fetchSummary = useCallback(async (days) => {
+    setSummaryLoading(true)
+    setSummaryError(null)
+    try {
+      const data = await callShopeeInsights({ action: 'returns_summary', days })
+      setSummary(data)
+    } catch (err) {
+      setSummaryError(err.message)
+    } finally {
+      setSummaryLoading(false)
+    }
+  }, [])
+
   async function getDisputeReasons(returnSn) {
     return (await callShopeeInsights({ action: 'return_dispute_reasons', return_sn: returnSn })).dispute_reason || []
   }
@@ -65,5 +82,6 @@ export function useShopeeReturns() {
   return {
     rows, loading, error, hasMore, page, status,
     fetchPage, getDisputeReasons, confirmReturn, disputeReturn,
+    summary, summaryLoading, summaryError, fetchSummary,
   }
 }
