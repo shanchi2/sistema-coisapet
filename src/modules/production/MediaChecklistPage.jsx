@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Package, Upload, Trash2, Video as VideoIcon,
   MessageSquare, StickyNote, Loader2, Check, Lightbulb, AlertTriangle,
-  Sparkles, Target,
+  Sparkles, Target, Wand2,
 } from 'lucide-react'
 import { useProductMediaDetail } from './hooks/useProductMediaStatus'
 import { useGuideExamples } from './hooks/useGuideExamples'
@@ -11,6 +11,12 @@ import { useSignedUrl } from '../../lib/signedUrlCache'
 import { Modal } from '../../components/ui/Modal'
 import { MEDIA_CHECKLIST, CATEGORIES } from './mediaChecklist'
 import { GuideExampleCarousel } from './GuideExampleCarousel'
+import { GeneratedSlotImageModal } from './GeneratedSlotImageModal'
+import { canGenerateSlot } from './generateSlotImage'
+
+// Só os slots 3 (o que acompanha) e 4 (dimensões) têm dado real o
+// suficiente no cadastro do produto pra gerar sozinho, sem IA.
+const GENERATABLE_SLOTS = [3, 4]
 
 function ProductThumb({ photoUrl }) {
   const url = useSignedUrl('product-photos', photoUrl)
@@ -22,11 +28,12 @@ function ProductThumb({ photoUrl }) {
 // objetivo/pergunta do cliente e o "cuidado" quando existe) ao lado do
 // slot de upload — pra Isa nunca precisar sair da tela pra lembrar o que
 // aquela foto precisa comunicar.
-function CheckCard({ item, data, onUpload, onRemove, hint, examples, onAddExample, onRemoveExample }) {
+function CheckCard({ item, data, onUpload, onRemove, hint, examples, onAddExample, onRemoveExample, product, heroPhotoPath, onGenerate }) {
   const inputRef = useRef()
   const [busy, setBusy] = useState(false)
   const Icon = item.icon
   const cat = CATEGORIES[item.category]
+  const canGenerate = GENERATABLE_SLOTS.includes(item.slot) && canGenerateSlot(item.slot, product, heroPhotoPath)
 
   async function handleFile(e) {
     const file = e.target.files?.[0]
@@ -64,6 +71,12 @@ function CheckCard({ item, data, onUpload, onRemove, hint, examples, onAddExampl
               <Trash2 size={11} />
             </button>
           </div>
+        )}
+        {canGenerate && (
+          <button onClick={() => onGenerate(item.slot)} disabled={busy}
+            className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-center gap-1 py-1 rounded-lg bg-rose-500 text-white text-[10px] font-bold hover:bg-rose-600 transition-colors">
+            <Wand2 size={11} /> Gerar
+          </button>
         )}
         <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
       </div>
@@ -216,6 +229,7 @@ export function MediaChecklistPage() {
 
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [noteOpen, setNoteOpen] = useState(false)
+  const [genSlot, setGenSlot] = useState(null) // 3 | 4 | null — slot sendo gerado agora
 
   if (loading || !product) {
     return (
@@ -277,7 +291,8 @@ export function MediaChecklistPage() {
             hint={item.hint?.(product)}
             onUpload={uploadCheckPhoto} onRemove={removeCheckPhoto}
             examples={examplesBySlot[item.slot]}
-            onAddExample={uploadExample} onRemoveExample={removeExample} />
+            onAddExample={uploadExample} onRemoveExample={removeExample}
+            product={product} heroPhotoPath={checks[1]?.photo_url} onGenerate={setGenSlot} />
         ))}
       </div>
 
@@ -316,6 +331,9 @@ export function MediaChecklistPage() {
         onSave={(v, d) => { saveFeedback(v, d); setFeedbackOpen(false) }} />
       <NoteModal open={noteOpen} onClose={() => setNoteOpen(false)} media={media}
         onSave={v => { saveNotes(v); setNoteOpen(false) }} />
+      <GeneratedSlotImageModal open={!!genSlot} slot={genSlot} product={product}
+        heroPhotoPath={checks[1]?.photo_url} onClose={() => setGenSlot(null)}
+        onUse={async file => { await uploadCheckPhoto(genSlot, file); setGenSlot(null) }} />
     </div>
   )
 }
