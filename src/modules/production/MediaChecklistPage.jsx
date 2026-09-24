@@ -345,7 +345,7 @@ export function MediaChecklistPage() {
         heroPhotoPath={checks[1]?.photo_url} onClose={() => setGenSlot(null)}
         onUse={async file => { await uploadCheckPhoto(genSlot, file); setGenSlot(null) }} />
       <AiSlotImageModal open={!!aiGenSlot} slot={aiGenSlot} product={product}
-        heroPhotoPath={checks[1]?.photo_url} onClose={() => setAiGenSlot(null)}
+        heroPhotoPath={checks[1]?.photo_url} examples={examplesBySlot[aiGenSlot]} onClose={() => setAiGenSlot(null)}
         onUse={async file => { await uploadCheckPhoto(aiGenSlot, file); setAiGenSlot(null) }} />
     </div>
   )
