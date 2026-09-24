@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   RotateCcw, Loader2, AlertTriangle, Clock, ChevronLeft, ChevronRight,
-  ShieldAlert, CheckCircle2, X, ExternalLink,
+  ShieldAlert, CheckCircle2, X, ExternalLink, CalendarDays, ArrowUpDown,
 } from 'lucide-react'
 import { useShopeeReturns } from './hooks/useShopeeReturns'
 import { Modal } from '../../components/ui/Modal'
@@ -48,6 +48,29 @@ function fmtPreco(v) {
 function fmtDate(unixSec) {
   if (!unixSec) return null
   return new Date(unixSec * 1000).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+function fmtDateISO(iso) {
+  if (!iso) return null
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+const SORT_OPTIONS = [
+  ['return_desc',   'Devolução — mais recente'],
+  ['return_asc',    'Devolução — mais antiga'],
+  ['purchase_desc', 'Compra — mais recente'],
+  ['purchase_asc',  'Compra — mais antiga'],
+]
+function sortRows(rows, sortKey) {
+  const [field, dir] = sortKey.startsWith('return_') ? ['create_time', sortKey.slice(7)] : ['purchase_date', sortKey.slice(9)]
+  const sorted = [...rows].sort((a, b) => {
+    const va = field === 'create_time' ? a.create_time : (a.purchase_date ? new Date(a.purchase_date).getTime() / 1000 : null)
+    const vb = field === 'create_time' ? b.create_time : (b.purchase_date ? new Date(b.purchase_date).getTime() / 1000 : null)
+    if (va == null && vb == null) return 0
+    if (va == null) return 1  // sem data da compra vai pro fim, nunca esconde a linha
+    if (vb == null) return -1
+    return dir === 'asc' ? va - vb : vb - va
+  })
+  return sorted
 }
 function daysUntil(unixSec) {
   if (!unixSec) return null
@@ -182,10 +205,13 @@ export function ShopeeReturnsPage() {
   const { rows, loading, error, hasMore, page, status, fetchPage, getDisputeReasons, confirmReturn, disputeReturn } = useShopeeReturns()
   const [disputeTarget, setDisputeTarget] = useState(null)
   const [confirmTarget, setConfirmTarget] = useState(null)
+  const [sortKey, setSortKey] = useState('return_desc')
 
   useEffect(() => { fetchPage(1, 'ALL') }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function reload() { fetchPage(page, status) }
+
+  const sortedRows = useMemo(() => sortRows(rows, sortKey), [rows, sortKey])
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
@@ -215,16 +241,25 @@ export function ShopeeReturnsPage() {
           </div>
         )}
 
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {STATUS_FILTERS.map(([key, label]) => (
-            <button key={key} onClick={() => fetchPage(1, key)} disabled={loading}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
-                status === key ? 'text-white border-transparent' : 'bg-white border-slate-200 text-slate-500 hover:border-orange-300'
-              }`}
-              style={status === key ? { background: SHOPEE_ORANGE } : undefined}>
-              {label}
-            </button>
-          ))}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {STATUS_FILTERS.map(([key, label]) => (
+              <button key={key} onClick={() => fetchPage(1, key)} disabled={loading}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                  status === key ? 'text-white border-transparent' : 'bg-white border-slate-200 text-slate-500 hover:border-orange-300'
+                }`}
+                style={status === key ? { background: SHOPEE_ORANGE } : undefined}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 shrink-0">
+            <ArrowUpDown size={13} />
+            <select value={sortKey} onChange={e => setSortKey(e.target.value)}
+              className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none">
+              {SORT_OPTIONS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
+          </div>
         </div>
 
         {loading && rows.length === 0 ? (
@@ -239,7 +274,7 @@ export function ShopeeReturnsPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {rows.map(r => {
+            {sortedRows.map(r => {
               const item = r.item?.[0]
               const extraItems = (r.item?.length || 0) - 1
               const days = daysUntil(r.due_date)
@@ -248,12 +283,23 @@ export function ShopeeReturnsPage() {
               return (
                 <div key={r.return_sn} className="bg-white border border-slate-200 rounded-2xl p-4">
                   <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
                       <span className="font-semibold text-slate-600">{r.user?.username || 'Comprador'}</span>
                       <span>· Pedido {r.order_sn}</span>
                       <span>· Retorno {r.return_sn}</span>
                     </div>
                     <StatusBadge status={r.status} />
+                  </div>
+
+                  <div className="flex items-center gap-4 flex-wrap mb-3 text-[11px] text-slate-400">
+                    <span className="flex items-center gap-1">
+                      <CalendarDays size={11} />
+                      Comprado em {fmtDateISO(r.purchase_date) || <span className="italic text-slate-300">não sincronizado</span>}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <CalendarDays size={11} />
+                      Devolução pedida em {fmtDate(r.create_time)}
+                    </span>
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 items-start">

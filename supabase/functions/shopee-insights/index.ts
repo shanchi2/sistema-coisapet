@@ -635,14 +635,26 @@ async function deleteFlashSaleItems(integration: any, db: ReturnType<typeof admi
 // tela, nunca em lote. Campos de resposta ainda não confirmados 100%
 // ao vivo (documentação pública da v2, formato pode variar um pouco) —
 // normaliza com fallback em vários nomes possíveis.
-async function returnsList(integration: any, params: { page_no: number; page_size: number; status?: string }) {
+async function returnsList(integration: any, db: ReturnType<typeof adminClient>, params: { page_no: number; page_size: number; status?: string }) {
   const query: Record<string, string> = {
     page_no: String(params.page_no || 1),
     page_size: String(Math.min(params.page_size || 40, 100)),
   }
   if (params.status && params.status !== 'ALL') query.status = params.status
   const res = await shopeeFetch('/api/v2/returns/get_return_list', integration, query)
-  const list = res?.response?.return ?? res?.return ?? []
+  let list = res?.response?.return ?? res?.return ?? []
+
+  // Enriquece com a data da compra de verdade — o retorno da Shopee só
+  // traz order_sn, não a data do pedido; o pedido já está sincronizado
+  // no nosso banco (shopee-process-webhook), então cruza por num_venda
+  // em vez de bater na API da Shopee de novo pra isso.
+  const orderSns = [...new Set(list.map((r: any) => r.order_sn).filter(Boolean))]
+  if (orderSns.length) {
+    const { data: orders } = await db.from('orders').select('num_venda, data_venda').eq('source', 'shopee').in('num_venda', orderSns)
+    const purchaseDateBySn: Record<string, string> = {}
+    ;(orders || []).forEach((o: any) => { purchaseDateBySn[o.num_venda] = o.data_venda })
+    list = list.map((r: any) => ({ ...r, purchase_date: purchaseDateBySn[r.order_sn] || null }))
+  }
   return { results: list, more: !!(res?.response?.more ?? res?.more) }
 }
 
@@ -807,7 +819,7 @@ serve(async (req) => {
         return json(await deleteFlashSaleItems(integration, db, Number(body.flash_sale_id), body.item_ids))
 
       case 'returns_list':
-        return json(await returnsList(integration, { page_no: Number(body.page_no || 1), page_size: Number(body.page_size || 40), status: body.status }))
+        return json(await returnsList(integration, db, { page_no: Number(body.page_no || 1), page_size: Number(body.page_size || 40), status: body.status }))
       case 'return_detail':
         if (!body.return_sn) return json({ error: 'return_sn obrigatório' }, 400)
         return json(await returnDetail(integration, String(body.return_sn)))
