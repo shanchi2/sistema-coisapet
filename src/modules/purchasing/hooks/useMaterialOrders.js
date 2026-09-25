@@ -45,13 +45,13 @@ export function useMaterialOrders() {
   useEffect(() => { fetch() }, [fetch])
 
   // items: [{ raw_material_id, qty_ordered, unit_price }]
-  async function createOrder({ supplier_id, notes, items }) {
+  async function createOrder({ title, supplier_id, notes, items }) {
     if (!items?.length) { toast.error('Adicione pelo menos 1 item.'); throw new Error('Sem itens') }
     const session = getSession()
 
     const { data: order, error } = await supabase
       .from('material_orders')
-      .insert({ supplier_id: supplier_id || null, notes: notes || null, created_by: session.id || null })
+      .insert({ title: title?.trim() || null, supplier_id: supplier_id || null, notes: notes || null, created_by: session.id || null })
       .select('id').single()
     if (error) { toast.error('Erro ao criar pedido.'); throw error }
 

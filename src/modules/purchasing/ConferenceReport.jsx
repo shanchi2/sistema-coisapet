@@ -257,7 +257,8 @@ function ConferenceCard({ order, photoIndex, onOpenPhoto, onSetStatus }) {
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <p className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <Truck size={15} className="text-slate-400" /> {order.supplier?.name || 'Sem fornecedor definido'}
+              <Truck size={15} className="text-slate-400" /> {order.title || order.supplier?.name || 'Sem fornecedor definido'}
+              {order.title && <span className="text-sm font-medium text-slate-400">· {order.supplier?.name || 'sem fornecedor'}</span>}
             </p>
             <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1 flex-wrap">
               <User size={11} /> Conferido por <b className="text-slate-600">{order.conferrer?.name || '—'}</b> em {fmtDataHora(order.conferred_at)}

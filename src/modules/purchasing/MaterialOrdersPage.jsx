@@ -90,6 +90,7 @@ function suggestedPrice(material, supplierId) {
 // ─── Novo pedido — 1) marca os produtos no catálogo (com busca),
 // 2) preenche quantidade/preço direto na lista dos selecionados ──────
 function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
+  const [title, setTitle]           = useState('')
   const [supplierId, setSupplierId] = useState('')
   const [notes, setNotes]           = useState('')
   const [items, setItems]           = useState([]) // [{raw_material_id, qty_ordered, unit_price}]
@@ -143,7 +144,7 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
   }
 
   function reset() {
-    setSupplierId(''); setNotes(''); setItems([]); setSearch(''); setCategoryId(''); setOnlySupplier(false)
+    setTitle(''); setSupplierId(''); setNotes(''); setItems([]); setSearch(''); setCategoryId(''); setOnlySupplier(false)
   }
 
   const missingQty = items.filter(it => !(Number(it.qty_ordered) > 0)).length
@@ -152,7 +153,7 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
     if (missingQty) { toast.error(`Falta a quantidade de ${missingQty} item(ns).`); return }
     setSaving(true)
     try {
-      await onSave({ supplier_id: supplierId || null, notes, items: items.map(it => ({ ...it, unit_price: it.unit_price || null })) })
+      await onSave({ title, supplier_id: supplierId || null, notes, items: items.map(it => ({ ...it, unit_price: it.unit_price || null })) })
       reset()
       onClose()
     } catch { /* toast já mostrado no hook */ }
@@ -175,9 +176,17 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
         </button>
       </>}>
       <div className="flex flex-col gap-4">
-        <div>
-          <label className="form-label">Fornecedor (opcional)</label>
-          <SupplierPicker suppliers={suppliers} value={supplierId} onChange={handleSupplierChange} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="form-label">Nome do pedido</label>
+            <input className="input" placeholder={supplierId ? `Ex: Chapas ${suppliers.find(s => s.id === supplierId)?.name || ''} — setembro` : 'Ex: Chapas Duratex — setembro'}
+              value={title} onChange={e => setTitle(e.target.value)} maxLength={120} />
+            <p className="text-[11px] text-slate-400 mt-1">Vai como descrição da conta ao registrar no Financeiro.</p>
+          </div>
+          <div>
+            <label className="form-label">Fornecedor (opcional)</label>
+            <SupplierPicker suppliers={suppliers} value={supplierId} onChange={handleSupplierChange} />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -315,7 +324,10 @@ function OrderCard({ order, onRegisterBill, onCancel, onResolveOccurrence }) {
     <div className="bg-white border border-slate-200 rounded-2xl p-4">
       <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
         <div>
-          <p className="text-sm font-bold text-slate-800">{order.supplier?.name || 'Sem fornecedor definido'}</p>
+          <p className="text-sm font-bold text-slate-800">{order.title || order.supplier?.name || 'Sem fornecedor definido'}</p>
+          {order.title && (
+            <p className="text-xs text-slate-500 flex items-center gap-1"><Truck size={11} /> {order.supplier?.name || 'Sem fornecedor definido'}</p>
+          )}
           <p className="text-xs text-slate-400">
             Pedido por {order.creator?.name || '—'} em {new Date(order.created_at).toLocaleDateString('pt-BR')}
           </p>
@@ -335,15 +347,19 @@ function OrderCard({ order, onRegisterBill, onCancel, onResolveOccurrence }) {
       </button>
 
       {expanded && (
-        <div className="flex flex-col gap-1.5 mb-3 mt-2">
+        // Quantidade na frente do nome, lista compacta (pedido do Raphael, 26/09)
+        <div className="mb-3 mt-2 bg-slate-50 rounded-xl divide-y divide-slate-100 max-w-3xl">
           {(order.items || []).map(it => (
-            <div key={it.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-3 py-2">
-              <span className="text-slate-700 font-medium">{it.raw_material?.name}</span>
-              <span className="text-slate-500">
-                {fmtQty(it.qty_ordered, it.raw_material?.unit)}
-                {it.qty_received != null && ` · recebido: ${fmtQty(it.qty_received, it.raw_material?.unit)}`}
+            <div key={it.id} className="flex items-baseline gap-3 text-xs px-3 py-1.5">
+              <span className="w-20 shrink-0 text-right font-bold text-slate-800 tabular-nums">{fmtQty(it.qty_ordered, it.raw_material?.unit)}</span>
+              <span className="text-slate-700 min-w-0 flex-1">
+                {it.raw_material?.name}
+                {it.qty_received != null && <span className="text-slate-400"> · recebido {fmtQty(it.qty_received, it.raw_material?.unit)}</span>}
                 {Number(it.qty_damaged) > 0 && <span className="text-rose-500 font-semibold"> · {fmtQty(it.qty_damaged, it.raw_material?.unit)} avariado</span>}
               </span>
+              {it.unit_price != null && (
+                <span className="shrink-0 text-slate-400 tabular-nums">{fmtPreco(it.unit_price)} un. · <b className="text-slate-600">{fmtPreco(Number(it.unit_price) * Number(it.qty_ordered))}</b></span>
+              )}
             </div>
           ))}
         </div>
@@ -398,7 +414,7 @@ export function MaterialOrdersPage() {
     if (!billOrder) return null
     const itemsDesc = (billOrder.items || []).map(it => `${it.raw_material?.name} (${fmtQty(it.qty_ordered, it.raw_material?.unit)})`).join(', ')
     return {
-      description:  `Matéria-prima${billOrder.supplier?.name ? ' — ' + billOrder.supplier.name : ''}`,
+      description:  billOrder.title || `Matéria-prima${billOrder.supplier?.name ? ' — ' + billOrder.supplier.name : ''}`,
       notes:        itemsDesc,
       supplier_id:  billOrder.supplier_id || '',
       amount:       orderTotal(billOrder),
