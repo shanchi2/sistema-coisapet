@@ -1,39 +1,66 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, Check, Wand2, AlertTriangle, RefreshCw, Images, Plus, X, Upload, RotateCcw, Palette, LayoutTemplate } from 'lucide-react'
+import {
+  Loader2, Check, Wand2, AlertTriangle, RefreshCw, Images, Plus, X, RotateCcw,
+  Palette, LayoutTemplate, Star, PencilLine, ImagePlus,
+} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Modal } from '../../components/ui/Modal'
 import { presetsForSlot, AI_SLOT_NOTE } from './aiSlotPrompts'
 import { MEDIA_CHECKLIST } from './mediaChecklist'
 import toast from 'react-hot-toast'
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result).split(',')[1])
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
+// Reduz a imagem no navegador antes de mandar (máx 2048px, JPEG) — foto
+// de celular de 10MB estouraria o corpo da requisição da edge function,
+// e a IA não ganha nada com resolução maior que isso.
+async function fileToImage(file, maxSide = 2048) {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = reject
+      el.src = url
+    })
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(img.naturalWidth * scale)
+    canvas.height = Math.round(img.naturalHeight * scale)
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#FFFFFF' // PNG transparente vira fundo branco, não preto
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+    return { data: dataUrl.split(',')[1], mime_type: 'image/jpeg', previewUrl: dataUrl, name: file.name }
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 // Gera imagem com IA (Gemini, image-to-image) — SEMPRE mostra a prévia
-// antes de salvar e o prompt é sempre editável. Pedido do Raphael, 26/09:
-// liberado em todos os 9 slots, com modelos de prompt prontos por slot e
-// a opção de subir uma imagem pra usar como BASE (melhoria de uma foto
-// real) ou como REFERÊNCIA de composição/estilo.
+// antes de salvar e o prompt é sempre editável.
 //
-// Imagem base = a foto que a IA edita preservando o produto (foto 01,
-// a foto atual do slot, ou uma enviada na hora). Referências = só
-// inspiração (estilo) ou layout a seguir (composição) — nunca trocam o produto.
+// 26/09 (Raphael):
+// - Fotos base: VÁRIAS fotos reais do produto (foto 01, foto do slot,
+//   quantas enviar), marcando quais a IA deve ver. A 1ª marcada é a
+//   principal; as outras são "fonte da verdade" de detalhe (canto, logo
+//   gravado, encaixe) — a IA não tem como adivinhar isso sem foto real.
+// - Versões + "Ajustar": corrige a imagem gerada (ex: tirar um atributo
+//   repetido) SEM refazer tudo — manda a própria imagem gerada como base
+//   com instrução de edição pontual.
+// - Referências: só estilo ou composição, nunca trocam o produto.
 export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, heroSrc, slotPhotoPath, slotSrc, examples, onUse }) {
   const [prompt, setPrompt] = useState('')
   const [presetId, setPresetId] = useState(null)
-  const [status, setStatus] = useState('idle') // idle | generating | ready | error
+  const [status, setStatus] = useState('idle') // idle | generating | error
   const [errorMsg, setErrorMsg] = useState('')
-  const [result, setResult] = useState(null) // { image_base64, mime_type }
+  const [versions, setVersions] = useState([]) // [{ image_base64, mime_type, label }]
+  const [current, setCurrent] = useState(-1)
+  const [fixText, setFixText] = useState('')
   const [saving, setSaving] = useState(false)
-  const [baseSource, setBaseSource] = useState('hero') // hero | slot | upload
-  const [baseUpload, setBaseUpload] = useState(null)   // { data, mime_type, previewUrl, name }
-  const [refMode, setRefMode] = useState('style')      // style | composition
+  // Fotos base: lista ordenada + quais estão marcadas
+  const [bases, setBases] = useState([])       // [{ key, label, src, path? , data?, mime_type? }]
+  const [baseSel, setBaseSel] = useState(new Set())
+  const [refMode, setRefMode] = useState('style') // style | composition
   const [selectedExampleIds, setSelectedExampleIds] = useState(new Set())
   const [adhocRefs, setAdhocRefs] = useState([]) // [{ data, mime_type, previewUrl, name }]
   const fileRef = useRef()
@@ -41,8 +68,6 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
 
   const presets = presetsForSlot(slot)
   const slotInfo = MEDIA_CHECKLIST.find(i => i.slot === slot)
-  // No slot 01 a "foto atual" já é a hero — não repete a opção
-  const hasSlotPhoto = !!slotPhotoPath && slot !== 1
 
   useEffect(() => {
     if (!open) return
@@ -50,20 +75,59 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
     setPrompt(first.build(product))
     setPresetId(first.id)
     setStatus('idle')
-    setResult(null)
     setErrorMsg('')
+    setVersions([])
+    setCurrent(-1)
+    setFixText('')
     setSelectedExampleIds(new Set())
     setAdhocRefs([])
-    setBaseUpload(null)
     setRefMode('style')
-    setBaseSource(heroPhotoPath ? 'hero' : (slotPhotoPath && slot !== 1) ? 'slot' : 'upload')
-  }, [open, slot, product, heroPhotoPath, slotPhotoPath])
+    const initial = []
+    if (heroPhotoPath) initial.push({ key: 'hero', label: 'Foto 01 (hero)', src: heroSrc, path: heroPhotoPath })
+    if (slotPhotoPath && slot !== 1) initial.push({ key: 'slot', label: `Foto atual do ${String(slot).padStart(2, '0')}`, src: slotSrc, path: slotPhotoPath })
+    setBases(initial)
+    setBaseSel(new Set(initial.slice(0, 1).map(b => b.key)))
+  }, [open, slot, product, heroPhotoPath, heroSrc, slotPhotoPath, slotSrc])
+
+  const selectedBases = bases.filter(b => baseSel.has(b.key)) // na ordem da lista → 1ª = principal
+  const refCount = selectedExampleIds.size + adhocRefs.length
+  const busy = status === 'generating'
+  const currentVersion = versions[current] || null
 
   function applyPreset(p) {
     setPrompt(p.build(product))
     setPresetId(p.id)
-    // "Melhorar esta foto" quase sempre é em cima de uma foto enviada/atual
-    if (p.id === 'melhorar' && baseSource === 'hero' && hasSlotPhoto) setBaseSource('slot')
+  }
+
+  function toggleBase(key) {
+    setBaseSel(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+  function makePrimary(key) {
+    setBases(prev => [prev.find(b => b.key === key), ...prev.filter(b => b.key !== key)])
+    setBaseSel(prev => new Set(prev).add(key))
+  }
+  function removeBase(key) {
+    setBases(prev => prev.filter(b => b.key !== key))
+    setBaseSel(prev => { const next = new Set(prev); next.delete(key); return next })
+  }
+
+  async function handleBaseUpload(e) {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    for (const file of files) {
+      try {
+        const img = await fileToImage(file)
+        const key = `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+        setBases(prev => [...prev, { key, label: file.name, src: img.previewUrl, data: img.data, mime_type: img.mime_type }])
+        setBaseSel(prev => new Set(prev).add(key)) // enviou → já entra marcada
+      } catch {
+        toast.error(`Não consegui ler ${file.name}.`)
+      }
+    }
   }
 
   function toggleExample(id) {
@@ -73,53 +137,29 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
       return next
     })
   }
-
-  async function readImage(file) {
-    if (file.size > 10 * 1024 * 1024) { toast.error(`${file.name}: máx 10 MB.`); return null }
-    const data = await fileToBase64(file)
-    return { data, mime_type: file.type || 'image/jpeg', previewUrl: URL.createObjectURL(file), name: file.name }
-  }
-
   async function handleAddAdhoc(e) {
     const files = Array.from(e.target.files || [])
     e.target.value = ''
     for (const file of files) {
-      const img = await readImage(file)
-      if (img) setAdhocRefs(prev => [...prev, img])
+      try { const img = await fileToImage(file); setAdhocRefs(prev => [...prev, img]) }
+      catch { toast.error(`Não consegui ler ${file.name}.`) }
     }
   }
-
-  async function handleBaseUpload(e) {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    const img = await readImage(file)
-    if (img) { setBaseUpload(img); setBaseSource('upload') }
-  }
-
   function removeAdhoc(idx) {
     setAdhocRefs(prev => prev.filter((_, i) => i !== idx))
   }
 
-  const baseReady = (baseSource === 'hero' && heroPhotoPath) || (baseSource === 'slot' && hasSlotPhoto) || (baseSource === 'upload' && baseUpload)
-  const refCount = selectedExampleIds.size + adhocRefs.length
-
-  async function handleGenerate() {
-    if (!baseReady) { toast.error('Escolha a imagem base (foto 01, foto atual ou envie uma).'); return }
+  async function callAi(extraBody) {
     setStatus('generating')
     setErrorMsg('')
-    const refPhotoPaths = (examples || [])
-      .filter(ex => selectedExampleIds.has(ex.id))
-      .map(ex => ex.image_url)
     const { data, error } = await supabase.functions.invoke('product-image-ai', {
       body: {
         action: 'generate',
-        base_photo_path:   baseSource === 'hero' ? heroPhotoPath : baseSource === 'slot' ? slotPhotoPath : null,
-        base_image_base64: baseSource === 'upload' ? { data: baseUpload.data, mime_type: baseUpload.mime_type } : null,
-        prompt,
+        base_images: selectedBases.map(b => b.path ? { path: b.path } : { data: b.data, mime_type: b.mime_type }),
         ref_mode: refMode,
-        ref_photo_paths: refPhotoPaths,
+        ref_photo_paths: (examples || []).filter(ex => selectedExampleIds.has(ex.id)).map(ex => ex.image_url),
         ref_images_base64: adhocRefs.map(r => ({ data: r.data, mime_type: r.mime_type })),
+        ...extraBody,
       },
     })
     if (error || data?.error) {
@@ -127,55 +167,71 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
       try { const parsed = await error?.context?.json?.(); if (parsed?.error) msg = parsed.error } catch { /* mantém msg */ }
       setErrorMsg(msg)
       setStatus('error')
-      return
+      return null
     }
-    setResult(data)
-    setStatus('ready')
+    setStatus('idle')
+    return data
+  }
+
+  function pushVersion(data, label) {
+    setVersions(prev => {
+      const next = [...prev, { image_base64: data.image_base64, mime_type: data.mime_type, label }]
+      setCurrent(next.length - 1)
+      return next
+    })
+  }
+
+  async function handleGenerate() {
+    if (!selectedBases.length) { toast.error('Marque pelo menos uma foto base (ou envie uma).'); return }
+    const data = await callAi({ prompt })
+    if (data) pushVersion(data, 'Nova')
+  }
+
+  // Ajuste pontual em cima da versão atual — não refaz a imagem
+  async function handleFix() {
+    if (!currentVersion || !fixText.trim()) return
+    const data = await callAi({
+      prompt: fixText,
+      edit_image_base64: { data: currentVersion.image_base64, mime_type: currentVersion.mime_type },
+      // No ajuste, referências de estilo/composição não entram — só a imagem + fotos reais pra conferência
+      ref_photo_paths: [],
+      ref_images_base64: [],
+    })
+    if (data) { pushVersion(data, 'Ajuste'); setFixText('') }
   }
 
   async function handleUse() {
-    if (!result) return
+    if (!currentVersion) return
     setSaving(true)
     try {
-      const res = await fetch(`data:${result.mime_type};base64,${result.image_base64}`)
+      const res = await fetch(`data:${currentVersion.mime_type};base64,${currentVersion.image_base64}`)
       const blob = await res.blob()
-      const ext = result.mime_type === 'image/png' ? 'png' : result.mime_type === 'image/jpeg' ? 'jpg' : 'webp'
-      const file = new File([blob], `slot-${slot}-ia.${ext}`, { type: result.mime_type })
+      const ext = currentVersion.mime_type === 'image/png' ? 'png' : currentVersion.mime_type === 'image/jpeg' ? 'jpg' : 'webp'
+      const file = new File([blob], `slot-${slot}-ia.${ext}`, { type: currentVersion.mime_type })
       await onUse(file)
     } finally {
       setSaving(false)
     }
   }
 
-  const previewSrc = result ? `data:${result.mime_type};base64,${result.image_base64}` : null
-  const busy = status === 'generating'
-
-  const BaseOption = ({ id, label, src, disabled, onClick }) => (
-    <button type="button" disabled={disabled || busy} onClick={onClick || (() => setBaseSource(id))}
-      className={`flex flex-col items-center gap-1 p-1.5 rounded-xl border-2 transition w-[92px] ${baseSource === id ? 'border-violet-500 bg-violet-50' : 'border-slate-100 hover:border-slate-200'} disabled:opacity-40`}>
-      <span className="w-full aspect-[4/5] rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center">
-        {src ? <img src={src} alt="" className="w-full h-full object-cover" /> : <Upload size={18} className="text-slate-300" />}
-      </span>
-      <span className="text-[10px] font-semibold text-slate-600 text-center leading-tight">{label}</span>
-    </button>
-  )
+  const previewSrc = currentVersion ? `data:${currentVersion.mime_type};base64,${currentVersion.image_base64}` : null
 
   return (
-    <Modal open={open} onClose={onClose} size="2xl"
+    <Modal open={open} onClose={onClose} size="wide"
       title={`Gerar com IA — ${String(slot || '').padStart(2, '0')} ${slotInfo?.title || ''}`}
-      subtitle="A IA edita a imagem base preservando o produto — sempre revise a prévia antes de usar."
+      subtitle="A IA usa as fotos reais marcadas como base e preserva o produto — sempre revise a prévia antes de usar."
       footer={
         <>
           <button onClick={onClose} className="btn-secondary" disabled={saving}>Fechar</button>
-          {status === 'ready' && (
-            <button onClick={handleUse} className="btn-primary" disabled={saving}>
+          {currentVersion && (
+            <button onClick={handleUse} className="btn-primary" disabled={saving || busy}>
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-              {saving ? 'Salvando...' : `Usar como foto ${String(slot).padStart(2, '0')}`}
+              {saving ? 'Salvando...' : `Usar esta versão como foto ${String(slot).padStart(2, '0')}`}
             </button>
           )}
         </>
       }>
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_300px] gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5">
         <div className="flex flex-col gap-4 min-w-0">
           {AI_SLOT_NOTE[slot] && (
             <p className="flex items-start gap-1.5 text-[11px] text-orange-700 bg-orange-50 rounded-lg px-2.5 py-2">
@@ -183,25 +239,57 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
             </p>
           )}
 
-          {/* 1. Imagem base */}
+          {/* 1. Fotos base (reais) */}
           <div>
-            <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">
-              1. Imagem base <span className="font-normal normal-case text-slate-400">(a foto que a IA vai editar — o produto dela é preservado)</span>
-            </label>
+            <label className="text-xs font-bold text-slate-500 uppercase block mb-0.5">1. Fotos reais do produto</label>
+            <p className="text-[11px] text-slate-400 mb-2">
+              Marque as fotos que a IA deve ver. A <b className="text-violet-600">principal</b> é a base editada; as outras ensinam os detalhes reais
+              (canto, encaixe, logo gravado, acabamento) — a IA não inventa o que não está numa foto.
+            </p>
             <div className="flex flex-wrap gap-2">
-              <BaseOption id="hero" label="Foto 01 (hero)" src={heroSrc} disabled={!heroPhotoPath} />
-              {hasSlotPhoto && <BaseOption id="slot" label={`Foto atual do ${String(slot).padStart(2, '0')}`} src={slotSrc} />}
-              <BaseOption id="upload" label={baseUpload ? 'Imagem enviada' : 'Enviar imagem'} src={baseUpload?.previewUrl}
-                onClick={() => baseUpload ? setBaseSource('upload') : baseFileRef.current?.click()} />
-              {baseUpload && (
-                <button type="button" onClick={() => baseFileRef.current?.click()} disabled={busy}
-                  className="self-center text-[11px] font-semibold text-violet-600 hover:text-violet-700">Trocar imagem</button>
-              )}
-              <input ref={baseFileRef} type="file" accept="image/*" className="hidden" onChange={handleBaseUpload} />
+              {bases.map(b => {
+                const selected = baseSel.has(b.key)
+                const isPrimary = selectedBases[0]?.key === b.key
+                return (
+                  <div key={b.key} className={`relative w-[92px] rounded-xl border-2 p-1 transition ${selected ? 'border-violet-500 bg-violet-50' : 'border-slate-100 opacity-60 hover:opacity-100'}`}>
+                    <button type="button" onClick={() => toggleBase(b.key)} disabled={busy} className="block w-full">
+                      <span className="block w-full aspect-[4/5] rounded-lg overflow-hidden bg-slate-100">
+                        {b.src ? <img src={b.src} alt="" className="w-full h-full object-cover" /> : null}
+                      </span>
+                      <span className="block text-[10px] font-semibold text-slate-600 truncate mt-1 px-0.5" title={b.label}>{b.label}</span>
+                    </button>
+                    <span className={`absolute top-2 left-2 w-5 h-5 rounded-md border-2 flex items-center justify-center pointer-events-none ${selected ? 'bg-violet-500 border-violet-500' : 'bg-white/90 border-slate-300'}`}>
+                      {selected && <Check size={12} className="text-white" strokeWidth={3} />}
+                    </span>
+                    {isPrimary ? (
+                      <span className="absolute bottom-7 left-2 right-2 text-center text-[9px] font-black uppercase bg-violet-600 text-white rounded px-1 py-0.5">Principal</span>
+                    ) : selected && (
+                      <button type="button" onClick={() => makePrimary(b.key)} title="Usar como principal"
+                        className="absolute bottom-7 left-2 right-2 flex items-center justify-center gap-0.5 text-[9px] font-bold bg-white/90 text-violet-600 rounded px-1 py-0.5 hover:bg-white">
+                        <Star size={9} /> Principal
+                      </button>
+                    )}
+                    {b.data && (
+                      <button type="button" onClick={() => removeBase(b.key)} disabled={busy}
+                        className="absolute top-2 right-2 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center text-white">
+                        <X size={11} />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+              <button type="button" onClick={() => baseFileRef.current?.click()} disabled={busy}
+                className="w-[92px] aspect-[92/135] rounded-xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors">
+                <ImagePlus size={20} />
+                <span className="text-[10px] font-semibold text-center leading-tight px-1">Adicionar fotos</span>
+              </button>
+              <input ref={baseFileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleBaseUpload} />
             </div>
-            {!heroPhotoPath && !baseUpload && (
-              <p className="text-[11px] text-slate-400 mt-1.5">Sem foto 01 ainda — envie uma foto do produto pra servir de base.</p>
-            )}
+            <p className="text-[11px] mt-1.5 text-slate-500">
+              {selectedBases.length === 0
+                ? <span className="text-amber-600 font-semibold">Nenhuma foto marcada — marque ou envie pelo menos uma.</span>
+                : `${selectedBases.length} foto${selectedBases.length > 1 ? 's' : ''} marcada${selectedBases.length > 1 ? 's' : ''}.`}
+            </p>
           </div>
 
           {/* 2. Modelo de prompt */}
@@ -215,10 +303,8 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
                 </button>
               ))}
             </div>
-            <div className="relative">
-              <textarea value={prompt} onChange={e => { setPrompt(e.target.value); setPresetId(null) }} rows={6}
-                className="input text-sm" disabled={busy} placeholder="Descreva o que a IA deve fazer..." />
-            </div>
+            <textarea value={prompt} onChange={e => { setPrompt(e.target.value); setPresetId(null) }} rows={6}
+              className="input text-sm" disabled={busy} placeholder="Descreva o que a IA deve fazer..." />
             <div className="flex items-center justify-between mt-1">
               <p className="text-[11px] text-slate-400">Edite à vontade — o modelo é só o ponto de partida.</p>
               {presetId === null && presets.length > 0 && (
@@ -232,7 +318,7 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
           {/* 3. Referências */}
           <div>
             <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">
-              3. Imagens de referência <span className="font-normal normal-case text-slate-400">(opcional — nunca trocam o produto)</span>
+              3. Imagens de referência <span className="font-normal normal-case text-slate-400">(opcional — de outros produtos/anúncios, nunca trocam o nosso produto)</span>
             </label>
             <div className="flex bg-slate-100 rounded-lg p-0.5 mb-2 w-fit">
               <button type="button" onClick={() => setRefMode('style')}
@@ -289,12 +375,12 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
           </div>
         </div>
 
-        {/* Prévia */}
+        {/* Prévia + versões + ajuste */}
         <div className="flex flex-col gap-3">
-          <button onClick={handleGenerate} disabled={busy || !prompt.trim() || !baseReady}
+          <button onClick={handleGenerate} disabled={busy || !prompt.trim() || !selectedBases.length}
             className="btn-primary w-full justify-center flex items-center gap-1.5">
-            {busy ? <Loader2 size={14} className="animate-spin" /> : status === 'ready' ? <RefreshCw size={14} /> : <Wand2 size={14} />}
-            {busy ? 'Gerando... (até ~30s)' : status === 'ready' ? 'Gerar de novo' : 'Gerar imagem'}
+            {busy ? <Loader2 size={14} className="animate-spin" /> : versions.length ? <RefreshCw size={14} /> : <Wand2 size={14} />}
+            {busy ? 'Gerando... (até ~30s)' : versions.length ? 'Gerar do zero de novo' : 'Gerar imagem'}
           </button>
           {refCount > 0 && (
             <p className="text-[11px] text-slate-400 text-center -mt-1">{refCount} referência{refCount > 1 ? 's' : ''} · {refMode === 'style' ? 'estilo' : 'composição'}</p>
@@ -306,15 +392,50 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
             </p>
           )}
 
-          <div className="w-full aspect-[4/5] rounded-xl overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center">
+          <div className="relative w-full aspect-[4/5] rounded-xl overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center">
             {previewSrc ? (
               <img src={previewSrc} alt="Prévia gerada" className="w-full h-full object-contain" />
-            ) : busy ? (
-              <Loader2 size={28} className="animate-spin text-violet-300" />
-            ) : (
-              <p className="text-xs text-slate-400 text-center px-6">A prévia aparece aqui. Nada é salvo até você clicar em "Usar como foto".</p>
+            ) : !busy && (
+              <p className="text-xs text-slate-400 text-center px-6">A prévia aparece aqui. Nada é salvo até você clicar em "Usar esta versão".</p>
+            )}
+            {busy && (
+              <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
+                <Loader2 size={28} className="animate-spin text-violet-400" />
+              </div>
             )}
           </div>
+
+          {versions.length > 1 && (
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Versões — clique pra voltar numa anterior</p>
+              <div className="flex gap-1.5 flex-wrap">
+                {versions.map((v, i) => (
+                  <button key={i} type="button" onClick={() => setCurrent(i)} disabled={busy}
+                    className={`relative w-12 aspect-[4/5] rounded-md overflow-hidden border-2 ${i === current ? 'border-violet-500' : 'border-transparent opacity-70 hover:opacity-100'}`}
+                    title={`${i + 1}. ${v.label}`}>
+                    <img src={`data:${v.mime_type};base64,${v.image_base64}`} alt="" className="w-full h-full object-cover" />
+                    <span className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[8px] font-bold text-center">{i + 1}{v.label === 'Ajuste' ? ' ✎' : ''}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {currentVersion && (
+            <div className="border border-violet-100 bg-violet-50/50 rounded-xl p-3 flex flex-col gap-2">
+              <label className="text-xs font-bold text-violet-700 flex items-center gap-1.5">
+                <PencilLine size={13} /> Ajustar esta versão <span className="font-normal text-violet-500">(sem refazer o resto)</span>
+              </label>
+              <textarea value={fixText} onChange={e => setFixText(e.target.value)} rows={2} disabled={busy}
+                className="input text-sm bg-white"
+                placeholder='Ex: "remova o segundo selo repetido de Fácil de montar" ou "deixe o fundo um pouco mais claro"'
+                onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleFix() }} />
+              <button onClick={handleFix} disabled={busy || !fixText.trim()}
+                className="btn-primary justify-center flex items-center gap-1.5 py-1.5 text-sm">
+                {busy ? <Loader2 size={13} className="animate-spin" /> : <PencilLine size={13} />} Aplicar ajuste
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </Modal>

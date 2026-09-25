@@ -74,8 +74,10 @@ export const SLOT_PRESETS = {
     IMPROVE_PRESET,
   ],
   6: [
-    { id: 'macro', label: 'Close de acabamento', build: p => `Faça um close fotográfico (estilo macro) de ${productName(p)} destacando o acabamento, o material e os encaixes EXATAMENTE como aparecem na foto — apenas aproxime/recorte e melhore luz e nitidez, sem inventar nenhum detalhe que não existe no produto real. Fundo desfocado suave. ${FORMAT}` },
-    { id: 'mosaico', label: 'Mosaico de detalhes', build: p => `Monte um mosaico com 3 ou 4 recortes em close de ${productName(p)} (acabamento, encaixes, material, ventilação), cada recorte tirado da própria foto, com uma legenda curta em cada. Não invente partes que não aparecem na foto. ${TEXT_RULES} ${FORMAT}` },
+    // Slot 06 depende de foto real de detalhe: marque/envie os closes
+    // (canto, encaixe, logo gravado) em "Fotos reais do produto" no modal.
+    { id: 'macro', label: 'Close de acabamento', build: p => `Faça um close fotográfico (estilo macro) de ${productName(p)} usando como base a foto de detalhe principal enviada (ex: canto, encaixe, logo gravado), destacando acabamento, material e encaixes EXATAMENTE como aparecem nas fotos reais — só melhore luz, nitidez e fundo (desfocado suave), sem inventar nenhum detalhe. ${FORMAT}` },
+    { id: 'mosaico', label: 'Mosaico de detalhes', build: p => `Monte um mosaico com 3 ou 4 quadros em close de ${productName(p)}, um para cada foto real de detalhe enviada (acabamento, encaixes, material, ventilação, logo gravado), cada quadro com uma legenda curta. Use somente o que aparece nas fotos reais — não invente partes. ${TEXT_RULES} ${FORMAT}` },
     IMPROVE_PRESET,
   ],
   7: [

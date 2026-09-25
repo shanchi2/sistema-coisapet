@@ -81,39 +81,56 @@ objeto parecido que apareça nelas. Use-as só pra entender o "clima"/composiç�
 // `refImages` = imagens de referência já resolvidas em base64 (tanto as
 // vindas da biblioteca de exemplos do guia — baixadas do storage —
 // quanto anexos avulsos que o usuário subiu na hora, ver rota abaixo).
-async function generateImage(
-  db: ReturnType<typeof adminClient>,
-  basePhotoPath: string | null,
-  baseImage: { data: string; mime_type: string } | null,
-  userPrompt: string,
-  refImages: { data: string; mime_type: string }[],
-  refMode: 'style' | 'composition',
-) {
+type Img = { data: string; mime_type: string }
+
+// Fotos reais extras do mesmo produto (26/09) — ex: closes de canto,
+// logo gravado, encaixe. A IA não tem como "adivinhar" esses detalhes:
+// eles só existem se vierem de foto real, então entram como fonte da verdade.
+const EXTRA_PRODUCT_NOTE = `AS PRÓXIMAS IMAGENS SÃO OUTRAS FOTOS REAIS DO MESMO PRODUTO (outros ângulos, closes de
+detalhes, encaixes, acabamento, gravações/logo). São a FONTE DA VERDADE sobre como o produto é de
+verdade: use-as para reproduzir detalhes com fidelidade total (e, se o pedido for um close/detalhe,
+use a foto correspondente como base desse close). Nunca invente detalhe que não aparece nelas.`
+
+// Modo "ajustar" (26/09): corrigir a imagem que a própria IA gerou sem
+// refazer tudo (ex: "removeu um atributo repetido" e ela refez a imagem inteira).
+const EDIT_PREFIX = `EDIÇÃO PONTUAL — PRIORIDADE MÁXIMA:
+A primeira imagem abaixo é uma imagem já aprovada. Aplique SOMENTE a alteração pedida a seguir e
+mantenha TODO o resto IDÊNTICO: mesmo produto, mesmo enquadramento, mesma composição, mesmas cores,
+mesma luz, mesmos textos (exceto o que o pedido mandar mudar), mesma posição de cada elemento.
+Não recrie, não reinterprete e não "melhore" nada além do que foi pedido.
+
+ALTERAÇÃO PEDIDA:
+`
+
+const EDIT_PRODUCT_NOTE = `As imagens a seguir são fotos reais do produto, só para conferência — se a alteração pedida
+envolver o produto, ele deve continuar fiel a elas. Não use essas fotos para mudar a composição.`
+
+async function generateImage({ productImages, editImage, userPrompt, refImages, refMode }: {
+  productImages: Img[]
+  editImage: Img | null
+  userPrompt: string
+  refImages: Img[]
+  refMode: 'style' | 'composition'
+}) {
   const apiKey = Deno.env.get('GEMINI_API_KEY')
   if (!apiKey) throw new Error('Chave do Gemini não configurada (GEMINI_API_KEY) — rode "supabase secrets set GEMINI_API_KEY=..." primeiro.')
-  if (!basePhotoPath && !baseImage?.data) throw new Error('Imagem base obrigatória (foto do slot ou imagem enviada).')
+  if (!editImage && !productImages.length) throw new Error('Imagem base obrigatória (foto do slot ou imagem enviada).')
   if (!userPrompt?.trim()) throw new Error('Prompt obrigatório.')
 
-  // Imagem base: foto já salva no storage (hero/slot) OU enviada na hora
-  // pelo usuário ("melhorar esta foto"), que chega em base64 direto do front.
-  let base64Photo: string
-  let mimeType: string
-  if (baseImage?.data) {
-    base64Photo = baseImage.data
-    mimeType = baseImage.mime_type || 'image/jpeg'
+  const img = (i: Img) => ({ inline_data: { mime_type: i.mime_type || 'image/jpeg', data: i.data } })
+  const parts: any[] = []
+
+  if (editImage) {
+    parts.push({ text: EDIT_PREFIX + userPrompt.trim() }, img(editImage))
+    if (productImages.length) {
+      parts.push({ text: EDIT_PRODUCT_NOTE }, ...productImages.map(img))
+    }
   } else {
-    const { data: blob, error: dlErr } = await db.storage.from('product-photos').download(basePhotoPath!)
-    if (dlErr || !blob) throw new Error('Não consegui carregar a foto base: ' + (dlErr?.message || 'arquivo não encontrado'))
-    base64Photo = await toBase64(blob)
-    mimeType = mimeFromPath(basePhotoPath!)
+    const [primary, ...extras] = productImages
+    parts.push({ text: FIDELITY_PREFIX + userPrompt.trim() }, img(primary))
+    if (extras.length) parts.push({ text: EXTRA_PRODUCT_NOTE }, ...extras.map(img))
   }
 
-  const fullPrompt = FIDELITY_PREFIX + userPrompt.trim()
-
-  const parts: any[] = [
-    { text: fullPrompt },
-    { inline_data: { mime_type: mimeType, data: base64Photo } },
-  ]
   if (refImages.length) {
     parts.push({ text: refMode === 'composition' ? COMPOSITION_NOTE : REFERENCE_NOTE })
     for (const ref of refImages) {
@@ -184,9 +201,24 @@ serve(async (req) => {
         const adhoc: { data: string; mime_type: string }[] = Array.isArray(body.ref_images_base64) ? body.ref_images_base64 : []
         const refImages = [...fromLibrary.filter(Boolean), ...adhoc] as { data: string; mime_type: string }[]
 
-        const baseImage = body.base_image_base64?.data ? body.base_image_base64 : null
+        // Fotos reais do produto, NA ORDEM (a 1ª é a base principal).
+        // Cada uma vem como { path } (já no storage: foto 01/slot) ou
+        // { data, mime_type } (enviada na hora). Formato antigo
+        // (base_photo_path / base_image_base64) continua aceito.
+        const baseList: any[] = Array.isArray(body.base_images) ? [...body.base_images] : []
+        if (!baseList.length && body.base_image_base64?.data) baseList.push(body.base_image_base64)
+        if (!baseList.length && body.base_photo_path) baseList.push({ path: body.base_photo_path })
+        const productImages = (await Promise.all(baseList.map(async (b) => {
+          if (b?.data) return { data: b.data, mime_type: b.mime_type || 'image/jpeg' }
+          if (!b?.path) return null
+          const { data: blob, error } = await db.storage.from('product-photos').download(b.path)
+          if (error || !blob) throw new Error('Não consegui carregar a foto base: ' + (error?.message || b.path))
+          return { data: await toBase64(blob), mime_type: mimeFromPath(b.path) }
+        }))).filter(Boolean) as Img[]
+
+        const editImage = body.edit_image_base64?.data ? body.edit_image_base64 : null
         const refMode = body.ref_mode === 'composition' ? 'composition' : 'style'
-        return json(await generateImage(db, body.base_photo_path || null, baseImage, body.prompt, refImages, refMode))
+        return json(await generateImage({ productImages, editImage, userPrompt: body.prompt, refImages, refMode }))
       }
       default:
         return json({ error: 'Ação desconhecida.' }, 400)
