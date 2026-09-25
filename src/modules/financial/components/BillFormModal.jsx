@@ -26,12 +26,13 @@ function fmtCurrency(v) {
   return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-// Converte um número (ex: vindo de `initial.amount` ou `prefill.amount`)
-// pro formato mascarado que o campo de valor espera (string de centavos).
+// Converte um número em reais (ex: vindo de `initial.amount` ou
+// `prefill.amount`) pro formato mascarado que o campo de valor espera
+// (maskCurrency lê a string como centavos — daí o *100 sempre, mesmo
+// pra valor redondo tipo 55 reais).
 function amountToMasked(v) {
   if (!v) return ''
-  const n = Number(v)
-  const cents = n % 1 !== 0 ? Math.round(n * 100) : n
+  const cents = Math.round(Number(v) * 100)
   return maskCurrency(String(cents))
 }
 
