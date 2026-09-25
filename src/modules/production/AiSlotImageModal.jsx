@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Loader2, Check, Wand2, AlertTriangle, RefreshCw, Images, Plus, X, RotateCcw,
-  Palette, LayoutTemplate, Star, PencilLine, ImagePlus,
+  Palette, LayoutTemplate, Star, PencilLine, ImagePlus, Lock, Unlock,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Modal } from '../../components/ui/Modal'
@@ -61,6 +61,7 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
   const [bases, setBases] = useState([])       // [{ key, label, src, path? , data?, mime_type? }]
   const [baseSel, setBaseSel] = useState(new Set())
   const [refMode, setRefMode] = useState('style') // style | composition
+  const [lockContent, setLockContent] = useState(false) // true = IA não tira/põe/move nada, só tom/luz
   const [selectedExampleIds, setSelectedExampleIds] = useState(new Set())
   const [adhocRefs, setAdhocRefs] = useState([]) // [{ data, mime_type, previewUrl, name }]
   const fileRef = useRef()
@@ -82,6 +83,7 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
     setSelectedExampleIds(new Set())
     setAdhocRefs([])
     setRefMode('style')
+    setLockContent(false)
     const initial = []
     if (heroPhotoPath) initial.push({ key: 'hero', label: 'Foto 01 (hero)', src: heroSrc, path: heroPhotoPath })
     if (slotPhotoPath && slot !== 1) initial.push({ key: 'slot', label: `Foto atual do ${String(slot).padStart(2, '0')}`, src: slotSrc, path: slotPhotoPath })
@@ -157,6 +159,7 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
         action: 'generate',
         base_images: selectedBases.map(b => b.path ? { path: b.path } : { data: b.data, mime_type: b.mime_type }),
         ref_mode: refMode,
+        lock_content: lockContent,
         ref_photo_paths: (examples || []).filter(ex => selectedExampleIds.has(ex.id)).map(ex => ex.image_url),
         ref_images_base64: adhocRefs.map(r => ({ data: r.data, mime_type: r.mime_type })),
         ...extraBody,
@@ -314,6 +317,25 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
               )}
             </div>
           </div>
+
+          {/* Chave de conteúdo travado — muda a instrução que vai pra IA (ver edge function) */}
+          <button type="button" onClick={() => setLockContent(v => !v)} disabled={busy}
+            className={`flex items-start gap-3 text-left rounded-xl border-2 px-3 py-2.5 transition ${lockContent ? 'border-amber-400 bg-amber-50' : 'border-slate-100 bg-white hover:border-slate-200'}`}>
+            <span className={`mt-0.5 w-9 h-5 rounded-full relative shrink-0 transition ${lockContent ? 'bg-amber-500' : 'bg-slate-300'}`}>
+              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${lockContent ? 'left-[18px]' : 'left-0.5'}`} />
+            </span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
+                {lockContent ? <Lock size={13} className="text-amber-600" /> : <Unlock size={13} className="text-slate-400" />}
+                {lockContent ? 'Não mexer no conteúdo da imagem' : 'IA pode melhorar o conteúdo da cena'}
+              </span>
+              <span className="block text-[11px] text-slate-500 leading-snug mt-0.5">
+                {lockContent
+                  ? 'Não remove, não adiciona, não move e não altera nada — só cor, tom, saturação, luz e nitidez.'
+                  : 'Pode reposicionar, remover distrações e adicionar/trocar elementos do cenário pra imagem ficar melhor. O produto nunca é alterado.'}
+              </span>
+            </span>
+          </button>
 
           {/* 3. Referências */}
           <div>

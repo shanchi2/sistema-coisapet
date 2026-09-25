@@ -97,8 +97,14 @@ export const SLOT_PRESETS = {
   ],
 }
 
+// Pedido do Raphael (26/09): TODO prompt pronto termina pedindo mais
+// saturação e uma exposição mais quente (laranja/amarelado) — padrão
+// visual da CoisaPet. Fica no texto (editável), não escondido na função.
+const WARM_TONE = 'Por fim, aumente levemente a saturação e deixe a exposição da imagem mais quente, puxada para tons alaranjados/amarelados, com aspecto aconchegante e natural.'
+
 export function presetsForSlot(slot) {
-  return SLOT_PRESETS[slot] || [IMPROVE_PRESET]
+  return (SLOT_PRESETS[slot] || [IMPROVE_PRESET])
+    .map(p => ({ ...p, build: prod => `${p.build(prod)} ${WARM_TONE}` }))
 }
 
 export function defaultPromptForSlot(slot, product) {

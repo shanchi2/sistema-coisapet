@@ -105,12 +105,31 @@ ALTERAÇÃO PEDIDA:
 const EDIT_PRODUCT_NOTE = `As imagens a seguir são fotos reais do produto, só para conferência — se a alteração pedida
 envolver o produto, ele deve continuar fiel a elas. Não use essas fotos para mudar a composição.`
 
-async function generateImage({ productImages, editImage, userPrompt, refImages, refMode }: {
+// Chave "Não mexer no conteúdo" do modal (26/09). Ligada: a IA só pode
+// mexer em tom/luz/cor/nitidez (e no que o pedido mandar explicitamente
+// de visual), sem tirar, pôr ou mover nada. Desligada: liberdade pra
+// melhorar a cena (reposicionar, remover distrações, adicionar
+// elementos) — mas o PRODUTO continua intocável em qualquer caso.
+const LOCK_CONTENT_NOTE = `
+
+REGRA DE CONTEÚDO TRAVADO (OBRIGATÓRIA): não mexa em absolutamente nada do conteúdo da imagem —
+não remova, não adicione, não mova e não altere nenhum objeto, elemento, texto ou posição. Mantenha
+a mesma composição e enquadramento. Só são permitidos ajustes de cor, tom, saturação, exposição,
+luz e nitidez.`
+
+const FREE_CONTENT_NOTE = `
+
+LIBERDADE DE COMPOSIÇÃO: além do pedido, você pode melhorar a cena ao redor do produto — reposicionar,
+remover distrações, adicionar ou trocar elementos de cenário e ajustar o enquadramento — se isso
+deixar a imagem melhor e mais vendável. O produto em si continua intocável.`
+
+async function generateImage({ productImages, editImage, userPrompt, refImages, refMode, lockContent }: {
   productImages: Img[]
   editImage: Img | null
   userPrompt: string
   refImages: Img[]
   refMode: 'style' | 'composition'
+  lockContent: boolean
 }) {
   const apiKey = Deno.env.get('GEMINI_API_KEY')
   if (!apiKey) throw new Error('Chave do Gemini não configurada (GEMINI_API_KEY) — rode "supabase secrets set GEMINI_API_KEY=..." primeiro.')
@@ -121,13 +140,13 @@ async function generateImage({ productImages, editImage, userPrompt, refImages, 
   const parts: any[] = []
 
   if (editImage) {
-    parts.push({ text: EDIT_PREFIX + userPrompt.trim() }, img(editImage))
+    parts.push({ text: EDIT_PREFIX + userPrompt.trim() + (lockContent ? LOCK_CONTENT_NOTE : '') }, img(editImage))
     if (productImages.length) {
       parts.push({ text: EDIT_PRODUCT_NOTE }, ...productImages.map(img))
     }
   } else {
     const [primary, ...extras] = productImages
-    parts.push({ text: FIDELITY_PREFIX + userPrompt.trim() }, img(primary))
+    parts.push({ text: FIDELITY_PREFIX + userPrompt.trim() + (lockContent ? LOCK_CONTENT_NOTE : FREE_CONTENT_NOTE) }, img(primary))
     if (extras.length) parts.push({ text: EXTRA_PRODUCT_NOTE }, ...extras.map(img))
   }
 
@@ -218,7 +237,7 @@ serve(async (req) => {
 
         const editImage = body.edit_image_base64?.data ? body.edit_image_base64 : null
         const refMode = body.ref_mode === 'composition' ? 'composition' : 'style'
-        return json(await generateImage({ productImages, editImage, userPrompt: body.prompt, refImages, refMode }))
+        return json(await generateImage({ productImages, editImage, userPrompt: body.prompt, refImages, refMode, lockContent: body.lock_content === true }))
       }
       default:
         return json({ error: 'Ação desconhecida.' }, 400)
