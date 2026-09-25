@@ -249,8 +249,10 @@ export function MaterialOrdersPage() {
     if (!billOrder) return null
     const itemsDesc = (billOrder.items || []).map(it => `${it.raw_material?.name} (${fmtQty(it.qty_ordered, it.raw_material?.unit)})`).join(', ')
     return {
-      description: `Matéria-prima${billOrder.supplier?.name ? ' — ' + billOrder.supplier.name : ''}`,
-      notes: itemsDesc,
+      description:  `Matéria-prima${billOrder.supplier?.name ? ' — ' + billOrder.supplier.name : ''}`,
+      notes:        itemsDesc,
+      supplier_id:  billOrder.supplier_id || '',
+      amount:       orderTotal(billOrder),
     }
   }, [billOrder])
 

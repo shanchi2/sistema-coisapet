@@ -26,6 +26,15 @@ function fmtCurrency(v) {
   return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+// Converte um número (ex: vindo de `initial.amount` ou `prefill.amount`)
+// pro formato mascarado que o campo de valor espera (string de centavos).
+function amountToMasked(v) {
+  if (!v) return ''
+  const n = Number(v)
+  const cents = n % 1 !== 0 ? Math.round(n * 100) : n
+  return maskCurrency(String(cents))
+}
+
 const EMPTY = {
   description:     '',
   supplier_id:     '',
@@ -40,12 +49,12 @@ const EMPTY = {
   custom_interval: 30,
 }
 
-// `prefill` (opcional) só toca description/notes e SÓ se aplica quando
-// `initial` é null — pré-preenche o formulário de conta NOVA (ex: vindo
-// de "marcar como comprado" em Compras, fase69) sem entrar em modo
-// edição. Se usássemos `initial` pra isso, `isEditing` viraria true e
-// escondia o campo de anexo/boleto (ver abaixo) — o oposto do que se
-// quer ao criar a conta a partir de uma compra.
+// `prefill` (opcional) só se aplica quando `initial` é null — pré-preenche
+// o formulário de conta NOVA (ex: vindo de "marcar como comprado" em
+// Compras, ou "Registrar no Financeiro" em Pedidos de Matéria-Prima) sem
+// entrar em modo edição. Se usássemos `initial` pra isso, `isEditing`
+// viraria true e escondia o campo de anexo/boleto (ver abaixo) — o oposto
+// do que se quer ao criar a conta a partir de uma compra/pedido.
 export function BillFormModal({ open, onClose, onSave, initial = null, prefill = null, loading = false }) {
   const { suppliers }  = useSuppliers()
   const { categories } = useExpenseCategories()
@@ -76,7 +85,7 @@ export function BillFormModal({ open, onClose, onSave, initial = null, prefill =
         description:    initial.description    ?? '',
         supplier_id:    initial.supplier_id    ?? '',
         category_id:    initial.category_id    ?? '',
-        amount:         initial.amount ? (() => { const n = Number(initial.amount); const cents = n % 1 !== 0 ? Math.round(n * 100) : n; return maskCurrency(String(cents)) })() : '',
+        amount:         amountToMasked(initial.amount),
         due_date:       initial.due_date        ?? '',
         notes:          initial.notes          ?? '',
         recurrent:      initial.recurrent      ?? false,
@@ -84,7 +93,13 @@ export function BillFormModal({ open, onClose, onSave, initial = null, prefill =
         installment_qty: 2,
         interval_days:  30,
         custom_interval: 30,
-      } : { ...EMPTY, description: prefill?.description ?? '', notes: prefill?.notes ?? '' })
+      } : {
+        ...EMPTY,
+        description: prefill?.description ?? '',
+        notes:       prefill?.notes ?? '',
+        supplier_id: prefill?.supplier_id ?? '',
+        amount:      amountToMasked(prefill?.amount),
+      })
     }
     wasOpen.current = open
   }, [open, initial, prefill])
