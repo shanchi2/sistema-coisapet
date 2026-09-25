@@ -26,10 +26,10 @@ export function useMaterialOrders() {
         creator:system_users!created_by(name),
         conferrer:system_users!conferred_by(name),
         items:material_order_items(
-          id, raw_material_id, qty_ordered, unit_price, qty_received, item_status,
+          id, raw_material_id, qty_ordered, unit_price, qty_received, qty_damaged, item_status,
           raw_material:raw_materials(id, name, unit)
         ),
-        occurrences:material_order_occurrences(id, status)
+        occurrences:material_order_occurrences(id, status, description, qty_damaged, order_item_id)
       `)
       .order('created_at', { ascending: false })
 

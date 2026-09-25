@@ -151,7 +151,10 @@ function OccurrenceRow({ occ, order, onResolve }) {
     <div className="flex items-start gap-2.5 bg-rose-50/60 border border-rose-100 rounded-xl px-3 py-2.5">
       <ShieldAlert size={14} className="text-rose-500 shrink-0 mt-0.5" />
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold text-rose-700">{item?.raw_material?.name || 'Item'}</p>
+        <p className="text-xs font-semibold text-rose-700">
+          {item?.raw_material?.name || 'Item'}
+          {occ.qty_damaged != null && ` — ${fmtQty(occ.qty_damaged, item?.raw_material?.unit)} avariado`}
+        </p>
         {occ.description && <p className="text-xs text-slate-500 mt-0.5">{occ.description}</p>}
       </div>
       {occ.status === 'aberto' ? (
@@ -199,7 +202,7 @@ function OrderCard({ order, onRegisterBill, onCancel, onResolveOccurrence }) {
               <span className="text-slate-500">
                 {fmtQty(it.qty_ordered, it.raw_material?.unit)}
                 {it.qty_received != null && ` · recebido: ${fmtQty(it.qty_received, it.raw_material?.unit)}`}
-                {it.item_status === 'avariado' && <span className="text-rose-500 font-semibold"> · avariado</span>}
+                {Number(it.qty_damaged) > 0 && <span className="text-rose-500 font-semibold"> · {fmtQty(it.qty_damaged, it.raw_material?.unit)} avariado</span>}
               </span>
             </div>
           ))}

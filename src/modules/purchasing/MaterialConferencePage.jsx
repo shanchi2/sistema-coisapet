@@ -12,11 +12,11 @@ function fmtQty(v, unit) {
 // Picklist de Expedição (toque grande, estoque +/-, tudo pensado pro
 // tablet do galpão). ──────────────────────────────────────────────
 function ConferenceChecklist({ order, onBack, onFinish }) {
-  // state por item: { qty_received, item_status, occurrence_description, occurrence_photos }
+  // state por item: { qty_received, qty_damaged, occurrence_description, occurrence_photos }
   const [state, setState] = useState(() => Object.fromEntries(
     (order.items || []).map(it => [it.id, {
       qty_received: Number(it.qty_ordered),
-      item_status: 'ok',
+      qty_damaged: 0,
       occurrence_description: '',
       occurrence_photos: [],
     }])
@@ -26,14 +26,21 @@ function ConferenceChecklist({ order, onBack, onFinish }) {
   function update(itemId, patch) {
     setState(prev => ({ ...prev, [itemId]: { ...prev[itemId], ...patch } }))
   }
-  function adjustQty(itemId, delta, max) {
+  function adjustReceived(itemId, delta) {
     setState(prev => {
-      const next = Math.max(0, Math.min(max, Number(prev[itemId].qty_received) + delta))
-      return { ...prev, [itemId]: { ...prev[itemId], qty_received: next } }
+      const cur = prev[itemId]
+      const nextReceived = Math.max(0, Number(cur.qty_received) + delta)
+      // Avariado nunca pode passar do recebido.
+      const nextDamaged = Math.min(Number(cur.qty_damaged), nextReceived)
+      return { ...prev, [itemId]: { ...cur, qty_received: nextReceived, qty_damaged: nextDamaged } }
     })
   }
-  function toggleAvariado(itemId) {
-    setState(prev => ({ ...prev, [itemId]: { ...prev[itemId], item_status: prev[itemId].item_status === 'avariado' ? 'ok' : 'avariado' } }))
+  function adjustDamaged(itemId, delta) {
+    setState(prev => {
+      const cur = prev[itemId]
+      const next = Math.max(0, Math.min(Number(cur.qty_received), Number(cur.qty_damaged) + delta))
+      return { ...prev, [itemId]: { ...cur, qty_damaged: next } }
+    })
   }
   function addPhotos(itemId, files) {
     update(itemId, { occurrence_photos: [...state[itemId].occurrence_photos, ...Array.from(files)] })
@@ -43,7 +50,7 @@ function ConferenceChecklist({ order, onBack, onFinish }) {
   }
 
   const items = order.items || []
-  const avariados = items.filter(it => state[it.id]?.item_status === 'avariado')
+  const avariados = items.filter(it => Number(state[it.id]?.qty_damaged) > 0)
   const missingPhoto = avariados.some(it => !state[it.id]?.occurrence_photos?.length)
 
   async function handleFinish() {
@@ -54,7 +61,7 @@ function ConferenceChecklist({ order, onBack, onFinish }) {
         item_id: it.id,
         raw_material_id: it.raw_material_id,
         qty_received: state[it.id].qty_received,
-        item_status: state[it.id].item_status,
+        qty_damaged: state[it.id].qty_damaged,
         occurrence_description: state[it.id].occurrence_description,
         occurrence_photos: state[it.id].occurrence_photos,
       }))
@@ -81,40 +88,51 @@ function ConferenceChecklist({ order, onBack, onFinish }) {
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 max-w-2xl mx-auto w-full">
         {items.map(it => {
           const s = state[it.id]
-          const isAvariado = s.item_status === 'avariado'
+          const isAvariado = Number(s.qty_damaged) > 0
           const isShort = s.qty_received < Number(it.qty_ordered)
           return (
             <div key={it.id}
               className={`rounded-2xl border-2 p-4 ${isAvariado ? 'bg-rose-50 border-rose-300' : isShort ? 'bg-amber-50 border-amber-300' : 'bg-white border-slate-200'}`}>
-              <div className="flex items-center gap-4">
-                <div className="flex-1 min-w-0">
-                  <p className="text-lg font-bold leading-snug text-slate-800">{it.raw_material?.name}</p>
-                  <p className="text-xs text-slate-400 mt-1">Pedido: {fmtQty(it.qty_ordered, it.raw_material?.unit)}</p>
-                </div>
-                <div className="flex flex-col items-center gap-1.5 shrink-0">
+              <p className="text-lg font-bold leading-snug text-slate-800">{it.raw_material?.name}</p>
+              <p className="text-xs text-slate-400 mt-1 mb-3">Pedido: {fmtQty(it.qty_ordered, it.raw_material?.unit)}</p>
+
+              <div className="flex items-stretch gap-2">
+                <div className="flex-1 flex flex-col items-center gap-1.5 bg-white rounded-xl border-2 border-slate-200 py-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Recebido</span>
                   <div className="flex items-center gap-1.5">
-                    <button onClick={() => adjustQty(it.id, -1, it.qty_ordered)}
-                      className="w-9 h-9 rounded-xl bg-white border-2 border-slate-200 flex items-center justify-center text-slate-500">
+                    <button onClick={() => adjustReceived(it.id, -1)}
+                      className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500">
                       <Minus size={16} strokeWidth={3} />
                     </button>
-                    <span className={`w-14 text-center text-xl font-black ${isShort ? 'text-amber-600' : 'text-slate-700'}`}>
+                    <span className={`w-12 text-center text-xl font-black ${isShort ? 'text-amber-600' : 'text-slate-700'}`}>
                       {s.qty_received}
                     </span>
-                    <button onClick={() => adjustQty(it.id, 1, it.qty_ordered)}
-                      className="w-9 h-9 rounded-xl bg-white border-2 border-slate-200 flex items-center justify-center text-slate-500">
+                    <button onClick={() => adjustReceived(it.id, 1)}
+                      className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500">
                       <Plus size={16} strokeWidth={3} />
                     </button>
                   </div>
-                  <span className="text-[10px] text-slate-400">recebido</span>
+                </div>
+
+                <div className="flex-1 flex flex-col items-center gap-1.5 bg-white rounded-xl border-2 border-rose-200 py-2">
+                  <span className="text-[10px] font-bold text-rose-400 uppercase flex items-center gap-1">
+                    <AlertTriangle size={11} /> Avariado
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => adjustDamaged(it.id, -1)}
+                      className="w-9 h-9 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500">
+                      <Minus size={16} strokeWidth={3} />
+                    </button>
+                    <span className={`w-12 text-center text-xl font-black ${isAvariado ? 'text-rose-600' : 'text-slate-300'}`}>
+                      {s.qty_damaged}
+                    </span>
+                    <button onClick={() => adjustDamaged(it.id, 1)}
+                      className="w-9 h-9 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500">
+                      <Plus size={16} strokeWidth={3} />
+                    </button>
+                  </div>
                 </div>
               </div>
-
-              <button onClick={() => toggleAvariado(it.id)}
-                className={`w-full mt-3 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors ${
-                  isAvariado ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-500'
-                }`}>
-                <AlertTriangle size={15} /> {isAvariado ? 'Marcado como avariado' : 'Marcar como avariado'}
-              </button>
 
               {isAvariado && (
                 <div className="mt-3 flex flex-col gap-2.5">

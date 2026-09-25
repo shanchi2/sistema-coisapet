@@ -136,6 +136,8 @@ export default function App() {
               {/* Fora do <Layout /> de propósito — tela cheia, sem sidebar/header,
                   pra Expedição usar no tablet sem distração nenhuma. */}
               <Route path="/expedicao" element={<ExpedicaoPage />} />
+              {/* Mesmo padrão — conferência do João no tablet do galpão, sem sidebar/header. */}
+              <Route path="/conferencia-materia-prima" element={<MaterialConferencePage />} />
 
               <Route element={<Layout />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
@@ -216,7 +218,6 @@ export default function App() {
                 <Route path="/cotacoes" element={<GuardedRoute moduleKey="cotacoes"><CotacoesPage /></GuardedRoute>} />
                 <Route path="/compra-lousa" element={<GuardedRoute moduleKey="compra-lousa"><PurchaseBoardPage /></GuardedRoute>} />
                 <Route path="/pedidos-materia-prima" element={<GuardedRoute moduleKey="pedidos-materia-prima"><MaterialOrdersPage /></GuardedRoute>} />
-                <Route path="/conferencia-materia-prima" element={<GuardedRoute moduleKey="conferencia-materia-prima"><MaterialConferencePage /></GuardedRoute>} />
                 <Route path="/grupos-chat" element={<GuardedRoute moduleKey="grupos-chat"><ChatGroupsPage /></GuardedRoute>} />
                 <Route path="/packaging" element={<GuardedRoute moduleKey="packaging"><EmbalagensPage /></GuardedRoute>} />
                 <Route path="/rh/horas"     element={<GuardedRoute moduleKey="rh"><RHHorasPage /></GuardedRoute>} />

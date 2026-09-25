@@ -24,7 +24,7 @@ export function useMaterialConference() {
       .select(`
         *,
         supplier:suppliers(id, name),
-        items:material_order_items(id, raw_material_id, qty_ordered, unit_price, qty_received, item_status,
+        items:material_order_items(id, raw_material_id, qty_ordered, unit_price, qty_received, qty_damaged, item_status,
           raw_material:raw_materials(id, name, unit))
       `)
       .eq('status', 'pedido')
@@ -51,35 +51,48 @@ export function useMaterialConference() {
     }
   }
 
-  // results: [{ item_id, raw_material_id, qty_received, item_status, occurrence_description, occurrence_photos }]
+  // results: [{ item_id, raw_material_id, qty_received, qty_damaged, occurrence_description, occurrence_photos }]
+  // qty_received = total que chegou fisicamente; qty_damaged = quantos
+  // desses vieram avariados (pode ser menor que qty_received — o resto
+  // tá bom). Só a diferença vira estoque de verdade.
   async function finishConference(order, results) {
     const session = getSession()
 
     for (const r of results) {
+      const qtyGood = Math.max(0, Number(r.qty_received) - Number(r.qty_damaged || 0))
+      const itemStatus = Number(r.qty_damaged) > 0 ? 'avariado' : 'ok'
+
       const { error: upErr } = await supabase.from('material_order_items').update({
         qty_received: r.qty_received,
-        item_status: r.item_status,
+        qty_damaged: r.qty_damaged || 0,
+        item_status: itemStatus,
       }).eq('id', r.item_id)
       if (upErr) throw upErr
 
       // Estoque só sobe aqui, na conferência de verdade — nunca no
-      // pedido. created_by fica null de propósito: a FK dessa tabela
-      // aponta pra `profiles`, não pra `system_users` (achado real,
-      // 25/09) — forçar o id do usuário logado ia violar a FK.
-      if (Number(r.qty_received) > 0) {
+      // pedido — e só a parte boa (recebido menos avariado) vira
+      // estoque de verdade. created_by fica null de propósito: a FK
+      // dessa tabela aponta pra `profiles`, não pra `system_users`
+      // (achado real, 25/09) — forçar o id do usuário logado ia
+      // violar a FK.
+      if (qtyGood > 0) {
         const { error: movErr } = await supabase.from('raw_material_movements').insert({
           raw_material_id: r.raw_material_id,
           type: 'entrada',
-          qty: r.qty_received,
+          qty: qtyGood,
           reason: `Conferência — pedido de matéria-prima`,
           reference_id: order.id,
         })
         if (movErr) throw movErr
       }
 
-      if (r.item_status === 'avariado') {
+      if (Number(r.qty_damaged) > 0) {
         const { data: occ, error: occErr } = await supabase.from('material_order_occurrences')
-          .insert({ order_id: order.id, order_item_id: r.item_id, description: r.occurrence_description || null })
+          .insert({
+            order_id: order.id, order_item_id: r.item_id,
+            qty_damaged: r.qty_damaged,
+            description: r.occurrence_description || null,
+          })
           .select('id').single()
         if (occErr) throw occErr
         if (r.occurrence_photos?.length) await uploadOccurrencePhotos(occ.id, r.occurrence_photos)
@@ -96,16 +109,16 @@ export function useMaterialConference() {
 
     // Avisa o Administrativo/Compras (César) se sobrou alguma avaria —
     // mesmo padrão de notificação já usado na Compra da Lousa.
-    const hasAvaria = results.some(r => r.item_status === 'avariado')
-    if (hasAvaria) {
+    const avariados = results.filter(r => Number(r.qty_damaged) > 0)
+    if (avariados.length) {
       const { data: notifyUsers } = await supabase.from('system_users')
         .select('id').in('role', ['admin', 'administrativo']).eq('active', true)
       if (notifyUsers?.length) {
-        const qtdAvariada = results.filter(r => r.item_status === 'avariado').length
+        const totalAvariado = avariados.reduce((s, r) => s + Number(r.qty_damaged), 0)
         await supabase.from('notifications').insert(notifyUsers.map(u => ({
           user_id: u.id, type: 'material_occurrence',
           title: 'Material avariado na conferência',
-          body: `${qtdAvariada} item(ns) chegaram avariados num pedido de matéria-prima — precisa abrir chamado com o fornecedor.`,
+          body: `${totalAvariado} unidade(s) em ${avariados.length} item(ns) chegaram avariadas num pedido de matéria-prima — precisa abrir chamado com o fornecedor.`,
           link: '/pedidos-materia-prima',
         })))
       }
