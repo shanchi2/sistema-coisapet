@@ -112,7 +112,7 @@ export function useProductMediaDetail(productId) {
 
     const { data: prod, error: prodErr } = await supabase
       .from('products')
-      .select('id, name, sku, photo_url, parent_product_id, group_id, width_cm, height_cm, depth_cm, accessories_included, includes_wheel, wheel_diameter_cm, compatible_species')
+      .select('id, name, sku, photo_url, parent_product_id, group_id, width_cm, height_cm, depth_cm, accessories_included, includes_wheel, wheel_diameter_cm, compatible_species, price_ml, sale_price, stock_qty, short_description')
       .eq('id', productId)
       .single()
 
