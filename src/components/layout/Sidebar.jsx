@@ -8,7 +8,7 @@ import {
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
   PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
   HeartPulse, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film, Zap,
-  Briefcase, Crown, Bookmark, Component, RotateCcw,
+  Briefcase, Crown, FileSearch, Bookmark, Component, RotateCcw,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
@@ -107,6 +107,7 @@ const NAV_SECTIONS = [
       { to: '/coisadecor',   moduleKey: 'coisadecor',   icon: Gem,          label: 'CoisaDecor',   roles: ['admin','administrativo'] },
       { to: '/compras',      moduleKey: 'financeiro',   icon: ShoppingCart, label: 'Compras',      roles: ['admin','administrativo'] },
       { to: '/pedidos-materia-prima', moduleKey: 'pedidos-materia-prima', icon: Layers, label: 'Pedidos de Matéria-Prima', roles: ['admin','administrativo'] },
+      { to: '/relatorio-conferencias', moduleKey: 'relatorio-conferencias', icon: FileSearch, label: 'Relatório de Conferências', roles: ['admin','administrativo'] },
       { to: '/fornecedores', moduleKey: 'fornecedores', icon: Truck,        label: 'Fornecedores', roles: ['admin','administrativo'] },
       { to: '/cotacoes',     moduleKey: 'cotacoes',     icon: ClipboardList, label: 'Cotações',     roles: ['admin','administrativo'] },
       { to: '/relatorios',   moduleKey: 'relatorios',   icon: BarChart2,    label: 'Relatórios',   roles: ['admin','administrativo'] },

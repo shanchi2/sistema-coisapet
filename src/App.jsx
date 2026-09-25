@@ -41,6 +41,7 @@ import { CotacoesPage }          from './modules/quotes/CotacoesPage'
 import { PurchaseBoardPage }     from './modules/purchasing/PurchaseBoardPage'
 import { MaterialOrdersPage }    from './modules/purchasing/MaterialOrdersPage'
 import { MaterialConferencePage } from './modules/purchasing/MaterialConferencePage'
+import { ConferenceReportPage }   from './modules/purchasing/ConferenceReportPage'
 import { ChatGroupsPage }        from './modules/directors/ChatGroupsPage'
 import { EmbalagensPage }        from './modules/packaging/EmbalagensPage'
 import { MeetingsPage }          from './modules/meetings/MeetingsPage'
@@ -218,6 +219,7 @@ export default function App() {
                 <Route path="/cotacoes" element={<GuardedRoute moduleKey="cotacoes"><CotacoesPage /></GuardedRoute>} />
                 <Route path="/compra-lousa" element={<GuardedRoute moduleKey="compra-lousa"><PurchaseBoardPage /></GuardedRoute>} />
                 <Route path="/pedidos-materia-prima" element={<GuardedRoute moduleKey="pedidos-materia-prima"><MaterialOrdersPage /></GuardedRoute>} />
+                <Route path="/relatorio-conferencias" element={<GuardedRoute moduleKey="relatorio-conferencias"><ConferenceReportPage /></GuardedRoute>} />
                 <Route path="/grupos-chat" element={<GuardedRoute moduleKey="grupos-chat"><ChatGroupsPage /></GuardedRoute>} />
                 <Route path="/packaging" element={<GuardedRoute moduleKey="packaging"><EmbalagensPage /></GuardedRoute>} />
                 <Route path="/rh/horas"     element={<GuardedRoute moduleKey="rh"><RHHorasPage /></GuardedRoute>} />
