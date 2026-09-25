@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
-  Package, Plus, Check, Loader2, Trash2, Receipt, ShieldAlert,
+  Package, Plus, Check, Loader2, Trash2, Receipt, ShieldAlert, Search, Truck, X, ClipboardCheck,
 } from 'lucide-react'
 import { Modal } from '../../components/ui/Modal'
 import { useMaterialOrders } from './hooks/useMaterialOrders'
@@ -8,6 +9,7 @@ import { useMaterials } from '../materials/hooks/useMaterials'
 import { useSuppliers } from '../financial/hooks/useSuppliers'
 import { BillFormModal } from '../financial/components/BillFormModal'
 import { useBills } from '../financial/hooks/useBills'
+import { ConferenceReport } from './ConferenceReport'
 import toast from 'react-hot-toast'
 
 function fmtPreco(v) {
@@ -33,46 +35,139 @@ function StatusBadge({ status }) {
   return <span className={`inline-flex text-xs font-semibold px-2.5 py-1 rounded-full border ${info.text} ${info.bg}`}>{info.label}</span>
 }
 
-// ─── Novo pedido — escolher matérias-primas/chapas + qtd (mesmo
-// padrão de "adicionar insumo" já usado na Ficha Técnica) ───────────
+// ─── Fornecedor com busca (digita pra filtrar) ───────────────────────
+function SupplierPicker({ suppliers, value, onChange }) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen]   = useState(false)
+  const selected = suppliers.find(s => s.id === value)
+
+  const filtered = useMemo(() => {
+    const q = normalize(query)
+    return suppliers.filter(s => !q || normalize(s.name).includes(q)).slice(0, 50)
+  }, [suppliers, query])
+
+  if (selected) {
+    return (
+      <div className="flex items-center justify-between gap-2 input bg-rose-50/50 border-rose-200">
+        <span className="flex items-center gap-2 text-sm font-semibold text-slate-700 min-w-0"><Truck size={14} className="text-rose-500 shrink-0" /> <span className="truncate">{selected.name}</span></span>
+        <button type="button" onClick={() => { onChange(''); setQuery('') }} className="text-slate-400 hover:text-rose-500 shrink-0"><X size={15} /></button>
+      </div>
+    )
+  }
+  return (
+    <div className="relative">
+      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+      <input className="input pl-9" placeholder="Digite o nome da empresa..." value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} />
+      {open && (
+        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <p className="text-sm text-slate-400 px-3 py-3">Nenhum fornecedor encontrado</p>
+          ) : filtered.map(s => (
+            <button key={s.id} type="button" onMouseDown={e => e.preventDefault()} onClick={() => { onChange(s.id); setOpen(false) }}
+              className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-rose-50">{s.name}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Busca sem acento/maiúscula ("petg" acha "PetG", "cortica" acha "Cortiça")
+function normalize(s) {
+  return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+}
+
+// Preço sugerido: o custo cadastrado pra esse fornecedor (material_suppliers)
+// ou, se não tiver, o custo geral da matéria-prima. Sempre em reais.
+function suggestedPrice(material, supplierId) {
+  const link = supplierId && material.suppliers_rel?.find(r => r.supplier_id === supplierId)
+  const v = link?.unit_cost ?? material.unit_cost
+  return v != null && Number(v) > 0 ? String(Number(v)) : ''
+}
+
+// ─── Novo pedido — 1) marca os produtos no catálogo (com busca),
+// 2) preenche quantidade/preço direto na lista dos selecionados ──────
 function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
   const [supplierId, setSupplierId] = useState('')
   const [notes, setNotes]           = useState('')
   const [items, setItems]           = useState([]) // [{raw_material_id, qty_ordered, unit_price}]
-  const [pickId, setPickId]         = useState('')
-  const [pickQty, setPickQty]       = useState('')
-  const [pickPrice, setPickPrice]   = useState('')
+  const [search, setSearch]         = useState('')
+  const [categoryId, setCategoryId] = useState('')
+  const [onlySupplier, setOnlySupplier] = useState(false)
   const [saving, setSaving]         = useState(false)
 
-  const available = materials.filter(m => m.active !== false && !items.some(it => it.raw_material_id === m.id))
   const materialById = id => materials.find(m => m.id === id)
+  const selectedIds  = useMemo(() => new Set(items.map(it => it.raw_material_id)), [items])
+  const active       = useMemo(() => materials.filter(m => m.active !== false), [materials])
 
-  function addItem() {
-    if (!pickId) { toast.error('Escolhe a matéria-prima/chapa.'); return }
-    if (!pickQty || Number(pickQty) <= 0) { toast.error('Informa a quantidade.'); return }
-    setItems(prev => [...prev, { raw_material_id: pickId, qty_ordered: pickQty, unit_price: pickPrice || null }])
-    setPickId(''); setPickQty(''); setPickPrice('')
+  const categories = useMemo(() => {
+    const map = new Map()
+    active.forEach(m => { if (m.category) map.set(m.category.id, m.category.name) })
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  }, [active])
+
+  const supplierHasLinks = supplierId && active.some(m => m.supplier_id === supplierId || m.suppliers_rel?.some(r => r.supplier_id === supplierId))
+
+  const catalog = useMemo(() => {
+    const q = normalize(search)
+    return active.filter(m => {
+      if (q && !normalize(m.name).includes(q)) return false
+      if (categoryId && m.category?.id !== categoryId) return false
+      if (onlySupplier && supplierId && m.supplier_id !== supplierId && !m.suppliers_rel?.some(r => r.supplier_id === supplierId)) return false
+      return true
+    })
+  }, [active, search, categoryId, onlySupplier, supplierId])
+
+  function toggleMaterial(m) {
+    setItems(prev => prev.some(it => it.raw_material_id === m.id)
+      ? prev.filter(it => it.raw_material_id !== m.id)
+      : [...prev, { raw_material_id: m.id, qty_ordered: '', unit_price: suggestedPrice(m, supplierId) }])
+  }
+  function updateItem(id, field, value) {
+    setItems(prev => prev.map(it => it.raw_material_id === id ? { ...it, [field]: value } : it))
   }
   function removeItem(id) {
     setItems(prev => prev.filter(it => it.raw_material_id !== id))
   }
+  // Trocou o fornecedor: preenche o preço dos itens que ainda estão sem preço
+  function handleSupplierChange(id) {
+    setSupplierId(id)
+    if (!id) setOnlySupplier(false)
+    setItems(prev => prev.map(it => {
+      if (it.unit_price) return it
+      const m = materialById(it.raw_material_id)
+      return m ? { ...it, unit_price: suggestedPrice(m, id) } : it
+    }))
+  }
+
+  function reset() {
+    setSupplierId(''); setNotes(''); setItems([]); setSearch(''); setCategoryId(''); setOnlySupplier(false)
+  }
+
+  const missingQty = items.filter(it => !(Number(it.qty_ordered) > 0)).length
 
   async function handleSave() {
+    if (missingQty) { toast.error(`Falta a quantidade de ${missingQty} item(ns).`); return }
     setSaving(true)
     try {
-      await onSave({ supplier_id: supplierId || null, notes, items })
-      setSupplierId(''); setNotes(''); setItems([])
+      await onSave({ supplier_id: supplierId || null, notes, items: items.map(it => ({ ...it, unit_price: it.unit_price || null })) })
+      reset()
       onClose()
     } catch { /* toast já mostrado no hook */ }
     finally { setSaving(false) }
   }
 
-  const total = items.reduce((s, it) => s + (Number(it.unit_price) || 0) * Number(it.qty_ordered), 0)
+  const total = items.reduce((s, it) => s + (Number(it.unit_price) || 0) * (Number(it.qty_ordered) || 0), 0)
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title="Novo Pedido de Matéria-Prima/Chapas"
-      subtitle="Escolha os itens e quantidades — o Financeiro é registrado depois, num passo separado."
+    <Modal open={open} onClose={onClose} size="wide" title="Novo Pedido de Matéria-Prima/Chapas"
+      subtitle="1) Escolha o fornecedor  2) Marque os produtos  3) Preencha as quantidades na lista da direita"
       footer={<>
+        <span className="mr-auto text-sm font-bold text-slate-700">
+          {items.length} item{items.length !== 1 ? 's' : ''} · Total estimado: {fmtPreco(total)}
+        </span>
         <button onClick={onClose} className="btn-secondary" disabled={saving}>Cancelar</button>
         <button onClick={handleSave} className="btn-primary" disabled={saving || items.length === 0}>
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
@@ -82,58 +177,103 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
       <div className="flex flex-col gap-4">
         <div>
           <label className="form-label">Fornecedor (opcional)</label>
-          <select className="select" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
-            <option value="">Sem fornecedor definido</option>
-            {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          <SupplierPicker suppliers={suppliers} value={supplierId} onChange={handleSupplierChange} />
         </div>
 
-        <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 bg-slate-50/50 flex flex-col gap-3">
-          <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Adicionar item</p>
-          {available.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-2">Todas as matérias-primas cadastradas já foram adicionadas.</p>
-          ) : (
-            <>
-              <select className="select bg-white" value={pickId} onChange={e => setPickId(e.target.value)}>
-                <option value="">Selecione a matéria-prima ou chapa...</option>
-                {available.map(m => (
-                  <option key={m.id} value={m.id}>{m.name} ({m.unit}) — Estoque: {Number(m.stock_qty).toLocaleString('pt-BR')}</option>
-                ))}
-              </select>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="form-label">Quantidade {pickId && <span className="text-slate-400">({materialById(pickId)?.unit})</span>}</label>
-                  <input type="number" min="0.001" step="0.001" className="input bg-white" placeholder="Ex: 50"
-                    value={pickQty} onChange={e => setPickQty(e.target.value)} />
-                </div>
-                <div>
-                  <label className="form-label">Preço unitário (opcional)</label>
-                  <input type="number" min="0" step="0.01" className="input bg-white" placeholder="Ex: 12.90"
-                    value={pickPrice} onChange={e => setPickPrice(e.target.value)} />
-                </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Catálogo — busca + marcar */}
+          <div className="border border-slate-200 rounded-2xl flex flex-col min-h-0">
+            <div className="p-3 border-b border-slate-100 flex flex-col gap-2">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input className="input pl-9" placeholder="Buscar produto (ex: petg, cortiça, caixa...)" value={search}
+                  onChange={e => setSearch(e.target.value)} autoFocus />
               </div>
-              <button onClick={addItem} className="btn-primary py-1.5 text-xs self-start"><Plus size={13} /> Adicionar</button>
-            </>
-          )}
-        </div>
-
-        {items.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {items.map(it => {
-              const m = materialById(it.raw_material_id)
-              return (
-                <div key={it.raw_material_id} className="flex items-center justify-between bg-white border border-slate-100 rounded-xl px-3 py-2.5">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-700">{m?.name}</p>
-                    <p className="text-xs text-slate-400">{fmtQty(it.qty_ordered, m?.unit)}{it.unit_price ? ` × ${fmtPreco(it.unit_price)}` : ''}</p>
-                  </div>
-                  <button onClick={() => removeItem(it.raw_material_id)} className="p-1.5 text-slate-300 hover:text-rose-500"><Trash2 size={14} /></button>
-                </div>
-              )
-            })}
-            <div className="text-right text-sm font-bold text-slate-700 pt-1">Total estimado: {fmtPreco(total)}</div>
+              <div className="flex gap-2 flex-wrap items-center">
+                {categories.length > 0 && (
+                  <select className="select py-1.5 text-xs w-auto" value={categoryId} onChange={e => setCategoryId(e.target.value)}>
+                    <option value="">Todas as categorias</option>
+                    {categories.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                  </select>
+                )}
+                {supplierHasLinks && (
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer select-none">
+                    <input type="checkbox" className="accent-rose-500" checked={onlySupplier} onChange={e => setOnlySupplier(e.target.checked)} />
+                    Só produtos deste fornecedor
+                  </label>
+                )}
+                <span className="ml-auto text-[11px] text-slate-400">{catalog.length} produto{catalog.length !== 1 ? 's' : ''}</span>
+              </div>
+            </div>
+            <div className="overflow-y-auto max-h-[45vh] p-1.5">
+              {catalog.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-8">Nenhum produto encontrado</p>
+              ) : catalog.map(m => {
+                const checked = selectedIds.has(m.id)
+                const low = m.stock_min != null && Number(m.stock_qty) <= Number(m.stock_min)
+                return (
+                  <button key={m.id} type="button" onClick={() => toggleMaterial(m)}
+                    className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-left transition ${checked ? 'bg-rose-50' : 'hover:bg-slate-50'}`}>
+                    <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${checked ? 'bg-rose-500 border-rose-500' : 'border-slate-300 bg-white'}`}>
+                      {checked && <Check size={13} className="text-white" strokeWidth={3} />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={`block text-sm truncate ${checked ? 'font-semibold text-slate-800' : 'text-slate-700'}`}>{m.name}</span>
+                      <span className="block text-[11px] text-slate-400 truncate">
+                        {m.category?.name ? `${m.category.name} · ` : ''}{m.unit} · estoque <span className={low ? 'text-amber-600 font-semibold' : ''}>{Number(m.stock_qty).toLocaleString('pt-BR')}{low ? ' (baixo)' : ''}</span>
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        )}
+
+          {/* Selecionados — quantidade e preço já na lista */}
+          <div className="border border-slate-200 rounded-2xl flex flex-col min-h-0 bg-slate-50/40">
+            <div className="p-3 border-b border-slate-100 flex items-center justify-between">
+              <p className="text-sm font-bold text-slate-700">Itens do pedido <span className="text-slate-400 font-normal">({items.length})</span></p>
+              {items.length > 0 && <button type="button" onClick={() => setItems([])} className="text-[11px] font-semibold text-slate-400 hover:text-rose-500">Limpar</button>}
+            </div>
+            <div className="overflow-y-auto max-h-[45vh] p-2 flex flex-col gap-2">
+              {items.length === 0 ? (
+                <div className="text-center py-10 px-4">
+                  <Package size={28} strokeWidth={1} className="mx-auto mb-2 text-slate-300" />
+                  <p className="text-sm text-slate-400">Marque os produtos na lista ao lado — eles aparecem aqui pra você preencher a quantidade.</p>
+                </div>
+              ) : items.map(it => {
+                const m = materialById(it.raw_material_id)
+                const sub = (Number(it.unit_price) || 0) * (Number(it.qty_ordered) || 0)
+                const noQty = !(Number(it.qty_ordered) > 0)
+                return (
+                  <div key={it.raw_material_id} className="bg-white border border-slate-200 rounded-xl px-3 py-2.5">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <p className="text-sm font-semibold text-slate-700 min-w-0 truncate">{m?.name}</p>
+                      <button type="button" onClick={() => removeItem(it.raw_material_id)} className="p-1 -m-1 text-slate-300 hover:text-rose-500 shrink-0"><Trash2 size={14} /></button>
+                    </div>
+                    <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase">Qtd ({m?.unit})</label>
+                        <input type="number" min="0.001" step="0.001" inputMode="decimal" placeholder="0"
+                          className={`input py-1.5 ${noQty ? 'border-amber-300 bg-amber-50/40' : ''}`}
+                          value={it.qty_ordered} onChange={e => updateItem(it.raw_material_id, 'qty_ordered', e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase">Preço un. (R$)</label>
+                        <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="opcional" className="input py-1.5"
+                          value={it.unit_price} onChange={e => updateItem(it.raw_material_id, 'unit_price', e.target.value)} />
+                      </div>
+                      <div className="text-right pb-2 min-w-[80px]">
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase">Subtotal</p>
+                        <p className="text-sm font-bold text-slate-700">{fmtPreco(sub)}</p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
 
         <div>
           <label className="form-label">Observações</label>
@@ -236,7 +376,16 @@ function OrderCard({ order, onRegisterBill, onCancel, onResolveOccurrence }) {
 }
 
 export function MaterialOrdersPage() {
-  const { orders, loading, createOrder, linkBill, cancelOrder, resolveOccurrence } = useMaterialOrders()
+  const { orders, loading, refetch, createOrder, linkBill, cancelOrder, resolveOccurrence } = useMaterialOrders()
+  // Aba via URL (?aba=conferencias) — o antigo /relatorio-conferencias redireciona pra cá
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('aba') === 'conferencias' ? 'conferencias' : 'pedidos'
+  function changeTab(t) {
+    setSearchParams(t === 'conferencias' ? { aba: 'conferencias' } : {}, { replace: true })
+    // A aba de conferências pode ter resolvido ocorrência — recarrega os pedidos ao voltar
+    if (t === 'pedidos') refetch()
+  }
+  const pendingCount = orders.filter(o => o.status === 'pedido').length
   const { materials } = useMaterials()
   const { suppliers } = useSuppliers()
   const { create: createBill, addPayment: addBillPayment } = useBills()
@@ -286,12 +435,26 @@ export function MaterialOrdersPage() {
           <h2 className="page-title">Pedidos de Matéria-Prima</h2>
           <p className="page-subtitle">Compras de matéria-prima e chapas, com conferência e Financeiro</p>
         </div>
-        <button onClick={() => setModal(true)} className="btn-primary">
-          <Plus size={16} /> Novo pedido
+        {tab === 'pedidos' && (
+          <button onClick={() => setModal(true)} className="btn-primary">
+            <Plus size={16} /> Novo pedido
+          </button>
+        )}
+      </div>
+
+      <div className="flex bg-slate-100 rounded-xl p-1 self-start">
+        <button onClick={() => changeTab('pedidos')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-1.5 transition ${tab === 'pedidos' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          <Package size={15} /> Pedidos
+          {pendingCount > 0 && <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">{pendingCount} aguardando</span>}
+        </button>
+        <button onClick={() => changeTab('conferencias')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-1.5 transition ${tab === 'conferencias' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          <ClipboardCheck size={15} /> Conferências
         </button>
       </div>
 
-      {loading ? (
+      {tab === 'conferencias' ? (
+        <ConferenceReport />
+      ) : loading ? (
         <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-slate-300" /></div>
       ) : orders.length === 0 ? (
         <div className="card text-center py-16">

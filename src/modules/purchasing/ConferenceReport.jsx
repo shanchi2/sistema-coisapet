@@ -372,7 +372,8 @@ function ConferenceCard({ order, photoIndex, onOpenPhoto, onSetStatus }) {
 }
 
 // ─── Página ──────────────────────────────────────────────────────────
-export function ConferenceReportPage() {
+// Aba "Conferências" dentro de Pedidos de Matéria-Prima (MaterialOrdersPage)
+export function ConferenceReport() {
   const { orders, loading, setOccurrenceStatus } = useConferenceReport()
 
   const [period, setPeriod]       = useState('90')
@@ -480,12 +481,6 @@ export function ConferenceReportPage() {
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
-      <div className="page-header">
-        <div>
-          <h2 className="page-title">Relatório de Conferências</h2>
-          <p className="page-subtitle">Tudo que chegou de matéria-prima e foi conferido no galpão: quantidades, avarias e fotos</p>
-        </div>
-      </div>
 
       {/* Filtros — uma linha só, acima de tudo */}
       <div className="bg-white border border-slate-200 rounded-2xl p-3 flex flex-col lg:flex-row lg:items-center gap-3">
