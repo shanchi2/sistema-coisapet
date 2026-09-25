@@ -41,8 +41,10 @@ Você NUNCA deve alterar o produto em si: mantenha EXATAMENTE a mesma forma, pro
 material, textura, cor, acabamento e todos os detalhes construtivos visíveis — como se o objeto
 físico real tivesse sido colocado numa cena nova, sem nenhum retoque nele. Não invente, não
 adicione, não remova e não modifique nenhuma peça, acessório ou característica do produto. A única
-coisa que pode mudar é o que está AO REDOR dele (fundo, cenário, iluminação, elementos externos),
-conforme o pedido abaixo.
+coisa que pode mudar é o que está AO REDOR dele (fundo, cenário, iluminação, enquadramento, e
+elementos externos como textos, ícones, setas, linhas de medida e outros elementos gráficos),
+conforme o pedido abaixo. Se o pedido for só melhorar a foto, melhore luz/nitidez/limpeza sem
+mudar o produto.
 
 PEDIDO PARA ESTA IMAGEM:
 `
@@ -61,6 +63,15 @@ async function toBase64(blob: Blob) {
   return btoa(binary)
 }
 
+// Modo "composição" (26/09): o usuário quer que a IA siga o LAYOUT da
+// referência (enquadramento, disposição, textos), com o nosso produto no lugar.
+const COMPOSITION_NOTE = `IMAGEM(NS) DE REFERÊNCIA A SEGUIR — MODELO DE COMPOSIÇÃO:
+As próximas imagens mostram a COMPOSIÇÃO/LAYOUT desejado: siga o enquadramento, o ângulo, a
+posição e a disposição dos elementos, o estilo gráfico e a estrutura de textos/ícones delas. MAS o
+produto da imagem final é SEMPRE e SOMENTE o produto real da primeira imagem (a imagem base) —
+nunca copie, misture ou substitua pelo produto/objeto que aparece nas referências. Textos que
+aparecerem nas referências não devem ser copiados literalmente, a não ser que o pedido diga isso.`
+
 const REFERENCE_NOTE = `IMAGEM(NS) DE REFERÊNCIA A SEGUIR — SOMENTE INSPIRAÇÃO DE ESTILO:
 As próximas imagens são só referência de estilo/ambiente/composição/iluminação (ex: como
 ambientar um cenário). NÃO são o produto sendo editado, NÃO copie os objetos delas pra dentro da
@@ -72,20 +83,30 @@ objeto parecido que apareça nelas. Use-as só pra entender o "clima"/composiç�
 // quanto anexos avulsos que o usuário subiu na hora, ver rota abaixo).
 async function generateImage(
   db: ReturnType<typeof adminClient>,
-  basePhotoPath: string,
+  basePhotoPath: string | null,
+  baseImage: { data: string; mime_type: string } | null,
   userPrompt: string,
   refImages: { data: string; mime_type: string }[],
+  refMode: 'style' | 'composition',
 ) {
   const apiKey = Deno.env.get('GEMINI_API_KEY')
   if (!apiKey) throw new Error('Chave do Gemini não configurada (GEMINI_API_KEY) — rode "supabase secrets set GEMINI_API_KEY=..." primeiro.')
-  if (!basePhotoPath) throw new Error('basePhotoPath obrigatório.')
+  if (!basePhotoPath && !baseImage?.data) throw new Error('Imagem base obrigatória (foto do slot ou imagem enviada).')
   if (!userPrompt?.trim()) throw new Error('Prompt obrigatório.')
 
-  const { data: blob, error: dlErr } = await db.storage.from('product-photos').download(basePhotoPath)
-  if (dlErr || !blob) throw new Error('Não consegui carregar a foto base: ' + (dlErr?.message || 'arquivo não encontrado'))
-
-  const base64Photo = await toBase64(blob)
-  const mimeType = mimeFromPath(basePhotoPath)
+  // Imagem base: foto já salva no storage (hero/slot) OU enviada na hora
+  // pelo usuário ("melhorar esta foto"), que chega em base64 direto do front.
+  let base64Photo: string
+  let mimeType: string
+  if (baseImage?.data) {
+    base64Photo = baseImage.data
+    mimeType = baseImage.mime_type || 'image/jpeg'
+  } else {
+    const { data: blob, error: dlErr } = await db.storage.from('product-photos').download(basePhotoPath!)
+    if (dlErr || !blob) throw new Error('Não consegui carregar a foto base: ' + (dlErr?.message || 'arquivo não encontrado'))
+    base64Photo = await toBase64(blob)
+    mimeType = mimeFromPath(basePhotoPath!)
+  }
 
   const fullPrompt = FIDELITY_PREFIX + userPrompt.trim()
 
@@ -94,25 +115,34 @@ async function generateImage(
     { inline_data: { mime_type: mimeType, data: base64Photo } },
   ]
   if (refImages.length) {
-    parts.push({ text: REFERENCE_NOTE })
+    parts.push({ text: refMode === 'composition' ? COMPOSITION_NOTE : REFERENCE_NOTE })
     for (const ref of refImages) {
       parts.push({ inline_data: { mime_type: ref.mime_type, data: ref.data } })
     }
   }
 
-  const res = await fetch(
+  // Pede 4:5 (padrão do guia, 1080×1350). Se o modelo recusar o
+  // imageConfig, tenta de novo sem ele em vez de falhar a geração.
+  const call = (withAspect: boolean) => fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts }],
-        generationConfig: { responseModalities: ['IMAGE'] },
+        generationConfig: withAspect
+          ? { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '4:5' } }
+          : { responseModalities: ['IMAGE'] },
       }),
     },
   )
 
-  const data = await res.json()
+  let res = await call(true)
+  let data = await res.json()
+  if (res.status === 400 && /aspect|imageConfig|image_config/i.test(data?.error?.message || '')) {
+    res = await call(false)
+    data = await res.json()
+  }
   if (!res.ok) {
     throw new Error('Erro na API do Gemini: ' + (data?.error?.message || res.status))
   }
@@ -154,7 +184,9 @@ serve(async (req) => {
         const adhoc: { data: string; mime_type: string }[] = Array.isArray(body.ref_images_base64) ? body.ref_images_base64 : []
         const refImages = [...fromLibrary.filter(Boolean), ...adhoc] as { data: string; mime_type: string }[]
 
-        return json(await generateImage(db, body.base_photo_path, body.prompt, refImages))
+        const baseImage = body.base_image_base64?.data ? body.base_image_base64 : null
+        const refMode = body.ref_mode === 'composition' ? 'composition' : 'style'
+        return json(await generateImage(db, body.base_photo_path || null, baseImage, body.prompt, refImages, refMode))
       }
       default:
         return json({ error: 'Ação desconhecida.' }, 400)
