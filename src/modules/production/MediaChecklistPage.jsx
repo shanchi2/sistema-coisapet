@@ -16,6 +16,8 @@ import { canGenerateSlot } from './generateSlotImage'
 import { AiSlotImageModal } from './AiSlotImageModal'
 import { AI_SLOTS } from './aiSlotPrompts'
 import { PdpSimulatorModal } from './PdpSimulatorModal'
+import { StorageImage } from '../../components/ui/StorageImage'
+import { useFreshSignedUrl } from '../../lib/signedUrlCache'
 
 // Só os slots 3 (o que acompanha) e 4 (dimensões) têm dado real o
 // suficiente no cadastro do produto pra gerar sozinho, sem IA.
@@ -37,7 +39,7 @@ function CheckCard({ item, data, onUpload, onRemove, hint, examples, onAddExampl
   const Icon = item.icon
   const cat = CATEGORIES[item.category]
   const canGenerate = GENERATABLE_SLOTS.includes(item.slot) && canGenerateSlot(item.slot, product, heroPhotoPath)
-  // IA liberada em todos os slots (26/09) — sem foto 01, o modal pede pra enviar uma imagem base
+  // IA liberada em todos os slots (25/09) — sem foto 01, o modal pede pra enviar uma imagem base
   const canGenerateAi = AI_SLOTS.includes(item.slot)
 
   async function handleFile(e) {
@@ -53,8 +55,8 @@ function CheckCard({ item, data, onUpload, onRemove, hint, examples, onAddExampl
     <div className="bg-white border border-slate-100 rounded-2xl p-3 flex gap-3">
       {/* Slot de foto — proporção 4:5 (1080×1350px), igual ao padrão do guia */}
       <div className="w-24 sm:w-28 aspect-[4/5] rounded-xl bg-slate-50 relative shrink-0 overflow-hidden">
-        {data?.src ? (
-          <img src={data.src} alt={item.title} className="w-full h-full object-cover" />
+        {data?.photo_url ? (
+          <StorageImage bucket="product-photos" path={data.photo_url} alt={item.title} className="w-full h-full object-cover" />
         ) : (
           <button onClick={() => inputRef.current?.click()} disabled={busy}
             className="w-full h-full flex flex-col items-center justify-center gap-1.5 text-slate-300 hover:text-violet-400 hover:bg-violet-50/40 transition-colors">
@@ -65,7 +67,7 @@ function CheckCard({ item, data, onUpload, onRemove, hint, examples, onAddExampl
         <span className="absolute top-1.5 left-1.5 w-6 h-6 rounded-lg bg-white/90 backdrop-blur text-[11px] font-black text-violet-600 flex items-center justify-center border border-violet-100">
           {String(item.slot).padStart(2, '0')}
         </span>
-        {data?.src && (
+        {data?.photo_url && (
           <div className="absolute top-1.5 right-1.5 flex gap-1">
             <button onClick={() => inputRef.current?.click()} disabled={busy}
               className="w-6 h-6 rounded-lg bg-white/90 backdrop-blur flex items-center justify-center text-slate-500 hover:text-violet-600 border border-slate-100">
@@ -135,8 +137,8 @@ function CheckCard({ item, data, onUpload, onRemove, hint, examples, onAddExampl
   )
 }
 
-// Player grande do vídeo (26/09) — antes só dava pra ver numa miniatura minúscula
-function VideoPlayerModal({ src, onClose }) {
+// Player grande do vídeo (25/09) — antes só dava pra ver numa miniatura minúscula
+function VideoPlayerModal({ src, onError, onClose }) {
   useEffect(() => {
     if (!src) return
     function onKey(e) { if (e.key === 'Escape') onClose() }
@@ -147,13 +149,13 @@ function VideoPlayerModal({ src, onClose }) {
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/85 flex items-center justify-center p-4" onClick={onClose}>
       <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-lg text-white hover:bg-white/10"><X size={22} /></button>
-      <video src={src} controls autoPlay onClick={e => e.stopPropagation()}
+      <video src={src} controls autoPlay onError={onError} onClick={e => e.stopPropagation()}
         className="max-h-[85vh] max-w-full rounded-xl bg-black shadow-2xl" />
     </div>
   )
 }
 
-function VideoCard({ media, onUpload, onRemove, onPlay }) {
+function VideoCard({ media, videoSrc, onVideoError, onUpload, onRemove, onPlay }) {
   const inputRef = useRef()
   const [busy, setBusy] = useState(false)
 
@@ -175,11 +177,11 @@ function VideoCard({ media, onUpload, onRemove, onPlay }) {
         <p className="text-sm font-bold text-slate-800">Vídeo do produto (10s)</p>
         <p className="text-xs text-slate-400">Produto em uso, giro rápido ou apresentação — até 80MB.</p>
       </div>
-      {media?.videoSrc ? (
+      {media?.video_url ? (
         <div className="flex items-center gap-2 shrink-0">
           <button type="button" onClick={onPlay} title="Assistir"
             className="relative w-40 h-24 rounded-lg overflow-hidden bg-black group">
-            <video src={media.videoSrc} muted preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+            {videoSrc && <video src={videoSrc} onError={onVideoError} muted preload="metadata" className="w-full h-full object-cover pointer-events-none" />}
             <span className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/15 transition">
               <span className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center shadow">
                 <Play size={18} className="text-violet-600 ml-0.5" fill="currentColor" />
@@ -274,6 +276,8 @@ export function MediaChecklistPage() {
   const [aiGenSlot, setAiGenSlot] = useState(null) // slot sendo gerado com IA agora
   const [pdpOpen, setPdpOpen] = useState(false)     // simulador do anúncio
   const [videoOpen, setVideoOpen] = useState(false)
+  // Link do vídeo que se renova sozinho se vencer (aba aberta >1h)
+  const [videoUrl, onVideoError] = useFreshSignedUrl('product-videos', media?.video_url)
 
   if (loading || !product) {
     return (
@@ -300,7 +304,7 @@ export function MediaChecklistPage() {
           <h1 className="text-xl font-bold text-slate-800 tracking-tight truncate">{product.name}</h1>
           <div className="flex items-center gap-2">
             {product.sku && <span className="text-xs text-slate-400 font-mono">{product.sku}</span>}
-            <span className="text-xs font-bold text-violet-600">{filledCount}/9 fotos {media?.videoSrc ? '+ vídeo ✓' : ''}</span>
+            <span className="text-xs font-bold text-violet-600">{filledCount}/9 fotos {media?.video_url ? '+ vídeo ✓' : ''}</span>
           </div>
         </div>
         <button onClick={() => setPdpOpen(true)} className="btn-primary shrink-0 flex items-center gap-1.5" title="Ver como o anúncio vai ficar">
@@ -345,7 +349,7 @@ export function MediaChecklistPage() {
 
       {/* Vídeo */}
       <div className="mb-6">
-        <VideoCard media={media} onUpload={uploadVideo} onRemove={removeVideo} onPlay={() => setVideoOpen(true)} />
+        <VideoCard media={media} videoSrc={videoUrl} onVideoError={onVideoError} onUpload={uploadVideo} onRemove={removeVideo} onPlay={() => setVideoOpen(true)} />
       </div>
 
       {/* Feedback + Observações */}
@@ -381,8 +385,8 @@ export function MediaChecklistPage() {
       <GeneratedSlotImageModal open={!!genSlot} slot={genSlot} product={product}
         heroPhotoPath={checks[1]?.photo_url} onClose={() => setGenSlot(null)}
         onUse={async file => { await uploadCheckPhoto(genSlot, file); setGenSlot(null) }} />
-      <PdpSimulatorModal open={pdpOpen} onClose={() => setPdpOpen(false)} product={product} checks={checks} videoSrc={media?.videoSrc} />
-      <VideoPlayerModal src={videoOpen ? media?.videoSrc : null} onClose={() => setVideoOpen(false)} />
+      <PdpSimulatorModal open={pdpOpen} onClose={() => setPdpOpen(false)} product={product} checks={checks} videoSrc={videoUrl} onVideoError={onVideoError} />
+      <VideoPlayerModal src={videoOpen ? videoUrl : null} onError={onVideoError} onClose={() => setVideoOpen(false)} />
       <AiSlotImageModal open={!!aiGenSlot} slot={aiGenSlot} product={product}
         heroPhotoPath={checks[1]?.photo_url} heroSrc={checks[1]?.src}
         slotPhotoPath={checks[aiGenSlot]?.photo_url} slotSrc={checks[aiGenSlot]?.src}

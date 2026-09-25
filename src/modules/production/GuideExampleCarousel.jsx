@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Plus, Trash2, Images } from 'lucide-react'
+import { StorageImage } from '../../components/ui/StorageImage'
 
 // Mini carrossel de referência ao lado do box de upload de cada check —
 // mostra 1 imagem de exemplo por vez (até 5, uma por guia pronto de
@@ -20,16 +21,16 @@ export function GuideExampleCarousel({ examples, onAdd, onRemove }) {
   return (
     <div className="relative shrink-0 group">
       {/* Preview ampliado — some no hover, sem precisar clicar */}
-      {current?.src && (
+      {current?.image_url && (
         <div className="hidden group-hover:block absolute z-50 bottom-full right-0 mb-2 w-48 sm:w-56 aspect-[4/5] rounded-xl overflow-hidden shadow-2xl border-2 border-white pointer-events-none">
-          <img src={current.src} alt="" className="w-full h-full object-cover" />
+          <StorageImage bucket="product-photos" path={current.image_url} className="w-full h-full object-cover" />
         </div>
       )}
 
       <div className="w-24 sm:w-28 aspect-[4/5] rounded-xl bg-slate-50 border border-dashed border-slate-200 relative overflow-hidden">
         {current ? (
           <>
-            <img src={current.src} alt="" className="w-full h-full object-cover" />
+            <StorageImage bucket="product-photos" path={current.image_url} className="w-full h-full object-cover" />
             {list.length > 1 && (
               <>
                 <button onClick={() => setIdx(i => (i - 1 + list.length) % list.length)}

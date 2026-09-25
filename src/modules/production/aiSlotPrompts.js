@@ -1,5 +1,5 @@
 // Prompts prontos por slot — ponto de partida editável, nunca texto fixo.
-// Pedido do Raphael, 26/09: liberar a IA (Gemini) em TODOS os 9 slots,
+// Pedido do Raphael, 25/09: liberar a IA (Gemini) em TODOS os 9 slots,
 // com vários modelos de prompt por slot, e a opção de subir uma imagem
 // pra usar como composição (referência de layout) ou como base pra
 // melhorar. A regra de fidelidade ao produto continua valendo sempre
@@ -97,7 +97,7 @@ export const SLOT_PRESETS = {
   ],
 }
 
-// Pedido do Raphael (26/09): TODO prompt pronto termina pedindo mais
+// Pedido do Raphael (25/09): TODO prompt pronto termina pedindo mais
 // saturação e uma exposição mais quente (laranja/amarelado) — padrão
 // visual da CoisaPet. Fica no texto (editável), não escondido na função.
 const WARM_TONE = 'Por fim, aumente levemente a saturação e deixe a exposição da imagem mais quente, puxada para tons alaranjados/amarelados, com aspecto aconchegante e natural.'

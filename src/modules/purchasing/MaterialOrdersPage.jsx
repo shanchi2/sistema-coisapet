@@ -347,7 +347,7 @@ function OrderCard({ order, onRegisterBill, onCancel, onResolveOccurrence }) {
       </button>
 
       {expanded && (
-        // Quantidade na frente do nome, lista compacta (pedido do Raphael, 26/09)
+        // Quantidade na frente do nome, lista compacta (pedido do Raphael, 25/09)
         <div className="mb-3 mt-2 bg-slate-50 rounded-xl divide-y divide-slate-100 max-w-3xl">
           {(order.items || []).map(it => (
             <div key={it.id} className="flex items-baseline gap-3 text-xs px-3 py-1.5">

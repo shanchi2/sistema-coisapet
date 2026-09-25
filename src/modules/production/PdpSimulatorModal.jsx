@@ -1,18 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { X, Monitor, Smartphone, Play, Star, Truck, ShieldCheck, ChevronLeft, ChevronRight, ImageOff } from 'lucide-react'
 import { MEDIA_CHECKLIST } from './mediaChecklist'
+import { StorageImage } from '../../components/ui/StorageImage'
 
 function fmtPreco(v) {
   const n = Number(v) || 0
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-// Simulador de PDP (26/09, pedido do Raphael) — página "de mentira" no
+// Simulador de PDP (25/09, pedido do Raphael) — página "de mentira" no
 // layout de um anúncio de marketplace, com as 9 fotos NA ORDEM do guia +
 // o vídeo, pra ver como o anúncio vai ficar antes de publicar. Só visual:
 // nada aqui fala com o ML. Galeria em moldura QUADRADA de propósito
 // (é assim que o marketplace mostra) — dá pra ver se o 4:5 fica bem.
-export function PdpSimulatorModal({ open, onClose, product, checks, videoSrc }) {
+export function PdpSimulatorModal({ open, onClose, product, checks, videoSrc, onVideoError }) {
   const [device, setDevice]         = useState('desktop') // desktop | mobile
   const [active, setActive]         = useState(0)
   const [showMissing, setShowMissing] = useState(true)
@@ -20,7 +21,7 @@ export function PdpSimulatorModal({ open, onClose, product, checks, videoSrc }) 
   // Mídias na ordem do anúncio: fotos 01..09 e o vídeo por último
   const media = useMemo(() => {
     const list = MEDIA_CHECKLIST.map(item => ({
-      kind: 'photo', slot: item.slot, title: item.title, src: checks?.[item.slot]?.src || null,
+      kind: 'photo', slot: item.slot, title: item.title, src: checks?.[item.slot]?.photo_url || null, // src = path no storage
     }))
     const filtered = showMissing ? list : list.filter(m => m.src)
     if (videoSrc) filtered.push({ kind: 'video', slot: 'video', title: 'Vídeo', src: videoSrc })
@@ -50,7 +51,7 @@ export function PdpSimulatorModal({ open, onClose, product, checks, videoSrc }) 
   function renderMain(className) {
     if (!current) return null
     if (current.kind === 'video') {
-      return <video key={current.src} src={current.src} controls autoPlay className={`${className} bg-black object-contain`} />
+      return <video key="pdp-video" src={current.src} onError={onVideoError} controls autoPlay className={`${className} bg-black object-contain`} />
     }
     if (!current.src) {
       return (
@@ -61,7 +62,7 @@ export function PdpSimulatorModal({ open, onClose, product, checks, videoSrc }) 
         </div>
       )
     }
-    return <img src={current.src} alt={current.title} className={`${className} object-contain bg-white`} />
+    return <StorageImage bucket="product-photos" path={current.src} alt={current.title} className={`${className} object-contain bg-white`} />
   }
 
   function renderThumb(m, i, size) {
@@ -73,7 +74,7 @@ export function PdpSimulatorModal({ open, onClose, product, checks, videoSrc }) 
         {m.kind === 'video' ? (
           <span className="w-full h-full bg-slate-800 flex items-center justify-center"><Play size={16} className="text-white" fill="white" /></span>
         ) : m.src ? (
-          <img src={m.src} alt="" className="w-full h-full object-contain" />
+          <StorageImage bucket="product-photos" path={m.src} className="w-full h-full object-contain" />
         ) : (
           <span className="text-[10px] font-bold text-slate-300">{String(m.slot).padStart(2, '0')}</span>
         )}

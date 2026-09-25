@@ -7,7 +7,7 @@ function getSession() {
   catch { return {} }
 }
 
-// Relatório de Conferências (26/09) — visão do Administrativo/Diretoria
+// Relatório de Conferências (25/09) — visão do Administrativo/Diretoria
 // sobre tudo que o João já conferiu no tablet: quantidades, avarias,
 // fotos e ocorrências. Só leitura, fora "marcar/reabrir ocorrência".
 export function useConferenceReport() {

@@ -106,9 +106,10 @@ export function useProductMediaDetail(productId) {
   const [media,    setMedia]    = useState(null) // linha de product_media_status (ou null)
   const [loading,  setLoading]  = useState(true)
 
-  const fetch = useCallback(async () => {
+  // silent = recarrega sem o spinner de página inteira (volta de aba, ver abaixo)
+  const fetch = useCallback(async ({ silent = false } = {}) => {
     if (!productId) return
-    setLoading(true)
+    if (!silent) setLoading(true)
 
     const { data: prod, error: prodErr } = await supabase
       .from('products')
@@ -162,6 +163,15 @@ export function useProductMediaDetail(productId) {
 
   useEffect(() => { fetch() }, [fetch])
 
+  // Voltou pra aba → recarrega em silêncio. Mais de uma pessoa sobe foto
+  // (Isa, Raphael) e a aba fica aberta horas: sem isso a tela mostrava
+  // slot vazio que no banco já estava preenchido (achado 25/09).
+  useEffect(() => {
+    function onVisible() { if (document.visibilityState === 'visible') fetch({ silent: true }) }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [fetch])
+
   async function uploadCheckPhoto(slot, file) {
     if (file.size > 10 * 1024 * 1024) { toast.error('Máx 10 MB.'); return }
     try {
@@ -184,7 +194,7 @@ export function useProductMediaDetail(productId) {
 
       const { data: signed } = await supabase.storage.from('product-photos').createSignedUrl(path, 3600)
       setChecks(prev => ({ ...prev, [slot]: { id: existing?.id, photo_url: path, src: signed?.signedUrl || null } }))
-      await fetch() // pega o id novo se era insert
+      await fetch({ silent: true }) // pega o id novo se era insert
       toast.success('Foto enviada!')
     } catch (err) {
       toast.error('Erro no upload: ' + err.message)
@@ -246,14 +256,14 @@ export function useProductMediaDetail(productId) {
     const patch = { feedback_montagem: value, feedback_details: details?.trim() || null }
     setMedia(prev => ({ ...prev, ...patch }))
     const { error } = await supabase.from('product_media_status').upsert({ product_id: productId, ...patch }, { onConflict: 'product_id' })
-    if (error) { toast.error('Erro ao salvar.'); console.error(error); await fetch() }
+    if (error) { toast.error('Erro ao salvar.'); console.error(error); await fetch({ silent: true }) }
   }
 
   async function saveNotes(value) {
     const patch = { observations: value?.trim() || null }
     setMedia(prev => ({ ...prev, ...patch }))
     const { error } = await supabase.from('product_media_status').upsert({ product_id: productId, ...patch }, { onConflict: 'product_id' })
-    if (error) { toast.error('Erro ao salvar.'); console.error(error); await fetch() }
+    if (error) { toast.error('Erro ao salvar.'); console.error(error); await fetch({ silent: true }) }
   }
 
   return {

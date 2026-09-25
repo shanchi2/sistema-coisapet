@@ -63,7 +63,7 @@ async function toBase64(blob: Blob) {
   return btoa(binary)
 }
 
-// Modo "composição" (26/09): o usuário quer que a IA siga o LAYOUT da
+// Modo "composição" (25/09): o usuário quer que a IA siga o LAYOUT da
 // referência (enquadramento, disposição, textos), com o nosso produto no lugar.
 const COMPOSITION_NOTE = `IMAGEM(NS) DE REFERÊNCIA A SEGUIR — MODELO DE COMPOSIÇÃO:
 As próximas imagens mostram a COMPOSIÇÃO/LAYOUT desejado: siga o enquadramento, o ângulo, a
@@ -83,7 +83,7 @@ objeto parecido que apareça nelas. Use-as só pra entender o "clima"/composiç�
 // quanto anexos avulsos que o usuário subiu na hora, ver rota abaixo).
 type Img = { data: string; mime_type: string }
 
-// Fotos reais extras do mesmo produto (26/09) — ex: closes de canto,
+// Fotos reais extras do mesmo produto (25/09) — ex: closes de canto,
 // logo gravado, encaixe. A IA não tem como "adivinhar" esses detalhes:
 // eles só existem se vierem de foto real, então entram como fonte da verdade.
 const EXTRA_PRODUCT_NOTE = `AS PRÓXIMAS IMAGENS SÃO OUTRAS FOTOS REAIS DO MESMO PRODUTO (outros ângulos, closes de
@@ -91,7 +91,7 @@ detalhes, encaixes, acabamento, gravações/logo). São a FONTE DA VERDADE sobre
 verdade: use-as para reproduzir detalhes com fidelidade total (e, se o pedido for um close/detalhe,
 use a foto correspondente como base desse close). Nunca invente detalhe que não aparece nelas.`
 
-// Modo "ajustar" (26/09): corrigir a imagem que a própria IA gerou sem
+// Modo "ajustar" (25/09): corrigir a imagem que a própria IA gerou sem
 // refazer tudo (ex: "removeu um atributo repetido" e ela refez a imagem inteira).
 const EDIT_PREFIX = `EDIÇÃO PONTUAL — PRIORIDADE MÁXIMA:
 A primeira imagem abaixo é uma imagem já aprovada. Aplique SOMENTE a alteração pedida a seguir e
@@ -105,7 +105,7 @@ ALTERAÇÃO PEDIDA:
 const EDIT_PRODUCT_NOTE = `As imagens a seguir são fotos reais do produto, só para conferência — se a alteração pedida
 envolver o produto, ele deve continuar fiel a elas. Não use essas fotos para mudar a composição.`
 
-// Chave "Não mexer no conteúdo" do modal (26/09). Ligada: a IA só pode
+// Chave "Não mexer no conteúdo" do modal (25/09). Ligada: a IA só pode
 // mexer em tom/luz/cor/nitidez (e no que o pedido mandar explicitamente
 // de visual), sem tirar, pôr ou mover nada. Desligada: liberdade pra
 // melhorar a cena (reposicionar, remover distrações, adicionar

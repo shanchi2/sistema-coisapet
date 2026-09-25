@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase'
 import { Modal } from '../../components/ui/Modal'
 import { presetsForSlot, AI_SLOT_NOTE } from './aiSlotPrompts'
 import { MEDIA_CHECKLIST } from './mediaChecklist'
+import { StorageImage } from '../../components/ui/StorageImage'
 import toast from 'react-hot-toast'
 
 // Reduz a imagem no navegador antes de mandar (máx 2048px, JPEG) — foto
@@ -39,7 +40,7 @@ async function fileToImage(file, maxSide = 2048) {
 // Gera imagem com IA (Gemini, image-to-image) — SEMPRE mostra a prévia
 // antes de salvar e o prompt é sempre editável.
 //
-// 26/09 (Raphael):
+// 25/09 (Raphael):
 // - Fotos base: VÁRIAS fotos reais do produto (foto 01, foto do slot,
 //   quantas enviar), marcando quais a IA deve ver. A 1ª marcada é a
 //   principal; as outras são "fonte da verdade" de detalhe (canto, logo
@@ -257,7 +258,9 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
                   <div key={b.key} className={`relative w-[92px] rounded-xl border-2 p-1 transition ${selected ? 'border-violet-500 bg-violet-50' : 'border-slate-100 opacity-60 hover:opacity-100'}`}>
                     <button type="button" onClick={() => toggleBase(b.key)} disabled={busy} className="block w-full">
                       <span className="block w-full aspect-[4/5] rounded-lg overflow-hidden bg-slate-100">
-                        {b.src ? <img src={b.src} alt="" className="w-full h-full object-cover" /> : null}
+                        {b.path
+                          ? <StorageImage bucket="product-photos" path={b.path} className="w-full h-full object-cover" />
+                          : b.src ? <img src={b.src} alt="" className="w-full h-full object-cover" /> : null}
                       </span>
                       <span className="block text-[10px] font-semibold text-slate-600 truncate mt-1 px-0.5" title={b.label}>{b.label}</span>
                     </button>
@@ -364,7 +367,7 @@ export function AiSlotImageModal({ open, onClose, product, slot, heroPhotoPath, 
                   <button key={ex.id} type="button" onClick={() => toggleExample(ex.id)}
                     className={`relative w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors ${selected ? 'border-violet-500' : 'border-transparent hover:border-slate-200'}`}
                     title={ex.title}>
-                    <img src={ex.src} alt={ex.title || ''} className="w-full h-full object-cover" />
+                    <StorageImage bucket="product-photos" path={ex.image_url} alt={ex.title || ''} className="w-full h-full object-cover" />
                     {selected && (
                       <span className="absolute inset-0 bg-violet-500/30 flex items-center justify-center">
                         <Check size={18} className="text-white drop-shadow" />
