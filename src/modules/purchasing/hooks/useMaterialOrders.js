@@ -29,7 +29,12 @@ export function useMaterialOrders() {
           id, raw_material_id, qty_ordered, unit_price, qty_received, qty_damaged, item_status,
           raw_material:raw_materials(id, name, unit)
         ),
-        occurrences:material_order_occurrences(id, status, description, qty_damaged, order_item_id)
+        closer:system_users!closed_by(name),
+        occurrences:material_order_occurrences(
+          id, order_item_id, kind, status, description, qty_damaged, qty_affected, reported_at, resolved_at, resolution, resolution_notes,
+          resolver:system_users!resolved_by(name),
+          photos:material_order_occurrence_photos(id, storage_path)
+        )
       `)
       .order('created_at', { ascending: false })
 
@@ -85,15 +90,6 @@ export function useMaterialOrders() {
     await fetch()
   }
 
-  async function resolveOccurrence(occurrenceId) {
-    const session = getSession()
-    const { error } = await supabase.from('material_order_occurrences')
-      .update({ status: 'resolvido', resolved_at: new Date().toISOString(), resolved_by: session.id || null })
-      .eq('id', occurrenceId)
-    if (error) { toast.error('Erro ao resolver ocorrência.'); throw error }
-    toast.success('Ocorrência marcada como resolvida.')
-    await fetch()
-  }
-
-  return { orders, loading, refetch: fetch, createOrder, linkBill, cancelOrder, resolveOccurrence }
+  // Ocorrências: acompanhamento pelo OccurrenceTrackingModal (occurrenceTracking.js)
+  return { orders, loading, refetch: fetch, createOrder, linkBill, cancelOrder }
 }

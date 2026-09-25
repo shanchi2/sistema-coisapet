@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  Package, Plus, Check, Loader2, Trash2, Receipt, ShieldAlert, Search, Truck, X, ClipboardCheck,
+  Package, Plus, Check, Loader2, Trash2, Receipt, ShieldAlert, Search, Truck, X, ClipboardCheck, Flag,
 } from 'lucide-react'
 import { Modal } from '../../components/ui/Modal'
 import { useMaterialOrders } from './hooks/useMaterialOrders'
@@ -10,6 +10,8 @@ import { useSuppliers } from '../financial/hooks/useSuppliers'
 import { BillFormModal } from '../financial/components/BillFormModal'
 import { useBills } from '../financial/hooks/useBills'
 import { ConferenceReport } from './ConferenceReport'
+import { OCC_KIND, OCC_RESOLUTION, isOpenOccurrence } from './occurrenceTracking'
+import { OccurrenceTrackingModal, FinalizeOrderModal, OccStatusBadge, OccKindBadge } from './OccurrenceTrackingModal'
 import toast from 'react-hot-toast'
 
 function fmtPreco(v) {
@@ -28,6 +30,7 @@ function orderTotal(order) {
 const STATUS_INFO = {
   pedido:    { label: 'Aguardando entrega/conferência', text: 'text-amber-700',   bg: 'bg-amber-50 border-amber-200' },
   conferido: { label: 'Conferido',                       text: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+  finalizado:{ label: 'Finalizado',                      text: 'text-white',       bg: 'bg-slate-800 border-slate-800' },
   cancelado: { label: 'Cancelado',                        text: 'text-slate-500',   bg: 'bg-slate-50 border-slate-200' },
 }
 function StatusBadge({ status }) {
@@ -293,32 +296,38 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
   )
 }
 
-// ─── Painel de ocorrências (avarias reportadas pelo João) ───────────
-function OccurrenceRow({ occ, order, onResolve }) {
+// ─── Ocorrências (avaria / falta / excesso) — clique abre o acompanhamento ──
+function OccurrenceRow({ occ, order, onTrack }) {
   const item = order.items?.find(i => i.id === occ.order_item_id)
+  const open = isOpenOccurrence(occ)
+  const qty = occ.qty_affected ?? occ.qty_damaged
   return (
-    <div className="flex items-start gap-2.5 bg-rose-50/60 border border-rose-100 rounded-xl px-3 py-2.5">
-      <ShieldAlert size={14} className="text-rose-500 shrink-0 mt-0.5" />
+    <button type="button" onClick={() => onTrack(occ, order)}
+      className={`w-full text-left flex items-start gap-2.5 rounded-xl px-3 py-2.5 border transition hover:shadow-sm ${open ? 'bg-rose-50/60 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
+      <ShieldAlert size={14} className={`shrink-0 mt-0.5 ${open ? 'text-rose-500' : 'text-slate-400'}`} />
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold text-rose-700">
+        <p className={`text-xs font-semibold flex items-center gap-1.5 flex-wrap ${open ? 'text-rose-700' : 'text-slate-600'}`}>
+          <OccKindBadge kind={occ.kind} />
           {item?.raw_material?.name || 'Item'}
-          {occ.qty_damaged != null && ` — ${fmtQty(occ.qty_damaged, item?.raw_material?.unit)} avariado`}
+          {qty != null && <span className="font-normal">— {fmtQty(qty, item?.raw_material?.unit)} {OCC_KIND[occ.kind]?.verb || 'avariado'}</span>}
         </p>
-        {occ.description && <p className="text-xs text-slate-500 mt-0.5">{occ.description}</p>}
+        {occ.status === 'resolvido'
+          ? <p className="text-[11px] text-emerald-700 mt-0.5">Solução: {OCC_RESOLUTION[occ.resolution] || '—'}{occ.resolution_notes ? ` — ${occ.resolution_notes}` : ''}</p>
+          : occ.description && <p className="text-xs text-slate-500 mt-0.5">{occ.description}</p>}
       </div>
-      {occ.status === 'aberto' ? (
-        <button onClick={() => onResolve(occ.id)} className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 shrink-0">Marcar resolvida</button>
-      ) : (
-        <span className="text-[11px] text-slate-400 shrink-0">Resolvida</span>
-      )}
-    </div>
+      <span className="flex flex-col items-end gap-1 shrink-0">
+        <OccStatusBadge status={occ.status} />
+        <span className="text-[10px] font-semibold text-violet-600">Acompanhar →</span>
+      </span>
+    </button>
   )
 }
 
 // ─── Card de pedido ──────────────────────────────────────────────────
-function OrderCard({ order, onRegisterBill, onCancel, onResolveOccurrence }) {
+function OrderCard({ order, onRegisterBill, onCancel, onTrack, onFinalize }) {
   const [expanded, setExpanded] = useState(false)
-  const openOccurrences = (order.occurrences || []).filter(o => o.status === 'aberto')
+  const occurrences = order.occurrences || []
+  const openOccurrences = occurrences.filter(isOpenOccurrence)
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-4">
@@ -335,7 +344,7 @@ function OrderCard({ order, onRegisterBill, onCancel, onResolveOccurrence }) {
         <div className="flex items-center gap-2">
           {openOccurrences.length > 0 && (
             <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-rose-100 text-rose-700">
-              <ShieldAlert size={12} /> {openOccurrences.length} ocorrência{openOccurrences.length > 1 ? 's' : ''}
+              <ShieldAlert size={12} /> {openOccurrences.length} ocorrência{openOccurrences.length > 1 ? 's' : ''} pendente{openOccurrences.length > 1 ? 's' : ''}
             </span>
           )}
           <StatusBadge status={order.status} />
@@ -365,16 +374,28 @@ function OrderCard({ order, onRegisterBill, onCancel, onResolveOccurrence }) {
         </div>
       )}
 
-      {openOccurrences.length > 0 && expanded && (
-        <div className="flex flex-col gap-1.5 mb-3">
-          {openOccurrences.map(occ => <OccurrenceRow key={occ.id} occ={occ} order={order} onResolve={onResolveOccurrence} />)}
+      {/* Ocorrências pendentes sempre visíveis; resolvidas só no detalhe */}
+      {(openOccurrences.length > 0 || (expanded && occurrences.length > 0)) && (
+        <div className="flex flex-col gap-1.5 mb-3 max-w-3xl">
+          {(expanded ? occurrences : openOccurrences).map(occ => <OccurrenceRow key={occ.id} occ={occ} order={order} onTrack={onTrack} />)}
+        </div>
+      )}
+
+      {order.status === 'finalizado' && (
+        <div className="mb-3 max-w-3xl bg-slate-800 text-white rounded-xl px-3 py-2.5">
+          <p className="text-[11px] font-bold flex items-center gap-1.5"><Flag size={12} /> Finalizado {order.closer?.name ? `por ${order.closer.name} ` : ''}em {new Date(order.closed_at).toLocaleDateString('pt-BR')}</p>
+          {order.closing_notes && <p className="text-xs text-slate-200 mt-0.5 whitespace-pre-line">{order.closing_notes}</p>}
         </div>
       )}
 
       <div className="flex items-center justify-between gap-3 flex-wrap pt-2 border-t border-slate-50">
         <span className="text-sm font-bold text-slate-700">Total estimado: {fmtPreco(orderTotal(order))}</span>
         <div className="flex items-center gap-2">
-          {order.status !== 'cancelado' && !order.bill_id && (
+          {order.status === 'conferido' && openOccurrences.length === 0 && (
+            <button onClick={() => onFinalize(order)} className="btn-secondary py-1.5 text-xs"><Flag size={13} /> Finalizar pedido</button>
+          )}
+          {/* Só dá pra cancelar antes da conferência — depois o estoque já entrou */}
+          {order.status === 'pedido' && !order.bill_id && (
             <button onClick={() => onCancel(order.id)} className="text-xs font-semibold text-slate-400 hover:text-rose-500">Cancelar</button>
           )}
           {order.bill_id ? (
@@ -392,7 +413,9 @@ function OrderCard({ order, onRegisterBill, onCancel, onResolveOccurrence }) {
 }
 
 export function MaterialOrdersPage() {
-  const { orders, loading, refetch, createOrder, linkBill, cancelOrder, resolveOccurrence } = useMaterialOrders()
+  const { orders, loading, refetch, createOrder, linkBill, cancelOrder } = useMaterialOrders()
+  const [tracking, setTracking]     = useState(null) // { occ, order }
+  const [finalizing, setFinalizing] = useState(null)
   // Aba via URL (?aba=conferencias) — o antigo /relatorio-conferencias redireciona pra cá
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('aba') === 'conferencias' ? 'conferencias' : 'pedidos'
@@ -481,10 +504,18 @@ export function MaterialOrdersPage() {
         <div className="flex flex-col gap-3">
           {orders.map(order => (
             <OrderCard key={order.id} order={order}
-              onRegisterBill={setBillOrder} onCancel={cancelOrder} onResolveOccurrence={resolveOccurrence} />
+              onRegisterBill={setBillOrder} onCancel={cancelOrder}
+              onTrack={(occ, order) => setTracking({ occ, order })} onFinalize={setFinalizing} />
           ))}
         </div>
       )}
+
+      {tracking && (
+        <OccurrenceTrackingModal occurrence={tracking.occ} order={tracking.order}
+          item={tracking.order.items?.find(i => i.id === tracking.occ.order_item_id)}
+          onClose={() => setTracking(null)} onChanged={refetch} />
+      )}
+      <FinalizeOrderModal order={finalizing} onClose={() => setFinalizing(null)} onDone={refetch} />
 
       <NewOrderModal open={modal} onClose={() => setModal(false)} onSave={createOrder} materials={materials} suppliers={suppliers} />
 

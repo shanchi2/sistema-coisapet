@@ -2,9 +2,11 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   ClipboardCheck, Loader2, ShieldAlert, CheckCircle2, AlertTriangle, PackageCheck,
   DollarSign, Search, ChevronLeft, ChevronRight, X, Image as ImageIcon, List,
-  Truck, User, RotateCcw, Camera, Boxes,
+  Truck, User, RotateCcw, Camera, Boxes, Flag, MessageSquareText,
 } from 'lucide-react'
 import { useConferenceReport } from './hooks/useConferenceReport'
+import { OCC_KIND, OCC_RESOLUTION, isOpenOccurrence, reopenOrder } from './occurrenceTracking'
+import { OccurrenceTrackingModal, FinalizeOrderModal, OccStatusBadge, OccKindBadge } from './OccurrenceTrackingModal'
 import { useSignedUrl } from '../../lib/signedUrlCache'
 
 const PHOTO_BUCKET = 'purchase-attachments' // mesmo bucket usado na conferência (useMaterialConference)
@@ -62,7 +64,7 @@ function orderMetrics(order) {
     missingItems:  m.filter(x => x.missing > 0).length,
     extraItems:    m.filter(x => x.extra > 0).length,
     loss:          m.reduce((s, x) => s + x.loss, 0),
-    openOcc:       (order.occurrences || []).filter(o => o.status === 'aberto').length,
+    openOcc:       (order.occurrences || []).filter(isOpenOccurrence).length,
     photoCount:    (order.occurrences || []).reduce((s, o) => s + (o.photos?.length || 0), 0),
   }
 }
@@ -200,56 +202,54 @@ function Lightbox({ photos, index, onClose, onNav }) {
 }
 
 // ─── Card de uma conferência ─────────────────────────────────────────
-function OccurrenceBlock({ occ, item, photos, onOpenPhoto, onSetStatus }) {
-  const [busy, setBusy] = useState(false)
+// Ocorrência (avaria, falta ou excesso) — o acompanhamento em si (linha do
+// tempo, solução) fica no OccurrenceTrackingModal.
+function OccurrenceBlock({ occ, item, photos, onOpenPhoto, onTrack }) {
   const unit = item?.raw_material?.unit
-  async function toggle() {
-    setBusy(true)
-    try { await onSetStatus(occ.id, occ.status === 'aberto' ? 'resolvido' : 'aberto') } catch { /* toast no hook */ }
-    finally { setBusy(false) }
-  }
-  const open = occ.status === 'aberto'
+  const open = isOpenOccurrence(occ)
+  const kind = OCC_KIND[occ.kind] || OCC_KIND.avaria
+  const qty = occ.qty_affected ?? occ.qty_damaged
   return (
     <div className={`rounded-xl border px-3 py-3 ${open ? 'bg-rose-50/60 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
       <div className="flex items-start gap-2.5">
         <ShieldAlert size={15} className={`shrink-0 mt-0.5 ${open ? 'text-rose-500' : 'text-slate-400'}`} />
         <div className="min-w-0 flex-1">
-          <p className={`text-sm font-semibold ${open ? 'text-rose-700' : 'text-slate-600'}`}>
+          <p className={`text-sm font-semibold flex items-center gap-1.5 flex-wrap ${open ? 'text-rose-700' : 'text-slate-600'}`}>
+            <OccKindBadge kind={occ.kind} />
             {item?.raw_material?.name || 'Item'}
-            {occ.qty_damaged != null && <span className="font-normal"> — {fmtQty(occ.qty_damaged, unit)} avariado</span>}
+            {qty != null && <span className="font-normal">— {fmtQty(qty, unit)} {kind.verb}</span>}
           </p>
-          <p className="text-xs text-slate-500 mt-0.5">{occ.description || <span className="italic text-slate-400">Sem descrição</span>}</p>
-          <p className="text-[11px] text-slate-400 mt-1">
-            {open
-              ? <>Aberta em {fmtDataHora(occ.reported_at)}</>
-              : <>Resolvida {occ.resolver?.name ? `por ${occ.resolver.name} ` : ''}em {fmtDataHora(occ.resolved_at)}</>}
-          </p>
+          {occ.description && <p className="text-xs text-slate-500 mt-0.5">{occ.description}</p>}
+          {occ.status === 'resolvido' ? (
+            <p className="text-[11px] text-emerald-700 mt-1">
+              <b>Solução:</b> {OCC_RESOLUTION[occ.resolution] || '—'}{occ.resolution_notes ? ` — ${occ.resolution_notes}` : ''}
+              <span className="text-slate-400"> · {occ.resolver?.name ? `por ${occ.resolver.name} ` : ''}em {fmtDataHora(occ.resolved_at)}</span>
+            </p>
+          ) : (
+            <p className="text-[11px] text-slate-400 mt-1">Aberta em {fmtDataHora(occ.reported_at)}</p>
+          )}
         </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${open ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-            {open ? <><AlertTriangle size={11} /> Aberta</> : <><CheckCircle2 size={11} /> Resolvida</>}
-          </span>
-          <button onClick={toggle} disabled={busy} className={`text-[11px] font-semibold ${open ? 'text-emerald-600 hover:text-emerald-700' : 'text-slate-400 hover:text-slate-600'} disabled:opacity-50 flex items-center gap-1`}>
-            {busy && <Loader2 size={10} className="animate-spin" />}
-            {open ? 'Marcar resolvida' : <><RotateCcw size={10} /> Reabrir</>}
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <OccStatusBadge status={occ.status} />
+          <button onClick={() => onTrack(occ)} className="text-[11px] font-semibold text-violet-600 hover:text-violet-700 flex items-center gap-1">
+            <MessageSquareText size={11} /> Acompanhar
           </button>
         </div>
       </div>
-      {photos.length > 0 ? (
+      {photos.length > 0 && (
         <div className="flex gap-2 flex-wrap mt-2.5 pl-6">
           {photos.map(p => <PhotoThumb key={p.id} path={p.storage_path} onClick={() => onOpenPhoto(p.id)} />)}
         </div>
-      ) : (
-        <p className="text-[11px] text-slate-400 mt-2 pl-6 flex items-center gap-1"><Camera size={11} /> Sem fotos</p>
       )}
     </div>
   )
 }
 
-function ConferenceCard({ order, photoIndex, onOpenPhoto, onSetStatus }) {
+function ConferenceCard({ order, photoIndex, onOpenPhoto, onTrack, onFinalize, onReopen }) {
   const [expanded, setExpanded] = useState(false)
   const om = orderMetrics(order)
   const allGood = om.damagedItems === 0 && om.missingItems === 0 && om.extraItems === 0
+  const finalized = order.status === 'finalizado'
 
   return (
     <div className={`bg-white border rounded-2xl overflow-hidden ${om.openOcc > 0 ? 'border-rose-200' : 'border-slate-200'}`}>
@@ -266,6 +266,13 @@ function ConferenceCard({ order, photoIndex, onOpenPhoto, onSetStatus }) {
             </p>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
+            {finalized ? (
+              <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-slate-800 text-white"><Flag size={12} /> Finalizado</span>
+            ) : om.openOcc > 0 ? (
+              <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-rose-500 text-white"><AlertTriangle size={12} /> {om.openOcc} ocorrência{om.openOcc > 1 ? 's' : ''} pendente{om.openOcc > 1 ? 's' : ''}</span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">Aguardando finalização</span>
+            )}
             {allGood && (
               <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 size={12} /> Tudo certo</span>
             )}
@@ -352,19 +359,37 @@ function ConferenceCard({ order, photoIndex, onOpenPhoto, onSetStatus }) {
 
           {(order.occurrences || []).length > 0 && (
             <div className="flex flex-col gap-2">
-              <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Ocorrências de avaria</p>
+              <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Ocorrências (avaria e divergência de quantidade)</p>
               {order.occurrences.map(occ => (
                 <OccurrenceBlock key={occ.id} occ={occ}
                   item={order.items?.find(i => i.id === occ.order_item_id)}
                   photos={occ.photos || []}
                   onOpenPhoto={id => onOpenPhoto(photoIndex.get(id))}
-                  onSetStatus={onSetStatus} />
+                  onTrack={o => onTrack(o, order)} />
               ))}
             </div>
           )}
 
           {order.notes && (
             <p className="text-xs text-slate-500"><b className="text-slate-600">Observações do pedido:</b> {order.notes}</p>
+          )}
+
+          {/* "Final" do pedido */}
+          {finalized ? (
+            <div className="bg-slate-800 text-white rounded-xl p-3.5">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <p className="text-xs font-bold flex items-center gap-1.5"><Flag size={13} /> Finalizado {order.closer?.name ? `por ${order.closer.name} ` : ''}em {fmtDataHora(order.closed_at)}</p>
+                <button onClick={() => onReopen(order)} className="text-[11px] font-semibold text-slate-300 hover:text-white flex items-center gap-1"><RotateCcw size={11} /> Reabrir</button>
+              </div>
+              <p className="text-sm text-slate-200 whitespace-pre-line">{order.closing_notes || '—'}</p>
+            </div>
+          ) : om.openOcc > 0 ? (
+            <p className="text-xs text-slate-500 bg-slate-100 rounded-lg px-3 py-2">Resolva as {om.openOcc} ocorrência(s) pendente(s) pra poder finalizar este pedido.</p>
+          ) : (
+            <div className="flex items-center justify-between gap-3 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2.5">
+              <p className="text-xs text-emerald-700 font-semibold">Nada pendente — dá pra finalizar com a observação final.</p>
+              <button onClick={() => onFinalize(order)} className="btn-primary py-1.5 text-xs shrink-0"><Flag size={13} /> Finalizar pedido</button>
+            </div>
           )}
         </div>
       )}
@@ -375,7 +400,13 @@ function ConferenceCard({ order, photoIndex, onOpenPhoto, onSetStatus }) {
 // ─── Página ──────────────────────────────────────────────────────────
 // Aba "Conferências" dentro de Pedidos de Matéria-Prima (MaterialOrdersPage)
 export function ConferenceReport() {
-  const { orders, loading, setOccurrenceStatus } = useConferenceReport()
+  const { orders, loading, refetch } = useConferenceReport()
+  const [tracking, setTracking]     = useState(null) // { occ, order } — modal de acompanhamento
+  const [finalizing, setFinalizing] = useState(null) // pedido sendo finalizado
+  const refresh = () => refetch({ silent: true })
+  async function handleReopen(order) {
+    try { await reopenOrder(order.id); await refresh() } catch { /* toast no helper */ }
+  }
 
   const [period, setPeriod]       = useState('90')
   const [supplierId, setSupplier] = useState('')
@@ -399,6 +430,8 @@ export function ConferenceReport() {
       if (q && !(o.items || []).some(it => it.raw_material?.name?.toLowerCase().includes(q))
             && !o.supplier?.name?.toLowerCase().includes(q)) return false
       const om = orderMetrics(o)
+      if (filter === 'pendentes'   && o.status === 'finalizado') return false
+      if (filter === 'finalizados' && o.status !== 'finalizado') return false
       if (filter === 'avaria'      && om.damagedItems === 0) return false
       if (filter === 'abertas'     && om.openOcc === 0) return false
       if (filter === 'divergencia' && om.missingItems === 0 && om.extraItems === 0) return false
@@ -474,10 +507,12 @@ export function ConferenceReport() {
 
   const FILTERS = [
     { key: 'todas',       label: 'Todas' },
+    { key: 'pendentes',   label: 'Não finalizadas' },
     { key: 'avaria',      label: 'Com avaria' },
     { key: 'abertas',     label: 'Ocorrência aberta' },
     { key: 'divergencia', label: 'Divergência de qtd' },
     { key: 'ok',          label: 'Tudo certo' },
+    { key: 'finalizados', label: 'Finalizadas' },
   ]
 
   return (
@@ -556,7 +591,9 @@ export function ConferenceReport() {
             <div className="flex flex-col gap-3">
               {filtered.map(o => (
                 <ConferenceCard key={o.id} order={o} photoIndex={photoIndex}
-                  onOpenPhoto={setLightbox} onSetStatus={setOccurrenceStatus} />
+                  onOpenPhoto={setLightbox}
+                  onTrack={(occ, order) => setTracking({ occ, order })}
+                  onFinalize={setFinalizing} onReopen={handleReopen} />
               ))}
             </div>
           ) : allPhotos.length === 0 ? (
@@ -573,8 +610,8 @@ export function ConferenceReport() {
                     <p className="text-xs font-bold text-slate-700 truncate">{p.materialName}</p>
                     <p className="text-[11px] text-rose-600 font-semibold">{fmtQty(p.qtyDamaged, p.unit)} avariado</p>
                     <p className="text-[11px] text-slate-400 truncate">{p.supplierName} · {fmtData(p.conferredAt)}</p>
-                    <span className={`inline-flex mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${p.occurrenceStatus === 'aberto' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                      {p.occurrenceStatus === 'aberto' ? 'Ocorrência aberta' : 'Resolvida'}
+                    <span className={`inline-flex mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${p.occurrenceStatus !== 'resolvido' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                      {p.occurrenceStatus !== 'resolvido' ? 'Ocorrência aberta' : 'Resolvida'}
                     </span>
                   </div>
                 </div>
@@ -583,6 +620,13 @@ export function ConferenceReport() {
           )}
         </>
       )}
+
+      {tracking && (
+        <OccurrenceTrackingModal occurrence={tracking.occ} order={tracking.order}
+          item={tracking.order.items?.find(i => i.id === tracking.occ.order_item_id)}
+          onClose={() => setTracking(null)} onChanged={refresh} />
+      )}
+      <FinalizeOrderModal order={finalizing} onClose={() => setFinalizing(null)} onDone={refresh} />
 
       {lightbox != null && (
         <Lightbox photos={allPhotos} index={lightbox} onClose={closeLightbox} onNav={navLightbox} />

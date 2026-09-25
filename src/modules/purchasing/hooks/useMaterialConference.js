@@ -90,12 +90,28 @@ export function useMaterialConference() {
         const { data: occ, error: occErr } = await supabase.from('material_order_occurrences')
           .insert({
             order_id: order.id, order_item_id: r.item_id,
+            kind: 'avaria',
             qty_damaged: r.qty_damaged,
+            qty_affected: r.qty_damaged,
             description: r.occurrence_description || null,
           })
           .select('id').single()
         if (occErr) throw occErr
         if (r.occurrence_photos?.length) await uploadOccurrencePhotos(occ.id, r.occurrence_photos)
+      }
+
+      // Divergência de quantidade também vira ocorrência (fase74, 25/09) —
+      // pra ter onde acompanhar a solução (reposição, crédito, desconto...).
+      const item = order.items?.find(i => i.id === r.item_id)
+      const diff = Number(r.qty_received) - Number(item?.qty_ordered ?? r.qty_received)
+      if (diff !== 0) {
+        const { error: divErr } = await supabase.from('material_order_occurrences').insert({
+          order_id: order.id, order_item_id: r.item_id,
+          kind: diff < 0 ? 'falta' : 'excesso',
+          qty_affected: Math.abs(diff),
+          description: diff < 0 ? 'Chegou menos do que foi pedido.' : 'Chegou mais do que foi pedido.',
+        })
+        if (divErr) throw divErr
       }
     }
 
@@ -110,16 +126,23 @@ export function useMaterialConference() {
     // Avisa o Administrativo/Compras (César) se sobrou alguma avaria —
     // mesmo padrão de notificação já usado na Compra da Lousa.
     const avariados = results.filter(r => Number(r.qty_damaged) > 0)
-    if (avariados.length) {
+    const divergentes = results.filter(r => {
+      const it = order.items?.find(i => i.id === r.item_id)
+      return it && Number(r.qty_received) !== Number(it.qty_ordered)
+    })
+    if (avariados.length || divergentes.length) {
       const { data: notifyUsers } = await supabase.from('system_users')
         .select('id').in('role', ['admin', 'administrativo']).eq('active', true)
       if (notifyUsers?.length) {
         const totalAvariado = avariados.reduce((s, r) => s + Number(r.qty_damaged), 0)
+        const partes = []
+        if (avariados.length)   partes.push(`${totalAvariado} unidade(s) avariada(s) em ${avariados.length} item(ns)`)
+        if (divergentes.length) partes.push(`${divergentes.length} item(ns) com quantidade diferente do pedido`)
         await supabase.from('notifications').insert(notifyUsers.map(u => ({
           user_id: u.id, type: 'material_occurrence',
-          title: 'Material avariado na conferência',
-          body: `${totalAvariado} unidade(s) em ${avariados.length} item(ns) chegaram avariadas num pedido de matéria-prima — precisa abrir chamado com o fornecedor.`,
-          link: '/pedidos-materia-prima',
+          title: avariados.length ? 'Material avariado na conferência' : 'Divergência na conferência',
+          body: `${partes.join(' e ')} num pedido de matéria-prima — acompanhe a ocorrência até a solução.`,
+          link: '/pedidos-materia-prima?aba=conferencias',
         })))
       }
     }
