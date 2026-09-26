@@ -1827,6 +1827,55 @@ async function categoryAttributesForCreate(accessToken: string, categoryId: stri
   return { category_id: categoryId, category_name: category?.name ?? null, attributes: buildFullAttributes({}, catAttrs) }
 }
 
+// ── Publicar fotos da Atualização de Mídia (26/09) ────────────────────
+// Acha os anúncios do vendedor com aquele SKU (atributo SELLER_SKU).
+async function findItemsBySku(integration: any, sku: string) {
+  const search = await mlFetch(`/users/${integration.ml_user_id}/items/search?seller_sku=${encodeURIComponent(sku)}`, integration.access_token)
+  const ids: string[] = search.results || []
+  const items = []
+  for (const id of ids) {
+    try {
+      const it = await mlFetch(`/items/${id}?attributes=id,title,status,permalink,thumbnail,pictures,variations`, integration.access_token)
+      items.push({
+        item_id: it.id, title: it.title, status: it.status, permalink: it.permalink,
+        pictures: (it.pictures || []).map((p: any) => ({ id: p.id, url: p.secure_url || p.url })),
+        variations_count: (it.variations || []).length,
+      })
+    } catch { /* anúncio sumiu/sem acesso — ignora */ }
+  }
+  return { items }
+}
+
+// SUBSTITUI todas as fotos do anúncio pelas enviadas (já na ordem certa,
+// ids vindos do upload_picture). Sempre atrás de confirmação explícita na
+// tela. Guarda a lista anterior em ml_item_updates pra poder desfazer.
+// Anúncio COM variação fica bloqueado nesta versão: cada variação tem as
+// próprias fotos e trocar o array geral sem remontar `picture_ids` de
+// cada uma deixaria fotos órfãs/variação sem foto (ver incidente 14/09 e
+// buildVariationsForWrite).
+async function replaceItemPictures(integration: any, db: ReturnType<typeof adminClient>, itemId: string, pictureIds: string[], source?: unknown) {
+  if (!pictureIds?.length) throw new Error('Nenhuma foto pra enviar.')
+  if (pictureIds.length > 12) throw new Error('O Mercado Livre aceita no máximo 12 fotos por anúncio.')
+  const current = await mlFetch(`/items/${itemId}?attributes=pictures,variations`, integration.access_token)
+  if ((current.variations || []).length) {
+    throw new Error('Esse anúncio tem variações — a troca automática de fotos ainda não suporta anúncio com variação (cada variação tem as próprias fotos). Use a aba Imagens do anúncio.')
+  }
+  const previous = (current.pictures || []).map((p: any) => p.id)
+  await mlWrite(`/items/${itemId}`, integration.access_token, 'PUT', { pictures: pictureIds.map(id => ({ id })) })
+  await logItemUpdate(db, itemId, 'pictures_replaced', { previous, new: pictureIds, source: source ?? null })
+  return { ok: true, previous }
+}
+
+// Desfaz a troca acima: volta exatamente a lista anterior de fotos
+async function restoreItemPictures(integration: any, db: ReturnType<typeof adminClient>, itemId: string, pictureIds: string[]) {
+  if (!pictureIds?.length) throw new Error('Lista anterior vazia.')
+  const current = await mlFetch(`/items/${itemId}?attributes=variations`, integration.access_token)
+  if ((current.variations || []).length) throw new Error('Anúncio com variações — restaure pela aba Imagens do anúncio.')
+  await mlWrite(`/items/${itemId}`, integration.access_token, 'PUT', { pictures: pictureIds.map(id => ({ id })) })
+  await logItemUpdate(db, itemId, 'pictures_restored', { restored: pictureIds })
+  return { ok: true }
+}
+
 // Upload de foto — recebe o arquivo em base64 do frontend, decodifica e
 // repassa como multipart pro ML (o `fetch` do Deno monta o multipart
 // sozinho a partir de um FormData, não precisa montar string à mão).
@@ -2748,6 +2797,15 @@ serve(async (req) => {
       case 'category_attributes_for_create':
         if (!body.category_id) return json({ error: 'category_id obrigatório' }, 400)
         return json(await categoryAttributesForCreate(integration.access_token, body.category_id))
+      case 'find_items_by_sku':
+        if (!body.sku) return json({ error: 'sku obrigatório' }, 400)
+        return json(await findItemsBySku(integration, String(body.sku)))
+      case 'replace_item_pictures':
+        if (!body.item_id || !Array.isArray(body.picture_ids)) return json({ error: 'item_id e picture_ids obrigatórios' }, 400)
+        return json(await replaceItemPictures(integration, db, String(body.item_id), body.picture_ids.map(String), body.source))
+      case 'restore_item_pictures':
+        if (!body.item_id || !Array.isArray(body.picture_ids)) return json({ error: 'item_id e picture_ids obrigatórios' }, 400)
+        return json(await restoreItemPictures(integration, db, String(body.item_id), body.picture_ids.map(String)))
       case 'upload_picture':
         if (!body.file_base64) return json({ error: 'file_base64 obrigatório' }, 400)
         return json(await uploadPicture(integration.access_token, body.file_base64, body.file_name, body.mime_type))

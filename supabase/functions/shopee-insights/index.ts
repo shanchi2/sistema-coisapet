@@ -515,6 +515,74 @@ async function deleteItemImage(integration: any, db: ReturnType<typeof adminClie
   return { ok: true }
 }
 
+// ── Publicar fotos da Atualização de Mídia (26/09) ────────────────────
+// Acha os anúncios com aquele SKU — do item (item_sku) ou de alguma
+// variação (model_sku). Varre as listagens (ativas + pausadas), porque o
+// search_item da API não filtra por SKU de forma confiável.
+async function findItemsBySku(integration: any, sku: string) {
+  const want = sku.trim().toLowerCase()
+  const [normalIds, unlistIds] = await Promise.all([
+    searchAllItemIds(integration, 'NORMAL'),
+    searchAllItemIds(integration, 'UNLIST'),
+  ])
+  const shape = (item: any) => ({
+    item_id: item.item_id, title: item.item_name,
+    status: item.item_status === 'NORMAL' ? 'active' : item.item_status === 'UNLIST' ? 'paused' : (item.item_status || '').toLowerCase(),
+    permalink: itemPermalink(integration.shop_id, item.item_id),
+    pictures: (item.image?.image_url_list ?? []).map((url: string, i: number) => ({ id: item.image?.image_id_list?.[i], url })),
+    has_model: !!item.has_model,
+  })
+  const found: any[] = []
+  const withModels: any[] = []
+  // Lotes de 50 em paralelo (4 por vez) — 1ª passada só pelo SKU do item
+  const groups = chunk([...normalIds, ...unlistIds], 50)
+  for (const batch of chunk(groups, 4)) {
+    const details = await Promise.all(batch.map(group => shopeeFetch('/api/v2/product/get_item_base_info', integration, {
+      item_id_list: group.join(','), response_optional_fields: 'image,item_status,has_model,item_sku',
+    }).catch(() => null)))
+    for (const detail of details) {
+      for (const item of detail?.response?.item_list ?? []) {
+        if ((item.item_sku || '').trim().toLowerCase() === want) found.push(shape(item))
+        else if (item.has_model) withModels.push(item)
+      }
+    }
+  }
+  // 2ª passada (só se não achou pelo item): SKU de variação, 5 por vez
+  if (!found.length) {
+    for (const batch of chunk(withModels, 5)) {
+      const res = await Promise.all(batch.map(item => shopeeFetch('/api/v2/product/get_model_list', integration, { item_id: String(item.item_id) }).catch(() => null)))
+      res.forEach((models, i) => {
+        if ((models?.response?.model ?? []).some((m: any) => (m.model_sku || '').trim().toLowerCase() === want)) found.push(shape(batch[i]))
+      })
+    }
+  }
+  return { items: found }
+}
+
+async function uploadImageAction(integration: any, imageBase64: string) {
+  return { image_id: await uploadShopeeImage(integration, imageBase64) }
+}
+
+// SUBSTITUI todas as fotos do anúncio (image_id_list já substitui a lista
+// inteira — ver nota em applyItemContent). Máx. 9 fotos na Shopee.
+// Guarda a lista anterior em shopee_item_updates pra poder desfazer.
+async function replaceItemImages(integration: any, db: ReturnType<typeof adminClient>, itemId: number, imageIds: string[], source?: unknown) {
+  if (!imageIds?.length) throw new Error('Nenhuma foto pra enviar.')
+  if (imageIds.length > 9) throw new Error('A Shopee aceita no máximo 9 fotos por anúncio.')
+  const current = await itemDetail(integration, itemId)
+  const previous = current.image_id_list
+  await shopeeWrite('/api/v2/product/update_item', integration, { item_id: itemId, image: { image_id_list: imageIds } })
+  await db.from('shopee_item_updates').insert({ item_id: String(itemId), action: 'pictures_replaced', detail: { previous, new: imageIds, source: source ?? null } })
+  return { ok: true, previous }
+}
+
+async function restoreItemImages(integration: any, db: ReturnType<typeof adminClient>, itemId: number, imageIds: string[]) {
+  if (!imageIds?.length) throw new Error('Lista anterior vazia.')
+  await shopeeWrite('/api/v2/product/update_item', integration, { item_id: itemId, image: { image_id_list: imageIds } })
+  await db.from('shopee_item_updates').insert({ item_id: String(itemId), action: 'pictures_restored', detail: { restored: imageIds } })
+  return { ok: true }
+}
+
 // ── Desempenho ────────────────────────────────────────────────────────
 // Mesma decisão de arquitetura da Visão Geral: não busca ao vivo na API
 // da Shopee (não temos endpoint de métrica por item confirmado ainda,
@@ -839,6 +907,18 @@ serve(async (req) => {
       case 'delete_item_image':
         if (!body.item_id || !body.image_id) return json({ error: 'item_id e image_id obrigatórios' }, 400)
         return json(await deleteItemImage(integration, db, Number(body.item_id), String(body.image_id)))
+      case 'find_items_by_sku':
+        if (!body.sku) return json({ error: 'sku obrigatório' }, 400)
+        return json(await findItemsBySku(integration, String(body.sku)))
+      case 'upload_image':
+        if (!body.image_base64) return json({ error: 'image_base64 obrigatório' }, 400)
+        return json(await uploadImageAction(integration, String(body.image_base64)))
+      case 'replace_item_images':
+        if (!body.item_id || !Array.isArray(body.image_ids)) return json({ error: 'item_id e image_ids obrigatórios' }, 400)
+        return json(await replaceItemImages(integration, db, Number(body.item_id), body.image_ids.map(String), body.source))
+      case 'restore_item_images':
+        if (!body.item_id || !Array.isArray(body.image_ids)) return json({ error: 'item_id e image_ids obrigatórios' }, 400)
+        return json(await restoreItemImages(integration, db, Number(body.item_id), body.image_ids.map(String)))
       case 'item_performance':
         if (!body.title) return json({ error: 'title obrigatório' }, 400)
         return json(await itemPerformance(db, String(body.title)))

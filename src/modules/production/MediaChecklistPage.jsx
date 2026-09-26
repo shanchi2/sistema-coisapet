@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Package, Upload, Trash2, Video as VideoIcon,
   MessageSquare, StickyNote, Loader2, Check, Lightbulb, AlertTriangle,
-  Sparkles, Target, Wand2, Play, X, Eye,
+  Sparkles, Target, Wand2, Play, X, Eye, Send,
 } from 'lucide-react'
 import { useProductMediaDetail } from './hooks/useProductMediaStatus'
 import { useGuideExamples } from './hooks/useGuideExamples'
@@ -16,6 +16,7 @@ import { canGenerateSlot } from './generateSlotImage'
 import { AiSlotImageModal } from './AiSlotImageModal'
 import { AI_SLOTS } from './aiSlotPrompts'
 import { PdpSimulatorModal } from './PdpSimulatorModal'
+import { PublishPhotosModal } from './PublishPhotosModal'
 import { StorageImage } from '../../components/ui/StorageImage'
 import { useFreshSignedUrl } from '../../lib/signedUrlCache'
 
@@ -275,6 +276,7 @@ export function MediaChecklistPage() {
   const [genSlot, setGenSlot] = useState(null) // 3 | 4 | null — slot sendo gerado agora
   const [aiGenSlot, setAiGenSlot] = useState(null) // slot sendo gerado com IA agora
   const [pdpOpen, setPdpOpen] = useState(false)     // simulador do anúncio
+  const [publishOpen, setPublishOpen] = useState(false) // publicar fotos no ML/Shopee
   const [videoOpen, setVideoOpen] = useState(false)
   // Link do vídeo que se renova sozinho se vencer (aba aberta >1h)
   const [videoUrl, onVideoError] = useFreshSignedUrl('product-videos', media?.video_url)
@@ -309,6 +311,9 @@ export function MediaChecklistPage() {
         </div>
         <button onClick={() => setPdpOpen(true)} className="btn-primary shrink-0 flex items-center gap-1.5" title="Ver como o anúncio vai ficar">
           <Eye size={15} /> Simular anúncio
+        </button>
+        <button onClick={() => setPublishOpen(true)} className="btn-secondary shrink-0 flex items-center gap-1.5" title="Trocar as fotos dos anúncios do ML/Shopee por estas">
+          <Send size={15} /> Publicar
         </button>
       </div>
 
@@ -385,6 +390,7 @@ export function MediaChecklistPage() {
       <GeneratedSlotImageModal open={!!genSlot} slot={genSlot} product={product}
         heroPhotoPath={checks[1]?.photo_url} onClose={() => setGenSlot(null)}
         onUse={async file => { await uploadCheckPhoto(genSlot, file); setGenSlot(null) }} />
+      <PublishPhotosModal open={publishOpen} onClose={() => setPublishOpen(false)} product={product} checks={checks} />
       <PdpSimulatorModal open={pdpOpen} onClose={() => setPdpOpen(false)} product={product} checks={checks} videoSrc={videoUrl} onVideoError={onVideoError} />
       <VideoPlayerModal src={videoOpen ? videoUrl : null} onError={onVideoError} onClose={() => setVideoOpen(false)} />
       <AiSlotImageModal open={!!aiGenSlot} slot={aiGenSlot} product={product}
