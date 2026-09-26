@@ -174,6 +174,7 @@ const SECTION_COLORS = {
   'Diretoria':        { base: '#D946EF', light: '#F0ABFC' }, // magenta
 }
 const DEFAULT_SECTION_COLOR = SECTION_COLORS['Favoritos']
+const PINNED_TOP = new Set(['Visão Geral', 'Dashboard'])
 
 // Ícone próprio por grupo — usado no cabeçalho do acordeão, no lugar do
 // pontinho colorido antigo (dá mais peso visual sem precisar de cor forte)
@@ -358,7 +359,15 @@ export function Sidebar({ open, onToggle }) {
           // Admin vê tudo sempre (canAccess já trata isso)
           // Escritório usa a lista fixa acima, sem passar pelo canAccess
           // (não tem permissões de módulo configuradas)
-          const visible = isEscritorioRole ? items : items.filter(item => canAccess(item.moduleKey))
+          const allowed = isEscritorioRole ? items : items.filter(item => canAccess(item.moduleKey))
+          // Itens de cada grupo em ordem alfabética (pedido do Raphael, 26/09) —
+          // a ordem dos GRUPOS continua a do NAV_SECTIONS. "Visão Geral" e
+          // "Dashboard" ficam fixos no topo do grupo (são a porta de entrada dele).
+          const visible = [...allowed].sort((a, b) => {
+            const pa = PINNED_TOP.has(a.label) ? 0 : 1
+            const pb = PINNED_TOP.has(b.label) ? 0 : 1
+            return pa - pb || a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' })
+          })
           if (visible.length === 0) return null
           const sc = SECTION_COLORS[label] ?? DEFAULT_SECTION_COLOR
           const containsActive = visible.some(({ to }) => location.pathname === to || location.pathname.startsWith(to + '/'))
