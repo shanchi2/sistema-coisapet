@@ -8,13 +8,13 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 
 const TYPE_LABELS: Record<string, string> = {
-  task_assigned: 'ðŸ“‹ Tarefa atribuÃ­da a vocÃª',
-  task_created:  'ðŸ†• Nova tarefa criada',
-  task_moved:    'ðŸ”„ Tarefa atualizada',
-  task_comment:  'ðŸ’¬ Novo comentÃ¡rio',
-  employee_message: 'ðŸ’¬ Nova mensagem do app',
-  purchase_request: 'ðŸ›ï¸ Compra da Lousa',
-  batch_deleted: 'ðŸ—‘ï¸ Pedidos Apagados',
+  task_assigned: '📋 Tarefa atribuída a você',
+  task_created:  '🆕 Nova tarefa criada',
+  task_moved:    '🔄 Tarefa atualizada',
+  task_comment:  '💬 Novo comentário',
+  employee_message: '💬 Nova mensagem do app',
+  purchase_request: '🛍️ Compra da Lousa',
+  batch_deleted: '🗑️ Pedidos Apagados',
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -28,7 +28,7 @@ const TYPE_COLORS: Record<string, string> = {
 }
 
 function buildEmailHtml(notification: any, userName: string): string {
-  const label   = TYPE_LABELS[notification.type]  || 'NotificaÃ§Ã£o'
+  const label   = TYPE_LABELS[notification.type]  || 'Notificação'
   const color   = TYPE_COLORS[notification.type]  || '#6366f1'
   const code    = notification.task_code ? `<span style="font-family:monospace;background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:13px;color:#64748b">#${notification.task_code}</span>` : ''
   const body    = notification.body ? `<p style="color:#5C4A3A;font-size:14px;line-height:1.6;margin:8px 0 0">${notification.body}</p>` : ''
@@ -38,7 +38,7 @@ function buildEmailHtml(notification: any, userName: string): string {
         <tr>
           <td style="padding:0 36px 28px">
             <a href="${ctaUrl}" style="display:inline-block;background:#3D1F0D;color:#fff;font-size:13px;font-weight:700;text-decoration:none;padding:12px 24px;border-radius:12px">
-              Ver tarefa â†’
+              Ver tarefa →
             </a>
           </td>
         </tr>` : ''
@@ -55,8 +55,8 @@ function buildEmailHtml(notification: any, userName: string): string {
         <!-- Header -->
         <tr>
           <td style="background:#3D1F0D;padding:28px 36px;text-align:center">
-            <p style="margin:0;color:#C4956A;font-size:22px;font-weight:800;letter-spacing:-0.5px">ðŸ¾ CoisaPet</p>
-            <p style="margin:6px 0 0;color:rgba(255,255,255,0.6);font-size:12px">Sistema de GestÃ£o</p>
+            <p style="margin:0;color:#C4956A;font-size:22px;font-weight:800;letter-spacing:-0.5px">🐾 CoisaPet</p>
+            <p style="margin:6px 0 0;color:rgba(255,255,255,0.6);font-size:12px">Sistema de Gestão</p>
           </td>
         </tr>
 
@@ -69,7 +69,7 @@ function buildEmailHtml(notification: any, userName: string): string {
           </td>
         </tr>
 
-        <!-- ConteÃºdo -->
+        <!-- Conteúdo -->
         <tr>
           <td style="padding:16px 36px 28px">
             <p style="margin:0;color:#3D1F0D;font-size:16px;font-weight:700;line-height:1.4">
@@ -87,10 +87,10 @@ function buildEmailHtml(notification: any, userName: string): string {
         <tr>
           <td style="padding:20px 36px;text-align:center">
             <p style="margin:0;color:#8B7355;font-size:12px">
-              OlÃ¡ <strong>${userName}</strong>, vocÃª recebeu esta notificaÃ§Ã£o porque Ã© membro desta tarefa.
+              Olá <strong>${userName}</strong>, você recebeu esta notificação porque é membro desta tarefa.
             </p>
             <p style="margin:8px 0 0;color:#C4956A;font-size:11px">
-              CoisaPetÂ® Â· Sistema interno
+              CoisaPet® · Sistema interno
             </p>
           </td>
         </tr>
@@ -116,21 +116,29 @@ serve(async (req) => {
       return new Response('No notification record', { status: 400 })
     }
 
-    // Busca email e nome do usuÃ¡rio
+    // Busca email e nome do usuário
     const db = createClient(SUPABASE_URL, SUPABASE_KEY)
     const { data: user, error: userErr } = await db
       .from('system_users')
-      .select('name, email, notification_email')
+      .select('name, email, notification_email, email_notifications')
       .eq('id', notification.user_id)
       .single()
 
-    // ðŸ” DIAGNÃ“STICO â€” remove essa linha depois de confirmar que estÃ¡ tudo certo
+    // 🔍 DIAGNÓSTICO — remove essa linha depois de confirmar que está tudo certo
     console.log('[DEBUG v2] user_id:', notification.user_id, '| email:', user?.email, '| notification_email:', user?.notification_email, '| userErr:', userErr)
+
+    // Usuário optou por não receber notificação por e-mail (fase77, 26/09) —
+    // o alerta no sino já foi criado (é o insert que disparou isto), só não envia.
+    if (user && user.email_notifications === false) {
+      return new Response(JSON.stringify({ ok: true, skipped: 'email_notifications desligado' }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
 
     const recipientEmail = user?.notification_email || user?.email
 
     if (userErr || !recipientEmail) {
-      console.error('UsuÃ¡rio nÃ£o encontrado:', userErr)
+      console.error('Usuário não encontrado:', userErr)
       return new Response('User not found', { status: 404 })
     }
 
@@ -144,7 +152,7 @@ serve(async (req) => {
       body: JSON.stringify({
         from:    `${FROM_NAME} <${FROM_EMAIL}>`,
         to:      [recipientEmail],
-        subject: `${TYPE_LABELS[notification.type] || 'NotificaÃ§Ã£o'}: ${notification.title}`,
+        subject: `${TYPE_LABELS[notification.type] || 'Notificação'}: ${notification.title}`,
         html:    buildEmailHtml(notification, user.name),
       }),
     })
@@ -156,7 +164,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: emailData }), { status: 500 })
     }
 
-    console.log('Email enviado:', emailData.id, 'â†’', recipientEmail)
+    console.log('Email enviado:', emailData.id, '→', recipientEmail)
     return new Response(JSON.stringify({ ok: true, emailId: emailData.id }), {
       headers: { 'Content-Type': 'application/json' },
     })

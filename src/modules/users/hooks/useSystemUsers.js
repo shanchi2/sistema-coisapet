@@ -33,7 +33,7 @@ export function useSystemUsers() {
     setLoading(true)
     const { data, error } = await supabase
       .from('system_users')
-.select('id, name, email, notification_email, role, job_title, phone, cpf, hire_date, birthday, monthly_salary, monthly_hours, address, emergency_name, emergency_phone, notes, must_change_password, last_login_at, created_at, document_personal, photo_url, medical_certs_notes, contract_signed, warnings_notes, half_day, contract_url, cnh, employee_type, payment_day, company_name, company_cnpj, escritorio_sector').eq('active', true)
+.select('id, name, email, notification_email, email_notifications, role, job_title, phone, cpf, hire_date, birthday, monthly_salary, monthly_hours, address, emergency_name, emergency_phone, notes, must_change_password, last_login_at, created_at, document_personal, photo_url, medical_certs_notes, contract_signed, warnings_notes, half_day, contract_url, cnh, employee_type, payment_day, company_name, company_cnpj, escritorio_sector').eq('active', true)
       .order('name')
 
     if (error) { toast.error('Erro ao carregar usuários.'); console.error(error) }
@@ -156,6 +156,7 @@ export function useSystemUsers() {
       birthday:       payload.birthday       || null,
       address:        payload.address        || null,
       notification_email: payload.notification_email?.trim() || payload.email || null,
+      email_notifications: payload.email_notifications !== false,
     }).eq('id', newId)
 
     // Salva contatos se prestador PJ
@@ -185,6 +186,7 @@ export function useSystemUsers() {
       role:                payload.role              ?? null,
       email:               payload.email             || null,
       notification_email:  payload.notification_email?.trim() || payload.email || null,
+      email_notifications: payload.email_notifications !== false,
       job_title:           payload.job_title         || null,
       phone:               payload.phone             || null,
       cpf:                 payload.cpf               || null,

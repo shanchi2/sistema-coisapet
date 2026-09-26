@@ -36,7 +36,7 @@ function fmtSalary(v) {
 }
 
 const EMPTY = {
-  name: '', email: '', notification_email: '', password: '', role: 'producao',
+  name: '', email: '', notification_email: '', email_notifications: true, password: '', role: 'producao',
   job_title: '', phone: '', cpf: '', hire_date: '', birthday: '',
   address: '', monthly_salary: '', monthly_hours: '220',
   emergency_name: '', emergency_phone: '',
@@ -108,6 +108,7 @@ export function UserFormModal({ open, onClose, onSave, initial, loading }) {
         name:                initial.name               ?? '',
         email:               initial.email              ?? '',
         notification_email:  initial.notification_email ?? initial.email ?? '',
+        email_notifications: initial.email_notifications !== false,
         password:            '',
         role:                initial.role               ?? 'producao',
         job_title:           initial.job_title          ?? '',
@@ -451,12 +452,30 @@ export function UserFormModal({ open, onClose, onSave, initial, loading }) {
                 </div>
               </Field>
             </div>
+            {/* Receber ou não as notificações por e-mail (fase77, 26/09) — o
+                alerta no sino do sistema continua chegando de qualquer jeito */}
+            <button type="button" onClick={() => set('email_notifications', !form.email_notifications)}
+              className={`w-full flex items-start gap-3 text-left rounded-xl border-2 px-3 py-2.5 transition ${form.email_notifications ? 'border-slate-100 bg-white hover:border-slate-200' : 'border-amber-300 bg-amber-50'}`}>
+              <span className={`mt-0.5 w-9 h-5 rounded-full relative shrink-0 transition ${form.email_notifications ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${form.email_notifications ? 'left-[18px]' : 'left-0.5'}`} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-slate-700">
+                  {form.email_notifications ? 'Recebe as notificações também por e-mail' : 'Não recebe notificações por e-mail'}
+                </span>
+                <span className="block text-[11px] text-slate-500 mt-0.5">
+                  {form.email_notifications
+                    ? 'Além do alerta no sistema (sino), cada notificação chega no e-mail abaixo.'
+                    : 'Só vê os alertas dentro do sistema (sino) — nenhum e-mail de notificação é enviado.'}
+                </span>
+              </span>
+            </button>
             <Field label="E-mail de notificação"
               hint={notifTouched
                 ? 'Personalizado — os e-mails do sistema (tarefas, avisos, etc.) vão pra esse endereço em vez do e-mail de login.'
                 : 'Por padrão, igual ao e-mail de login. Mude aqui se quiser centralizar em outra caixa (ex: administrativo@coisapet.com.br).'}>
               <div className="relative">
-                <input className={notifTouched ? "input pr-20" : "input"} type="email"
+                <input className={`${notifTouched ? 'input pr-20' : 'input'} ${form.email_notifications ? '' : 'opacity-50'}`} type="email"
                   value={form.notification_email}
                   onChange={e => { set('notification_email', e.target.value); setNotifTouched(true) }}
                   placeholder="mesmo que o e-mail de login"
