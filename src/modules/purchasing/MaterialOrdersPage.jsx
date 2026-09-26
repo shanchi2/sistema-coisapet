@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  Package, Plus, Check, Loader2, Trash2, Receipt, ShieldAlert, Search, Truck, X, ClipboardCheck, Flag,
+  Package, Plus, Check, Loader2, Trash2, Receipt, ShieldAlert, Search, Truck, X, ClipboardCheck, Flag, Pencil, History,
 } from 'lucide-react'
 import { Modal } from '../../components/ui/Modal'
 import { useMaterialOrders } from './hooks/useMaterialOrders'
@@ -12,6 +12,12 @@ import { useBills } from '../financial/hooks/useBills'
 import { ConferenceReport } from './ConferenceReport'
 import { DeliveryEditor, deliveryInfo } from './DeliveryDate'
 import { todayISO } from '../../lib/dateBR'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+
+// Data/hora sempre no horário de Brasília
+function fmtDataHoraBR(iso) {
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
+}
 import { OCC_KIND, OCC_RESOLUTION, isOpenOccurrence } from './occurrenceTracking'
 import { OccurrenceTrackingModal, FinalizeOrderModal, OccStatusBadge, OccKindBadge } from './OccurrenceTrackingModal'
 import toast from 'react-hot-toast'
@@ -94,7 +100,8 @@ function suggestedPrice(material, supplierId) {
 
 // ─── Novo pedido — 1) marca os produtos no catálogo (com busca),
 // 2) preenche quantidade/preço direto na lista dos selecionados ──────
-function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
+// editOrder = pedido existente (modo edição) ou null (novo pedido)
+function OrderFormModal({ open, onClose, onSave, materials, suppliers, editOrder }) {
   const [title, setTitle]           = useState('')
   const [expected, setExpected]     = useState('') // previsão de entrega (YYYY-MM-DD)
   const [supplierId, setSupplierId] = useState('')
@@ -104,6 +111,29 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
   const [categoryId, setCategoryId] = useState('')
   const [onlySupplier, setOnlySupplier] = useState(false)
   const [saving, setSaving]         = useState(false)
+  // Depois da conferência os itens ficam travados (estoque já entrou)
+  const itemsLocked = !!editOrder && editOrder.status !== 'pedido'
+
+  const wasEditing = useRef(false)
+  // Abriu em modo edição → carrega o pedido; abriu pra novo depois de
+  // editar → limpa (senão sobraria o pedido editado no formulário)
+  useEffect(() => {
+    if (!open) return
+    if (editOrder) {
+      setTitle(editOrder.title || '')
+      setExpected(editOrder.expected_delivery || '')
+      setSupplierId(editOrder.supplier_id || '')
+      setNotes(editOrder.notes || '')
+      setItems((editOrder.items || []).map(it => ({
+        id: it.id, raw_material_id: it.raw_material_id,
+        qty_ordered: String(Number(it.qty_ordered)), unit_price: it.unit_price != null ? String(Number(it.unit_price)) : '',
+      })))
+      setSearch(''); setCategoryId(''); setOnlySupplier(false)
+    } else if (wasEditing.current) {
+      reset()
+    }
+    wasEditing.current = !!editOrder
+  }, [open, editOrder]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const materialById = id => materials.find(m => m.id === id)
   const selectedIds  = useMemo(() => new Set(items.map(it => it.raw_material_id)), [items])
@@ -160,7 +190,7 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
     setSaving(true)
     try {
       await onSave({ title, expected_delivery: expected || null, supplier_id: supplierId || null, notes, items: items.map(it => ({ ...it, unit_price: it.unit_price || null })) })
-      reset()
+      if (!editOrder) reset()
       onClose()
     } catch { /* toast já mostrado no hook */ }
     finally { setSaving(false) }
@@ -169,8 +199,11 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
   const total = items.reduce((s, it) => s + (Number(it.unit_price) || 0) * (Number(it.qty_ordered) || 0), 0)
 
   return (
-    <Modal open={open} onClose={onClose} size="wide" title="Novo Pedido de Matéria-Prima/Chapas"
-      subtitle="1) Escolha o fornecedor  2) Marque os produtos  3) Preencha as quantidades na lista da direita"
+    <Modal open={open} onClose={onClose} size="wide"
+      title={editOrder ? `Editar pedido — ${editOrder.title || editOrder.supplier?.name || 'sem nome'}` : 'Novo Pedido de Matéria-Prima/Chapas'}
+      subtitle={itemsLocked
+        ? 'Pedido já conferido: dá pra corrigir nome, fornecedor, previsão e observações — os itens ficam travados (o estoque já entrou).'
+        : '1) Escolha o fornecedor  2) Marque os produtos  3) Preencha as quantidades na lista da direita'}
       footer={<>
         <span className="mr-auto text-sm font-bold text-slate-700">
           {items.length} item{items.length !== 1 ? 's' : ''} · Total estimado: {fmtPreco(total)}
@@ -178,7 +211,7 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
         <button onClick={onClose} className="btn-secondary" disabled={saving}>Cancelar</button>
         <button onClick={handleSave} className="btn-primary" disabled={saving || items.length === 0}>
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-          {saving ? 'Salvando...' : 'Criar pedido'}
+          {saving ? 'Salvando...' : editOrder ? 'Salvar alterações' : 'Criar pedido'}
         </button>
       </>}>
       <div className="flex flex-col gap-4">
@@ -195,14 +228,14 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
           </div>
           <div>
             <label className="form-label">Previsão de entrega</label>
-            <input type="date" className="input" value={expected} min={todayISO()} onChange={e => setExpected(e.target.value)} />
+            <input type="date" className="input" value={expected} min={editOrder ? undefined : todayISO()} onChange={e => setExpected(e.target.value)} />
             <p className="text-[11px] text-slate-400 mt-1">Opcional — dá pra definir depois.</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className={`grid grid-cols-1 gap-4 ${itemsLocked ? '' : 'lg:grid-cols-2'}`}>
           {/* Catálogo — busca + marcar */}
-          <div className="border border-slate-200 rounded-2xl flex flex-col min-h-0">
+          <div className={`border border-slate-200 rounded-2xl flex flex-col min-h-0 ${itemsLocked ? 'hidden' : ''}`}>
             <div className="p-3 border-b border-slate-100 flex flex-col gap-2">
               <div className="relative">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -253,7 +286,7 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
           <div className="border border-slate-200 rounded-2xl flex flex-col min-h-0 bg-slate-50/40">
             <div className="p-3 border-b border-slate-100 flex items-center justify-between">
               <p className="text-sm font-bold text-slate-700">Itens do pedido <span className="text-slate-400 font-normal">({items.length})</span></p>
-              {items.length > 0 && <button type="button" onClick={() => setItems([])} className="text-[11px] font-semibold text-slate-400 hover:text-rose-500">Limpar</button>}
+              {items.length > 0 && !itemsLocked && <button type="button" onClick={() => setItems([])} className="text-[11px] font-semibold text-slate-400 hover:text-rose-500">Limpar</button>}
             </div>
             <div className="overflow-y-auto max-h-[45vh] p-2 flex flex-col gap-2">
               {items.length === 0 ? (
@@ -269,18 +302,18 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
                   <div key={it.raw_material_id} className="bg-white border border-slate-200 rounded-xl px-3 py-2.5">
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <p className="text-sm font-semibold text-slate-700 min-w-0 truncate">{m?.name}</p>
-                      <button type="button" onClick={() => removeItem(it.raw_material_id)} className="p-1 -m-1 text-slate-300 hover:text-rose-500 shrink-0"><Trash2 size={14} /></button>
+                      {!itemsLocked && <button type="button" onClick={() => removeItem(it.raw_material_id)} className="p-1 -m-1 text-slate-300 hover:text-rose-500 shrink-0"><Trash2 size={14} /></button>}
                     </div>
                     <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
                       <div>
                         <label className="text-[10px] font-semibold text-slate-400 uppercase">Qtd ({m?.unit})</label>
                         <input type="number" min="0.001" step="0.001" inputMode="decimal" placeholder="0"
-                          className={`input py-1.5 ${noQty ? 'border-amber-300 bg-amber-50/40' : ''}`}
+                          disabled={itemsLocked} className={`input py-1.5 ${noQty ? 'border-amber-300 bg-amber-50/40' : ''}`}
                           value={it.qty_ordered} onChange={e => updateItem(it.raw_material_id, 'qty_ordered', e.target.value)} />
                       </div>
                       <div>
                         <label className="text-[10px] font-semibold text-slate-400 uppercase">Preço un. (R$)</label>
-                        <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="opcional" className="input py-1.5"
+                        <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="opcional" className="input py-1.5" disabled={itemsLocked}
                           value={it.unit_price} onChange={e => updateItem(it.raw_material_id, 'unit_price', e.target.value)} />
                       </div>
                       <div className="text-right pb-2 min-w-[80px]">
@@ -332,7 +365,7 @@ function OccurrenceRow({ occ, order, onTrack }) {
 }
 
 // ─── Card de pedido ──────────────────────────────────────────────────
-function OrderCard({ order, onRegisterBill, onCancel, onTrack, onFinalize, onSetDelivery }) {
+function OrderCard({ order, onRegisterBill, onCancel, onTrack, onFinalize, onSetDelivery, onEdit, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const occurrences = order.occurrences || []
   const openOccurrences = occurrences.filter(isOpenOccurrence)
@@ -402,6 +435,10 @@ function OrderCard({ order, onRegisterBill, onCancel, onTrack, onFinalize, onSet
       <div className="flex items-center justify-between gap-3 flex-wrap pt-2 border-t border-slate-50">
         <span className="text-sm font-bold text-slate-700">Total estimado: {fmtPreco(orderTotal(order))}</span>
         <div className="flex items-center gap-2">
+          <button onClick={() => onEdit(order)} title="Editar pedido" className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50"><Pencil size={14} /></button>
+          {['pedido', 'cancelado'].includes(order.status) && (
+            <button onClick={() => onDelete(order)} title="Excluir pedido" className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"><Trash2 size={14} /></button>
+          )}
           {order.status === 'conferido' && openOccurrences.length === 0 && (
             <button onClick={() => onFinalize(order)} className="btn-secondary py-1.5 text-xs"><Flag size={13} /> Finalizar pedido</button>
           )}
@@ -416,15 +453,27 @@ function OrderCard({ order, onRegisterBill, onCancel, onTrack, onFinalize, onSet
           )}
         </div>
       </div>
-      {order.conferred_at && (
-        <p className="text-[11px] text-slate-400 mt-2">Conferido por {order.conferrer?.name || '—'} em {new Date(order.conferred_at).toLocaleDateString('pt-BR')}</p>
-      )}
+      <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap mt-2 text-[11px] text-slate-400">
+        {order.conferred_at && <span>Conferido por {order.conferrer?.name || '—'} em {new Date(order.conferred_at).toLocaleDateString('pt-BR')}</span>}
+        {/* "Última atualização" — só aparece se o pedido mudou depois de criado */}
+        {order.updated_at && new Date(order.updated_at) - new Date(order.created_at) > 60000 && (
+          <span className="flex items-center gap-1"><History size={11} /> Última atualização {fmtDataHoraBR(order.updated_at)}{order.updater?.name ? ` por ${order.updater.name}` : ''}</span>
+        )}
+      </div>
     </div>
   )
 }
 
 export function MaterialOrdersPage() {
-  const { orders, loading, refetch, createOrder, linkBill, cancelOrder, setExpectedDelivery } = useMaterialOrders()
+  const { orders, loading, refetch, createOrder, updateOrder, deleteOrder, linkBill, cancelOrder, setExpectedDelivery } = useMaterialOrders()
+  const [editing, setEditing]   = useState(null) // pedido em edição (modal reaproveitado do "novo")
+  const [deleting, setDeleting] = useState(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  async function handleDelete() {
+    setDeleteBusy(true)
+    try { await deleteOrder(deleting); setDeleting(null) } catch { /* toast no hook */ }
+    finally { setDeleteBusy(false) }
+  }
   const [tracking, setTracking]     = useState(null) // { occ, order }
   const [finalizing, setFinalizing] = useState(null)
   // Aba via URL (?aba=conferencias) — o antigo /relatorio-conferencias redireciona pra cá
@@ -487,7 +536,7 @@ export function MaterialOrdersPage() {
           <p className="page-subtitle">Compras de matéria-prima e chapas, com conferência e Financeiro</p>
         </div>
         {tab === 'pedidos' && (
-          <button onClick={() => setModal(true)} className="btn-primary">
+          <button onClick={() => { setEditing(null); setModal(true) }} className="btn-primary">
             <Plus size={16} /> Novo pedido
           </button>
         )}
@@ -519,7 +568,8 @@ export function MaterialOrdersPage() {
             <OrderCard key={order.id} order={order}
               onRegisterBill={setBillOrder} onCancel={cancelOrder}
               onTrack={(occ, order) => setTracking({ occ, order })} onFinalize={setFinalizing}
-              onSetDelivery={setExpectedDelivery} />
+              onSetDelivery={setExpectedDelivery}
+              onEdit={o => { setEditing(o); setModal(true) }} onDelete={setDeleting} />
           ))}
         </div>
       )}
@@ -531,7 +581,13 @@ export function MaterialOrdersPage() {
       )}
       <FinalizeOrderModal order={finalizing} onClose={() => setFinalizing(null)} onDone={refetch} />
 
-      <NewOrderModal open={modal} onClose={() => setModal(false)} onSave={createOrder} materials={materials} suppliers={suppliers} />
+      <OrderFormModal open={modal} onClose={() => { setModal(false); setEditing(null) }}
+        onSave={payload => editing ? updateOrder(editing, payload) : createOrder(payload)}
+        editOrder={editing} materials={materials} suppliers={suppliers} />
+
+      <ConfirmDialog open={!!deleting} onClose={() => setDeleting(null)} onConfirm={handleDelete} loading={deleteBusy}
+        title="Excluir pedido?" confirmLabel="Excluir"
+        description={deleting ? `"${deleting.title || deleting.supplier?.name || 'Pedido'}" e seus ${deleting.items?.length || 0} item(ns) serão apagados de vez.${deleting.bill_id ? ' ATENÇÃO: a conta já registrada no Financeiro NÃO é apagada — confira e exclua lá se for o caso.' : ''}` : ''} />
 
       <BillFormModal open={!!billOrder} onClose={() => setBillOrder(null)} onSave={handleSaveBillForOrder}
         loading={billSaving} prefill={billPrefill} />
