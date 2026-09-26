@@ -5,6 +5,7 @@ import { StorageImage } from '../../components/ui/StorageImage'
 import {
   OCC_KIND, OCC_STATUS, OCC_RESOLUTION, fetchOccurrenceUpdates, addOccurrenceUpdate, finalizeOrder,
 } from './occurrenceTracking'
+import { itemName, itemUnit, cutName } from './orderItem'
 
 const PHOTO_BUCKET = 'purchase-attachments'
 
@@ -48,7 +49,7 @@ export function OccurrenceTrackingModal({ occurrence, item, order, onClose, onCh
 
   if (!open) return null
   const occ = occurrence
-  const unit = item?.raw_material?.unit || ''
+  const unit = itemUnit(item)
   const kind = OCC_KIND[occ.kind] || OCC_KIND.avaria
   const qty = occ.qty_affected ?? occ.qty_damaged
   const resolving = statusTo === 'resolvido' && occ.status !== 'resolvido'
@@ -71,7 +72,7 @@ export function OccurrenceTrackingModal({ occurrence, item, order, onClose, onCh
 
   return (
     <Modal open onClose={onClose} size="xl"
-      title={`${item?.raw_material?.name || 'Item'} — ${fmtNum(qty)} ${unit} ${kind.verb}`}
+      title={`${itemName(item)}${occ.sheet_cut_id ? ' · ' + cutName(item, occ.sheet_cut_id) : ''} — ${fmtNum(qty)} ${occ.sheet_cut_id ? 'sub-chapa(s)' : unit} ${kind.verb}`}
       subtitle={`${order?.title || order?.supplier?.name || 'Pedido'} · aberta em ${fmtDataHora(occ.reported_at)}`}
       footer={<>
         <button onClick={onClose} className="btn-secondary" disabled={saving}>Fechar</button>
@@ -200,7 +201,7 @@ export function FinalizeOrderModal({ order, onClose, onDone }) {
             <ul className="text-xs text-slate-600 flex flex-col gap-1">
               {occs.map(o => {
                 const it = order.items?.find(i => i.id === o.order_item_id)
-                return <li key={o.id}>• {it?.raw_material?.name} ({OCC_KIND[o.kind]?.label || 'Avaria'}) — {OCC_RESOLUTION[o.resolution] || 'resolvida'}</li>
+                return <li key={o.id}>• {itemName(it)} ({OCC_KIND[o.kind]?.label || 'Avaria'}) — {OCC_RESOLUTION[o.resolution] || 'resolvida'}</li>
               })}
             </ul>
           </div>

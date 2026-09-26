@@ -6,6 +6,7 @@ import {
 import { Modal } from '../../components/ui/Modal'
 import { useMaterialOrders } from './hooks/useMaterialOrders'
 import { useMaterials } from '../materials/hooks/useMaterials'
+import { useSheets } from '../materials/hooks/useSheets'
 import { useSuppliers } from '../financial/hooks/useSuppliers'
 import { BillFormModal } from '../financial/components/BillFormModal'
 import { useBills } from '../financial/hooks/useBills'
@@ -21,6 +22,7 @@ function fmtDataHoraBR(iso) {
 import { OCC_KIND, OCC_RESOLUTION, isOpenOccurrence } from './occurrenceTracking'
 import { OccurrenceTrackingModal, FinalizeOrderModal, OccStatusBadge, OccKindBadge } from './OccurrenceTrackingModal'
 import toast from 'react-hot-toast'
+import { itemName, itemUnit, isSheetItem, cutName, itemCuts } from './orderItem'
 
 function fmtPreco(v) {
   const n = parseFloat(v)
@@ -101,12 +103,21 @@ function suggestedPrice(material, supplierId) {
 // ─── Novo pedido — 1) marca os produtos no catálogo (com busca),
 // 2) preenche quantidade/preço direto na lista dos selecionados ──────
 // editOrder = pedido existente (modo edição) ou null (novo pedido)
-function OrderFormModal({ open, onClose, onSave, materials, suppliers, editOrder }) {
+// Chave única do item na lista: matéria-prima comum ou chapa (formato+espessura+cor)
+function itemKey(it) {
+  return it.sheet_format_id ? `s:${it.sheet_format_id}:${it.sheet_thickness_id}:${it.sheet_color_id}` : it.raw_material_id
+}
+
+function OrderFormModal({ open, onClose, onSave, materials, suppliers, editOrder, sheets, lastSheetPrice }) {
   const [title, setTitle]           = useState('')
   const [expected, setExpected]     = useState('') // previsão de entrega (YYYY-MM-DD)
   const [supplierId, setSupplierId] = useState('')
   const [notes, setNotes]           = useState('')
-  const [items, setItems]           = useState([]) // [{raw_material_id, qty_ordered, unit_price}]
+  const [items, setItems]           = useState([]) // [{key, raw_material_id | sheet_format_id+thickness+color, qty_ordered, unit_price}]
+  const [catalogTab, setCatalogTab] = useState('chapas') // chapas | materias
+  const [pickFormat, setPickFormat] = useState('')
+  const [pickThickness, setPickThickness] = useState('')
+  const [pickColor, setPickColor]   = useState('')
   const [search, setSearch]         = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [onlySupplier, setOnlySupplier] = useState(false)
@@ -125,7 +136,8 @@ function OrderFormModal({ open, onClose, onSave, materials, suppliers, editOrder
       setSupplierId(editOrder.supplier_id || '')
       setNotes(editOrder.notes || '')
       setItems((editOrder.items || []).map(it => ({
-        id: it.id, raw_material_id: it.raw_material_id,
+        id: it.id, key: itemKey(it), raw_material_id: it.raw_material_id,
+        sheet_format_id: it.sheet_format_id, sheet_thickness_id: it.sheet_thickness_id, sheet_color_id: it.sheet_color_id,
         qty_ordered: String(Number(it.qty_ordered)), unit_price: it.unit_price != null ? String(Number(it.unit_price)) : '',
       })))
       setSearch(''); setCategoryId(''); setOnlySupplier(false)
@@ -136,8 +148,27 @@ function OrderFormModal({ open, onClose, onSave, materials, suppliers, editOrder
   }, [open, editOrder]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const materialById = id => materials.find(m => m.id === id)
-  const selectedIds  = useMemo(() => new Set(items.map(it => it.raw_material_id)), [items])
-  const active       = useMemo(() => materials.filter(m => m.active !== false), [materials])
+  const selectedIds  = useMemo(() => new Set(items.map(it => it.raw_material_id).filter(Boolean)), [items])
+  // Sub-chapas de MDF não aparecem aqui: compra-se a CHAPA (aba "Chapas de MDF"),
+  // e a conferência é que transforma em sub-chapas no estoque.
+  const active       = useMemo(() => materials.filter(m => m.active !== false && !m.sheet_cut_id), [materials])
+  const activeFormats = useMemo(() => (sheets?.formats ?? []).filter(f => f.active !== false), [sheets])
+  const activeThicks  = useMemo(() => (sheets?.thicknesses ?? []).filter(t => t.active !== false), [sheets])
+  const activeColors  = useMemo(() => (sheets?.colors ?? []).filter(c => c.active !== false), [sheets])
+  const sheetName = it => [
+    sheets?.formats?.find(f => f.id === it.sheet_format_id)?.name,
+    sheets?.thicknesses?.find(t => t.id === it.sheet_thickness_id)?.name,
+    sheets?.colors?.find(c => c.id === it.sheet_color_id)?.name,
+  ].filter(Boolean).join(' · ')
+
+  function addSheet() {
+    if (!pickFormat || !pickThickness || !pickColor) { toast.error('Escolha a chapa, a espessura e a cor.'); return }
+    const it = { sheet_format_id: pickFormat, sheet_thickness_id: pickThickness, sheet_color_id: pickColor }
+    const key = itemKey(it)
+    if (items.some(x => x.key === key)) { toast.error('Essa chapa já está no pedido — ajuste a quantidade na lista.'); return }
+    setItems(prev => [...prev, { ...it, key, qty_ordered: '', unit_price: lastSheetPrice?.(key) ?? '' }])
+    setPickColor('') // mantém chapa/espessura: normalmente o César pede várias cores da mesma
+  }
 
   const categories = useMemo(() => {
     const map = new Map()
@@ -160,20 +191,20 @@ function OrderFormModal({ open, onClose, onSave, materials, suppliers, editOrder
   function toggleMaterial(m) {
     setItems(prev => prev.some(it => it.raw_material_id === m.id)
       ? prev.filter(it => it.raw_material_id !== m.id)
-      : [...prev, { raw_material_id: m.id, qty_ordered: '', unit_price: suggestedPrice(m, supplierId) }])
+      : [...prev, { key: m.id, raw_material_id: m.id, qty_ordered: '', unit_price: suggestedPrice(m, supplierId) }])
   }
-  function updateItem(id, field, value) {
-    setItems(prev => prev.map(it => it.raw_material_id === id ? { ...it, [field]: value } : it))
+  function updateItem(key, field, value) {
+    setItems(prev => prev.map(it => it.key === key ? { ...it, [field]: value } : it))
   }
-  function removeItem(id) {
-    setItems(prev => prev.filter(it => it.raw_material_id !== id))
+  function removeItem(key) {
+    setItems(prev => prev.filter(it => it.key !== key))
   }
   // Trocou o fornecedor: preenche o preço dos itens que ainda estão sem preço
   function handleSupplierChange(id) {
     setSupplierId(id)
     if (!id) setOnlySupplier(false)
     setItems(prev => prev.map(it => {
-      if (it.unit_price) return it
+      if (it.unit_price || !it.raw_material_id) return it
       const m = materialById(it.raw_material_id)
       return m ? { ...it, unit_price: suggestedPrice(m, id) } : it
     }))
@@ -181,6 +212,7 @@ function OrderFormModal({ open, onClose, onSave, materials, suppliers, editOrder
 
   function reset() {
     setTitle(''); setExpected(''); setSupplierId(''); setNotes(''); setItems([]); setSearch(''); setCategoryId(''); setOnlySupplier(false)
+    setPickFormat(''); setPickThickness(''); setPickColor('')
   }
 
   const missingQty = items.filter(it => !(Number(it.qty_ordered) > 0)).length
@@ -236,6 +268,61 @@ function OrderFormModal({ open, onClose, onSave, materials, suppliers, editOrder
         <div className={`grid grid-cols-1 gap-4 ${itemsLocked ? '' : 'lg:grid-cols-2'}`}>
           {/* Catálogo — busca + marcar */}
           <div className={`border border-slate-200 rounded-2xl flex flex-col min-h-0 ${itemsLocked ? 'hidden' : ''}`}>
+            <div className="flex bg-slate-100 rounded-t-2xl p-1 gap-1">
+              <button type="button" onClick={() => setCatalogTab('chapas')}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg ${catalogTab === 'chapas' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>Chapas de MDF</button>
+              <button type="button" onClick={() => setCatalogTab('materias')}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg ${catalogTab === 'materias' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>Outras matérias-primas</button>
+            </div>
+
+            {catalogTab === 'chapas' ? (
+              <div className="p-3 flex flex-col gap-3 overflow-y-auto max-h-[52vh]">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">1. Chapa</p>
+                  <div className="flex flex-col gap-1.5">
+                    {activeFormats.map(f => {
+                      const sel = pickFormat === f.id
+                      const pieces = (f.cuts || []).reduce((s, c) => s + Number(c.qty_per_sheet || 0), 0)
+                      return (
+                        <button key={f.id} type="button" onClick={() => setPickFormat(f.id)}
+                          className={`w-full text-left rounded-xl border-2 px-3 py-2 transition ${sel ? 'border-amber-400 bg-amber-50' : 'border-slate-100 hover:border-slate-200'}`}>
+                          <span className="flex items-baseline justify-between gap-2">
+                            <span className="text-sm font-bold text-slate-800">{f.name}</span>
+                            <span className="text-[11px] text-slate-400 shrink-0">{Number(f.width_mm || 0)}×{Number(f.length_mm || 0)} mm</span>
+                          </span>
+                          <span className="block text-[11px] text-slate-500 truncate">
+                            rende {pieces} sub-chapa{pieces !== 1 ? 's' : ''}: {(f.cuts || []).map(c => `${c.qty_per_sheet}× ${c.name}`).join(', ')}
+                          </span>
+                          {/confirmar/i.test(f.notes || '') && <span className="block text-[10px] text-amber-600 font-semibold">⚠ {f.notes}</span>}
+                        </button>
+                      )
+                    })}
+                    {activeFormats.length === 0 && <p className="text-xs text-slate-400">Nenhuma chapa cadastrada — cadastre em Matéria-Prima → Chapas de MDF.</p>}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">2. Espessura</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {activeThicks.map(t => (
+                      <button key={t.id} type="button" onClick={() => setPickThickness(t.id)}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-full border ${pickThickness === t.id ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-600'}`}>{t.name}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">3. Cor</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {activeColors.map(c => (
+                      <button key={c.id} type="button" onClick={() => setPickColor(c.id)}
+                        className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${pickColor === c.id ? 'bg-rose-500 border-rose-500 text-white' : 'bg-white border-slate-200 text-slate-600'}`}>{c.name}</button>
+                    ))}
+                  </div>
+                </div>
+                <button type="button" onClick={addSheet} disabled={!pickFormat || !pickThickness || !pickColor}
+                  className="btn-primary justify-center py-2 text-sm"><Plus size={14} /> Adicionar ao pedido</button>
+                <p className="text-[11px] text-slate-400 -mt-1">Espessura e chapa ficam selecionadas — dá pra ir trocando só a cor e adicionando.</p>
+              </div>
+            ) : (<>
             <div className="p-3 border-b border-slate-100 flex flex-col gap-2">
               <div className="relative">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -280,6 +367,7 @@ function OrderFormModal({ open, onClose, onSave, materials, suppliers, editOrder
                 )
               })}
             </div>
+            </>)}
           </div>
 
           {/* Selecionados — quantidade e preço já na lista */}
@@ -295,26 +383,32 @@ function OrderFormModal({ open, onClose, onSave, materials, suppliers, editOrder
                   <p className="text-sm text-slate-400">Marque os produtos na lista ao lado — eles aparecem aqui pra você preencher a quantidade.</p>
                 </div>
               ) : items.map(it => {
-                const m = materialById(it.raw_material_id)
+                const isSheet = !!it.sheet_format_id
+                const m = isSheet ? null : materialById(it.raw_material_id)
+                const fmt = isSheet ? sheets?.formats?.find(f => f.id === it.sheet_format_id) : null
+                const pieces = fmt ? (fmt.cuts || []).reduce((s, c) => s + Number(c.qty_per_sheet || 0), 0) : 0
                 const sub = (Number(it.unit_price) || 0) * (Number(it.qty_ordered) || 0)
                 const noQty = !(Number(it.qty_ordered) > 0)
                 return (
-                  <div key={it.raw_material_id} className="bg-white border border-slate-200 rounded-xl px-3 py-2.5">
+                  <div key={it.key} className={`bg-white border rounded-xl px-3 py-2.5 ${isSheet ? 'border-amber-200' : 'border-slate-200'}`}>
                     <div className="flex items-start justify-between gap-2 mb-2">
-                      <p className="text-sm font-semibold text-slate-700 min-w-0 truncate">{m?.name}</p>
-                      {!itemsLocked && <button type="button" onClick={() => removeItem(it.raw_material_id)} className="p-1 -m-1 text-slate-300 hover:text-rose-500 shrink-0"><Trash2 size={14} /></button>}
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-700 truncate">{isSheet ? sheetName(it) : m?.name}</p>
+                        {isSheet && <p className="text-[11px] text-amber-700">cada chapa = {pieces} sub-chapa{pieces !== 1 ? 's' : ''} no estoque{Number(it.qty_ordered) > 0 ? ` → ${pieces * Number(it.qty_ordered)} no total` : ''}</p>}
+                      </div>
+                      {!itemsLocked && <button type="button" onClick={() => removeItem(it.key)} className="p-1 -m-1 text-slate-300 hover:text-rose-500 shrink-0"><Trash2 size={14} /></button>}
                     </div>
                     <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
                       <div>
-                        <label className="text-[10px] font-semibold text-slate-400 uppercase">Qtd ({m?.unit})</label>
-                        <input type="number" min="0.001" step="0.001" inputMode="decimal" placeholder="0"
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase">Qtd ({isSheet ? 'chapas' : m?.unit})</label>
+                        <input type="number" min={isSheet ? 1 : 0.001} step={isSheet ? 1 : 0.001} inputMode="decimal" placeholder="0"
                           disabled={itemsLocked} className={`input py-1.5 ${noQty ? 'border-amber-300 bg-amber-50/40' : ''}`}
-                          value={it.qty_ordered} onChange={e => updateItem(it.raw_material_id, 'qty_ordered', e.target.value)} />
+                          value={it.qty_ordered} onChange={e => updateItem(it.key, 'qty_ordered', e.target.value)} />
                       </div>
                       <div>
-                        <label className="text-[10px] font-semibold text-slate-400 uppercase">Preço un. (R$)</label>
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase">Preço {isSheet ? 'da chapa' : 'un.'} (R$)</label>
                         <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="opcional" className="input py-1.5" disabled={itemsLocked}
-                          value={it.unit_price} onChange={e => updateItem(it.raw_material_id, 'unit_price', e.target.value)} />
+                          value={it.unit_price} onChange={e => updateItem(it.key, 'unit_price', e.target.value)} />
                       </div>
                       <div className="text-right pb-2 min-w-[80px]">
                         <p className="text-[10px] font-semibold text-slate-400 uppercase">Subtotal</p>
@@ -349,8 +443,8 @@ function OccurrenceRow({ occ, order, onTrack }) {
       <div className="min-w-0 flex-1">
         <p className={`text-xs font-semibold flex items-center gap-1.5 flex-wrap ${open ? 'text-rose-700' : 'text-slate-600'}`}>
           <OccKindBadge kind={occ.kind} />
-          {item?.raw_material?.name || 'Item'}
-          {qty != null && <span className="font-normal">— {fmtQty(qty, item?.raw_material?.unit)} {OCC_KIND[occ.kind]?.verb || 'avariado'}</span>}
+          {itemName(item)}{occ.sheet_cut_id && <span className="font-normal"> · {cutName(item, occ.sheet_cut_id)}</span>}
+          {qty != null && <span className="font-normal">— {fmtQty(qty, itemUnit(item))} {OCC_KIND[occ.kind]?.verb || 'avariado'}</span>}
         </p>
         {occ.status === 'resolvido'
           ? <p className="text-[11px] text-emerald-700 mt-0.5">Solução: {OCC_RESOLUTION[occ.resolution] || '—'}{occ.resolution_notes ? ` — ${occ.resolution_notes}` : ''}</p>
@@ -404,11 +498,11 @@ function OrderCard({ order, onRegisterBill, onCancel, onTrack, onFinalize, onSet
         <div className="mb-3 mt-2 bg-slate-50 rounded-xl divide-y divide-slate-100 max-w-3xl">
           {(order.items || []).map(it => (
             <div key={it.id} className="flex items-baseline gap-3 text-xs px-3 py-1.5">
-              <span className="w-20 shrink-0 text-right font-bold text-slate-800 tabular-nums">{fmtQty(it.qty_ordered, it.raw_material?.unit)}</span>
+              <span className="w-20 shrink-0 text-right font-bold text-slate-800 tabular-nums">{fmtQty(it.qty_ordered, itemUnit(it))}</span>
               <span className="text-slate-700 min-w-0 flex-1">
-                {it.raw_material?.name}
-                {it.qty_received != null && <span className="text-slate-400"> · recebido {fmtQty(it.qty_received, it.raw_material?.unit)}</span>}
-                {Number(it.qty_damaged) > 0 && <span className="text-rose-500 font-semibold"> · {fmtQty(it.qty_damaged, it.raw_material?.unit)} avariado</span>}
+                {itemName(it)}
+                {it.qty_received != null && <span className="text-slate-400"> · recebido {fmtQty(it.qty_received, itemUnit(it))}</span>}
+                {Number(it.qty_damaged) > 0 && <span className="text-rose-500 font-semibold"> · {fmtQty(it.qty_damaged, isSheetItem(it) ? 'sub-chapa(s)' : itemUnit(it))} avariado</span>}
               </span>
               {it.unit_price != null && (
                 <span className="shrink-0 text-slate-400 tabular-nums">{fmtPreco(it.unit_price)} un. · <b className="text-slate-600">{fmtPreco(Number(it.unit_price) * Number(it.qty_ordered))}</b></span>
@@ -487,6 +581,15 @@ export function MaterialOrdersPage() {
   const pendingCount = orders.filter(o => o.status === 'pedido').length
   const lateCount = orders.filter(o => deliveryInfo(o.expected_delivery, o.status)?.late).length
   const { materials } = useMaterials()
+  const sheets = useSheets()
+  // Último preço pago por chapa (formato+espessura+cor) — sugere no pedido novo
+  const lastSheetPrice = useMemo(() => {
+    const map = new Map()
+    ;[...orders].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).forEach(o => (o.items || []).forEach(it => {
+      if (it.sheet_format_id && it.unit_price != null) map.set(`s:${it.sheet_format_id}:${it.sheet_thickness_id}:${it.sheet_color_id}`, String(Number(it.unit_price)))
+    }))
+    return key => map.get(key)
+  }, [orders])
   const { suppliers } = useSuppliers()
   const { create: createBill, addPayment: addBillPayment } = useBills()
 
@@ -496,7 +599,7 @@ export function MaterialOrdersPage() {
 
   const billPrefill = useMemo(() => {
     if (!billOrder) return null
-    const itemsDesc = (billOrder.items || []).map(it => `${it.raw_material?.name} (${fmtQty(it.qty_ordered, it.raw_material?.unit)})`).join(', ')
+    const itemsDesc = (billOrder.items || []).map(it => `${itemName(it)} (${fmtQty(it.qty_ordered, itemUnit(it))})`).join(', ')
     return {
       description:  billOrder.title || `Matéria-prima${billOrder.supplier?.name ? ' — ' + billOrder.supplier.name : ''}`,
       notes:        itemsDesc,
@@ -583,7 +686,7 @@ export function MaterialOrdersPage() {
 
       <OrderFormModal open={modal} onClose={() => { setModal(false); setEditing(null) }}
         onSave={payload => editing ? updateOrder(editing, payload) : createOrder(payload)}
-        editOrder={editing} materials={materials} suppliers={suppliers} />
+        editOrder={editing} materials={materials} suppliers={suppliers} sheets={sheets} lastSheetPrice={lastSheetPrice} />
 
       <ConfirmDialog open={!!deleting} onClose={() => setDeleting(null)} onConfirm={handleDelete} loading={deleteBusy}
         title="Excluir pedido?" confirmLabel="Excluir"

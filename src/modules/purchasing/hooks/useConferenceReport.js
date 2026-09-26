@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../../lib/supabase'
 import toast from 'react-hot-toast'
+import { ITEM_SELECT } from '../orderItem'
 
 // Relatório de Conferências (25/09) — visão do Administrativo/Diretoria
 // sobre tudo que o João já conferiu no tablet: quantidades, avarias,
@@ -20,12 +21,9 @@ export function useConferenceReport() {
         creator:system_users!created_by(name),
         conferrer:system_users!conferred_by(name),
         closer:system_users!closed_by(name),
-        items:material_order_items(
-          id, raw_material_id, qty_ordered, unit_price, qty_received, qty_damaged, item_status,
-          raw_material:raw_materials(id, name, unit)
-        ),
+        items:material_order_items(${ITEM_SELECT}),
         occurrences:material_order_occurrences(
-          id, order_item_id, kind, description, qty_damaged, qty_affected, status, reported_at, resolved_at, resolution, resolution_notes,
+          id, order_item_id, sheet_cut_id, kind, description, qty_damaged, qty_affected, status, reported_at, resolved_at, resolution, resolution_notes,
           resolver:system_users!resolved_by(name),
           photos:material_order_occurrence_photos(id, storage_path, created_at)
         )

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../../lib/supabase'
 import toast from 'react-hot-toast'
+import { ITEM_SELECT } from '../orderItem'
 
 function getSession() {
   try { return JSON.parse(localStorage.getItem('coisapet_session') || '{}') }
@@ -26,13 +27,10 @@ export function useMaterialOrders() {
         creator:system_users!created_by(name),
         conferrer:system_users!conferred_by(name),
         updater:system_users!updated_by(name),
-        items:material_order_items(
-          id, raw_material_id, qty_ordered, unit_price, qty_received, qty_damaged, item_status,
-          raw_material:raw_materials(id, name, unit)
-        ),
+        items:material_order_items(${ITEM_SELECT}),
         closer:system_users!closed_by(name),
         occurrences:material_order_occurrences(
-          id, order_item_id, kind, status, description, qty_damaged, qty_affected, reported_at, resolved_at, resolution, resolution_notes,
+          id, order_item_id, sheet_cut_id, kind, status, description, qty_damaged, qty_affected, reported_at, resolved_at, resolution, resolution_notes,
           resolver:system_users!resolved_by(name),
           photos:material_order_occurrence_photos(id, storage_path)
         )
@@ -69,7 +67,11 @@ export function useMaterialOrders() {
     const { error: itemsErr } = await supabase.from('material_order_items').insert(
       items.map(it => ({
         order_id: order.id,
-        raw_material_id: it.raw_material_id,
+        raw_material_id: it.raw_material_id || null,
+        // Chapa de MDF (fase78): formato + espessura + cor em vez de matéria-prima
+        sheet_format_id: it.sheet_format_id || null,
+        sheet_thickness_id: it.sheet_thickness_id || null,
+        sheet_color_id: it.sheet_color_id || null,
         qty_ordered: Number(it.qty_ordered),
         unit_price: it.unit_price ? Number(it.unit_price) : null,
       }))
@@ -130,7 +132,10 @@ export function useMaterialOrders() {
       if (added.length) {
         const { error: insErr } = await supabase.from('material_order_items').insert(added.map(it => ({
           order_id: order.id,
-          raw_material_id: it.raw_material_id,
+          raw_material_id: it.raw_material_id || null,
+          sheet_format_id: it.sheet_format_id || null,
+          sheet_thickness_id: it.sheet_thickness_id || null,
+          sheet_color_id: it.sheet_color_id || null,
           qty_ordered: Number(it.qty_ordered),
           unit_price: it.unit_price ? Number(it.unit_price) : null,
         })))

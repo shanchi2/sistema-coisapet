@@ -275,6 +275,39 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-09-26 — Chapas de MDF e sub-chapas (fase78)
+
+Como funciona de verdade: o César compra a CHAPA inteira na Duratex (ex:
+"CE01 - Branco 6mm", 1840×2740) e ela vem com cortes especiais — rende
+sub-chapas de tamanhos diferentes. O estoque conta SUB-CHAPAS; retalho não
+conta. Modelo novo (`supabase/fase78-chapas-subchapas.sql`):
+- `sheet_formats` (chapa, só tamanho) + `sheet_cuts` (sub-chapas, qtd por
+  chapa) + `sheet_thicknesses` + `sheet_colors`.
+- Estoque continua em `raw_materials`, 1 linha por sub-chapa × espessura ×
+  cor (colunas `sheet_*`); `get_sheet_stock_id()` acha/cria a linha. Os 56
+  sub-cortes antigos foram ligados com o mesmo estoque.
+- Telas: Matéria-Prima → aba **Chapas de MDF** (CRUD + estoque por cor);
+  pedido do César escolhe chapa + espessura + cor; tablet do João confere
+  chapas e marca avaria POR SUB-CHAPA (cada uma vira ocorrência); a tela
+  "Chapas" do Vini virou **Planos de corte**, com a sub-chapa que o plano
+  consome — lançar produção pede a cor do MDF e baixa o estoque (RPC
+  `log_chapa_production`, parâmetro novo `p_sheet_color_id`).
+
+**Pendências:**
+- "3mm CE1 - Corte 1 - <cor>" (1360×920) ficou no formato **CE1 3mm (a
+  confirmar)** com 4 por chapa estimado — Raphael vai ver com o Vini (segunda).
+- Medidas do CE2 a conferir (Raphael vai mandar); Hanover × Cerrado
+  Amadeirado: confirmar se são a mesma cor.
+- Nenhum plano de corte está ligado a sub-chapa ainda — o Vini precisa
+  editar cada plano (A-23 etc.) e escolher sub-chapa + espessura, senão a
+  produção continua sem baixar MDF.
+- Retalho "3mm CE2 - Corte 3 - Acácia" (estoque 40) ficou fora do modelo,
+  ainda ativo como matéria-prima comum.
+- Chave do Resend vazada (25/08) ainda em uso — trocar no painel e rodar
+  `supabase secrets set RESEND_KEY=...`.
+
+---
+
 ### 2026-09-18 — Shopee: app aprovado pra produção, credenciais Live configuradas
 
 Raphael recebeu `Partner_id`/`Partner Key` **Live** (produção) da

@@ -3,6 +3,7 @@ import { ArrowLeft, Minus, Plus, Check, Camera, X, ClipboardCheck, Loader2, Aler
 import { useMaterialConference } from './hooks/useMaterialConference'
 import toast from 'react-hot-toast'
 import { DeliveryBadge } from './DeliveryDate'
+import { itemName, itemUnit, isSheetItem, itemCuts } from './orderItem'
 
 function fmtQty(v, unit) {
   const n = Number(v)
@@ -18,6 +19,7 @@ function ConferenceChecklist({ order, onBack, onFinish }) {
     (order.items || []).map(it => [it.id, {
       qty_received: Number(it.qty_ordered),
       qty_damaged: 0,
+      cut_damage: {}, // chapa de MDF: { sheet_cut_id: peças avariadas }
       occurrence_description: '',
       occurrence_photos: [],
     }])
@@ -31,9 +33,28 @@ function ConferenceChecklist({ order, onBack, onFinish }) {
     setState(prev => {
       const cur = prev[itemId]
       const nextReceived = Math.max(0, Number(cur.qty_received) + delta)
+      const it = (order.items || []).find(i => i.id === itemId)
+      if (isSheetItem(it)) {
+        // Chapa: avaria por sub-chapa nunca passa de (chapas recebidas × qtd por chapa)
+        const cd = {}
+        for (const c of itemCuts(it)) cd[c.id] = Math.min(Number(cur.cut_damage[c.id] || 0), nextReceived * c.qty_per_sheet)
+        const total = Object.values(cd).reduce((a, b) => a + b, 0)
+        return { ...prev, [itemId]: { ...cur, qty_received: nextReceived, cut_damage: cd, qty_damaged: total } }
+      }
       // Avariado nunca pode passar do recebido.
       const nextDamaged = Math.min(Number(cur.qty_damaged), nextReceived)
       return { ...prev, [itemId]: { ...cur, qty_received: nextReceived, qty_damaged: nextDamaged } }
+    })
+  }
+  // Chapa de MDF (fase78): João marca QUAL sub-chapa veio avariada
+  function adjustCutDamage(itemId, cut, delta) {
+    setState(prev => {
+      const cur = prev[itemId]
+      const max = Number(cur.qty_received) * cut.qty_per_sheet
+      const next = Math.max(0, Math.min(max, Number(cur.cut_damage[cut.id] || 0) + delta))
+      const cd = { ...cur.cut_damage, [cut.id]: next }
+      const total = Object.values(cd).reduce((a, b) => a + b, 0)
+      return { ...prev, [itemId]: { ...cur, cut_damage: cd, qty_damaged: total } }
     })
   }
   function adjustDamaged(itemId, delta) {
@@ -63,6 +84,7 @@ function ConferenceChecklist({ order, onBack, onFinish }) {
         raw_material_id: it.raw_material_id,
         qty_received: state[it.id].qty_received,
         qty_damaged: state[it.id].qty_damaged,
+        cut_damage: state[it.id].cut_damage,
         occurrence_description: state[it.id].occurrence_description,
         occurrence_photos: state[it.id].occurrence_photos,
       }))
@@ -94,8 +116,8 @@ function ConferenceChecklist({ order, onBack, onFinish }) {
           return (
             <div key={it.id}
               className={`rounded-2xl border-2 p-4 ${isAvariado ? 'bg-rose-50 border-rose-300' : isShort ? 'bg-amber-50 border-amber-300' : 'bg-white border-slate-200'}`}>
-              <p className="text-lg font-bold leading-snug text-slate-800">{it.raw_material?.name}</p>
-              <p className="text-xs text-slate-400 mt-1 mb-3">Pedido: {fmtQty(it.qty_ordered, it.raw_material?.unit)}</p>
+              <p className="text-lg font-bold leading-snug text-slate-800">{itemName(it)}</p>
+              <p className="text-xs text-slate-400 mt-1 mb-3">Pedido: {fmtQty(it.qty_ordered, itemUnit(it))}</p>
 
               <div className="flex items-stretch gap-2">
                 <div className="flex-1 flex flex-col items-center gap-1.5 bg-white rounded-xl border-2 border-slate-200 py-2">
@@ -115,6 +137,7 @@ function ConferenceChecklist({ order, onBack, onFinish }) {
                   </div>
                 </div>
 
+                {!isSheetItem(it) && (
                 <div className="flex-1 flex flex-col items-center gap-1.5 bg-white rounded-xl border-2 border-rose-200 py-2">
                   <span className="text-[10px] font-bold text-rose-400 uppercase flex items-center gap-1">
                     <AlertTriangle size={11} /> Avariado
@@ -133,7 +156,30 @@ function ConferenceChecklist({ order, onBack, onFinish }) {
                     </button>
                   </div>
                 </div>
+                )}
               </div>
+
+              {isSheetItem(it) && (
+                <div className="mt-3 bg-white rounded-xl border-2 border-rose-200 p-3">
+                  <p className="text-[11px] font-bold text-rose-500 uppercase flex items-center gap-1 mb-2">
+                    <AlertTriangle size={12} /> Sub-chapas avariadas <span className="normal-case font-semibold text-slate-400">— cada chapa rende: {itemCuts(it).map(c => `${c.qty_per_sheet}× ${c.name}`).join(', ')}</span>
+                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    {itemCuts(it).map(c => {
+                      const v = Number(s.cut_damage[c.id] || 0)
+                      return (
+                        <div key={c.id} className="flex items-center gap-2">
+                          <span className="flex-1 min-w-0 text-sm font-semibold text-slate-700 truncate">{c.name} <span className="text-xs font-normal text-slate-400">{Number(c.width_mm || 0)}×{Number(c.length_mm || 0)}</span></span>
+                          <button onClick={() => adjustCutDamage(it.id, c, -1)} className="w-9 h-9 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500"><Minus size={16} strokeWidth={3} /></button>
+                          <span className={`w-10 text-center text-lg font-black ${v ? 'text-rose-600' : 'text-slate-300'}`}>{v}</span>
+                          <button onClick={() => adjustCutDamage(it.id, c, 1)} className="w-9 h-9 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500"><Plus size={16} strokeWidth={3} /></button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-2">Entram no estoque: {itemCuts(it).map(c => `${Number(s.qty_received) * c.qty_per_sheet - Number(s.cut_damage[c.id] || 0)}× ${c.name}`).join(' · ')}</p>
+                </div>
+              )}
 
               {isAvariado && (
                 <div className="mt-3 flex flex-col gap-2.5">

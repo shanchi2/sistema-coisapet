@@ -25,6 +25,15 @@ async function auditLog(action, tableName, recordId, description) {
 // "14x Toca Luxo", ou uma combinação de tipos diferentes, tipo "1x
 // Terrário Grande + 1x Toca Luxo + 1x Banheira"). Fase 46 — só o
 // cadastro/gerador por enquanto, ainda não mexe na fila de produção.
+// Vínculo plano de corte → sub-chapa de MDF que ele consome (fase78, 26/09)
+function sheetFields(payload) {
+  return {
+    sheet_cut_id: payload.sheet_cut_id || null,
+    sheet_thickness_id: payload.sheet_thickness_id || null,
+    cuts_per_run: Number(payload.cuts_per_run) > 0 ? Number(payload.cuts_per_run) : 1,
+  }
+}
+
 export function useChapas() {
   const [chapas,  setChapas]  = useState([])
   const [loading, setLoading] = useState(true)
@@ -35,7 +44,9 @@ export function useChapas() {
       .from('chapas')
       .select(`
         *,
-        items:chapa_items(id, quantity, product:products(id, name, sku, photo_url, is_sellable))
+        items:chapa_items(id, quantity, product:products(id, name, sku, photo_url, is_sellable)),
+        sheet_cut:sheet_cuts(id, name, width_mm, length_mm, format:sheet_formats(id, name)),
+        sheet_thickness:sheet_thicknesses(id, name)
       `)
       .eq('active', true)
       .order('name')
@@ -58,7 +69,7 @@ export function useChapas() {
 
     const { data: chapa, error } = await supabase
       .from('chapas')
-      .insert({ name, notes: notes || null })
+      .insert({ name, notes: notes || null, ...sheetFields(payload) })
       .select()
       .single()
     if (error) { toast.error('Erro ao criar chapa.'); throw error }
@@ -74,7 +85,7 @@ export function useChapas() {
     }
 
     await auditLog('create', 'chapas', chapa.id, `Chapa "${name}" criada com ${items.length} produto(s)`)
-    toast.success('Chapa criada!')
+    toast.success('Plano de corte criado!')
     await fetch()
   }
 
@@ -83,7 +94,7 @@ export function useChapas() {
     const { name, notes, items } = payload
     if (!items?.length) throw new Error('Adicione pelo menos 1 produto.')
 
-    const { error } = await supabase.from('chapas').update({ name, notes: notes || null }).eq('id', id)
+    const { error } = await supabase.from('chapas').update({ name, notes: notes || null, ...sheetFields(payload) }).eq('id', id)
     if (error) { toast.error('Erro ao atualizar chapa.'); throw error }
 
     // Reconstrói os itens do zero — mais simples e seguro que diff
@@ -97,7 +108,7 @@ export function useChapas() {
     if (insError) { toast.error('Erro ao salvar os itens da chapa.'); throw insError }
 
     await auditLog('update', 'chapas', id, `Chapa "${name}" atualizada`)
-    toast.success('Chapa atualizada!')
+    toast.success('Plano de corte atualizado!')
     await fetch()
   }
 
@@ -106,7 +117,7 @@ export function useChapas() {
     const { error } = await supabase.from('chapas').update({ active: false }).eq('id', id)
     if (error) { toast.error('Erro ao remover chapa.'); throw error }
     await auditLog('delete', 'chapas', id, `Chapa "${name}" removida`)
-    toast.success('Chapa removida.')
+    toast.success('Plano de corte removido.')
     await fetch()
   }
 
@@ -116,11 +127,14 @@ export function useChapas() {
   // (fase64c, opcional): { [produto_principal_id]: cor_escolhida_id }
   // — quando um item da chapa aponta pra um produto principal (família
   // de cor), resolve pra qual SKU de verdade credita o estoque.
-  async function logProduction(chapaId, multiplier, notes, colorSelections) {
+  // sheetColorId (fase78): cor do MDF usada — se o plano está ligado a uma
+  // sub-chapa, a RPC baixa 1 (ou cuts_per_run) dela × multiplier do estoque.
+  async function logProduction(chapaId, multiplier, notes, colorSelections, sheetColorId) {
     const session = getSession()
     const { data, error } = await supabase.rpc('log_chapa_production', {
       p_chapa_id: chapaId, p_multiplier: multiplier, p_notes: notes || null, p_user_id: session.id || null,
       p_color_selections: colorSelections && Object.keys(colorSelections).length ? colorSelections : null,
+      p_sheet_color_id: sheetColorId || null,
     })
     if (error) { toast.error('Erro ao lançar produção: ' + error.message); throw error }
     await auditLog('create', 'chapa_production_entries', chapaId, `Produção lançada (x${multiplier})`)
@@ -152,7 +166,7 @@ export function useChapas() {
   async function fetchProductionHistory(chapaId) {
     const { data, error } = await supabase
       .from('chapa_production_entries')
-      .select('id, multiplier, notes, created_at, created_by_user:system_users(name)')
+      .select('id, multiplier, notes, created_at, created_by_user:system_users(name), sheet_color:sheet_colors(name)')
       .eq('chapa_id', chapaId)
       .order('created_at', { ascending: false })
       .limit(20)

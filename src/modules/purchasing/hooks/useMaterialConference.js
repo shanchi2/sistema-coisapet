@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../../lib/supabase'
 import toast from 'react-hot-toast'
+import { ITEM_SELECT, isSheetItem, itemCuts, itemName } from '../orderItem'
 
 function getSession() {
   try { return JSON.parse(localStorage.getItem('coisapet_session') || '{}') }
@@ -24,8 +25,7 @@ export function useMaterialConference() {
       .select(`
         *,
         supplier:suppliers(id, name),
-        items:material_order_items(id, raw_material_id, qty_ordered, unit_price, qty_received, qty_damaged, item_status,
-          raw_material:raw_materials(id, name, unit))
+        items:material_order_items(${ITEM_SELECT})
       `)
       .eq('status', 'pedido')
       .order('expected_delivery', { ascending: true, nullsFirst: false })
@@ -42,13 +42,16 @@ export function useMaterialConference() {
 
   useEffect(() => { fetch() }, [fetch])
 
-  async function uploadOccurrencePhotos(occurrenceId, files) {
+  // Sobe as fotos 1x e liga em todas as ocorrências do item (numa chapa,
+  // cada sub-chapa avariada vira uma ocorrência — mesmas fotos em todas).
+  async function uploadOccurrencePhotos(occurrenceIds, files) {
+    const ids = Array.isArray(occurrenceIds) ? occurrenceIds : [occurrenceIds]
     for (const file of files) {
       const ext  = file.name.split('.').pop()
-      const path = `occurrences/${occurrenceId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const path = `occurrences/${ids[0]}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
       const { error: upErr } = await supabase.storage.from(OCCURRENCE_BUCKET).upload(path, file)
       if (upErr) { console.error(upErr); continue }
-      await supabase.from('material_order_occurrence_photos').insert({ occurrence_id: occurrenceId, storage_path: path })
+      await supabase.from('material_order_occurrence_photos').insert(ids.map(id => ({ occurrence_id: id, storage_path: path })))
     }
   }
 
@@ -66,9 +69,53 @@ export function useMaterialConference() {
       const { error: upErr } = await supabase.from('material_order_items').update({
         qty_received: r.qty_received,
         qty_damaged: r.qty_damaged || 0,
+        cut_damage: r.cut_damage && Object.keys(r.cut_damage).length ? r.cut_damage : null,
         item_status: itemStatus,
       }).eq('id', r.item_id)
       if (upErr) throw upErr
+
+      // ── Chapa de MDF (fase78): 1 chapa recebida vira as sub-chapas dela
+      // no estoque (sub-chapa × espessura × cor), menos as avariadas. ──
+      const orderItem = order.items?.find(i => i.id === r.item_id)
+      if (isSheetItem(orderItem)) {
+        const damagedOccIds = []
+        for (const cut of itemCuts(orderItem)) {
+          const dmg = Number(r.cut_damage?.[cut.id] || 0)
+          const good = Number(r.qty_received) * cut.qty_per_sheet - dmg
+          if (good > 0) {
+            const { data: rawId, error: rpcErr } = await supabase.rpc('get_sheet_stock_id', {
+              p_cut: cut.id, p_thickness: orderItem.sheet_thickness_id, p_color: orderItem.sheet_color_id,
+            })
+            if (rpcErr) throw rpcErr
+            const { error: movErr } = await supabase.from('raw_material_movements').insert({
+              raw_material_id: rawId, type: 'entrada', qty: good,
+              reason: `Conferência — ${itemName(orderItem)} (${cut.name})`, reference_id: order.id,
+            })
+            if (movErr) throw movErr
+          }
+          if (dmg > 0) {
+            const { data: occ, error: occErr } = await supabase.from('material_order_occurrences').insert({
+              order_id: order.id, order_item_id: r.item_id, sheet_cut_id: cut.id,
+              kind: 'avaria', qty_damaged: dmg, qty_affected: dmg,
+              description: r.occurrence_description || null,
+            }).select('id').single()
+            if (occErr) throw occErr
+            damagedOccIds.push(occ.id)
+          }
+        }
+        if (damagedOccIds.length && r.occurrence_photos?.length) await uploadOccurrencePhotos(damagedOccIds, r.occurrence_photos)
+
+        const diffSheets = Number(r.qty_received) - Number(orderItem.qty_ordered)
+        if (diffSheets !== 0) {
+          const { error: divErr } = await supabase.from('material_order_occurrences').insert({
+            order_id: order.id, order_item_id: r.item_id,
+            kind: diffSheets < 0 ? 'falta' : 'excesso', qty_affected: Math.abs(diffSheets),
+            description: diffSheets < 0 ? 'Chegaram menos chapas do que foi pedido.' : 'Chegaram mais chapas do que foi pedido.',
+          })
+          if (divErr) throw divErr
+        }
+        continue
+      }
 
       // Estoque só sobe aqui, na conferência de verdade — nunca no
       // pedido — e só a parte boa (recebido menos avariado) vira

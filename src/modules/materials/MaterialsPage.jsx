@@ -6,6 +6,9 @@ import { MaterialFormModal }        from './components/MaterialFormModal'
 import { MaterialCategoriesModal }  from './components/MaterialCategoriesModal'
 import { ConfirmDialog }            from '../../components/ui/ConfirmDialog'
 import { EmptyState }               from '../../components/ui/EmptyState'
+import { useSearchParams }          from 'react-router-dom'
+import { Layers, Boxes }            from 'lucide-react'
+import { SheetsPanel }              from './SheetsPanel'
 
 // ─── Utilitários ──────────────────────────────────────────────────
 function stockStatus(qty, min) {
@@ -121,7 +124,7 @@ function StatCard({ icon: Icon, label, value, bg, color }) {
 }
 
 // ─── Página principal ─────────────────────────────────────────────
-export function MaterialsPage() {
+function MaterialsListPage() {
   const { materials, loading, create, update, remove, refetch } = useMaterials()
   const { categories } = useMaterialCategories()
 
@@ -366,6 +369,39 @@ export function MaterialsPage() {
         description="O material será desativado mas o histórico de movimentações será mantido."
         confirmLabel="Remover material"
       />
+    </div>
+  )
+}
+
+
+// Abas da Matéria-Prima (26/09): lista geral + Chapas de MDF (sub-chapas).
+// Aba na URL (?aba=chapas) pra dar pra linkar direto.
+export function MaterialsPage() {
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('aba') === 'chapas' ? 'chapas' : 'lista'
+  const tabBtn = (key, Icon, label) => (
+    <button onClick={() => setParams(key === 'chapas' ? { aba: 'chapas' } : {}, { replace: true })}
+      className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-1.5 transition ${tab === key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+      <Icon size={15} /> {label}
+    </button>
+  )
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex bg-slate-100 rounded-xl p-1 self-start">
+        {tabBtn('lista', Boxes, 'Matérias-primas')}
+        {tabBtn('chapas', Layers, 'Chapas de MDF')}
+      </div>
+      {tab === 'chapas' ? (
+        <div className="flex flex-col gap-4 animate-fade-in">
+          <div className="page-header">
+            <div>
+              <h2 className="page-title">Chapas de MDF</h2>
+              <p className="page-subtitle">Chapas, sub-chapas que cada uma rende, espessuras e cores</p>
+            </div>
+          </div>
+          <SheetsPanel />
+        </div>
+      ) : <MaterialsListPage />}
     </div>
   )
 }

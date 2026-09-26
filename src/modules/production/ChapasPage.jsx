@@ -6,6 +6,13 @@ import { useProducts } from '../products/hooks/useProducts'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useSignedUrl } from '../../lib/signedUrlCache'
+import { useSheets } from '../materials/hooks/useSheets'
+
+// Texto "6mm · CE1 · Corte 2" do que o plano consome (fase78)
+function sheetLinkLabel(chapa) {
+  if (!chapa?.sheet_cut) return null
+  return [chapa.sheet_thickness?.name, chapa.sheet_cut.format?.name, chapa.sheet_cut.name].filter(Boolean).join(' · ')
+}
 
 function fmtDateTime(iso) {
   return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -31,8 +38,11 @@ function ProductThumb({ photoUrl }) {
 }
 
 // ─── Modal: Nova/Editar chapa ──────────────────────────────────────
-function ChapaFormModal({ open, onClose, onSave, products, editing }) {
+function ChapaFormModal({ open, onClose, onSave, products, editing, sheets }) {
   const [name,    setName]    = useState('')
+  const [sheetCutId, setSheetCutId] = useState('')
+  const [sheetThicknessId, setSheetThicknessId] = useState('')
+  const [cutsPerRun, setCutsPerRun] = useState('1')
   const [notes,   setNotes]   = useState('')
   const [items,   setItems]   = useState([])
   const [search,  setSearch]  = useState('')
@@ -40,6 +50,9 @@ function ChapaFormModal({ open, onClose, onSave, products, editing }) {
 
   useEffect(() => {
     if (!open) return
+    setSheetCutId(editing?.sheet_cut_id || '')
+    setSheetThicknessId(editing?.sheet_thickness_id || '')
+    setCutsPerRun(editing?.cuts_per_run ? String(Number(editing.cuts_per_run)) : '1')
     if (editing) {
       setName(editing.name)
       setNotes(editing.notes || '')
@@ -103,6 +116,9 @@ function ChapaFormModal({ open, onClose, onSave, products, editing }) {
         name: name.trim(),
         notes: notes.trim(),
         items: items.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+        sheet_cut_id: sheetCutId || null,
+        sheet_thickness_id: sheetCutId ? (sheetThicknessId || null) : null,
+        cuts_per_run: cutsPerRun,
       })
       onClose()
     } catch { /* toast já cobre o erro */ }
@@ -120,9 +136,9 @@ function ChapaFormModal({ open, onClose, onSave, products, editing }) {
         <div className="flex items-center justify-between p-6 border-b border-slate-100">
           <div>
             <h2 style={{ fontFamily: 'Nunito, sans-serif', fontWeight: 700, fontSize: '18px' }} className="text-slate-800">
-              {editing ? 'Editar chapa' : 'Nova chapa'}
+              {editing ? 'Editar plano de corte' : 'Novo plano de corte'}
             </h2>
-            <p className="text-sm text-slate-400 mt-0.5">Uma chapa de corte pode render vários produtos de uma vez só — cadastre o que ela produz.</p>
+            <p className="text-sm text-slate-400 mt-0.5">Um plano de corte pode render vários produtos de uma vez só — cadastre o que ele produz e qual sub-chapa de MDF ele usa.</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 transition-all">
             <X size={18} />
@@ -133,9 +149,34 @@ function ChapaFormModal({ open, onClose, onSave, products, editing }) {
 
           {/* Nome */}
           <div>
-            <label className="form-label">Nome da chapa</label>
-            <input className="input" placeholder="Ex: Chapa Toca Luxo, Chapa Combo Terrário..."
+            <label className="form-label">Nome do plano de corte</label>
+            <input className="input" placeholder="Ex: A-23, Combo Terrário..."
               value={name} onChange={e => setName(e.target.value)} autoFocus />
+          </div>
+
+          {/* Sub-chapa de MDF que esse plano consome (fase78) — é o que baixa do estoque ao lançar */}
+          <div className="bg-amber-50/60 border border-amber-100 rounded-xl p-3 flex flex-col gap-2">
+            <label className="form-label mb-0">Consome qual sub-chapa de MDF?</label>
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_110px_120px] gap-2">
+              <select className="select" value={sheetCutId} onChange={e => setSheetCutId(e.target.value)}>
+                <option value="">Não baixar MDF do estoque</option>
+                {(sheets?.formats ?? []).filter(fm => fm.active !== false).map(fm => (
+                  <optgroup key={fm.id} label={fm.name}>
+                    {fm.cuts.map(c => <option key={c.id} value={c.id}>{fm.name} · {c.name} ({Number(c.width_mm || 0)}×{Number(c.length_mm || 0)})</option>)}
+                  </optgroup>
+                ))}
+              </select>
+              <select className="select" value={sheetThicknessId} onChange={e => setSheetThicknessId(e.target.value)} disabled={!sheetCutId}>
+                <option value="">Espessura</option>
+                {(sheets?.thicknesses ?? []).filter(t => t.active !== false).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <div className="relative">
+                <input className="input pr-16" type="number" min="0.001" step="0.001" value={cutsPerRun} onChange={e => setCutsPerRun(e.target.value)} disabled={!sheetCutId} />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">por corte</span>
+              </div>
+            </div>
+            {sheetCutId && !sheetThicknessId && <p className="text-[11px] text-amber-700">Escolha a espessura — sem ela o estoque não baixa.</p>}
+            <p className="text-[11px] text-slate-500">A cor do MDF é escolhida na hora de lançar a produção.</p>
           </div>
 
           {/* Busca de produtos */}
@@ -230,7 +271,7 @@ function ChapaFormModal({ open, onClose, onSave, products, editing }) {
             <button onClick={handleSave} disabled={saving || !name.trim() || items.length === 0}
               className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-rose-500 hover:bg-rose-600 text-white transition-all active:scale-[0.98] disabled:opacity-50"
               style={{ fontFamily: 'Nunito, sans-serif' }}>
-              {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : (editing ? 'Salvar alterações' : 'Criar chapa')}
+              {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : (editing ? 'Salvar alterações' : 'Criar plano de corte')}
             </button>
           </div>
         </div>
@@ -240,8 +281,9 @@ function ChapaFormModal({ open, onClose, onSave, products, editing }) {
 }
 
 // ─── Modal: Lançar produção (chapa cortada de verdade) ─────────────
-function ProductionLogModal({ open, onClose, chapa, onLog, fetchColorOptions }) {
+function ProductionLogModal({ open, onClose, chapa, onLog, fetchColorOptions, sheets }) {
   const [multiplier, setMultiplier] = useState(1)
+  const [sheetColorId, setSheetColorId] = useState('') // cor do MDF (fase78)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   // { [principal_id]: [{id, sku, name, photo_url, cor}] }
@@ -258,7 +300,7 @@ function ProductionLogModal({ open, onClose, chapa, onLog, fetchColorOptions }) 
 
   useEffect(() => {
     if (!open) return
-    setMultiplier(1); setNotes(''); setColorSelections({})
+    setMultiplier(1); setNotes(''); setColorSelections({}); setSheetColorId('')
     if (principalItems.length === 0) { setColorOptions({}); return }
     setLoadingColors(true)
     Promise.all(principalItems.map(i => fetchColorOptions(i.product.id).then(opts => [i.product.id, opts])))
@@ -269,12 +311,18 @@ function ProductionLogModal({ open, onClose, chapa, onLog, fetchColorOptions }) 
 
   if (!open || !chapa) return null
 
-  const missingColor = principalItems.some(i => !colorSelections[i.product.id])
+  const linked = !!(chapa.sheet_cut_id && chapa.sheet_thickness_id)
+  const missingColor = principalItems.some(i => !colorSelections[i.product.id]) || (linked && !sheetColorId)
+  const consume = linked ? Number(chapa.cuts_per_run || 1) * multiplier : 0
+  const stockRow = linked && sheetColorId
+    ? (sheets?.stock ?? []).find(st => st.sheet_cut_id === chapa.sheet_cut_id && st.sheet_thickness_id === chapa.sheet_thickness_id && st.sheet_color_id === sheetColorId)
+    : null
+  const available = stockRow ? Number(stockRow.stock_qty) : 0
 
   async function handleConfirm() {
     setSaving(true)
     try {
-      const result = await onLog(chapa.id, multiplier, notes.trim(), colorSelections)
+      const result = await onLog(chapa.id, multiplier, notes.trim(), colorSelections, linked ? sheetColorId : null)
       const summary = (result || []).map(r => `${r.product_name}: +${r.delta} (agora ${r.new_stock_qty})`).join(' · ')
       if (summary) toast.success(summary, { duration: 6000 })
       onClose()
@@ -292,16 +340,34 @@ function ProductionLogModal({ open, onClose, chapa, onLog, fetchColorOptions }) 
         </div>
         <p className="text-sm text-slate-400 mb-4">{chapa.name}</p>
 
-        <label className="form-label">Quantas vezes essa chapa foi cortada hoje?</label>
+        <label className="form-label">Quantas vezes esse plano foi cortado hoje?</label>
         <div className="flex items-center gap-2 mb-4">
           <button type="button" onClick={() => setMultiplier(m => Math.max(1, m - 1))} className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-600">−</button>
           <input type="number" min="1" className="input w-20 text-center" value={multiplier} onChange={e => setMultiplier(Math.max(1, parseInt(e.target.value) || 1))} />
           <button type="button" onClick={() => setMultiplier(m => m + 1)} className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-600">+</button>
         </div>
 
+        {linked && (
+          <div className="mb-4 bg-amber-50/60 border border-amber-100 rounded-xl p-3">
+            <label className="form-label">Cor do MDF usado</label>
+            <div className="flex flex-wrap gap-1.5">
+              {(sheets?.colors ?? []).filter(c => c.active !== false).map(c => (
+                <button key={c.id} type="button" onClick={() => setSheetColorId(c.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${sheetColorId === c.id ? 'bg-amber-500 border-amber-500 text-white' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'}`}>
+                  {c.name}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-600 mt-2">
+              Vai baixar <b>{consume.toLocaleString('pt-BR')}× {sheetLinkLabel(chapa)}</b>
+              {sheetColorId && <> — em estoque: <b className={available - consume < 0 ? 'text-rose-600' : 'text-emerald-600'}>{available.toLocaleString('pt-BR')}</b>{available - consume < 0 && <span className="text-rose-600"> (vai ficar negativo — confira o estoque)</span>}</>}
+            </p>
+          </div>
+        )}
+
         {principalItems.length > 0 && (
           <div className="mb-4">
-            <label className="form-label">Essa chapa é de qual cor?</label>
+            <label className="form-label">Os produtos saem de qual cor?</label>
             {loadingColors ? (
               <p className="text-xs text-slate-400 py-2">Carregando cores...</p>
             ) : principalItems.map(i => (
@@ -380,6 +446,7 @@ function ProductionHistory({ chapaId, fetchProductionHistory, refreshToken }) {
         <div key={h.id} className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-2.5 py-1.5">
           <Factory size={11} className="text-slate-400 shrink-0" />
           <span className="font-semibold text-slate-600">x{h.multiplier}</span>
+          {h.sheet_color?.name && <span className="text-amber-700">MDF {h.sheet_color.name}</span>}
           {h.notes && <span className="italic truncate">— {h.notes}</span>}
           <span className="ml-auto text-slate-400 shrink-0">{fmtDateTime(h.created_at)}{h.created_by_user?.name ? ` · ${h.created_by_user.name}` : ''}</span>
         </div>
@@ -389,7 +456,7 @@ function ProductionHistory({ chapaId, fetchProductionHistory, refreshToken }) {
 }
 
 // ─── Card de chapa ─────────────────────────────────────────────────
-function ChapaCard({ chapa, onEdit, onDelete, onLogProduction, fetchProductionHistory, fetchColorOptions }) {
+function ChapaCard({ chapa, onEdit, onDelete, onLogProduction, fetchProductionHistory, fetchColorOptions, sheets }) {
   const [open, setOpen] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
@@ -397,8 +464,8 @@ function ChapaCard({ chapa, onEdit, onDelete, onLogProduction, fetchProductionHi
   const items = chapa.items || []
   const totalPecas = items.reduce((a, i) => a + i.quantity, 0)
 
-  async function handleLog(chapaId, multiplier, notes, colorSelections) {
-    const result = await onLogProduction(chapaId, multiplier, notes, colorSelections)
+  async function handleLog(chapaId, multiplier, notes, colorSelections, sheetColorId) {
+    const result = await onLogProduction(chapaId, multiplier, notes, colorSelections, sheetColorId)
     setHistoryRefresh(r => r + 1)
     return result
   }
@@ -416,8 +483,13 @@ function ChapaCard({ chapa, onEdit, onDelete, onLogProduction, fetchProductionHi
               {chapa.notes && <span className="text-xs text-slate-400 italic truncate">{chapa.notes}</span>}
             </div>
             <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
-              <Hash size={11} /> {items.length} produto{items.length === 1 ? '' : 's'} · {totalPecas} peça{totalPecas === 1 ? '' : 's'} por chapa
+              <Hash size={11} /> {items.length} produto{items.length === 1 ? '' : 's'} · {totalPecas} peça{totalPecas === 1 ? '' : 's'} por corte
             </p>
+            {sheetLinkLabel(chapa) ? (
+              <p className="text-[11px] text-amber-700 font-semibold mt-0.5">Consome {Number(chapa.cuts_per_run || 1).toLocaleString('pt-BR')}× {sheetLinkLabel(chapa)}</p>
+            ) : (
+              <p className="text-[11px] text-slate-400 mt-0.5">Sem sub-chapa ligada — não baixa MDF</p>
+            )}
           </div>
         </button>
         <div className="flex items-center gap-1 shrink-0">
@@ -461,7 +533,7 @@ function ChapaCard({ chapa, onEdit, onDelete, onLogProduction, fetchProductionHi
         <ProductionHistory chapaId={chapa.id} fetchProductionHistory={fetchProductionHistory} refreshToken={historyRefresh} />
       )}
 
-      <ProductionLogModal open={logOpen} onClose={() => setLogOpen(false)} chapa={chapa} onLog={handleLog} fetchColorOptions={fetchColorOptions} />
+      <ProductionLogModal open={logOpen} onClose={() => setLogOpen(false)} chapa={chapa} onLog={handleLog} fetchColorOptions={fetchColorOptions} sheets={sheets} />
     </div>
   )
 }
@@ -470,6 +542,13 @@ function ChapaCard({ chapa, onEdit, onDelete, onLogProduction, fetchProductionHi
 export function ChapasPage() {
   const { chapas, loading, create, update, remove, logProduction, fetchProductionHistory, fetchColorOptions } = useChapas()
   const { products } = useProducts()
+  const sheets = useSheets()
+  // Depois de lançar produção o estoque de sub-chapas mudou — recarrega
+  async function logAndRefresh(...args) {
+    const result = await logProduction(...args)
+    sheets.refetch()
+    return result
+  }
   const [search,    setSearch]    = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing,   setEditing]   = useState(null)
@@ -510,13 +589,13 @@ export function ChapasPage() {
             <Layers size={22} strokeWidth={1.5} className="text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Chapas</h1>
-            <p className="text-sm text-slate-500">Cadastro do que cada chapa de corte rende — 1 produto só ou uma combinação de vários</p>
+            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Planos de corte</h1>
+            <p className="text-sm text-slate-500">O que cada plano de corte rende de produto e qual sub-chapa de MDF ele consome</p>
           </div>
         </div>
         <button onClick={openNew}
           className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-xl transition-colors shadow-sm">
-          <Plus size={15} /> Nova chapa
+          <Plus size={15} /> Novo plano de corte
         </button>
       </div>
 
@@ -524,7 +603,7 @@ export function ChapasPage() {
       {chapas.length > 0 && (
         <div className="relative mb-5 max-w-md">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="input pl-8" placeholder="Buscar chapa ou produto..."
+          <input className="input pl-8" placeholder="Buscar plano de corte ou produto..."
             value={search} onChange={e => setSearch(e.target.value)} />
         </div>
       )}
@@ -537,24 +616,24 @@ export function ChapasPage() {
       ) : chapas.length === 0 ? (
         <EmptyState
           icon={Layers}
-          title="Nenhuma chapa cadastrada ainda"
+          title="Nenhum plano de corte cadastrado ainda"
           description="Cadastre a primeira chapa — dê um nome e diga quais produtos (e quantas peças de cada) ela rende quando é cortada."
           action={
             <button onClick={openNew}
               className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-xl transition-colors shadow-sm">
-              <Plus size={15} /> Nova chapa
+              <Plus size={15} /> Novo plano de corte
             </button>
           }
         />
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
-          <p className="text-slate-400">Nenhuma chapa bate com a busca.</p>
+          <p className="text-slate-400">Nenhum plano de corte bate com a busca.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(chapa => (
             <ChapaCard key={chapa.id} chapa={chapa} onEdit={openEdit} onDelete={setDeleting}
-              onLogProduction={logProduction} fetchProductionHistory={fetchProductionHistory} fetchColorOptions={fetchColorOptions} />
+              onLogProduction={logAndRefresh} fetchProductionHistory={fetchProductionHistory} fetchColorOptions={fetchColorOptions} sheets={sheets} />
           ))}
         </div>
       )}
@@ -565,13 +644,14 @@ export function ChapasPage() {
         onSave={handleSave}
         products={products}
         editing={editing}
+        sheets={sheets}
       />
 
       <ConfirmDialog
         open={!!deleting}
         onClose={() => setDeleting(null)}
         onConfirm={confirmDelete}
-        title="Remover chapa"
+        title="Remover plano de corte"
         description={deleting ? `Tem certeza que quer remover "${deleting.name}"? Isso não apaga os produtos, só a receita da chapa.` : ''}
         confirmLabel="Remover"
         loading={deleteBusy}

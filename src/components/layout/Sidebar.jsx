@@ -69,7 +69,7 @@ const NAV_SECTIONS = [
       { to: '/kits',           moduleKey: 'produtos',     icon: Component,      label: 'Kits',               roles: ['admin','administrativo','producao','marketplace'] },
       { to: '/variacoes',      moduleKey: 'produtos',     icon: Layers,         label: 'Variações',         roles: ['admin','administrativo','marketplace'] },
       { to: '/producao',       moduleKey: 'producao',     icon: Factory,        label: 'Produção',          roles: ['admin','administrativo','producao'] },
-      { to: '/producao/chapas', moduleKey: 'producao',    icon: Layers,         label: 'Chapas',            roles: ['admin','administrativo','producao'] },
+      { to: '/producao/chapas', moduleKey: 'producao',    icon: Layers,         label: 'Planos de corte',   roles: ['admin','administrativo','producao'] },
       { to: '/producao/midia',  moduleKey: 'controle-midia', icon: Film,        label: 'Atualização de Mídia', roles: ['admin','administrativo','atendimento'] },
       { to: '/checklist',      moduleKey: 'checklist',    icon: ClipboardCheck, label: 'Checklist Diário',  roles: ['admin','administrativo','atendimento'] },
       { to: '/manuais',        moduleKey: 'manuais',      icon: BookOpen,       label: 'Manuais',           roles: ['admin','administrativo','producao'] },

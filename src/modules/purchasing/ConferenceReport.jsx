@@ -8,6 +8,7 @@ import { useConferenceReport } from './hooks/useConferenceReport'
 import { OCC_KIND, OCC_RESOLUTION, isOpenOccurrence, reopenOrder } from './occurrenceTracking'
 import { OccurrenceTrackingModal, FinalizeOrderModal, OccStatusBadge, OccKindBadge } from './OccurrenceTrackingModal'
 import { useSignedUrl } from '../../lib/signedUrlCache'
+import { itemName, itemUnit, damageLoss, cutName } from './orderItem'
 
 const PHOTO_BUCKET = 'purchase-attachments' // mesmo bucket usado na conferência (useMaterialConference)
 
@@ -51,7 +52,7 @@ function itemMetrics(it) {
   const good     = Math.max(0, received - damaged)
   const missing  = Math.max(0, ordered - received)
   const extra    = Math.max(0, received - ordered)
-  const loss     = damaged * (Number(it.unit_price) || 0)
+  const loss     = damageLoss(it)
   return { ordered, received, damaged, good, missing, extra, loss }
 }
 
@@ -205,7 +206,7 @@ function Lightbox({ photos, index, onClose, onNav }) {
 // Ocorrência (avaria, falta ou excesso) — o acompanhamento em si (linha do
 // tempo, solução) fica no OccurrenceTrackingModal.
 function OccurrenceBlock({ occ, item, photos, onOpenPhoto, onTrack }) {
-  const unit = item?.raw_material?.unit
+  const unit = itemUnit(item)
   const open = isOpenOccurrence(occ)
   const kind = OCC_KIND[occ.kind] || OCC_KIND.avaria
   const qty = occ.qty_affected ?? occ.qty_damaged
@@ -216,8 +217,8 @@ function OccurrenceBlock({ occ, item, photos, onOpenPhoto, onTrack }) {
         <div className="min-w-0 flex-1">
           <p className={`text-sm font-semibold flex items-center gap-1.5 flex-wrap ${open ? 'text-rose-700' : 'text-slate-600'}`}>
             <OccKindBadge kind={occ.kind} />
-            {item?.raw_material?.name || 'Item'}
-            {qty != null && <span className="font-normal">— {fmtQty(qty, unit)} {kind.verb}</span>}
+            {itemName(item)}{occ.sheet_cut_id && <span className="font-normal"> · {cutName(item, occ.sheet_cut_id)}</span>}
+            {qty != null && <span className="font-normal">— {fmtQty(qty, occ.sheet_cut_id ? 'sub-chapa(s)' : unit)} {kind.verb}</span>}
           </p>
           {occ.description && <p className="text-xs text-slate-500 mt-0.5">{occ.description}</p>}
           {occ.status === 'resolvido' ? (
@@ -295,7 +296,7 @@ function ConferenceCard({ order, photoIndex, onOpenPhoto, onTrack, onFinalize, o
             return (
               <div key={it.id} className="min-w-0">
                 <div className="flex items-baseline justify-between gap-2 text-[11px] mb-1">
-                  <span className="text-slate-600 font-medium truncate">{it.raw_material?.name}</span>
+                  <span className="text-slate-600 font-medium truncate">{itemName(it)}</span>
                   <span className={`shrink-0 ${m.damaged > 0 ? 'text-rose-600 font-semibold' : 'text-slate-400'}`}>
                     {fmtNum(m.received)}/{fmtNum(m.ordered)}{m.damaged > 0 ? ` · ${fmtNum(m.damaged)} avar.` : ''}
                   </span>
@@ -330,10 +331,10 @@ function ConferenceCard({ order, photoIndex, onOpenPhoto, onTrack, onFinalize, o
               <tbody>
                 {(order.items || []).map(it => {
                   const m = itemMetrics(it)
-                  const unit = it.raw_material?.unit
+                  const unit = itemUnit(it)
                   return (
                     <tr key={it.id} className="border-t border-slate-100">
-                      <td className="py-2 font-medium text-slate-700">{it.raw_material?.name}</td>
+                      <td className="py-2 font-medium text-slate-700">{itemName(it)}</td>
                       <td className="py-2 text-right text-slate-500">{fmtQty(m.ordered, unit)}</td>
                       <td className="py-2 text-right text-slate-700">{fmtQty(m.received, unit)}</td>
                       <td className={`py-2 text-right ${m.damaged > 0 ? 'text-rose-600 font-semibold' : 'text-slate-300'}`}>{m.damaged > 0 ? fmtQty(m.damaged, unit) : '—'}</td>
@@ -427,7 +428,7 @@ export function ConferenceReport() {
     return orders.filter(o => {
       if (period !== 'all' && new Date(o.conferred_at).getTime() < since) return false
       if (supplierId && o.supplier_id !== supplierId) return false
-      if (q && !(o.items || []).some(it => it.raw_material?.name?.toLowerCase().includes(q))
+      if (q && !(o.items || []).some(it => itemName(it).toLowerCase().includes(q))
             && !o.supplier?.name?.toLowerCase().includes(q)) return false
       const om = orderMetrics(o)
       if (filter === 'pendentes'   && o.status === 'finalizado') return false
@@ -456,8 +457,8 @@ export function ConferenceReport() {
     filtered.forEach(o => (o.items || []).forEach(it => {
       const m = itemMetrics(it)
       if (m.damaged <= 0) return
-      const key = it.raw_material_id
-      const cur = map.get(key) || { key, label: it.raw_material?.name || '—', unit: it.raw_material?.unit, value: 0, damaged: 0, loss: 0 }
+      const key = it.raw_material_id || `${it.sheet_format_id}:${it.sheet_thickness_id}:${it.sheet_color_id}`
+      const cur = map.get(key) || { key, label: itemName(it), unit: itemUnit(it), value: 0, damaged: 0, loss: 0 }
       cur.value += 1; cur.damaged += m.damaged; cur.loss += m.loss
       map.set(key, cur)
     }))
@@ -490,8 +491,8 @@ export function ConferenceReport() {
         occurrenceStatus: occ.status,
         description:  occ.description,
         qtyDamaged:   occ.qty_damaged,
-        materialName: item?.raw_material?.name || 'Item',
-        unit:         item?.raw_material?.unit,
+        materialName: itemName(item),
+        unit:         itemUnit(item),
         supplierName: o.supplier?.name || 'Sem fornecedor',
         conferredAt:  o.conferred_at,
       }))
