@@ -28,6 +28,7 @@ export function useMaterialConference() {
           raw_material:raw_materials(id, name, unit))
       `)
       .eq('status', 'pedido')
+      .order('expected_delivery', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: true })
 
     if (error) {

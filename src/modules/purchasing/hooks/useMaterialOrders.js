@@ -50,13 +50,13 @@ export function useMaterialOrders() {
   useEffect(() => { fetch() }, [fetch])
 
   // items: [{ raw_material_id, qty_ordered, unit_price }]
-  async function createOrder({ title, supplier_id, notes, items }) {
+  async function createOrder({ title, supplier_id, expected_delivery, notes, items }) {
     if (!items?.length) { toast.error('Adicione pelo menos 1 item.'); throw new Error('Sem itens') }
     const session = getSession()
 
     const { data: order, error } = await supabase
       .from('material_orders')
-      .insert({ title: title?.trim() || null, supplier_id: supplier_id || null, notes: notes || null, created_by: session.id || null })
+      .insert({ title: title?.trim() || null, supplier_id: supplier_id || null, expected_delivery: expected_delivery || null, notes: notes || null, created_by: session.id || null })
       .select('id').single()
     if (error) { toast.error('Erro ao criar pedido.'); throw error }
 
@@ -83,6 +83,14 @@ export function useMaterialOrders() {
     await fetch()
   }
 
+  // Previsão de entrega (fase75) — editável enquanto o pedido não chegou
+  async function setExpectedDelivery(orderId, date) {
+    const { error } = await supabase.from('material_orders').update({ expected_delivery: date || null, updated_at: new Date().toISOString() }).eq('id', orderId)
+    if (error) { toast.error('Erro ao salvar a previsão.'); throw error }
+    toast.success(date ? 'Previsão de entrega salva.' : 'Previsão removida.')
+    await fetch()
+  }
+
   async function cancelOrder(orderId) {
     const { error } = await supabase.from('material_orders').update({ status: 'cancelado', updated_at: new Date().toISOString() }).eq('id', orderId)
     if (error) { toast.error('Erro ao cancelar pedido.'); throw error }
@@ -91,5 +99,5 @@ export function useMaterialOrders() {
   }
 
   // Ocorrências: acompanhamento pelo OccurrenceTrackingModal (occurrenceTracking.js)
-  return { orders, loading, refetch: fetch, createOrder, linkBill, cancelOrder }
+  return { orders, loading, refetch: fetch, createOrder, linkBill, cancelOrder, setExpectedDelivery }
 }

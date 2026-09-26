@@ -10,6 +10,8 @@ import { useSuppliers } from '../financial/hooks/useSuppliers'
 import { BillFormModal } from '../financial/components/BillFormModal'
 import { useBills } from '../financial/hooks/useBills'
 import { ConferenceReport } from './ConferenceReport'
+import { DeliveryEditor, deliveryInfo } from './DeliveryDate'
+import { todayISO } from '../../lib/dateBR'
 import { OCC_KIND, OCC_RESOLUTION, isOpenOccurrence } from './occurrenceTracking'
 import { OccurrenceTrackingModal, FinalizeOrderModal, OccStatusBadge, OccKindBadge } from './OccurrenceTrackingModal'
 import toast from 'react-hot-toast'
@@ -94,6 +96,7 @@ function suggestedPrice(material, supplierId) {
 // 2) preenche quantidade/preço direto na lista dos selecionados ──────
 function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
   const [title, setTitle]           = useState('')
+  const [expected, setExpected]     = useState('') // previsão de entrega (YYYY-MM-DD)
   const [supplierId, setSupplierId] = useState('')
   const [notes, setNotes]           = useState('')
   const [items, setItems]           = useState([]) // [{raw_material_id, qty_ordered, unit_price}]
@@ -147,7 +150,7 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
   }
 
   function reset() {
-    setTitle(''); setSupplierId(''); setNotes(''); setItems([]); setSearch(''); setCategoryId(''); setOnlySupplier(false)
+    setTitle(''); setExpected(''); setSupplierId(''); setNotes(''); setItems([]); setSearch(''); setCategoryId(''); setOnlySupplier(false)
   }
 
   const missingQty = items.filter(it => !(Number(it.qty_ordered) > 0)).length
@@ -156,7 +159,7 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
     if (missingQty) { toast.error(`Falta a quantidade de ${missingQty} item(ns).`); return }
     setSaving(true)
     try {
-      await onSave({ title, supplier_id: supplierId || null, notes, items: items.map(it => ({ ...it, unit_price: it.unit_price || null })) })
+      await onSave({ title, expected_delivery: expected || null, supplier_id: supplierId || null, notes, items: items.map(it => ({ ...it, unit_price: it.unit_price || null })) })
       reset()
       onClose()
     } catch { /* toast já mostrado no hook */ }
@@ -179,7 +182,7 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
         </button>
       </>}>
       <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_170px] gap-4">
           <div>
             <label className="form-label">Nome do pedido</label>
             <input className="input" placeholder={supplierId ? `Ex: Chapas ${suppliers.find(s => s.id === supplierId)?.name || ''} — setembro` : 'Ex: Chapas Duratex — setembro'}
@@ -189,6 +192,11 @@ function NewOrderModal({ open, onClose, onSave, materials, suppliers }) {
           <div>
             <label className="form-label">Fornecedor (opcional)</label>
             <SupplierPicker suppliers={suppliers} value={supplierId} onChange={handleSupplierChange} />
+          </div>
+          <div>
+            <label className="form-label">Previsão de entrega</label>
+            <input type="date" className="input" value={expected} min={todayISO()} onChange={e => setExpected(e.target.value)} />
+            <p className="text-[11px] text-slate-400 mt-1">Opcional — dá pra definir depois.</p>
           </div>
         </div>
 
@@ -324,7 +332,7 @@ function OccurrenceRow({ occ, order, onTrack }) {
 }
 
 // ─── Card de pedido ──────────────────────────────────────────────────
-function OrderCard({ order, onRegisterBill, onCancel, onTrack, onFinalize }) {
+function OrderCard({ order, onRegisterBill, onCancel, onTrack, onFinalize, onSetDelivery }) {
   const [expanded, setExpanded] = useState(false)
   const occurrences = order.occurrences || []
   const openOccurrences = occurrences.filter(isOpenOccurrence)
@@ -340,6 +348,9 @@ function OrderCard({ order, onRegisterBill, onCancel, onTrack, onFinalize }) {
           <p className="text-xs text-slate-400">
             Pedido por {order.creator?.name || '—'} em {new Date(order.created_at).toLocaleDateString('pt-BR')}
           </p>
+          <div className="mt-1.5">
+            <DeliveryEditor order={order} onSave={onSetDelivery} />
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {openOccurrences.length > 0 && (
@@ -413,7 +424,7 @@ function OrderCard({ order, onRegisterBill, onCancel, onTrack, onFinalize }) {
 }
 
 export function MaterialOrdersPage() {
-  const { orders, loading, refetch, createOrder, linkBill, cancelOrder } = useMaterialOrders()
+  const { orders, loading, refetch, createOrder, linkBill, cancelOrder, setExpectedDelivery } = useMaterialOrders()
   const [tracking, setTracking]     = useState(null) // { occ, order }
   const [finalizing, setFinalizing] = useState(null)
   // Aba via URL (?aba=conferencias) — o antigo /relatorio-conferencias redireciona pra cá
@@ -425,6 +436,7 @@ export function MaterialOrdersPage() {
     if (t === 'pedidos') refetch()
   }
   const pendingCount = orders.filter(o => o.status === 'pedido').length
+  const lateCount = orders.filter(o => deliveryInfo(o.expected_delivery, o.status)?.late).length
   const { materials } = useMaterials()
   const { suppliers } = useSuppliers()
   const { create: createBill, addPayment: addBillPayment } = useBills()
@@ -485,6 +497,7 @@ export function MaterialOrdersPage() {
         <button onClick={() => changeTab('pedidos')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-1.5 transition ${tab === 'pedidos' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
           <Package size={15} /> Pedidos
           {pendingCount > 0 && <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">{pendingCount} aguardando</span>}
+          {lateCount > 0 && <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500 text-white">{lateCount} atrasado{lateCount > 1 ? 's' : ''}</span>}
         </button>
         <button onClick={() => changeTab('conferencias')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-1.5 transition ${tab === 'conferencias' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
           <ClipboardCheck size={15} /> Conferências
@@ -505,7 +518,8 @@ export function MaterialOrdersPage() {
           {orders.map(order => (
             <OrderCard key={order.id} order={order}
               onRegisterBill={setBillOrder} onCancel={cancelOrder}
-              onTrack={(occ, order) => setTracking({ occ, order })} onFinalize={setFinalizing} />
+              onTrack={(occ, order) => setTracking({ occ, order })} onFinalize={setFinalizing}
+              onSetDelivery={setExpectedDelivery} />
           ))}
         </div>
       )}

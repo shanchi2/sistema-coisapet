@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ArrowLeft, Minus, Plus, Check, Camera, X, ClipboardCheck, Loader2, AlertTriangle } from 'lucide-react'
 import { useMaterialConference } from './hooks/useMaterialConference'
 import toast from 'react-hot-toast'
+import { DeliveryBadge } from './DeliveryDate'
 
 function fmtQty(v, unit) {
   const n = Number(v)
@@ -212,8 +213,10 @@ export function MaterialConferencePage() {
             {orders.map(order => (
               <button key={order.id} onClick={() => setOpenOrder(order)}
                 className="w-full text-left bg-white border-2 border-slate-200 rounded-2xl p-4 hover:border-emerald-300 transition-colors">
-                <p className="text-lg font-bold text-slate-800">{order.supplier?.name || 'Sem fornecedor definido'}</p>
+                <p className="text-lg font-bold text-slate-800">{order.title || order.supplier?.name || 'Sem fornecedor definido'}</p>
+                {order.title && order.supplier?.name && <p className="text-sm text-slate-500">{order.supplier.name}</p>}
                 <p className="text-sm text-slate-400 mt-1">{order.items?.length || 0} item{order.items?.length !== 1 ? 's' : ''} — pedido em {new Date(order.created_at).toLocaleDateString('pt-BR')}</p>
+                <DeliveryBadge expected={order.expected_delivery} status={order.status} className="mt-2" />
               </button>
             ))}
           </div>
