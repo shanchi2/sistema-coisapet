@@ -72,6 +72,10 @@ export function ManualGeneratorTab() {
   const [results,   setResults]   = useState([])
   const [searching, setSearching] = useState(false)
   const [label,     setLabel]     = useState('Manual de Uso')
+  // Nome que aparece NO manual (topo, rodapé, título da página) — vem com o
+  // nome do produto, mas dá pra encurtar/limpar (28/09: tem produto com nome
+  // de anúncio, cheio de palavra-chave). O vínculo continua sendo o produto.
+  const [displayName, setDisplayName] = useState('')
   const [imageUrl,  setImageUrl]  = useState('')
   const [uploadingImg, setUploadingImg] = useState(false)
   const [rawText,   setRawText]   = useState('')
@@ -104,7 +108,7 @@ export function ManualGeneratorTab() {
     if (!rawText.trim()) { toast.error('Escreva o texto sobre o produto primeiro.'); return }
     setGenerating(true)
     try {
-      const data = await callManualAi(product.name, rawText)
+      const data = await callManualAi(displayName.trim() || product.name, rawText)
       setSections({ ...emptySections(), ...data, care: { ...emptySections().care, ...(data.care || {}) } })
       toast.success('Conteúdo gerado! Revise antes de salvar.')
     } catch (err) {
@@ -119,8 +123,8 @@ export function ManualGeneratorTab() {
 
   const finalHtml = useMemo(() => {
     if (!product) return ''
-    return buildManualHtml({ productName: product.name, imageUrl, sections: sections || {} })
-  }, [product, imageUrl, sections])
+    return buildManualHtml({ productName: displayName.trim() || product.name, imageUrl, sections: sections || {} })
+  }, [product, displayName, imageUrl, sections])
 
   function handleDownloadPdf() {
     const win = window.open('', '_blank')
@@ -141,7 +145,7 @@ export function ManualGeneratorTab() {
       const file = new File([finalHtml], 'manual-gerado.html', { type: 'text/html' })
       await addResource(product.id, { label: label.trim(), kind: 'file', file })
       setProduct(null); setQuery(''); setResults([])
-      setLabel('Manual de Uso'); setImageUrl(''); setRawText(''); setSections(null)
+      setLabel('Manual de Uso'); setDisplayName(''); setImageUrl(''); setRawText(''); setSections(null)
     } finally {
       setSaving(false)
     }
@@ -165,7 +169,7 @@ export function ManualGeneratorTab() {
             ) : (
               <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
                 {results.map(p => (
-                  <button key={p.id} onClick={() => setProduct(p)}
+                  <button key={p.id} onClick={() => { setProduct(p); setDisplayName(p.name) }}
                     className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 text-left">
                     <GenProductThumb photoUrl={p.photo_url} />
                     <div className="min-w-0">
@@ -192,9 +196,22 @@ export function ManualGeneratorTab() {
 
             <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
               <div>
-                <label className="text-xs font-semibold text-slate-500 block mb-1.5">2. Título do manual</label>
+                <label className="text-xs font-semibold text-slate-500 block mb-1.5">2. Nome do produto no manual</label>
+                <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={product.name}
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-[11px] text-slate-400">É o nome que aparece no topo e no rodapé do manual. Ex: "Comedouro Topolino".</p>
+                  {displayName !== product.name && (
+                    <button type="button" onClick={() => setDisplayName(product.name)} className="text-[11px] font-semibold text-slate-400 hover:text-slate-600 shrink-0 ml-2">usar nome do produto</button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-500 block mb-1.5">Título do link</label>
                 <input value={label} onChange={e => setLabel(e.target.value)}
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+                <p className="text-[11px] text-slate-400 mt-1">Como o manual aparece na lista de links/documentos do produto.</p>
               </div>
 
               <div>
