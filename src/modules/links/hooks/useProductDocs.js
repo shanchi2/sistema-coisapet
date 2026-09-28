@@ -83,6 +83,35 @@ export function useProductDocs() {
     }
   }
 
+  // Editar um recurso já salvo (28/09): título do link, URL (se for link) e,
+  // pra manual em arquivo, o HTML novo (ex: nome do produto trocado). O
+  // HTML vai pra um caminho NOVO no bucket (evita o cache do storage/CDN
+  // continuar servindo a versão antiga) e o arquivo antigo é apagado.
+  async function updateResource(resource, { label, url, html }) {
+    try {
+      const patch = { label: label.trim() }
+      if (resource.kind === 'link' && url != null) patch.url = url.trim()
+      let oldPath = null
+      if (html != null && resource.file_path) {
+        const path = `docs/${resource.product_id}/${Date.now()}-${Math.random().toString(36).slice(2)}.html`
+        const file = new File([html], 'manual.html', { type: 'text/html' })
+        const { error: upErr } = await supabase.storage.from('product-docs').upload(path, file, { contentType: 'text/html' })
+        if (upErr) throw upErr
+        patch.file_path = path
+        oldPath = resource.file_path
+      }
+      const { error } = await supabase.from('product_doc_resources').update(patch).eq('id', resource.id)
+      if (error) throw error
+      if (oldPath) await supabase.storage.from('product-docs').remove([oldPath])
+      toast.success('Manual atualizado!')
+      await load()
+    } catch (err) {
+      toast.error('Erro ao salvar: ' + err.message)
+      console.error(err)
+      throw err
+    }
+  }
+
   async function removeResource(id) {
     const resource = groups.flatMap(g => g.resources).find(r => r.id === id)
     if (!resource) return
@@ -98,5 +127,5 @@ export function useProductDocs() {
     }
   }
 
-  return { groups, loading, searchProducts, addResource, removeResource }
+  return { groups, loading, searchProducts, addResource, updateResource, removeResource }
 }

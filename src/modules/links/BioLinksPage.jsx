@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import {
   Link2, Plus, Pencil, Trash2, X, Check, GripVertical,
@@ -426,9 +426,127 @@ function DocResourceModal({ open, onClose, presetProduct, searchProducts, onSave
   )
 }
 
+// ── Editar manual já salvo (28/09) ─────────────────────────────
+// Manual gerado é um HTML pronto no bucket; o nome do produto está
+// "assado" nele (topo, título da página, alt da imagem, rodapé e às vezes
+// no texto). Aqui descobre o nome atual pelo <h1>, troca TODAS as
+// ocorrências e salva um arquivo novo — sem precisar gerar de novo.
+function escapeHtmlText(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+function EditDocModal({ resource, product, onSave, onClose }) {
+  const [label, setLabel]       = useState(resource.label || '')
+  const [url, setUrl]           = useState(resource.url || '')
+  const [html, setHtml]         = useState(null)   // HTML original
+  const [oldName, setOldName]   = useState('')
+  const [newName, setNewName]   = useState('')
+  const [loadingHtml, setLoadingHtml] = useState(false)
+  const [saving, setSaving]     = useState(false)
+  const isHtml = resource.kind === 'file' && /\.html?$/i.test(resource.file_path || '')
+
+  useEffect(() => {
+    if (!isHtml) return
+    setLoadingHtml(true)
+    supabase.storage.from('product-docs').download(resource.file_path).then(async ({ data, error }) => {
+      if (error || !data) { toast.error('Não consegui abrir o arquivo do manual.'); return }
+      const text = await data.text()
+      // Nome atual = texto do <h1> (decodifica &amp; etc. pelo próprio navegador)
+      const h1 = new DOMParser().parseFromString(text, 'text/html').querySelector('h1')?.textContent?.trim() || ''
+      setHtml(text); setOldName(h1); setNewName(h1)
+    }).finally(() => setLoadingHtml(false))
+  }, [resource.file_path, isHtml])
+
+  const occurrences = html && oldName ? html.split(escapeHtmlText(oldName)).length - 1 : 0
+  const newHtml = useMemo(() => {
+    if (!html || !oldName || !newName.trim() || newName.trim() === oldName) return html
+    return html.split(escapeHtmlText(oldName)).join(escapeHtmlText(newName.trim()))
+  }, [html, oldName, newName])
+  const nameChanged = isHtml && html && newName.trim() && newName.trim() !== oldName
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      await onSave(resource, { label, url: resource.kind === 'link' ? url : null, html: nameChanged ? newHtml : null })
+      onClose()
+    } catch { /* toast no hook */ }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={onClose}>
+      <div className={`bg-white rounded-2xl shadow-xl w-full ${isHtml ? 'max-w-5xl' : 'max-w-md'} max-h-[92vh] flex flex-col`} onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between p-5 border-b border-slate-100">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-slate-800">Editar {isHtml ? 'manual' : 'recurso'}</h2>
+            <p className="text-xs text-slate-400 truncate">{product.name}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+
+        <div className={`flex-1 overflow-y-auto p-5 grid gap-5 ${isHtml ? 'lg:grid-cols-[1fr_1.3fr]' : ''}`}>
+          <div className="space-y-4">
+            {isHtml && (
+              <div>
+                <label className="text-xs font-semibold text-slate-500 block mb-1.5">Nome do produto no manual</label>
+                {loadingHtml ? (
+                  <p className="text-xs text-slate-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Abrindo o manual...</p>
+                ) : oldName ? (
+                  <>
+                    <input value={newName} onChange={e => setNewName(e.target.value)}
+                      className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" autoFocus />
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Hoje: <span className="text-slate-600">{oldName}</span> — aparece {occurrences}× no manual (topo, título, rodapé{occurrences > 4 ? ' e no texto' : ''}). Todas serão trocadas.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-amber-600">Esse arquivo não tem o formato do gerador — só dá pra editar o título do link.</p>
+                )}
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-semibold text-slate-500 block mb-1.5">Título do link</label>
+              <input value={label} onChange={e => setLabel(e.target.value)}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+              <p className="text-[11px] text-slate-400 mt-1">Como aparece na lista de documentos do produto (ex: "Manual de Uso").</p>
+            </div>
+            {resource.kind === 'link' && (
+              <div>
+                <label className="text-xs font-semibold text-slate-500 block mb-1.5">URL</label>
+                <input value={url} onChange={e => setUrl(e.target.value)}
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+              </div>
+            )}
+          </div>
+
+          {isHtml && (
+            <div className="bg-slate-100 border border-slate-200 rounded-xl p-2">
+              <p className="text-[11px] font-semibold text-slate-500 mb-1.5 px-1">Pré-visualização {nameChanged ? '(com o nome novo)' : ''}</p>
+              <div className="bg-white rounded-lg overflow-hidden border border-slate-200" style={{ height: 520 }}>
+                {newHtml
+                  ? <iframe title="Pré-visualização" srcDoc={newHtml} className="w-full h-full" style={{ border: 'none' }} />
+                  : <div className="h-full flex items-center justify-center"><Loader2 size={18} className="animate-spin text-slate-300" /></div>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-slate-100 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">Cancelar</button>
+          <button onClick={handleSave} disabled={saving || !label.trim() || loadingHtml}
+            className="px-4 py-2 text-sm font-medium text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-lg flex items-center gap-2">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Aba Manuais ─────────────────────────────────────────────────
 function ProductDocsTab() {
-  const { groups, loading, searchProducts, addResource, removeResource } = useProductDocs()
+  const { groups, loading, searchProducts, addResource, updateResource, removeResource } = useProductDocs()
+  const [editingDoc, setEditingDoc] = useState(null) // { resource, product }
   const [modalOpen, setModalOpen] = useState(false)
   const [presetProduct, setPresetProduct] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -490,6 +608,10 @@ function ProductDocsTab() {
                     {r.kind === 'link' ? <Link2 size={14} className="text-sky-500 shrink-0" /> : <FileText size={14} className="text-violet-500 shrink-0" />}
                     <span className="flex-1 text-sm font-medium text-slate-700 truncate">{r.label}</span>
                     <span className="text-[10px] font-semibold text-slate-400 uppercase shrink-0">{r.kind === 'link' ? 'Link' : 'Arquivo'}</span>
+                    <button onClick={() => setEditingDoc({ resource: r, product: g.product })} title="Editar"
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors shrink-0">
+                      <Pencil size={13} strokeWidth={1.5} />
+                    </button>
                     <button onClick={() => removeResource(r.id)}
                       className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors shrink-0">
                       <Trash2 size={13} strokeWidth={1.5} />
@@ -500,6 +622,11 @@ function ProductDocsTab() {
             </div>
           ))}
         </div>
+      )}
+
+      {editingDoc && (
+        <EditDocModal resource={editingDoc.resource} product={editingDoc.product}
+          onSave={updateResource} onClose={() => setEditingDoc(null)} />
       )}
 
       {modalOpen && (
