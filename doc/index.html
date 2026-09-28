@@ -145,7 +145,7 @@ async function load() {
   }
 
   const { data: product } = await db
-    .from('products').select('id,name,photo_url,slug')
+    .from('products').select('id,name,doc_title,photo_url,slug')
     .eq('slug', slug).eq('active', true).maybeSingle()
 
   if (!product) {
@@ -154,11 +154,13 @@ async function load() {
     return
   }
 
-  document.getElementById('page-title').textContent = `${product.name} — Manuais | CoisaPet`
+  // doc_title = nome curto só pros manuais (vazio = nome do cadastro)
+  const displayName = (product.doc_title || '').trim() || product.name
+  document.getElementById('page-title').textContent = `${displayName} — Manuais | CoisaPet`
   const photo = publicUrl('product-photos', product.photo_url)
   header.innerHTML = `
-    ${photo ? `<img src="${photo}" alt="${product.name}" class="avatar"/>` : ''}
-    <div class="brand">${product.name}</div>
+    ${photo ? `<img src="${photo}" alt="${displayName}" class="avatar"/>` : ''}
+    <div class="brand">${displayName}</div>
     <div class="tagline">Manuais, instruções e vídeos</div>
   `
 

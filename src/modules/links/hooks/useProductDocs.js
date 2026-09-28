@@ -14,7 +14,7 @@ export function useProductDocs() {
     setLoading(true)
     const { data, error } = await supabase
       .from('product_doc_resources')
-      .select('id, label, kind, url, file_path, sort_order, product_id, product:products(id, name, sku, slug, photo_url)')
+      .select('id, label, kind, url, file_path, sort_order, product_id, product:products(id, name, doc_title, sku, slug, photo_url)')
       .order('sort_order')
 
     if (error) {
@@ -40,7 +40,7 @@ export function useProductDocs() {
     if (!query.trim()) return []
     const { data } = await supabase
       .from('products')
-      .select('id, name, sku, slug, photo_url')
+      .select('id, name, doc_title, sku, slug, photo_url')
       .eq('active', true)
       .ilike('name', `%${query}%`)
       .order('name')
@@ -112,6 +112,14 @@ export function useProductDocs() {
     }
   }
 
+  // Nome do produto nas páginas de manuais (fase80) — vazio = nome do cadastro
+  async function setDocTitle(productId, title) {
+    const { error } = await supabase.from('products').update({ doc_title: title?.trim() || null }).eq('id', productId)
+    if (error) { toast.error('Erro ao salvar o nome: ' + error.message); throw error }
+    toast.success('Nome dos manuais atualizado!')
+    await load()
+  }
+
   async function removeResource(id) {
     const resource = groups.flatMap(g => g.resources).find(r => r.id === id)
     if (!resource) return
@@ -127,5 +135,5 @@ export function useProductDocs() {
     }
   }
 
-  return { groups, loading, searchProducts, addResource, updateResource, removeResource }
+  return { groups, loading, searchProducts, addResource, updateResource, removeResource, setDocTitle }
 }

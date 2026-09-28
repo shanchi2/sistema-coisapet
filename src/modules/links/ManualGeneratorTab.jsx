@@ -66,7 +66,7 @@ function PairListEditor({ items, onChange, labelA, labelB, placeholderA, placeho
 function linesToArr(text) { return text.split('\n').map(l => l.trim()).filter(Boolean) }
 
 export function ManualGeneratorTab() {
-  const { searchProducts, addResource } = useProductDocs()
+  const { searchProducts, addResource, setDocTitle } = useProductDocs()
   const [product,   setProduct]   = useState(null)
   const [query,     setQuery]     = useState('')
   const [results,   setResults]   = useState([])
@@ -144,6 +144,10 @@ export function ManualGeneratorTab() {
     try {
       const file = new File([finalHtml], 'manual-gerado.html', { type: 'text/html' })
       await addResource(product.id, { label: label.trim(), kind: 'file', file })
+      // Nome digitado diferente do cadastro → vira o nome do produto nas
+      // páginas de manuais também (fase80), pra ficar tudo igual
+      const dn = displayName.trim()
+      if (dn && dn !== product.name && dn !== (product.doc_title || '').trim()) await setDocTitle(product.id, dn).catch(() => {})
       setProduct(null); setQuery(''); setResults([])
       setLabel('Manual de Uso'); setDisplayName(''); setImageUrl(''); setRawText(''); setSections(null)
     } finally {
@@ -169,7 +173,7 @@ export function ManualGeneratorTab() {
             ) : (
               <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
                 {results.map(p => (
-                  <button key={p.id} onClick={() => { setProduct(p); setDisplayName(p.name) }}
+                  <button key={p.id} onClick={() => { setProduct(p); setDisplayName(p.doc_title?.trim() || p.name) }}
                     className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 text-left">
                     <GenProductThumb photoUrl={p.photo_url} />
                     <div className="min-w-0">
@@ -200,7 +204,7 @@ export function ManualGeneratorTab() {
                 <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={product.name}
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
                 <div className="flex items-center justify-between mt-1">
-                  <p className="text-[11px] text-slate-400">É o nome que aparece no topo e no rodapé do manual. Ex: "Comedouro Topolino".</p>
+                  <p className="text-[11px] text-slate-400">Aparece no topo e no rodapé do manual e na página de manuais do produto. Ex: "Comedouro Topolino".</p>
                   {displayName !== product.name && (
                     <button type="button" onClick={() => setDisplayName(product.name)} className="text-[11px] font-semibold text-slate-400 hover:text-slate-600 shrink-0 ml-2">usar nome do produto</button>
                   )}

@@ -545,8 +545,9 @@ function EditDocModal({ resource, product, onSave, onClose }) {
 
 // ── Aba Manuais ─────────────────────────────────────────────────
 function ProductDocsTab() {
-  const { groups, loading, searchProducts, addResource, updateResource, removeResource } = useProductDocs()
+  const { groups, loading, searchProducts, addResource, updateResource, removeResource, setDocTitle } = useProductDocs()
   const [editingDoc, setEditingDoc] = useState(null) // { resource, product }
+  const [titleEdit, setTitleEdit]   = useState(null) // { id, value } — nome do produto nos manuais
   const [modalOpen, setModalOpen] = useState(false)
   const [presetProduct, setPresetProduct] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -590,7 +591,23 @@ function ProductDocsTab() {
               <div className="flex items-center gap-3 px-4 py-3 bg-slate-50/60 border-b border-slate-100">
                 <DocProductThumb photoUrl={g.product.photo_url} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-800 truncate">{g.product.name}</p>
+                  {titleEdit?.id === g.product.id ? (
+                    <div className="flex items-center gap-1.5">
+                      <input value={titleEdit.value} onChange={e => setTitleEdit({ ...titleEdit, value: e.target.value })} autoFocus
+                        placeholder={g.product.name}
+                        onKeyDown={e => { if (e.key === 'Enter') setDocTitle(g.product.id, titleEdit.value).then(() => setTitleEdit(null)).catch(() => {}); if (e.key === 'Escape') setTitleEdit(null) }}
+                        className="flex-1 min-w-0 text-sm font-semibold border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:border-slate-500" />
+                      <button onClick={() => setDocTitle(g.product.id, titleEdit.value).then(() => setTitleEdit(null)).catch(() => {})} className="p-1 rounded-lg text-emerald-600 hover:bg-emerald-50"><Check size={14} /></button>
+                      <button onClick={() => setTitleEdit(null)} className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"><X size={14} /></button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 truncate" title={g.product.name}>{g.product.doc_title?.trim() || g.product.name}</p>
+                      <button onClick={() => setTitleEdit({ id: g.product.id, value: g.product.doc_title || g.product.name })} title="Editar o nome que aparece nas páginas de manuais"
+                        className="p-1 rounded-md text-slate-300 hover:text-slate-600 hover:bg-slate-100 shrink-0"><Pencil size={12} /></button>
+                    </div>
+                  )}
+                  {g.product.doc_title?.trim() && titleEdit?.id !== g.product.id && <p className="text-[10px] text-slate-400 truncate">Cadastro: {g.product.name}</p>}
                   <p className="text-[11px] text-slate-400 font-mono truncate">{DOC_SITE_BASE}/{g.product.slug}</p>
                 </div>
                 <a href={`${DOC_SITE_BASE}/${g.product.slug}`} target="_blank" rel="noopener noreferrer"

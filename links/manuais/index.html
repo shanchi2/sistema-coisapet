@@ -178,7 +178,7 @@ function render(list) {
 async function load() {
   const { data, error } = await db
     .from('product_doc_resources')
-    .select('product_id, product:products(id,name,slug,photo_url)')
+    .select('product_id, product:products(id,name,doc_title,slug,photo_url)')
 
   const container = document.getElementById('list-container')
   if (error || !data) {
@@ -189,7 +189,8 @@ async function load() {
   const map = new Map()
   data.forEach(row => {
     if (!row.product) return
-    if (!map.has(row.product_id)) map.set(row.product_id, { ...row.product, count: 0 })
+    // doc_title = nome curto só pros manuais (vazio = nome do cadastro)
+    if (!map.has(row.product_id)) map.set(row.product_id, { ...row.product, name: (row.product.doc_title || '').trim() || row.product.name, fullName: row.product.name, count: 0 })
     map.get(row.product_id).count++
   })
   products = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name))
@@ -199,7 +200,7 @@ async function load() {
 
 document.getElementById('search-input').addEventListener('input', e => {
   const q = e.target.value.trim().toLowerCase()
-  render(q ? products.filter(p => p.name.toLowerCase().includes(q)) : products)
+  render(q ? products.filter(p => p.name.toLowerCase().includes(q) || p.fullName.toLowerCase().includes(q)) : products)
 })
 
 load()
