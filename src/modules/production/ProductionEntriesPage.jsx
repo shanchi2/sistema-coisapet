@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
-import { ClipboardList, ChevronDown, ChevronRight, Search, Calendar, User, Package, RefreshCw } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { ClipboardList, ChevronDown, ChevronRight, Search, Calendar, User, Package, RefreshCw, BarChart3, LayoutList } from 'lucide-react'
+import { HoristasReport } from './HoristasReport'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -13,7 +15,7 @@ function fmtDate(dateStr) {
   return `${dow.charAt(0).toUpperCase() + dow.slice(1)}, ${d} de ${MESES[m-1]} de ${y}`
 }
 
-export function ProductionEntriesPage() {
+function EntriesList() {
   const [entries,    setEntries]    = useState([])
   const [loading,    setLoading]    = useState(true)
   const [search,     setSearch]     = useState('')
@@ -106,26 +108,11 @@ export function ProductionEntriesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center shrink-0">
-              <ClipboardList size={20} strokeWidth={1.5} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold text-slate-800">Produção dos Horistas</h1>
-              <p className="text-sm text-slate-500">Lançamentos diários por funcionário</p>
-            </div>
-          </div>
-          <button
-            onClick={load}
-            className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 transition-colors"
-          >
-            <RefreshCw size={14} strokeWidth={1.5} className={loading ? 'animate-spin' : ''} />
-            Atualizar
+    <div>
+      <div className="max-w-4xl space-y-6">
+        <div className="flex justify-end -mb-3">
+          <button onClick={load} className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 transition-colors">
+            <RefreshCw size={14} strokeWidth={1.5} className={loading ? 'animate-spin' : ''} /> Atualizar
           </button>
         </div>
 
@@ -299,6 +286,41 @@ export function ProductionEntriesPage() {
             })}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// Página (30/09): Relatório (semanal/mensal/período, por funcionário e
+// total, com horas do ponto e peças/hora) + a lista de lançamentos de antes.
+export function ProductionEntriesPage() {
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('aba') === 'lancamentos' ? 'lancamentos' : 'relatorio'
+  const tabBtn = (key, Icon, label) => (
+    <button onClick={() => setParams(key === 'lancamentos' ? { aba: 'lancamentos' } : {}, { replace: true })}
+      className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg ${tab === key ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
+      <Icon size={15} /> {label}
+    </button>
+  )
+  return (
+    <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
+      <div className="max-w-[1400px] mx-auto space-y-5">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-sm bg-gradient-to-br from-violet-500 to-violet-700">
+              <ClipboardList size={20} strokeWidth={1.5} className="text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Produção dos Horistas</h1>
+              <p className="text-sm text-slate-500">Relatório semanal e mensal, por funcionário e no total — com horas do ponto e peças por hora</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl p-1 w-fit">
+          {tabBtn('relatorio', BarChart3, 'Relatório')}
+          {tabBtn('lancamentos', LayoutList, 'Lançamentos')}
+        </div>
+        {tab === 'relatorio' ? <HoristasReport /> : <EntriesList />}
       </div>
     </div>
   )
