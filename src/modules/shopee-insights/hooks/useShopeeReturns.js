@@ -81,8 +81,29 @@ export function useShopeeReturns() {
     await load()
   }
 
+  // A resposta vem em `dispute_reason_list` (cada motivo com id, exigência
+  // e módulos de prova obrigatórios) — o formato antigo `dispute_reason`
+  // (reason_id/reason_text) não vem mais, e a tela achava que não dava pra
+  // disputar (30/09). O motivo 81 "live test" é lixo de teste da Shopee.
   async function getDisputeReasons(returnSn) {
-    return (await callShopeeInsights({ action: 'return_dispute_reasons', return_sn: returnSn })).dispute_reason || []
+    const data = await callShopeeInsights({ action: 'return_dispute_reasons', return_sn: returnSn })
+    const list = data.dispute_reason_list || []
+    if (list.length) {
+      return list
+        .filter(r => !/live test/i.test(r.dispute_requirement || ''))
+        .map(r => ({
+          reason_id: r.dispute_reason,
+          requirement: r.dispute_requirement || '',
+          modules: r.evidence_module_list || [],
+          samples: r.sample_evidence || [],
+        }))
+    }
+    return (data.dispute_reason || []).map(r => ({ reason_id: r.reason_id, reason_text: r.reason_text, requirement: '', modules: [], samples: [] }))
+  }
+
+  // Fotos de prova → URLs da Shopee (base64 enviadas + URLs das fotos do comprador)
+  async function convertProofImages({ base64 = [], urls = [] }) {
+    return (await callShopeeInsights({ action: 'return_convert_images', images: base64, image_urls: urls })).urls || []
   }
 
   async function confirmReturn(returnSn) {
@@ -102,6 +123,6 @@ export function useShopeeReturns() {
 
   return {
     rows, loading, error, syncing, syncError, lastSync,
-    reload: load, sync, refreshOne, getDisputeReasons, confirmReturn, disputeReturn,
+    reload: load, sync, refreshOne, getDisputeReasons, convertProofImages, confirmReturn, disputeReturn,
   }
 }

@@ -933,6 +933,52 @@ async function returnDetail(integration: any, returnSn: string, db?: ReturnType<
   return d
 }
 
+// Provas da disputa (30/09): foto em base64 → URL da Shopee (v2.returns.
+// convert_image). Tenta JSON ({images:[{image}]}) e, se a API recusar,
+// multipart — o formato não está confirmado na doc pública.
+async function returnConvertImages(integration: any, imagesBase64: string[], imageUrls: string[] = []) {
+  // Fotos que o próprio comprador mandou (URL da Shopee) também valem como
+  // prova — baixa aqui e converte igual às enviadas pelo vendedor.
+  for (const u of imageUrls) {
+    try {
+      const r = await fetch(u)
+      if (!r.ok) continue
+      const buf = new Uint8Array(await r.arrayBuffer())
+      let bin = ''
+      for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i])
+      imagesBase64 = [...imagesBase64, btoa(bin)]
+    } catch { /* ignora a que falhar */ }
+  }
+  const urls: string[] = []
+  for (const b64 of imagesBase64) {
+    let url: string | null = null
+    try {
+      const res = await shopeeWrite('/api/v2/returns/convert_image', integration, { images: [{ image: b64 }] })
+      url = res?.response?.images?.[0]?.url || res?.response?.image_url || res?.response?.url || null
+      if (!url) throw new Error('sem url: ' + JSON.stringify(res).slice(0, 300))
+    } catch (jsonErr) {
+      // Fallback multipart (mesma assinatura de loja do upload_image)
+      const timestamp = Math.floor(Date.now() / 1000)
+      const partnerId = Deno.env.get('SHOPEE_PARTNER_ID')!
+      const path = '/api/v2/returns/convert_image'
+      const enc = new TextEncoder()
+      const key = await crypto.subtle.importKey('raw', enc.encode(Deno.env.get('SHOPEE_PARTNER_KEY')!), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+      const sig = await crypto.subtle.sign('HMAC', key, enc.encode(`${partnerId}${path}${timestamp}${integration.access_token}${integration.shop_id}`))
+      const sign = [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join('')
+      const params = new URLSearchParams({ partner_id: partnerId, timestamp: String(timestamp), sign, shop_id: integration.shop_id, access_token: integration.access_token })
+      const form = new FormData()
+      form.append('upload_image', new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: 'image/jpeg' }), 'prova.jpg')
+      const base = Deno.env.get('SHOPEE_API_BASE') || 'https://openplatform.sandbox.test-stable.shopee.sg'
+      const res = await fetch(`${base}${path}?${params}`, { method: 'POST', body: form })
+      const data = await res.json()
+      url = data?.response?.images?.[0]?.url || data?.response?.image_url || data?.response?.url || null
+      if (!url) throw new Error(`Não consegui enviar a foto pra Shopee. JSON: ${String(jsonErr).slice(0, 200)} | multipart: ${JSON.stringify(data).slice(0, 300)}`)
+    }
+    urls.push(url)
+  }
+  return { urls }
+}
+
 async function returnDisputeReasons(integration: any, returnSn: string) {
   const res = await shopeeFetch('/api/v2/returns/get_return_dispute_reason', integration, { return_sn: returnSn })
   return res?.response ?? res
@@ -1115,6 +1161,9 @@ serve(async (req) => {
       case 'return_detail':
         if (!body.return_sn) return json({ error: 'return_sn obrigatório' }, 400)
         return json(await returnDetail(integration, String(body.return_sn), db))
+      case 'return_convert_images':
+        if (!(body.images?.length || body.image_urls?.length)) return json({ error: 'images ou image_urls obrigatório' }, 400)
+        return json(await returnConvertImages(integration, (body.images || []).map(String), (body.image_urls || []).map(String)))
       case 'return_dispute_reasons':
         if (!body.return_sn) return json({ error: 'return_sn obrigatório' }, 400)
         return json(await returnDisputeReasons(integration, String(body.return_sn)))

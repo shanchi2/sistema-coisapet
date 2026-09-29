@@ -164,51 +164,164 @@ function Field({ label, children }) {
 }
 
 // ── Modais de ação (gravam direto na Shopee — confirmação explícita) ────
-function DisputeModal({ open, onClose, ret, reasons, disputeReturn, onDone }) {
+// A API manda os motivos só por código + exigência de prova (sem nome) —
+// nomes aqui a partir da exigência de cada um (30/09).
+const DISPUTE_REASON_LABELS = {
+  82: 'Produto devolvido danificado / com problema',
+  83: 'Devolução veio vazia ou com itens faltando',
+  84: 'Produto devolvido diferente do anunciado',
+  86: 'Outro motivo',
+  89: 'Produto devolvido com sinais de uso',
+}
+function reasonLabel(r) {
+  return r.reason_text || DISPUTE_REASON_LABELS[r.reason_id] || r.modules?.[0]?.requirement || `Motivo ${r.reason_id}`
+}
+
+// Reduz a foto no navegador (máx 1600px, JPEG) antes de mandar
+async function fileToJpegBase64(file) {
+  const bmp = await createImageBitmap(file)
+  const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height))
+  const c = document.createElement('canvas')
+  c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale)
+  const ctx = c.getContext('2d')
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height)
+  ctx.drawImage(bmp, 0, 0, c.width, c.height)
+  return c.toDataURL('image/jpeg', 0.88).split(',')[1]
+}
+
+// Mesmo fluxo do "Dispute to Shopee" do Seller Center: motivo → descrição
+// (até 256) → provas (fotos suas e/ou as fotos que o comprador mandou) →
+// confirmação. Fotos viram URL da Shopee (convert_image) e vão na disputa.
+function DisputeModal({ open, onClose, ret, reasons, disputeReturn, convertProofImages, onDone }) {
   const [reasonId, setReasonId] = useState('')
-  const [text, setText] = useState('')
-  const [email, setEmail] = useState('raphael@coisapet.com.br')
-  const [saving, setSaving] = useState(false)
-  useEffect(() => { if (open) { setReasonId(''); setText(''); setSaving(false) } }, [open])
+  const [text, setText]         = useState('')
+  const [email, setEmail]       = useState('raphael@coisapet.com.br')
+  const [files, setFiles]       = useState([])       // [{ file, preview }]
+  const [buyerPicks, setBuyerPicks] = useState(new Set())
+  const [confirming, setConfirming] = useState(false)
+  const [saving, setSaving]     = useState('')       // '' | 'fotos' | 'disputa'
+  useEffect(() => {
+    if (!open) return
+    setReasonId(''); setText(''); setFiles([]); setBuyerPicks(new Set()); setConfirming(false); setSaving('')
+  }, [open])
+
+  const reason = reasons.find(r => String(r.reason_id) === String(reasonId))
+  const needsProof = (reason?.modules || []).some(m => m.is_required)
+  const proofCount = files.length + buyerPicks.size
+  const buyerPhotos = ret?.buyer_images || []
+
+  function addFiles(list) {
+    const next = Array.from(list || []).filter(f => f.type.startsWith('image/')).map(file => ({ file, preview: URL.createObjectURL(file) }))
+    setFiles(prev => [...prev, ...next].slice(0, 9))
+  }
+  function toggleBuyer(url) {
+    setBuyerPicks(prev => { const n = new Set(prev); n.has(url) ? n.delete(url) : n.add(url); return n })
+  }
+
+  function validate() {
+    if (!reasonId) { toast.error('Escolha o motivo.'); return false }
+    if (needsProof && proofCount === 0) { toast.error('Esse motivo exige prova — anexe pelo menos 1 foto.'); return false }
+    if (!email.trim()) { toast.error('Informe um e-mail de contato.'); return false }
+    return true
+  }
 
   async function handleSubmit() {
-    if (!reasonId) { toast.error('Escolha um motivo.'); return }
-    if (!email.trim()) { toast.error('Informe um e-mail de contato.'); return }
-    setSaving(true)
     try {
-      await disputeReturn(ret.return_sn, { email: email.trim(), disputeReason: reasonId, disputeText: text.trim() })
+      let images = []
+      if (proofCount) {
+        setSaving('fotos')
+        const base64 = await Promise.all(files.map(f => fileToJpegBase64(f.file)))
+        images = await convertProofImages({ base64, urls: [...buyerPicks] })
+        if (!images.length) throw new Error('Não consegui enviar as fotos de prova pra Shopee.')
+      }
+      setSaving('disputa')
+      await disputeReturn(ret.return_sn, { email: email.trim(), disputeReason: Number(reasonId), disputeText: text.trim(), images })
       toast.success('Disputa aberta na Shopee!')
       onDone()
-    } catch (err) { toast.error('Erro ao abrir disputa: ' + err.message) }
-    finally { setSaving(false) }
+    } catch (err) {
+      toast.error('Erro ao abrir disputa: ' + err.message, { duration: 10000 })
+      setConfirming(false)
+    } finally { setSaving('') }
   }
+
   return (
-    <Modal open={open} onClose={onClose} size="md" title="Abrir disputa" subtitle={ret ? `Pedido ${ret.order_sn} — solicitação ${ret.return_sn}` : ''}
-      footer={<>
-        <button onClick={onClose} className="btn-secondary" disabled={saving}>Cancelar</button>
-        <button onClick={handleSubmit} className="btn-primary" disabled={saving}>
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <ShieldAlert size={14} />} {saving ? 'Enviando...' : 'Confirmar disputa'}
+    <Modal open={open} onClose={() => !saving && onClose()} size="lg" title="Disputar com a Shopee" subtitle={ret ? `Pedido ${ret.order_sn} — solicitação ${ret.return_sn}` : ''}
+      footer={confirming ? <>
+        <span className="mr-auto text-sm font-semibold text-rose-700">Confirma a disputa na Shopee? A mediação deles decide o resultado.</span>
+        <button onClick={() => setConfirming(false)} className="btn-secondary" disabled={!!saving}>Voltar</button>
+        <button onClick={handleSubmit} className="btn-primary bg-rose-600 hover:bg-rose-700" disabled={!!saving}>
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <ShieldAlert size={14} />}
+          {saving === 'fotos' ? 'Enviando fotos...' : saving === 'disputa' ? 'Abrindo disputa...' : 'Sim, abrir disputa'}
         </button>
+      </> : <>
+        <button onClick={onClose} className="btn-secondary">Cancelar</button>
+        <button onClick={() => validate() && setConfirming(true)} className="btn-primary"><ShieldAlert size={14} /> Continuar</button>
       </>}>
-      <div className="space-y-3">
-        <p className="flex items-start gap-1.5 text-[11px] text-orange-700 bg-orange-50 rounded-lg px-2.5 py-2">
-          <AlertTriangle size={13} className="shrink-0 mt-0.5" /> Isso grava direto na Shopee — a mediação deles decide o resultado. Fotos de prova (produto avariado, embalagem) ajudam: anexe pelo Seller Center logo depois.
-        </p>
+      <div className="space-y-4">
         <div>
-          <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Motivo da disputa</label>
-          <select value={reasonId} onChange={e => setReasonId(e.target.value)} className="input">
-            <option value="">Selecione...</option>
-            {reasons.map(r => <option key={r.reason_id} value={r.reason_id}>{r.reason_text}</option>)}
+          <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Motivo *</label>
+          <select value={reasonId} onChange={e => setReasonId(e.target.value)} className="input" disabled={confirming}>
+            <option value="">Selecione o motivo...</option>
+            {reasons.map(r => <option key={r.reason_id} value={r.reason_id}>{reasonLabel(r)}</option>)}
           </select>
+          {reason && (
+            <div className="mt-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 space-y-1">
+              {(reason.modules || []).map((m, i) => (
+                <p key={i} className="font-semibold text-slate-700">{m.is_required ? '📎 Obrigatório: ' : '📎 '}{m.requirement}</p>
+              ))}
+              {reason.requirement && <p className="whitespace-pre-line text-slate-500">{reason.requirement}</p>}
+              {reason.samples?.length > 0 && (
+                <div className="flex gap-1.5 pt-1">{reason.samples.map((s, i) => <a key={i} href={s.url} target="_blank" rel="noreferrer"><img src={s.thumbnail || s.url} alt="" className="w-12 h-12 rounded object-cover border" title="Exemplo de prova" /></a>)}</div>
+              )}
+            </div>
+          )}
         </div>
+
         <div>
-          <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Justificativa</label>
-          <textarea value={text} onChange={e => setText(e.target.value)} rows={4} className="input text-sm"
-            placeholder="Ex: Recebemos o produto com cantos quebrados e caixa amassada — dano de transporte." />
+          <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Descrição</label>
+          <textarea value={text} onChange={e => setText(e.target.value.slice(0, 256))} rows={3} className="input text-sm" disabled={confirming}
+            placeholder="Ex: O produto voltou com 2 grades amassadas e a caixa rasgada — não estava assim quando enviamos." />
+          <p className="text-[11px] text-slate-400 text-right">{text.length}/256</p>
         </div>
+
+        <div>
+          <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Provas (fotos) {needsProof && <span className="text-rose-600 normal-case">— obrigatório pra esse motivo</span>}</label>
+          <div className="flex gap-2 flex-wrap">
+            {files.map((f, i) => (
+              <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border-2 border-orange-400">
+                <img src={f.preview} alt="" className="w-full h-full object-cover" />
+                {!confirming && <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center"><X size={11} /></button>}
+              </div>
+            ))}
+            {!confirming && files.length < 9 && (
+              <label className="w-20 h-20 rounded-lg border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-0.5 text-slate-400 hover:border-orange-400 hover:text-orange-500 cursor-pointer text-[10px] font-semibold">
+                <ImageIcon size={18} /> Enviar fotos
+                <input type="file" accept="image/*" multiple className="hidden" onChange={e => { addFiles(e.target.files); e.target.value = '' }} />
+              </label>
+            )}
+          </div>
+          {buyerPhotos.length > 0 && (
+            <div className="mt-3">
+              <p className="text-[11px] text-slate-500 mb-1.5">Ou use as fotos que o comprador mandou (a Shopee aceita, se mostrarem o problema):</p>
+              <div className="flex gap-2 flex-wrap">
+                {buyerPhotos.map(url => {
+                  const on = buyerPicks.has(url)
+                  return (
+                    <button key={url} type="button" disabled={confirming} onClick={() => toggleBuyer(url)}
+                      className={`relative w-16 h-16 rounded-lg overflow-hidden border-2 ${on ? 'border-orange-500' : 'border-transparent opacity-70 hover:opacity-100'}`}>
+                      <img src={url} alt="" className="w-full h-full object-cover" />
+                      {on && <span className="absolute inset-0 bg-orange-500/30 flex items-center justify-center"><CheckCircle2 size={18} className="text-white" /></span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
         <div>
           <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">E-mail de contato</label>
-          <input value={email} onChange={e => setEmail(e.target.value)} className="input" type="email" />
+          <input value={email} onChange={e => setEmail(e.target.value)} className="input" type="email" disabled={confirming} />
         </div>
       </div>
     </Modal>
@@ -397,7 +510,7 @@ function DetailPanel({ r, api, onClose }) {
         </div>
       </div>
 
-      <DisputeModal open={disputeOpen} ret={r} reasons={reasons || []} disputeReturn={api.disputeReturn}
+      <DisputeModal open={disputeOpen} ret={r} reasons={reasons || []} disputeReturn={api.disputeReturn} convertProofImages={api.convertProofImages}
         onClose={() => setDisputeOpen(false)} onDone={() => { setDisputeOpen(false); onClose() }} />
       <ConfirmReturnModal open={confirmOpen} ret={r} confirmReturn={api.confirmReturn}
         onClose={() => setConfirmOpen(false)} onDone={() => { setConfirmOpen(false); onClose() }} />
