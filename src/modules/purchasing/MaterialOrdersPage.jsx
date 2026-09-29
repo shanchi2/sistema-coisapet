@@ -591,7 +591,7 @@ export function MaterialOrdersPage() {
     return key => map.get(key)
   }, [orders])
   const { suppliers } = useSuppliers()
-  const { create: createBill, addPayment: addBillPayment } = useBills()
+  const { create: createBill } = useBills()
 
   const [modal, setModal]           = useState(false)
   const [billOrder, setBillOrder]   = useState(null)
@@ -611,20 +611,14 @@ export function MaterialOrdersPage() {
   async function handleSaveBillForOrder(payload) {
     setBillSaving(true)
     try {
-      const isArray = Array.isArray(payload)
-      const first   = isArray ? payload[0] : payload
-      const total   = isArray ? payload.reduce((s, p) => s + Number(p.amount || 0), 0) : payload.amount
       const billIds = await createBill(payload)
       const billId  = Array.isArray(billIds) ? billIds[0] : billIds
 
-      // Mesmo padrão do Compras: conta de parcela única já nasce paga
-      // (a compra já aconteceu de verdade); parcelamento fica em aberto normal.
-      if (!isArray) {
-        try {
-          await addBillPayment(billId, { amount: total, paid_at: first.due_date, notes: 'Pago automaticamente — pedido de matéria-prima.' })
-        } catch { /* conta já criada, só o pagamento falhou — dá pra pagar manual depois */ }
-      }
-
+      // A conta nasce EM ABERTO (29/09). Antes, parcela única já nascia
+      // "paga" (copiado do Compras) — mas pedido de matéria-prima é quase
+      // sempre boleto/PIX a vencer: a conta "ROLAMENTO - PEDIDO 35" (boleto
+      // pra 30/09) apareceu como paga sem ninguém ter pago. O pagamento é
+      // dado no Financeiro quando acontecer de verdade.
       await linkBill(billOrder.id, billId)
       setBillOrder(null)
     } catch { /* useBills().create já mostra o toast de erro */ }
