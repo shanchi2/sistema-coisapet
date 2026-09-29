@@ -799,9 +799,138 @@ async function returnsSummary(integration: any, days: number) {
   }
 }
 
-async function returnDetail(integration: any, returnSn: string) {
+// ── Espelho no banco (fase81, 29/09) ──────────────────────────────────
+// get_return_list vem do MAIS ANTIGO pro mais novo e os filtros de data
+// voltam vazios (testado ao vivo) — então pagina TUDO e grava em
+// shopee_returns; a tela lê de lá. Detalhe completo só pras recentes/em
+// aberto (é 1 chamada por devolução).
+const tsIso = (s: any) => (s ? new Date(Number(s) * 1000).toISOString() : null)
+
+function returnToRow(r: any) {
+  return {
+    return_sn: String(r.return_sn),
+    order_sn: r.order_sn ?? null,
+    status: r.status ?? null,
+    reason: r.reason ?? null,
+    text_reason: r.text_reason ?? null,
+    refund_amount: r.refund_amount ?? null,
+    amount_before_discount: r.amount_before_discount ?? null,
+    currency: r.currency ?? null,
+    create_time: tsIso(r.create_time),
+    update_time: tsIso(r.update_time),
+    due_date: tsIso(r.due_date),
+    return_ship_due_date: tsIso(r.return_ship_due_date),
+    return_seller_due_date: tsIso(r.return_seller_due_date),
+    return_solution: r.return_solution ?? null,
+    return_refund_type: r.return_refund_type ?? null,
+    needs_logistics: r.needs_logistics ?? null,
+    buyer_username: r.user?.username ?? null,
+    items: r.item ?? null,
+    buyer_images: r.image ?? null,
+    buyer_videos: r.buyer_videos ?? null,
+    tracking_number: r.tracking_number || null,
+    synced_at: new Date().toISOString(),
+  }
+}
+
+function detailToRow(d: any) {
+  const comp = d.seller_compensation || {}
+  return {
+    ...returnToRow(d),
+    logistics_status: d.logistics_status || null,
+    reverse_logistics_status: d.reverse_logistics_status || null,
+    is_arrived_at_warehouse: d.is_arrived_at_warehouse ?? null,
+    dispute_reason: d.dispute_reason ?? null,
+    dispute_text_reason: d.dispute_text_reason ?? null,
+    compensation_amount: comp.compensation_amount ?? null,
+    compensation_status: comp.seller_compensation_status || null,
+    compensation_due_date: tsIso(comp.seller_compensation_due_date),
+    compensation_list: comp.compensation_amount_list ?? null,
+    shipping_fee_responsibility: d.shipping_fee_responsibility || null,
+    shipping_fee_responsibility_reason: d.shipping_fee_responsibility_reason || null,
+    negotiation: d.negotiation ?? null,
+    seller_proof: d.seller_proof ?? null,
+    validation_type: d.validation_type || null,
+    detail: d,
+    detail_synced_at: new Date().toISOString(),
+  }
+}
+
+// Em aberto DE VERDADE (ainda muda). ACCEPTED não entra: é o reembolso ao
+// comprador já aceito — caso encerrado (367 assim desde 2024, confirmado 29/09).
+const OPEN_RETURN_STATUSES = new Set(['REQUESTED', 'PROCESSING', 'JUDGING', 'SELLER_DISPUTE'])
+
+async function returnsSync(integration: any, db: ReturnType<typeof adminClient>, detailLimit = 60, full = false) {
+  // 1) Lista, página por página. A lista vem em ordem CRESCENTE de data,
+  // então as novas sempre entram no fim: no dia a dia basta começar ~2
+  // páginas antes do fim (≈ 4 meses). `full` varre tudo (≈ 80s).
+  let startPage = 1
+  if (!full) {
+    const { count } = await db.from('shopee_returns').select('return_sn', { count: 'exact', head: true })
+    if (count && count > 200) startPage = Math.max(1, Math.floor((count - 200) / 100) + 1)
+  }
+  const all: any[] = []
+  for (let page = startPage; page <= 60; page++) {
+    const res = await shopeeFetch('/api/v2/returns/get_return_list', integration, { page_no: String(page), page_size: '100' })
+    const list = res?.response?.return ?? res?.return ?? []
+    all.push(...list)
+    if (!(res?.response?.more ?? res?.more) || !list.length) break
+  }
+  const rows = all.map(returnToRow)
+
+  // Data da compra, do nosso orders (pedido sincronizado pelo webhook)
+  const sns = [...new Set(rows.map(r => r.order_sn).filter(Boolean))]
+  const purchase: Record<string, string> = {}
+  for (const group of chunk(sns, 300)) {
+    const { data } = await db.from('orders').select('num_venda, data_venda').eq('source', 'shopee').in('num_venda', group)
+    ;(data || []).forEach((o: any) => { purchase[o.num_venda] = o.data_venda })
+  }
+  rows.forEach((r: any) => { r.purchase_date = purchase[r.order_sn] || null })
+
+  for (const group of chunk(rows, 200)) {
+    const { error } = await db.from('shopee_returns').upsert(group, { onConflict: 'return_sn' })
+    if (error) throw new Error('Erro ao gravar devoluções: ' + error.message)
+  }
+
+  // 2) Detalhe completo: sem detalhe ainda (recentes, 120 dias), mudou
+  // desde o último detalhe, ou em aberto de verdade (re-busca se o
+  // detalhe tem mais de 1h — prazo/compensação mudam sem aviso).
+  const since = Date.now() - 120 * 86400000
+  const hourAgo = Date.now() - 3600000
+  const { data: known } = await db.from('shopee_returns').select('return_sn, status, create_time, update_time, detail_synced_at')
+  const need = (known || []).filter((r: any) => {
+    const open = OPEN_RETURN_STATUSES.has(r.status)
+    const recent = r.create_time && new Date(r.create_time).getTime() >= since
+    if (!recent && !open) return false
+    if (!r.detail_synced_at) return true
+    if (r.update_time && new Date(r.update_time) > new Date(r.detail_synced_at)) return true
+    return open && new Date(r.detail_synced_at).getTime() < hourAgo
+  }).sort((a: any, b: any) => (b.create_time || '').localeCompare(a.create_time || ''))
+
+  const batch = need.slice(0, detailLimit)
+  let detailed = 0
+  for (const group of chunk(batch, 6)) {
+    const details = await Promise.all(group.map((r: any) =>
+      shopeeFetch('/api/v2/returns/get_return_detail', integration, { return_sn: r.return_sn }).then(x => x?.response ?? x).catch(() => null)))
+    const detailRows = details.filter(Boolean).map((d: any) => ({ ...detailToRow(d), purchase_date: purchase[d.order_sn] || null }))
+    if (detailRows.length) {
+      const { error } = await db.from('shopee_returns').upsert(detailRows, { onConflict: 'return_sn' })
+      if (error) throw new Error('Erro ao gravar detalhe: ' + error.message)
+      detailed += detailRows.length
+    }
+  }
+  return { scanned: rows.length, from_page: startPage, full, details_synced: detailed, details_pending: Math.max(0, need.length - batch.length), synced_at: new Date().toISOString() }
+}
+
+// Detalhe ao vivo + atualiza o espelho no banco
+async function returnDetail(integration: any, returnSn: string, db?: ReturnType<typeof adminClient>) {
   const res = await shopeeFetch('/api/v2/returns/get_return_detail', integration, { return_sn: returnSn })
-  return res?.response ?? res
+  const d = res?.response ?? res
+  if (db && d?.return_sn) {
+    const { data: prev } = await db.from('shopee_returns').select('purchase_date').eq('return_sn', String(d.return_sn)).maybeSingle()
+    await db.from('shopee_returns').upsert({ ...detailToRow(d), purchase_date: prev?.purchase_date ?? null }, { onConflict: 'return_sn' })
+  }
+  return d
 }
 
 async function returnDisputeReasons(integration: any, returnSn: string) {
@@ -812,6 +941,7 @@ async function returnDisputeReasons(integration: any, returnSn: string) {
 async function returnConfirm(integration: any, db: ReturnType<typeof adminClient>, returnSn: string) {
   const res = await shopeeWrite('/api/v2/returns/confirm', integration, { return_sn: returnSn })
   await db.from('shopee_item_updates').insert({ item_id: returnSn, action: 'return_confirm', detail: {} })
+  await returnDetail(integration, returnSn, db).catch(() => null)
   return { ok: true, return_sn: returnSn, raw: res }
 }
 
@@ -821,6 +951,7 @@ async function returnDispute(
 ) {
   const res = await shopeeWrite('/api/v2/returns/dispute', integration, { return_sn: returnSn, ...payload })
   await db.from('shopee_item_updates').insert({ item_id: returnSn, action: 'return_dispute', detail: payload })
+  await returnDetail(integration, returnSn, db).catch(() => null)
   return { ok: true, return_sn: returnSn, raw: res }
 }
 
@@ -977,11 +1108,13 @@ serve(async (req) => {
           create_time_from: body.create_time_from ? Number(body.create_time_from) : undefined,
           create_time_to: body.create_time_to ? Number(body.create_time_to) : undefined,
         }))
+      case 'returns_sync':
+        return json(await returnsSync(integration, db, Number(body.detail_limit || 60), !!body.full))
       case 'returns_summary':
         return json(await returnsSummary(integration, Number(body.days || 90)))
       case 'return_detail':
         if (!body.return_sn) return json({ error: 'return_sn obrigatório' }, 400)
-        return json(await returnDetail(integration, String(body.return_sn)))
+        return json(await returnDetail(integration, String(body.return_sn), db))
       case 'return_dispute_reasons':
         if (!body.return_sn) return json({ error: 'return_sn obrigatório' }, 400)
         return json(await returnDisputeReasons(integration, String(body.return_sn)))

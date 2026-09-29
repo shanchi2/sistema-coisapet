@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  RotateCcw, Loader2, AlertTriangle, ChevronLeft, ChevronRight,
-  ShieldAlert, CheckCircle2, ExternalLink, CalendarDays, ArrowUpDown,
-  LayoutList, BarChart3, TrendingDown, TrendingUp, Clock, AlertCircle,
+  RotateCcw, Loader2, AlertTriangle, ShieldAlert, CheckCircle2, ExternalLink, Clock, AlertCircle,
+  TrendingDown, TrendingUp, Search, X, Package, Truck, User, Wallet, ScrollText, Scale, Copy,
+  RefreshCw, BarChart3, LayoutList, Image as ImageIcon, Hourglass, Ban,
 } from 'lucide-react'
 import { useShopeeReturns } from './hooks/useShopeeReturns'
 import { Modal } from '../../components/ui/Modal'
@@ -10,208 +10,201 @@ import toast from 'react-hot-toast'
 
 const SHOPEE_ORANGE = '#EE4D2D'
 
-// Status crus da Shopee — texto secundário (o que realmente guia a
-// tela agora é o "resultado financeiro", ver classifyOutcome).
+// ── Tradução dos códigos da Shopee ──────────────────────────────────────
 const STATUS_LABELS = {
-  REQUESTED: 'Solicitado', PROCESSING: 'Em processamento', JUDGING: 'Em análise (mediação)',
-  ACCEPTED: 'Aceito, aguardando devolução', REFUND_PAID: 'Reembolso pago', CLOSED: 'Encerrado',
-  CANCELLED: 'Cancelado', REJECTED: 'Rejeitado',
+  REQUESTED: 'Solicitada — aguardando sua resposta', PROCESSING: 'Em andamento (devolução)', JUDGING: 'Em análise pela Shopee',
+  SELLER_DISPUTE: 'Em disputa', ACCEPTED: 'Reembolso aceito', REFUND_PAID: 'Reembolso pago', CLOSED: 'Encerrada',
+  CANCELLED: 'Cancelada pelo comprador',
 }
-const STATUS_FILTERS = [
-  ['ALL', 'Todos'], ['REQUESTED', 'Solicitado'], ['PROCESSING', 'Em processamento'],
-  ['JUDGING', 'Em análise'], ['ACCEPTED', 'Aceito'], ['REFUND_PAID', 'Reembolso pago'],
-  ['CLOSED', 'Encerrado'], ['CANCELLED', 'Cancelado'],
-]
 const REASON_LABELS = {
-  CHANGE_MIND: 'Mudei de ideia', NOT_RECEIPT: 'Não recebi o produto', WRONG_ITEM: 'Recebi um produto errado',
-  ITEM_MISSING: 'Faltou item no pedido', DAMAGED_OTHERS: 'Produto danificado', BROKEN_PRODUCTS: 'Produto chegou quebrado',
-  PHYSICAL_DMG: 'Dano físico no produto', FUNCTIONAL_DMG: 'Defeito de funcionamento',
-  ITEM_NOT_FIT: 'Não serviu / não é compatível', EXPECTATION_FAILED: 'Diferente do esperado',
-  EXPIRED_PRODUCT: 'Produto vencido',
+  CHANGE_MIND: 'Mudei de ideia', NOT_RECEIPT: 'Não recebi o produto', WRONG_ITEM: 'Produto errado',
+  ITEM_MISSING: 'Faltou item', DAMAGED_OTHERS: 'Produto danificado', BROKEN_PRODUCTS: 'Chegou quebrado',
+  PHYSICAL_DMG: 'Dano físico', FUNCTIONAL_DMG: 'Defeito de funcionamento', ITEM_NOT_FIT: 'Não serviu / não compatível',
+  EXPECTATION_FAILED: 'Diferente do esperado', EXPIRED_PRODUCT: 'Produto vencido', DIFFERENT_DESCRIPTION: 'Diferente do anúncio',
+  WRONG_DAMAGED_PRODUCT: 'Errado/danificado', MISSING_PARTS: 'Faltando peças',
 }
-const SOLUTION_LABELS = { 0: 'Devolução e Reembolso', 1: 'Apenas Reembolso' }
+const LOGISTICS_LABELS = {
+  LOGISTICS_NOT_STARTED: 'Não iniciada', LOGISTICS_PENDING_ARRANGE: 'Aguardando agendamento', LOGISTICS_READY: 'Pronta pra coleta',
+  LOGISTICS_REQUEST_CREATED: 'Etiqueta gerada — aguardando comprador postar', LOGISTICS_PICKUP_DONE: 'Comprador postou — a caminho',
+  LOGISTICS_PICKUP_RETRY: 'Nova tentativa de coleta', LOGISTICS_DELIVERY_DONE: 'Entregue pra você', LOGISTICS_DELIVERY_FAILED: 'Falha na entrega',
+  LOGISTICS_REQUEST_CANCELED: 'Cancelada', LOGISTICS_LOST: 'Extraviada',
+}
+const RESPONSIBILITY_LABELS = { SHOPEE: 'Shopee (custo absorvido pela Shopee)', SELLER: 'Vendedor (você)', BUYER: 'Comprador', PENDING: 'Ainda não definida' }
+const COMP_TYPE_LABELS = { LOGISTICS_RELATED_COMPENSATION: 'Relacionada à logística' }
+const COMP_STATUS_LABELS = { NOT_REQUIRED: 'Não se aplica', PENDING: 'Em análise', APPROVED: 'Aprovada', REJECTED: 'Negada' }
+const SOLUTION_LABELS = { 0: 'Devolução e reembolso', 1: 'Só reembolso' }
 
-// Mesma classificação financeira do backend (returnsSummary) — REFUND_PAID
-// é a única certeza de que saiu dinheiro; CANCELLED/REJECTED terminou sem
-// reembolso (o valor ficou com a gente); os "em aberto" ainda podem virar
-// qualquer um dos dois; o resto (CLOSED e afins) fica neutro de propósito
-// — nunca chuta se foi ganho ou perda sem ter certeza.
-const LOST_STATUSES    = new Set(['REFUND_PAID'])
-const KEPT_STATUSES    = new Set(['CANCELLED', 'REJECTED'])
-const ACTIONABLE_STATUSES = new Set(['REQUESTED', 'PROCESSING', 'ACCEPTED'])
-const PENDING_STATUSES    = new Set(['REQUESTED', 'PROCESSING', 'JUDGING', 'ACCEPTED'])
-
-function outcomeOf(status) {
-  if (LOST_STATUSES.has(status)) return 'lost'
-  if (KEPT_STATUSES.has(status)) return 'kept'
-  if (PENDING_STATUSES.has(status)) return 'pending'
-  return 'other'
+// ── Datas (sempre Brasília) ─────────────────────────────────────────────
+const TZ = 'America/Sao_Paulo'
+function fmtDate(iso) { return iso ? new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)) : '—' }
+function fmtDateTime(iso) { return iso ? new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(iso)) : '—' }
+function fmtPreco(v) { return (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
+function hoursUntil(iso) { return iso ? (new Date(iso).getTime() - Date.now()) / 3600000 : null }
+function fmtCountdown(iso) {
+  const h = hoursUntil(iso)
+  if (h == null) return null
+  if (h < 0) { const ah = -h; return ah < 24 ? `venceu há ${Math.round(ah)}h` : `venceu há ${Math.round(ah / 24)}d` }
+  if (h < 1) return `vence em ${Math.max(1, Math.round(h * 60))} min`
+  if (h < 24) return `vence em ${Math.round(h)}h`
+  return `vence em ${Math.ceil(h / 24)}d`
 }
-
-function fmtPreco(v) {
-  const n = parseFloat(v)
-  if (!n || isNaN(n)) return 'R$ 0,00'
-  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
-function fmtDate(unixSec) {
-  if (!unixSec) return null
-  return new Date(unixSec * 1000).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
-function fmtDateISO(iso) {
-  if (!iso) return null
-  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
-function daysUntil(unixSec) {
-  if (!unixSec) return null
-  return Math.ceil((unixSec * 1000 - Date.now()) / 86400000)
+function ago(iso) {
+  if (!iso) return 'nunca'
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  if (m < 1) return 'agora'
+  if (m < 60) return `há ${m} min`
+  if (m < 1440) return `há ${Math.round(m / 60)}h`
+  return `há ${Math.round(m / 1440)}d`
 }
 
-const SORT_OPTIONS = [
-  ['return_desc',   'Devolução — mais recente'],
-  ['return_asc',    'Devolução — mais antiga'],
-  ['purchase_desc', 'Compra — mais recente'],
-  ['purchase_asc',  'Compra — mais antiga'],
+// ── Regras de negócio ───────────────────────────────────────────────────
+const itemBack = r => r.reverse_logistics_status === 'LOGISTICS_DELIVERY_DONE'
+
+// Qual prazo importa agora e se ele é NOSSO (precisa agir) ou só informativo
+function deadlineOf(r) {
+  if (r.status === 'REQUESTED') return { at: r.due_date, label: 'Responder a solicitação (aceitar ou disputar)', ours: true }
+  if (r.status === 'PROCESSING' && itemBack(r)) return { at: r.return_seller_due_date, label: 'Conferir o produto devolvido e decidir (aceitar ou disputar)', ours: true }
+  if (r.status === 'PROCESSING') return { at: r.return_ship_due_date, label: 'Comprador devolver o produto', ours: false }
+  return null
+}
+
+// Resultado financeiro de cada caso
+function outcomeOf(r) {
+  if (['REQUESTED', 'PROCESSING', 'JUDGING', 'SELLER_DISPUTE'].includes(r.status)) return 'open'
+  if (r.status === 'CANCELLED') return 'kept'
+  if (['ACCEPTED', 'REFUND_PAID'].includes(r.status)) return Number(r.compensation_amount) > 0 ? 'compensated' : 'refunded'
+  return 'closed'
+}
+const OUTCOME = {
+  open:        { label: 'Em aberto',                  tone: 'bg-sky-50 text-sky-700 border-sky-200',       bar: '#38bdf8' },
+  kept:        { label: 'Cancelada — valor mantido',   tone: 'bg-emerald-50 text-emerald-700 border-emerald-200', bar: '#10b981' },
+  compensated: { label: 'Reembolsado, mas compensado', tone: 'bg-violet-50 text-violet-700 border-violet-200', bar: '#8b5cf6' },
+  refunded:    { label: 'Reembolsado ao comprador',    tone: 'bg-rose-50 text-rose-700 border-rose-200',     bar: '#f43f5e' },
+  closed:      { label: 'Encerrada',                   tone: 'bg-slate-100 text-slate-500 border-slate-200', bar: '#cbd5e1' },
+}
+
+function urgencyOf(r) {
+  const d = deadlineOf(r)
+  if (!d?.ours || !d.at) return null
+  const h = hoursUntil(d.at)
+  if (h < 0) return 'overdue'
+  if (h <= 72) return 'soon'
+  return 'ok'
+}
+
+const FILTERS = [
+  ['acao', 'Precisa agir'], ['andamento', 'Em andamento'], ['disputa', 'Com disputa'], ['compensacao', 'Com compensação'],
+  ['reembolsadas', 'Reembolsadas'], ['canceladas', 'Canceladas'], ['todas', 'Todas'],
 ]
-function sortRows(rows, sortKey) {
-  const [field, dir] = sortKey.startsWith('return_') ? ['create_time', sortKey.slice(7)] : ['purchase_date', sortKey.slice(9)]
-  return [...rows].sort((a, b) => {
-    const va = field === 'create_time' ? a.create_time : (a.purchase_date ? new Date(a.purchase_date).getTime() / 1000 : null)
-    const vb = field === 'create_time' ? b.create_time : (b.purchase_date ? new Date(b.purchase_date).getTime() / 1000 : null)
-    if (va == null && vb == null) return 0
-    if (va == null) return 1
-    if (vb == null) return -1
-    return dir === 'asc' ? va - vb : vb - va
-  })
+function matchFilter(r, f) {
+  switch (f) {
+    case 'acao': return !!deadlineOf(r)?.ours
+    case 'andamento': return outcomeOf(r) === 'open'
+    case 'disputa': return (r.dispute_reason?.length || 0) > 0 || ['JUDGING', 'SELLER_DISPUTE'].includes(r.status)
+    case 'compensacao': return Number(r.compensation_amount) > 0
+    case 'reembolsadas': return ['refunded', 'compensated'].includes(outcomeOf(r))
+    case 'canceladas': return r.status === 'CANCELLED'
+    default: return true
+  }
 }
 
-// ── Selo único por linha — resolve de cara "perdemos, recuperamos, ou
-// ainda precisa de ação" (era a maior confusão da versão anterior, que
-// espalhava status + prazo em pedaços separados). ──────────────────
+const PERIODS = [[30, '30 dias'], [90, '90 dias'], [180, '6 meses'], [365, '1 ano'], [0, 'Tudo']]
+
+// ── Peças ───────────────────────────────────────────────────────────────
 function OutcomeBadge({ r }) {
-  const outcome = outcomeOf(r.status)
-  if (outcome === 'lost') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
-        <TrendingDown size={13} /> Reembolsado — {fmtPreco(r.refund_amount)} perdido
-      </span>
-    )
-  }
-  if (outcome === 'kept') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-        <TrendingUp size={13} /> Sem reembolso — valor mantido
-      </span>
-    )
-  }
-  if (outcome === 'pending') {
-    const days = daysUntil(r.due_date)
-    const canAct = ACTIONABLE_STATUSES.has(r.status)
-    if (canAct && days !== null && days < 0) {
-      return (
-        <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
-          <AlertCircle size={13} /> Prazo vencido — pode não dar mais pra agir
-        </span>
-      )
-    }
-    if (canAct && days !== null && days <= 3) {
-      return (
-        <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
-          <Clock size={13} /> {days <= 0 ? 'Vence hoje' : `Vence em ${days}d`} — precisa agir
-        </span>
-      )
-    }
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">
-        <Clock size={13} /> {STATUS_LABELS[r.status] || 'Em aberto'}
-      </span>
-    )
-  }
+  const o = OUTCOME[outcomeOf(r)]
+  const label = outcomeOf(r) === 'open' ? (STATUS_LABELS[r.status] || 'Em aberto') : o.label
+  return <span className={`inline-flex items-center text-[11px] font-bold px-2.5 py-1 rounded-full border ${o.tone}`}>{label}</span>
+}
+
+function DeadlineChip({ r, big }) {
+  const d = deadlineOf(r)
+  if (!d?.at) return null
+  const u = urgencyOf(r)
+  const tone = !d.ours ? 'bg-slate-50 text-slate-500 border-slate-200'
+    : u === 'overdue' ? 'bg-rose-600 text-white border-rose-600'
+    : u === 'soon' ? 'bg-amber-100 text-amber-800 border-amber-300'
+    : 'bg-sky-50 text-sky-700 border-sky-200'
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
-      {STATUS_LABELS[r.status] || r.status || 'Encerrado'}
+    <span className={`inline-flex items-center gap-1 ${big ? 'text-xs px-3 py-1.5' : 'text-[11px] px-2 py-0.5'} font-bold rounded-full border ${tone} ${d.ours && u === 'soon' ? 'animate-pulse' : ''}`}
+      title={`${d.label} — até ${fmtDateTime(d.at)}`}>
+      <Clock size={big ? 13 : 11} /> {d.ours ? '' : 'Comprador: '}{fmtCountdown(d.at)}
     </span>
   )
 }
 
-// Cor da barra lateral do card — reforça o mesmo sinal do selo, dá pra
-// escanear a lista inteira só pela faixa colorida à esquerda.
-function outcomeBorderColor(r) {
-  const outcome = outcomeOf(r.status)
-  if (outcome === 'lost') return '#f43f5e'
-  if (outcome === 'kept') return '#10b981'
-  if (outcome === 'pending') {
-    const days = daysUntil(r.due_date)
-    if (ACTIONABLE_STATUSES.has(r.status) && days !== null && days <= 3) return '#f59e0b'
-    return '#38bdf8'
-  }
-  return '#cbd5e1'
+function Kpi({ icon: Icon, label, value, sub, color, bg, onClick }) {
+  return (
+    <button type="button" onClick={onClick} className="text-left bg-white border border-slate-200 rounded-2xl p-4 hover:border-orange-200 transition-colors">
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: bg }}><Icon size={15} style={{ color }} /></span>
+        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide leading-tight">{label}</p>
+      </div>
+      <p className="text-xl font-black text-slate-800">{value}</p>
+      {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+    </button>
+  )
 }
 
-function DisputeModal({ open, onClose, ret, getDisputeReasons, disputeReturn, onDone }) {
-  const [reasons, setReasons] = useState([])
-  const [loadingReasons, setLoadingReasons] = useState(false)
+function Section({ icon: Icon, title, children, tone }) {
+  return (
+    <div className={`rounded-2xl border p-4 ${tone || 'bg-white border-slate-200'}`}>
+      <p className="text-sm font-bold text-slate-700 flex items-center gap-1.5 mb-3"><Icon size={15} className="text-slate-400" /> {title}</p>
+      {children}
+    </div>
+  )
+}
+function Field({ label, children }) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-1 text-sm">
+      <span className="text-slate-400 shrink-0">{label}</span>
+      <span className="text-slate-700 text-right min-w-0">{children}</span>
+    </div>
+  )
+}
+
+// ── Modais de ação (gravam direto na Shopee — confirmação explícita) ────
+function DisputeModal({ open, onClose, ret, reasons, disputeReturn, onDone }) {
   const [reasonId, setReasonId] = useState('')
   const [text, setText] = useState('')
   const [email, setEmail] = useState('raphael@coisapet.com.br')
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    if (!open || !ret) return
-    setReasonId(''); setText(''); setSaving(false)
-    setLoadingReasons(true)
-    getDisputeReasons(ret.return_sn)
-      .then(setReasons)
-      .catch(err => toast.error('Erro ao buscar motivos de disputa: ' + err.message))
-      .finally(() => setLoadingReasons(false))
-  }, [open, ret]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) { setReasonId(''); setText(''); setSaving(false) } }, [open])
 
   async function handleSubmit() {
-    if (!reasonId) { toast.error('Escolhe um motivo pra disputa.'); return }
-    if (!email.trim()) { toast.error('Informa um e-mail de contato.'); return }
+    if (!reasonId) { toast.error('Escolha um motivo.'); return }
+    if (!email.trim()) { toast.error('Informe um e-mail de contato.'); return }
     setSaving(true)
     try {
       await disputeReturn(ret.return_sn, { email: email.trim(), disputeReason: reasonId, disputeText: text.trim() })
       toast.success('Disputa aberta na Shopee!')
       onDone()
-    } catch (err) {
-      toast.error('Erro ao abrir disputa: ' + err.message)
-    } finally {
-      setSaving(false)
-    }
+    } catch (err) { toast.error('Erro ao abrir disputa: ' + err.message) }
+    finally { setSaving(false) }
   }
-
   return (
-    <Modal open={open} onClose={onClose} size="md" title="Abrir disputa"
-      subtitle={ret ? `Pedido ${ret.order_sn} — retorno ${ret.return_sn}` : ''}
+    <Modal open={open} onClose={onClose} size="md" title="Abrir disputa" subtitle={ret ? `Pedido ${ret.order_sn} — solicitação ${ret.return_sn}` : ''}
       footer={<>
         <button onClick={onClose} className="btn-secondary" disabled={saving}>Cancelar</button>
-        <button onClick={handleSubmit} className="btn-primary" disabled={saving || loadingReasons}>
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <ShieldAlert size={14} />}
-          {saving ? 'Enviando...' : 'Confirmar disputa'}
+        <button onClick={handleSubmit} className="btn-primary" disabled={saving}>
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <ShieldAlert size={14} />} {saving ? 'Enviando...' : 'Confirmar disputa'}
         </button>
       </>}>
       <div className="space-y-3">
         <p className="flex items-start gap-1.5 text-[11px] text-orange-700 bg-orange-50 rounded-lg px-2.5 py-2">
-          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-          Isso grava direto na Shopee — a mediação deles decide o resultado, não dá pra desfazer sozinho depois.
+          <AlertTriangle size={13} className="shrink-0 mt-0.5" /> Isso grava direto na Shopee — a mediação deles decide o resultado. Fotos de prova (produto avariado, embalagem) ajudam: anexe pelo Seller Center logo depois.
         </p>
         <div>
           <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Motivo da disputa</label>
-          {loadingReasons ? (
-            <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" /> Carregando motivos...</div>
-          ) : reasons.length === 0 ? (
-            <p className="text-sm text-slate-400">Nenhum motivo de disputa disponível pra essa solicitação (o prazo pode já ter passado).</p>
-          ) : (
-            <select value={reasonId} onChange={e => setReasonId(e.target.value)} className="input">
-              <option value="">Selecione...</option>
-              {reasons.map(r => <option key={r.reason_id} value={r.reason_id}>{r.reason_text}</option>)}
-            </select>
-          )}
+          <select value={reasonId} onChange={e => setReasonId(e.target.value)} className="input">
+            <option value="">Selecione...</option>
+            {reasons.map(r => <option key={r.reason_id} value={r.reason_id}>{r.reason_text}</option>)}
+          </select>
         </div>
         <div>
-          <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Justificativa (opcional)</label>
-          <textarea value={text} onChange={e => setText(e.target.value)} rows={3} className="input text-sm"
-            placeholder="Explica o motivo da disputa com mais detalhe..." />
+          <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Justificativa</label>
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={4} className="input text-sm"
+            placeholder="Ex: Recebemos o produto com cantos quebrados e caixa amassada — dano de transporte." />
         </div>
         <div>
           <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">E-mail de contato</label>
@@ -224,354 +217,456 @@ function DisputeModal({ open, onClose, ret, getDisputeReasons, disputeReturn, on
 
 function ConfirmReturnModal({ open, onClose, ret, confirmReturn, onDone }) {
   const [saving, setSaving] = useState(false)
-
   async function handleConfirm() {
     setSaving(true)
-    try {
-      await confirmReturn(ret.return_sn)
-      toast.success('Devolução confirmada e reembolso liberado!')
-      onDone()
-    } catch (err) {
-      toast.error('Erro ao confirmar: ' + err.message)
-    } finally {
-      setSaving(false)
-    }
+    try { await confirmReturn(ret.return_sn); toast.success('Reembolso aceito na Shopee.'); onDone() }
+    catch (err) { toast.error('Erro ao confirmar: ' + err.message) }
+    finally { setSaving(false) }
   }
-
   return (
-    <Modal open={open} onClose={onClose} size="sm" title="Finalizar sem disputas"
-      subtitle={ret ? `Pedido ${ret.order_sn} — retorno ${ret.return_sn}` : ''}
+    <Modal open={open} onClose={onClose} size="sm" title="Aceitar e reembolsar" subtitle={ret ? `Pedido ${ret.order_sn} — solicitação ${ret.return_sn}` : ''}
       footer={<>
         <button onClick={onClose} className="btn-secondary" disabled={saving}>Cancelar</button>
         <button onClick={handleConfirm} className="btn-primary" disabled={saving}>
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-          {saving ? 'Confirmando...' : 'Confirmar e reembolsar'}
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} {saving ? 'Confirmando...' : 'Sim, aceitar e reembolsar'}
         </button>
       </>}>
       <p className="flex items-start gap-1.5 text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2.5">
         <AlertTriangle size={15} className="shrink-0 mt-0.5 text-orange-500" />
-        Vai confirmar essa devolução direto na Shopee e liberar <strong>{fmtPreco(ret?.refund_amount)}</strong> de
-        reembolso pro comprador — sem disputa. Não dá pra desfazer depois.
+        Aceita a devolução direto na Shopee e libera <strong>&nbsp;{fmtPreco(ret?.refund_amount)}&nbsp;</strong> de reembolso pro comprador, sem disputa. Não dá pra desfazer.
       </p>
     </Modal>
   )
 }
 
-// ── Aba "Acompanhamento" — a lista, redesenhada ──────────────────────
-function AcompanhamentoTab({ shopee }) {
-  const { rows, loading, error, hasMore, page, status, fetchPage, getDisputeReasons, confirmReturn, disputeReturn } = shopee
-  const [disputeTarget, setDisputeTarget] = useState(null)
-  const [confirmTarget, setConfirmTarget] = useState(null)
-  const [sortKey, setSortKey] = useState('return_desc')
+// ── Painel de detalhe (conteúdo do Seller Center) ───────────────────────
+function DetailPanel({ r, api, onClose }) {
+  const [refreshing, setRefreshing] = useState(false)
+  const [reasons, setReasons] = useState(null) // null = verificando
+  const [disputeOpen, setDisputeOpen] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const d = deadlineOf(r)
+  const actionable = !!d?.ours
 
-  useEffect(() => { fetchPage(1, 'ALL') }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setReasons(null)
+    // Atualiza ao vivo + descobre se ainda dá pra disputar
+    setRefreshing(true)
+    api.refreshOne(r.return_sn).catch(() => {}).finally(() => setRefreshing(false))
+    if (actionable) api.getDisputeReasons(r.return_sn).then(setReasons).catch(() => setReasons([]))
+    else setReasons([])
+  }, [r.return_sn]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function reload() { fetchPage(page, status) }
-  const sortedRows = useMemo(() => sortRows(rows, sortKey), [rows, sortKey])
+  const item = r.items?.[0]
+  const photos = r.buyer_images || []
+  const videos = (r.buyer_videos || []).map(v => v.video_url || v.url || v).filter(x => typeof x === 'string')
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {STATUS_FILTERS.map(([key, label]) => (
-            <button key={key} onClick={() => fetchPage(1, key)} disabled={loading}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
-                status === key ? 'text-white border-transparent' : 'bg-white border-slate-200 text-slate-500 hover:border-orange-300'
-              }`}
-              style={status === key ? { background: SHOPEE_ORANGE } : undefined}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-3">
-          <button onClick={reload} disabled={loading}
-            className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-orange-600 disabled:opacity-50">
-            {loading ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Atualizar
-          </button>
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 shrink-0">
-            <ArrowUpDown size={13} />
-            <select value={sortKey} onChange={e => setSortKey(e.target.value)}
-              className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none">
-              {SORT_OPTIONS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Legenda — deixa explícito o que cada cor quer dizer, de cara */}
-      <div className="flex items-center gap-4 flex-wrap text-[11px] text-slate-400 bg-white border border-slate-200 rounded-xl px-3 py-2">
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Perdemos (reembolsado)</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Recuperamos (sem reembolso)</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Precisa agir logo</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-sky-400" /> Em aberto, sem urgência</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-slate-300" /> Encerrado / outro</span>
-      </div>
-
-      {error && (
-        <div className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
-          <AlertTriangle size={15} /> {error}
-        </div>
-      )}
-
-      {loading && rows.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
-          <Loader2 size={28} className="mx-auto mb-3 text-slate-300 animate-spin" />
-          <p className="text-slate-400">Carregando solicitações...</p>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
-          <CheckCircle2 size={32} strokeWidth={1} className="mx-auto mb-3 text-slate-200" />
-          <p className="text-slate-400">Nenhuma solicitação nesse filtro</p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {sortedRows.map(r => {
-            const item = r.item?.[0]
-            const extraItems = (r.item?.length || 0) - 1
-            const canAct = ACTIONABLE_STATUSES.has(r.status)
-            return (
-              <div key={r.return_sn} className="bg-white border border-slate-200 rounded-2xl p-4 border-l-4"
-                style={{ borderLeftColor: outcomeBorderColor(r) }}>
-                <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
-                  <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
-                    <span className="font-semibold text-slate-600">{r.user?.username || 'Comprador'}</span>
-                    <span>· Pedido {r.order_sn}</span>
-                    <span>· Retorno {r.return_sn}</span>
-                  </div>
-                  <OutcomeBadge r={r} />
-                </div>
-
-                <div className="flex items-center gap-4 flex-wrap mb-3 text-[11px] text-slate-400">
-                  <span className="flex items-center gap-1">
-                    <CalendarDays size={11} />
-                    Comprado em {fmtDateISO(r.purchase_date) || <span className="italic text-slate-300">não sincronizado</span>}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <CalendarDays size={11} />
-                    Devolução pedida em {fmtDate(r.create_time)}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 items-start">
-                  <div className="flex gap-3">
-                    <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
-                      {item?.images?.[0] && <img src={item.images[0]} alt="" className="w-full h-full object-cover" />}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-slate-700 line-clamp-2">{item?.name || '—'}</p>
-                      {item?.item_sku && <p className="text-xs text-slate-400 font-mono mt-0.5">{item.item_sku}</p>}
-                      {extraItems > 0 && <p className="text-xs text-slate-400 mt-0.5">+{extraItems} outro{extraItems > 1 ? 's' : ''} item{extraItems > 1 ? 's' : ''}</p>}
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-[10px] font-semibold text-slate-400 uppercase">Valor</p>
-                    <p className="text-sm font-bold text-slate-700">{fmtPreco(r.refund_amount)}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-[10px] font-semibold text-slate-400 uppercase">Motivo</p>
-                    <p className="text-sm text-slate-700">{REASON_LABELS[r.reason] || r.reason || '—'}</p>
-                    {r.text_reason && <p className="text-xs text-slate-400 mt-0.5 italic line-clamp-2">&ldquo;{r.text_reason}&rdquo;</p>}
-                  </div>
-
-                  <div>
-                    <p className="text-[10px] font-semibold text-slate-400 uppercase">Solução</p>
-                    <p className="text-sm text-slate-700">{SOLUTION_LABELS[r.return_solution] ?? '—'}</p>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5 items-stretch lg:items-end shrink-0">
-                    {canAct ? (
-                      <>
-                        <button onClick={() => setDisputeTarget(r)}
-                          className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1 justify-end">
-                          <ShieldAlert size={12} /> Disputar
-                        </button>
-                        <button onClick={() => setConfirmTarget(r)}
-                          className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 justify-end">
-                          <CheckCircle2 size={12} /> Finalizar sem disputa
-                        </button>
-                      </>
-                    ) : (
-                      <span className="text-xs text-slate-300">Sem ação disponível</span>
-                    )}
-                    {r.tracking_number && (
-                      <a href={`https://www.17track.net/en/track?nums=${r.tracking_number}`} target="_blank" rel="noreferrer"
-                        className="text-[11px] text-slate-400 hover:text-slate-600 flex items-center gap-1 justify-end">
-                        <ExternalLink size={10} /> {r.tracking_number}
-                      </a>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {rows.length > 0 && (
-        <div className="flex items-center justify-center gap-3">
-          <button onClick={() => fetchPage(page - 1, status)} disabled={page <= 1 || loading}
-            className="flex items-center gap-1 text-sm font-semibold text-slate-500 disabled:opacity-30 hover:text-orange-600">
-            <ChevronLeft size={16} /> Anterior
-          </button>
-          <span className="text-sm text-slate-400">Página {page}</span>
-          <button onClick={() => fetchPage(page + 1, status)} disabled={!hasMore || loading}
-            className="flex items-center gap-1 text-sm font-semibold text-slate-500 disabled:opacity-30 hover:text-orange-600">
-            Próxima <ChevronRight size={16} />
-          </button>
-        </div>
-      )}
-
-      <DisputeModal open={!!disputeTarget} ret={disputeTarget} onClose={() => setDisputeTarget(null)}
-        getDisputeReasons={getDisputeReasons} disputeReturn={disputeReturn}
-        onDone={() => { setDisputeTarget(null); reload() }} />
-      <ConfirmReturnModal open={!!confirmTarget} ret={confirmTarget} onClose={() => setConfirmTarget(null)}
-        confirmReturn={confirmReturn}
-        onDone={() => { setConfirmTarget(null); reload() }} />
-    </div>
-  )
-}
-
-// ── Aba "Relatório" — totais do período ──────────────────────────────
-const PERIOD_OPTIONS = [[90, '90 dias'], [180, '180 dias'], [365, '1 ano'], [730, '2 anos']]
-
-function KpiCard({ icon: Icon, label, value, sub, color, bg }) {
-  return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-4">
-      <div className="flex items-center gap-2.5 mb-2">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: bg }}>
-          <Icon size={15} style={{ color }} />
-        </div>
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
-      </div>
-      <p className="text-2xl font-black text-slate-800" style={{ fontFamily: 'Nunito,sans-serif' }}>{value}</p>
-      {sub && <p className="text-xs text-slate-400 mt-1">{sub}</p>}
-    </div>
-  )
-}
-
-function ReportTab({ shopee }) {
-  const { summary, summaryLoading, summaryError, fetchSummary } = shopee
-  const [days, setDays] = useState(365)
-
-  useEffect(() => { fetchSummary(days) }, [days]) // eslint-disable-line react-hooks/exhaustive-deps
+  function copy(t) { navigator.clipboard?.writeText(t); toast.success('Copiado!') }
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-sm text-slate-500">Totais das solicitações de devolução pedidas nesse período</p>
-        <div className="flex items-center gap-1.5">
-          {PERIOD_OPTIONS.map(([d, label]) => (
-            <button key={d} onClick={() => setDays(d)} disabled={summaryLoading}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
-                days === d ? 'text-white border-transparent' : 'bg-white border-slate-200 text-slate-500 hover:border-orange-300'
-              }`}
-              style={days === d ? { background: SHOPEE_ORANGE } : undefined}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {summaryError && (
-        <div className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
-          <AlertTriangle size={15} /> {summaryError}
-        </div>
-      )}
-
-      {summaryLoading ? (
-        <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
-          <Loader2 size={28} className="mx-auto mb-3 text-slate-300 animate-spin" />
-          <p className="text-slate-400">Somando as solicitações do período (pode levar um pouco)...</p>
-        </div>
-      ) : summary && (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard icon={TrendingDown} label="Perdemos (reembolsado)" color="#e11d48" bg="#fff1f2"
-              value={fmtPreco(summary.lost.amount)} sub={`${summary.lost.count} solicitaç${summary.lost.count === 1 ? 'ão' : 'ões'}`} />
-            <KpiCard icon={TrendingUp} label="Recuperamos (sem reembolso)" color="#059669" bg="#ecfdf5"
-              value={fmtPreco(summary.kept.amount)} sub={`${summary.kept.count} solicitaç${summary.kept.count === 1 ? 'ão' : 'ões'}`} />
-            <KpiCard icon={Clock} label="Em aberto — precisa de ação" color="#d97706" bg="#fffbeb"
-              value={fmtPreco(summary.pending.amount)} sub={`${summary.pending.count} solicitaç${summary.pending.count === 1 ? 'ão' : 'ões'} em aberto`} />
-            <KpiCard icon={AlertCircle} label="Vencendo ou já vencido" color="#dc2626" bg="#fef2f2"
-              value={summary.pending.urgent_count + summary.pending.overdue_count}
-              sub={`${summary.pending.overdue_count} vencido${summary.pending.overdue_count === 1 ? '' : 's'} · ${summary.pending.urgent_count} vencendo em até 3 dias`} />
-          </div>
-
-          {summary.truncated && (
-            <p className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-              <AlertTriangle size={13} /> Esse período tem muita solicitação — os números acima podem estar incompletos (bateu no limite de segurança da busca). Tenta um período menor pra ver o total exato.
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex justify-end" onClick={onClose}>
+      <div className="w-full max-w-2xl h-full bg-slate-50 overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-5 py-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap"><OutcomeBadge r={r} /><DeadlineChip r={r} big /></div>
+            <p className="text-sm text-slate-500 mt-1.5 flex items-center gap-1.5 flex-wrap">
+              Solicitação <button onClick={() => copy(r.return_sn)} className="font-mono text-slate-700 hover:text-orange-600 flex items-center gap-1">{r.return_sn}<Copy size={11} /></button>
+              · Pedido <button onClick={() => copy(r.order_sn)} className="font-mono text-slate-700 hover:text-orange-600 flex items-center gap-1">{r.order_sn}<Copy size={11} /></button>
             </p>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {refreshing && <Loader2 size={15} className="animate-spin text-slate-300" />}
+            <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+          </div>
+        </div>
+
+        <div className="p-5 flex flex-col gap-4">
+          {/* Ação necessária */}
+          {actionable && (
+            <div className={`rounded-2xl border-2 p-4 ${urgencyOf(r) === 'overdue' ? 'border-rose-300 bg-rose-50' : urgencyOf(r) === 'soon' ? 'border-amber-300 bg-amber-50' : 'border-sky-200 bg-sky-50'}`}>
+              <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5"><Hourglass size={15} /> {d.label}</p>
+              <p className="text-sm text-slate-600 mt-0.5">Prazo: <b>{fmtDateTime(d.at)}</b> ({fmtCountdown(d.at)})</p>
+              {urgencyOf(r) === 'overdue' && <p className="text-xs text-rose-700 mt-1">O prazo passou — a Shopee costuma decidir sozinha a favor do comprador. Confira no Seller Center se ainda há alguma opção.</p>}
+              <div className="flex items-center gap-2 mt-3 flex-wrap">
+                {reasons === null ? (
+                  <span className="text-xs text-slate-500 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Verificando se dá pra disputar...</span>
+                ) : reasons.length > 0 ? (
+                  <button onClick={() => setDisputeOpen(true)} className="text-sm font-semibold px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 flex items-center gap-1.5"><ShieldAlert size={14} /> Abrir disputa</button>
+                ) : (
+                  <span className="text-xs text-slate-500 flex items-center gap-1"><Ban size={12} /> A Shopee não oferece disputa nesta etapa</span>
+                )}
+                <button onClick={() => setConfirmOpen(true)} className="text-sm font-semibold px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-emerald-700 hover:border-emerald-300 flex items-center gap-1.5"><CheckCircle2 size={14} /> Aceitar e reembolsar</button>
+              </div>
+            </div>
           )}
 
-          <div className="bg-white border border-slate-200 rounded-2xl p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <BarChart3 size={15} className="text-slate-400" />
-              <p className="text-sm font-bold text-slate-700">Principais motivos de devolução</p>
+          {/* Linha do tempo */}
+          <Section icon={Clock} title="Linha do tempo">
+            <div className="flex flex-col gap-2">
+              {[
+                ['Compra', r.purchase_date, null],
+                ['Comprador solicitou devolução/reembolso', r.create_time, null],
+                ['Prazo pra responder a solicitação', r.due_date, r.status === 'REQUESTED'],
+                ['Prazo do comprador devolver', r.return_ship_due_date, r.status === 'PROCESSING' && !itemBack(r)],
+                ['Prazo pra conferir o produto devolvido', r.return_seller_due_date, r.status === 'PROCESSING' && itemBack(r)],
+                ['Prazo da compensação', r.compensation_due_date, false],
+                ['Última atualização', r.update_time, null],
+              ].filter(([, at]) => at).map(([label, at, active]) => (
+                <div key={label} className="flex items-center gap-3 text-sm">
+                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${active ? 'bg-orange-500 ring-4 ring-orange-100' : new Date(at) < new Date() ? 'bg-slate-300' : 'bg-sky-400'}`} />
+                  <span className={`flex-1 ${active ? 'font-bold text-slate-800' : 'text-slate-600'}`}>{label}</span>
+                  <span className="text-slate-500 tabular-nums">{fmtDateTime(at)}</span>
+                </div>
+              ))}
             </div>
-            {summary.by_reason.length === 0 ? (
-              <p className="text-sm text-slate-400">Nenhuma solicitação nesse período.</p>
-            ) : (
-              <div className="flex flex-col gap-2.5">
-                {summary.by_reason.map(({ reason, count }) => {
-                  const max = summary.by_reason[0].count
-                  return (
-                    <div key={reason} className="flex items-center gap-3">
-                      <span className="text-xs text-slate-600 w-48 shrink-0 truncate">{REASON_LABELS[reason] || reason}</span>
-                      <div className="flex-1 h-5 bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full flex items-center justify-end pr-1.5"
-                          style={{ width: `${Math.max((count / max) * 100, 6)}%`, background: SHOPEE_ORANGE }}>
-                          <span className="text-[10px] font-black text-white">{count}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+          </Section>
+
+          {/* Produto */}
+          <Section icon={Package} title="Produto">
+            {(r.items || []).map((it, i) => (
+              <div key={i} className="flex items-center gap-3 mb-2 last:mb-0">
+                <div className="w-14 h-14 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200">{it.images?.[0] && <img src={it.images[0]} alt="" className="w-full h-full object-cover" />}</div>
+                <div className="min-w-0 text-sm">
+                  <p className="font-semibold text-slate-700 line-clamp-2">{it.name}</p>
+                  <p className="text-xs text-slate-400">{it.item_sku || it.variation_sku || ''} {it.amount ? `· ${it.amount} un.` : ''} {it.item_price ? `· ${fmtPreco(it.item_price)}` : ''}</p>
+                </div>
+              </div>
+            ))}
+            {!item && <p className="text-sm text-slate-400">—</p>}
+          </Section>
+
+          {/* Solicitado pelo comprador */}
+          <Section icon={User} title="Solicitado pelo comprador">
+            <Field label="Comprador">{r.buyer_username || '—'}</Field>
+            <Field label="Valor do reembolso"><b>{fmtPreco(r.refund_amount)}</b>{Number(r.amount_before_discount) > Number(r.refund_amount) && <span className="text-xs text-slate-400"> (antes do desconto {fmtPreco(r.amount_before_discount)})</span>}</Field>
+            <Field label="Tipo">{SOLUTION_LABELS[r.return_solution] ?? '—'}</Field>
+            <Field label="Motivo">{REASON_LABELS[r.reason] || r.reason || '—'}</Field>
+            {r.text_reason && <p className="text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2 mt-1 italic">&ldquo;{r.text_reason}&rdquo;</p>}
+            {(photos.length > 0 || videos.length > 0) && (
+              <div className="flex gap-2 flex-wrap mt-2">
+                {photos.map((p, i) => <a key={i} href={p} target="_blank" rel="noreferrer"><img src={p} alt="" className="w-20 h-20 rounded-lg object-cover border border-slate-200 hover:ring-2 hover:ring-orange-300" /></a>)}
+                {videos.map((v, i) => <a key={`v${i}`} href={v} target="_blank" rel="noreferrer" className="w-20 h-20 rounded-lg bg-slate-800 text-white text-xs flex items-center justify-center">▶ vídeo</a>)}
               </div>
             )}
-          </div>
-        </>
-      )}
+          </Section>
+
+          {/* Disputa */}
+          {((r.dispute_reason?.length || 0) > 0 || ['JUDGING', 'SELLER_DISPUTE'].includes(r.status)) && (
+            <Section icon={Scale} title="Informações da disputa" tone="bg-rose-50/50 border-rose-100">
+              {(r.dispute_reason || []).map((reason, i) => (
+                <div key={i} className="mb-2 last:mb-0">
+                  <p className="text-sm font-semibold text-slate-700">Razão: {reason}</p>
+                  {r.dispute_text_reason?.[i] && <p className="text-sm text-slate-600 mt-0.5">{r.dispute_text_reason[i]}</p>}
+                </div>
+              ))}
+              {!(r.dispute_reason?.length) && <p className="text-sm text-slate-600">Em análise pela Shopee.</p>}
+            </Section>
+          )}
+
+          {/* Compensação */}
+          <Section icon={Wallet} title="Compensação pra você (vendedor)" tone={Number(r.compensation_amount) > 0 ? 'bg-violet-50/60 border-violet-100' : undefined}>
+            {Number(r.compensation_amount) > 0 ? (
+              <>
+                <Field label="Valor"><b className="text-violet-700 text-base">{fmtPreco(r.compensation_amount)}</b></Field>
+                {(r.compensation_list || []).map((c, i) => <Field key={i} label="Tipo">{COMP_TYPE_LABELS[c.compensation_type] || c.compensation_type} · {fmtPreco(c.compensation_amount)}</Field>)}
+                {r.compensation_status && <Field label="Situação">{COMP_STATUS_LABELS[r.compensation_status] || r.compensation_status}</Field>}
+                <p className="text-[11px] text-slate-400 mt-1">Valor definido pela Shopee pra cobrir o prejuízo (ajuste de carteira). Confira o extrato da carteira no Seller Center.</p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">{r.compensation_status === 'NOT_REQUIRED' ? 'Não se aplica a este caso.' : 'Nenhuma compensação registrada.'}</p>
+            )}
+          </Section>
+
+          {/* Envio da devolução */}
+          <Section icon={Truck} title="Envio da devolução">
+            <Field label="Status">{LOGISTICS_LABELS[r.reverse_logistics_status] || r.reverse_logistics_status || '—'}</Field>
+            {r.tracking_number && (
+              <Field label="Rastreio">
+                <a href={`https://www.17track.net/pt/track?nums=${r.tracking_number}`} target="_blank" rel="noreferrer" className="font-mono text-sky-600 hover:underline inline-flex items-center gap-1">{r.tracking_number}<ExternalLink size={11} /></a>
+              </Field>
+            )}
+            {r.is_arrived_at_warehouse === 1 && <Field label="Armazém">Chegou no armazém da Shopee</Field>}
+          </Section>
+
+          {/* Responsabilidade logística */}
+          <Section icon={ScrollText} title="Responsabilidade logística">
+            <Field label="Responsável">{RESPONSIBILITY_LABELS[r.shipping_fee_responsibility] || r.shipping_fee_responsibility || '—'}</Field>
+          </Section>
+
+          <p className="text-[11px] text-slate-400 text-center">Dados da Shopee · detalhe atualizado {ago(r.detail_synced_at)}</p>
+        </div>
+      </div>
+
+      <DisputeModal open={disputeOpen} ret={r} reasons={reasons || []} disputeReturn={api.disputeReturn}
+        onClose={() => setDisputeOpen(false)} onDone={() => { setDisputeOpen(false); onClose() }} />
+      <ConfirmReturnModal open={confirmOpen} ret={r} confirmReturn={api.confirmReturn}
+        onClose={() => setConfirmOpen(false)} onDone={() => { setConfirmOpen(false); onClose() }} />
     </div>
   )
 }
 
+// ── Relatório ───────────────────────────────────────────────────────────
+function ReportTab({ rows }) {
+  const byReason = useMemo(() => {
+    const m = {}
+    rows.forEach(r => { m[r.reason] = (m[r.reason] || 0) + 1 })
+    return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 10)
+  }, [rows])
+  const byProduct = useMemo(() => {
+    const m = {}
+    rows.forEach(r => {
+      const it = r.items?.[0]; if (!it) return
+      const k = it.item_id
+      m[k] = m[k] || { name: it.name, img: it.images?.[0], count: 0, refunded: 0 }
+      m[k].count++
+      if (['refunded', 'compensated'].includes(outcomeOf(r))) m[k].refunded += Number(r.refund_amount) || 0
+    })
+    return Object.values(m).sort((a, b) => b.count - a.count).slice(0, 8)
+  }, [rows])
+  const byMonth = useMemo(() => {
+    const m = {}
+    rows.forEach(r => {
+      if (!r.create_time) return
+      const k = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(new Date(r.create_time))
+      m[k] = m[k] || { total: 0, refunded: 0 }
+      m[k].total++
+      if (['refunded', 'compensated'].includes(outcomeOf(r))) m[k].refunded++
+    })
+    return Object.entries(m).sort((a, b) => a[0].localeCompare(b[0])).slice(-12)
+  }, [rows])
+  const maxReason = byReason[0]?.[1] || 1
+  const maxMonth = Math.max(1, ...byMonth.map(([, v]) => v.total))
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
+        <p className="text-sm font-bold text-slate-700 mb-4">Motivos mais comuns</p>
+        <div className="flex flex-col gap-2.5">
+          {byReason.map(([reason, count]) => (
+            <div key={reason} className="flex items-center gap-3" title={`${count} solicitações`}>
+              <span className="text-xs text-slate-600 w-44 shrink-0 truncate">{REASON_LABELS[reason] || reason}</span>
+              <div className="flex-1 h-5 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full rounded-full flex items-center justify-end pr-1.5" style={{ width: `${Math.max((count / maxReason) * 100, 7)}%`, background: SHOPEE_ORANGE }}>
+                  <span className="text-[10px] font-black text-white">{count}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+          {!byReason.length && <p className="text-sm text-slate-400">Sem dados no período.</p>}
+        </div>
+      </div>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
+        <p className="text-sm font-bold text-slate-700 mb-4">Solicitações por mês <span className="font-normal text-slate-400">(laranja escuro = reembolsadas)</span></p>
+        <div className="flex items-end gap-1.5 h-40">
+          {byMonth.map(([k, v]) => (
+            <div key={k} className="flex-1 flex flex-col items-center gap-1 min-w-0" title={`${k}: ${v.total} solicitações, ${v.refunded} reembolsadas`}>
+              <div className="w-full flex flex-col justify-end rounded-t-md overflow-hidden" style={{ height: `${(v.total / maxMonth) * 128}px`, background: '#fed7c7' }}>
+                <div style={{ height: `${(v.refunded / Math.max(1, v.total)) * 100}%`, background: SHOPEE_ORANGE }} />
+              </div>
+              <span className="text-[9px] text-slate-400">{k.slice(5)}/{k.slice(2, 4)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 lg:col-span-2">
+        <p className="text-sm font-bold text-slate-700 mb-3">Produtos com mais solicitações</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {byProduct.map((p, i) => (
+            <div key={i} className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 py-2">
+              <div className="w-10 h-10 rounded-lg bg-white overflow-hidden border border-slate-200 shrink-0">{p.img && <img src={p.img} alt="" className="w-full h-full object-cover" />}</div>
+              <p className="text-xs text-slate-700 flex-1 min-w-0 line-clamp-2">{p.name}</p>
+              <div className="text-right shrink-0">
+                <p className="text-sm font-black text-slate-800">{p.count}×</p>
+                {p.refunded > 0 && <p className="text-[10px] text-rose-600">{fmtPreco(p.refunded)} reemb.</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Página ──────────────────────────────────────────────────────────────
 export function ShopeeReturnsPage() {
-  const shopee = useShopeeReturns()
-  const [tab, setTab] = useState('acompanhamento')
+  const api = useShopeeReturns()
+  const { rows, loading, error, syncing, syncError, lastSync, sync } = api
+  const [tab, setTab]       = useState('lista')
+  const [period, setPeriod] = useState(90)
+  const [filter, setFilter] = useState('todas')
+  const [q, setQ]           = useState('')
+  const [openSn, setOpenSn] = useState(null)
+
+  const inPeriod = useMemo(() => {
+    if (!period) return rows
+    const since = Date.now() - period * 86400000
+    return rows.filter(r => r.create_time && new Date(r.create_time).getTime() >= since)
+  }, [rows, period])
+
+  // Prazos: sempre de TODAS (não só do período) — nada que precise de ação fica escondido
+  const actionable = useMemo(() => rows.filter(r => deadlineOf(r)?.ours)
+    .sort((a, b) => new Date(deadlineOf(a).at || 0) - new Date(deadlineOf(b).at || 0)), [rows])
+
+  const kpis = useMemo(() => {
+    const k = { total: inPeriod.length, refunded: 0, refundedN: 0, comp: 0, compN: 0, kept: 0, keptN: 0, open: 0, openN: 0 }
+    inPeriod.forEach(r => {
+      const o = outcomeOf(r), v = Number(r.refund_amount) || 0
+      if (o === 'refunded' || o === 'compensated') { k.refunded += v; k.refundedN++ }
+      if (Number(r.compensation_amount) > 0) { k.comp += Number(r.compensation_amount); k.compN++ }
+      if (o === 'kept') { k.kept += v; k.keptN++ }
+      if (o === 'open') { k.open += v; k.openN++ }
+    })
+    return k
+  }, [inPeriod])
+
+  const list = useMemo(() => {
+    const s = q.trim().toLowerCase()
+    let l = (filter === 'acao' ? actionable : inPeriod).filter(r => matchFilter(r, filter))
+    if (s) l = l.filter(r => [r.return_sn, r.order_sn, r.buyer_username, r.items?.[0]?.name].some(x => (x || '').toLowerCase().includes(s)))
+    return l
+  }, [inPeriod, actionable, filter, q])
+
+  const openRow = rows.find(r => r.return_sn === openSn)
+  const overdue = actionable.filter(r => urgencyOf(r) === 'overdue').length
+  const soon = actionable.filter(r => urgencyOf(r) === 'soon').length
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
-      <div className="max-w-[1500px] mx-auto space-y-6">
-
+      <div className="max-w-[1400px] mx-auto space-y-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-sm" style={{ background: `linear-gradient(135deg, ${SHOPEE_ORANGE}, #D6431F)`, boxShadow: `0 2px 10px ${SHOPEE_ORANGE}40` }}>
+            <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-sm" style={{ background: `linear-gradient(135deg, ${SHOPEE_ORANGE}, #D6431F)` }}>
               <RotateCcw size={20} strokeWidth={1.5} className="text-white" />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Retornos e Pedidos Cancelados</h1>
-              <p className="text-sm text-slate-500">Acompanhamento de devoluções da Shopee, direto da API</p>
+              <p className="text-sm text-slate-500">Devoluções e reembolsos da Shopee — prazos, disputas e compensações</p>
             </div>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-slate-400">
+            {syncing ? <span className="flex items-center gap-1.5 text-orange-600 font-semibold"><Loader2 size={13} className="animate-spin" /> Sincronizando com a Shopee...</span>
+              : <span>Atualizado {ago(lastSync)}</span>}
+            <button onClick={() => sync()} disabled={syncing} className="flex items-center gap-1.5 font-semibold text-slate-500 hover:text-orange-600 disabled:opacity-40"><RefreshCw size={13} /> Atualizar</button>
+            <button onClick={() => sync({ full: true })} disabled={syncing} className="font-semibold text-slate-400 hover:text-orange-600 disabled:opacity-40" title="Varre todas as páginas da Shopee (~1 min)">Sincronização completa</button>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl p-1 w-fit">
-          <button onClick={() => setTab('acompanhamento')}
-            className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg transition-colors ${tab === 'acompanhamento' ? 'text-white' : 'text-slate-500 hover:bg-slate-50'}`}
-            style={tab === 'acompanhamento' ? { background: SHOPEE_ORANGE } : undefined}>
-            <LayoutList size={15} /> Acompanhamento
-          </button>
-          <button onClick={() => setTab('relatorio')}
-            className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg transition-colors ${tab === 'relatorio' ? 'text-white' : 'text-slate-500 hover:bg-slate-50'}`}
-            style={tab === 'relatorio' ? { background: SHOPEE_ORANGE } : undefined}>
-            <BarChart3 size={15} /> Relatório
-          </button>
+        {syncError && <div className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5"><AlertTriangle size={15} /> Erro ao sincronizar: {syncError}</div>}
+        {error && <div className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5"><AlertTriangle size={15} /> {error}</div>}
+
+        {/* Precisa agir — sempre no topo */}
+        {actionable.length > 0 && (
+          <div className={`rounded-2xl border-2 p-4 ${overdue || soon ? 'border-amber-300 bg-amber-50' : 'border-sky-200 bg-sky-50'}`}>
+            <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5 mb-2">
+              <AlertCircle size={16} className="text-amber-600" /> {actionable.length} solicitaç{actionable.length > 1 ? 'ões precisam' : 'ão precisa'} de ação sua
+              {overdue > 0 && <span className="text-rose-700">· {overdue} com prazo vencido</span>}
+              {soon > 0 && <span className="text-amber-700">· {soon} vencendo em até 3 dias</span>}
+            </p>
+            <div className="flex flex-col gap-1.5">
+              {actionable.slice(0, 6).map(r => (
+                <button key={r.return_sn} onClick={() => setOpenSn(r.return_sn)} className="flex items-center gap-3 bg-white rounded-xl px-3 py-2 text-left hover:ring-2 hover:ring-orange-200">
+                  <DeadlineChip r={r} />
+                  <span className="text-sm font-semibold text-slate-700 truncate flex-1">{r.items?.[0]?.name || r.return_sn}</span>
+                  <span className="text-xs text-slate-500 hidden md:inline">{deadlineOf(r).label}</span>
+                  <span className="text-sm font-bold text-slate-800 shrink-0">{fmtPreco(r.refund_amount)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Período + KPIs */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {PERIODS.map(([d, label]) => (
+            <button key={d} onClick={() => setPeriod(d)}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${period === d ? 'text-white border-transparent' : 'bg-white border-slate-200 text-slate-500 hover:border-orange-300'}`}
+              style={period === d ? { background: SHOPEE_ORANGE } : undefined}>{label}</button>
+          ))}
+          <span className="text-xs text-slate-400 ml-1">{period ? `solicitações criadas nos últimos ${period} dias` : 'todo o histórico'}</span>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <Kpi icon={LayoutList} label="Solicitações" value={kpis.total} color="#64748b" bg="#f1f5f9" onClick={() => setFilter('todas')} />
+          <Kpi icon={TrendingDown} label="Reembolsado ao comprador" value={fmtPreco(kpis.refunded)} sub={`${kpis.refundedN} caso(s)`} color="#e11d48" bg="#fff1f2" onClick={() => setFilter('reembolsadas')} />
+          <Kpi icon={Wallet} label="Compensação recebida" value={fmtPreco(kpis.comp)} sub={`${kpis.compN} caso(s) — ajuste de carteira`} color="#7c3aed" bg="#f5f3ff" onClick={() => setFilter('compensacao')} />
+          <Kpi icon={TrendingUp} label="Canceladas — valor mantido" value={fmtPreco(kpis.kept)} sub={`${kpis.keptN} caso(s)`} color="#059669" bg="#ecfdf5" onClick={() => setFilter('canceladas')} />
+          <Kpi icon={Hourglass} label="Em andamento" value={fmtPreco(kpis.open)} sub={`${kpis.openN} caso(s)`} color="#0284c7" bg="#f0f9ff" onClick={() => setFilter('andamento')} />
         </div>
 
-        {tab === 'acompanhamento' ? <AcompanhamentoTab shopee={shopee} /> : <ReportTab shopee={shopee} />}
+        {/* Abas */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl p-1">
+            <button onClick={() => setTab('lista')} className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg ${tab === 'lista' ? 'text-white' : 'text-slate-500 hover:bg-slate-50'}`} style={tab === 'lista' ? { background: SHOPEE_ORANGE } : undefined}><LayoutList size={15} /> Solicitações</button>
+            <button onClick={() => setTab('relatorio')} className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg ${tab === 'relatorio' ? 'text-white' : 'text-slate-500 hover:bg-slate-50'}`} style={tab === 'relatorio' ? { background: SHOPEE_ORANGE } : undefined}><BarChart3 size={15} /> Relatório</button>
+          </div>
+          {tab === 'lista' && (
+            <div className="relative w-full sm:w-72">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={q} onChange={e => setQ(e.target.value)} placeholder="Pedido, solicitação, produto, comprador..." className="input pl-9 py-2 text-sm" />
+            </div>
+          )}
+        </div>
+
+        {tab === 'relatorio' ? <ReportTab rows={inPeriod} /> : (
+          <>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {FILTERS.map(([key, label]) => (
+                <button key={key} onClick={() => setFilter(key)}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${filter === key ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+                  {label}{key === 'acao' && actionable.length ? ` (${actionable.length})` : ''}
+                </button>
+              ))}
+              <span className="text-xs text-slate-400 ml-1">{list.length} resultado(s){filter === 'acao' ? ' — de qualquer período' : ''}</span>
+            </div>
+
+            {loading ? (
+              <div className="text-center py-16 bg-white rounded-2xl border border-slate-200"><Loader2 size={26} className="mx-auto mb-2 animate-spin text-slate-300" /><p className="text-slate-400 text-sm">Carregando...</p></div>
+            ) : list.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
+                <CheckCircle2 size={30} strokeWidth={1} className="mx-auto mb-2 text-slate-200" />
+                <p className="text-slate-400 text-sm">{rows.length ? 'Nenhuma solicitação nesse filtro' : syncing ? 'Buscando as solicitações na Shopee...' : 'Nenhuma solicitação sincronizada ainda'}</p>
+              </div>
+            ) : (
+              <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100">
+                {list.slice(0, 300).map(r => {
+                  const it = r.items?.[0]
+                  return (
+                    <button key={r.return_sn} onClick={() => setOpenSn(r.return_sn)}
+                      className="w-full text-left grid grid-cols-[4px_1fr] hover:bg-orange-50/40 transition-colors">
+                      <span style={{ background: OUTCOME[outcomeOf(r)].bar }} />
+                      <div className="px-4 py-3 grid grid-cols-1 md:grid-cols-[90px_minmax(0,2.2fr)_minmax(0,1.3fr)_110px_minmax(0,1.6fr)] gap-x-4 gap-y-1 items-center">
+                        <div className="text-xs text-slate-500">
+                          <p className="font-semibold text-slate-700">{fmtDate(r.create_time)}</p>
+                          <p className="text-[10px] text-slate-400 font-mono truncate">{r.order_sn}</p>
+                        </div>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 shrink-0">{it?.images?.[0] ? <img src={it.images[0]} alt="" className="w-full h-full object-cover" loading="lazy" /> : <ImageIcon size={14} className="m-auto mt-3 text-slate-300" />}</div>
+                          <div className="min-w-0">
+                            <p className="text-sm text-slate-700 truncate">{it?.name || '—'}</p>
+                            <p className="text-[11px] text-slate-400 truncate">{r.buyer_username}</p>
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs text-slate-600 truncate">{REASON_LABELS[r.reason] || r.reason}</p>
+                          {(r.dispute_reason?.length > 0) && <p className="text-[10px] font-bold text-rose-600 flex items-center gap-1"><Scale size={10} /> Disputa aberta</p>}
+                        </div>
+                        <div className="text-sm font-bold text-slate-800 md:text-right">{fmtPreco(r.refund_amount)}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap md:justify-end">
+                          <OutcomeBadge r={r} />
+                          <DeadlineChip r={r} />
+                          {Number(r.compensation_amount) > 0 && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">+{fmtPreco(r.compensation_amount)}</span>}
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+                {list.length > 300 && <p className="text-xs text-slate-400 text-center py-3">Mostrando 300 de {list.length} — use a busca ou um período menor.</p>}
+              </div>
+            )}
+          </>
+        )}
       </div>
+
+      {openRow && <DetailPanel r={openRow} api={api} onClose={() => setOpenSn(null)} />}
     </div>
   )
 }
