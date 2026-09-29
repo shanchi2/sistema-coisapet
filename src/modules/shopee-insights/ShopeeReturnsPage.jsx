@@ -510,10 +510,15 @@ function DetailPanel({ r, api, onClose }) {
         </div>
       </div>
 
-      <DisputeModal open={disputeOpen} ret={r} reasons={reasons || []} disputeReturn={api.disputeReturn} convertProofImages={api.convertProofImages}
-        onClose={() => setDisputeOpen(false)} onDone={() => { setDisputeOpen(false); onClose() }} />
-      <ConfirmReturnModal open={confirmOpen} ret={r} confirmReturn={api.confirmReturn}
-        onClose={() => setConfirmOpen(false)} onDone={() => { setConfirmOpen(false); onClose() }} />
+      {/* Os modais ficam na árvore do React DENTRO do fundo do painel (que
+          fecha no clique) — sem barrar a propagação aqui, qualquer clique
+          no modal (ex: abrir o select de motivo) "vazava" e fechava tudo. */}
+      <div onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+        <DisputeModal open={disputeOpen} ret={r} reasons={reasons || []} disputeReturn={api.disputeReturn} convertProofImages={api.convertProofImages}
+          onClose={() => setDisputeOpen(false)} onDone={() => { setDisputeOpen(false); onClose() }} />
+        <ConfirmReturnModal open={confirmOpen} ret={r} confirmReturn={api.confirmReturn}
+          onClose={() => setConfirmOpen(false)} onDone={() => { setConfirmOpen(false); onClose() }} />
+      </div>
     </div>
   )
 }
