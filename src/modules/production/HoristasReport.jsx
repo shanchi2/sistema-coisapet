@@ -135,8 +135,12 @@ function Kpi({ icon: Icon, label, value, sub, color, bg }) {
   )
 }
 
-// Barras por dia, empilhadas por funcionário (legenda sempre presente)
-function DailyChart({ from, to, entries, emps, colorOf }) {
+// Barras por dia, empilhadas por funcionário (legenda sempre presente).
+// `showHours` (30/09, pedido do Raphael): liga uma SEGUNDA faixa de barras
+// logo abaixo, com as horas do ponto de cada dia — mesmo eixo de dias,
+// escala própria (nunca dois eixos no mesmo gráfico), mesmas cores por
+// funcionário. O balão do dia mostra peças, horas e peças/hora de cada um.
+function DailyChart({ from, to, entries, emps, colorOf, hours, showHours }) {
   const days = []
   for (let d = from; d <= to; d = addDays(d, 1)) days.push(d)
   const byDay = {}
@@ -144,10 +148,34 @@ function DailyChart({ from, to, entries, emps, colorOf }) {
     const x = (byDay[e.date] ||= {})
     x[e.employee_id] = (x[e.employee_id] || 0) + e.quantity
   }
+  const hoursOf = (d, id) => hours?.[`${id}|${d}`] || 0
+  const dayHours = d => emps.reduce((s, e) => s + hoursOf(d, e.id), 0)
   const max = Math.max(1, ...days.map(d => Object.values(byDay[d] || {}).reduce((s, v) => s + v, 0)))
+  const maxH = Math.max(1, ...days.map(dayHours))
   const dense = days.length > 14
+
+  function Tooltip({ d, parts, total }) {
+    const h = dayHours(d)
+    return (
+      <div className="pointer-events-none absolute bottom-full mb-1 hidden group-hover:block z-20 bg-slate-800 text-white text-[11px] rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg">
+        <p className="font-bold">{fmtLong(d)} — {total} peça(s){h ? ` · ${fmtHours(h)}` : ''}</p>
+        {emps.filter(e => parts[e.id] || hoursOf(d, e.id)).map(e => {
+          const ph = hoursOf(d, e.id)
+          return (
+            <p key={e.id}>
+              <span className="inline-block w-2 h-2 rounded-sm mr-1" style={{ background: colorOf(e.id) }} />
+              {e.name.split(' ')[0]}: {parts[e.id] || 0} peça(s)
+              {ph ? ` · ${fmtHours(ph)} · ${fmtNum((parts[e.id] || 0) / ph, 1)}/h` : parts[e.id] ? ' · sem ponto' : ''}
+            </p>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <div>
+      {/* Peças */}
       <div className="flex items-end gap-[3px] h-44">
         {days.map(d => {
           const parts = byDay[d] || {}
@@ -160,14 +188,13 @@ function DailyChart({ from, to, entries, emps, colorOf }) {
                 {emps.map(emp => parts[emp.id] ? <div key={emp.id} style={{ height: `${(parts[emp.id] / total) * 100}%`, background: colorOf(emp.id) }} /> : null)}
               </div>
               {!total && <div className={`w-full h-[3px] rounded ${weekend ? 'bg-slate-100' : 'bg-slate-200'}`} />}
-              <div className="pointer-events-none absolute bottom-full mb-1 hidden group-hover:block z-10 bg-slate-800 text-white text-[11px] rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg">
-                <p className="font-bold">{fmtLong(d)} — {total} peça(s)</p>
-                {emps.filter(e => parts[e.id]).map(e => <p key={e.id}><span className="inline-block w-2 h-2 rounded-sm mr-1" style={{ background: colorOf(e.id) }} />{e.name.split(' ')[0]}: {parts[e.id]}</p>)}
-              </div>
+              <Tooltip d={d} parts={parts} total={total} />
             </div>
           )
         })}
       </div>
+
+      {/* Dias */}
       <div className="flex gap-[3px] mt-1">
         {days.map((d, i) => (
           <span key={d} className={`flex-1 text-center text-[9px] min-w-0 ${[0, 6].includes(toD(d).getUTCDay()) ? 'text-slate-300' : 'text-slate-400'}`}>
@@ -175,6 +202,39 @@ function DailyChart({ from, to, entries, emps, colorOf }) {
           </span>
         ))}
       </div>
+
+      {/* Horas trabalhadas (faixa própria, pendurada pra baixo) */}
+      {showHours && (
+        <div className="mt-2 pt-2 border-t border-dashed border-slate-200">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Horas trabalhadas (ponto)</p>
+          <div className="flex items-start gap-[3px] h-24">
+            {days.map(d => {
+              const parts = byDay[d] || {}
+              const total = Object.values(parts).reduce((s, v) => s + v, 0)
+              const h = dayHours(d)
+              const noPunch = total > 0 && !h
+              return (
+                <div key={d} className="flex-1 flex flex-col items-center justify-start h-full min-w-0 group relative">
+                  {h > 0 ? (
+                    <>
+                      <div className="w-full flex flex-col rounded-b-[4px] overflow-hidden opacity-60" style={{ height: `${(h / maxH) * 70}px`, gap: 2 }}>
+                        {emps.map(emp => hoursOf(d, emp.id) ? <div key={emp.id} style={{ height: `${(hoursOf(d, emp.id) / h) * 100}%`, background: colorOf(emp.id) }} /> : null)}
+                      </div>
+                      <span className="text-[9px] font-bold text-slate-500 mt-0.5">{fmtHours(h)}</span>
+                      {total > 0 && !dense && <span className="text-[8px] text-slate-400">{fmtNum(total / h, 1)}/h</span>}
+                    </>
+                  ) : noPunch ? (
+                    <span className="text-[9px] font-bold text-amber-500 mt-1" title="Teve produção mas não tem batida de ponto">!</span>
+                  ) : (
+                    <div className="w-full h-[3px] rounded bg-slate-100" />
+                  )}
+                  <Tooltip d={d} parts={parts} total={total} />
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -280,6 +340,8 @@ export function HoristasReport() {
   const [punches, setPunches] = useState([])
   const [loading, setLoading] = useState(true)
   const [panelEmp, setPanelEmp] = useState(null)
+  const [showHours, setShowHours] = useState(() => { try { return localStorage.getItem('horistas_show_hours') === '1' } catch { return false } })
+  function toggleHours() { setShowHours(v => { try { localStorage.setItem('horistas_show_hours', v ? '0' : '1') } catch { /* ok */ } return !v }) }
 
   const range = rangeOf(mode, anchor, custom)
   const prev = previousRange(range, mode)
@@ -389,14 +451,21 @@ export function HoristasReport() {
               {/* Por dia */}
               <div className="bg-white border border-slate-200 rounded-2xl p-5">
                 <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-                  <p className="text-sm font-bold text-slate-700">Produção por dia</p>
+                  <div className="flex items-center gap-3">
+                    <p className="text-sm font-bold text-slate-700">Produção por dia</p>
+                    <button type="button" onClick={toggleHours}
+                      className={`flex items-center gap-2 text-xs font-semibold px-2.5 py-1 rounded-full border transition ${showHours ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+                      <span className={`relative w-7 h-4 rounded-full transition ${showHours ? 'bg-sky-500' : 'bg-slate-300'}`}><span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${showHours ? 'left-[14px]' : 'left-0.5'}`} /></span>
+                      <Clock size={12} /> Horas trabalhadas
+                    </button>
+                  </div>
                   {chartEmps.length > 1 && (
                     <div className="flex items-center gap-3 text-xs text-slate-500">
                       {chartEmps.map(e => <span key={e.id} className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: colorOf(e.id) }} />{e.name.split(' ')[0]}</span>)}
                     </div>
                   )}
                 </div>
-                <DailyChart from={range.from} to={range.to} entries={cur.entries} emps={chartEmps} colorOf={colorOf} />
+                <DailyChart from={range.from} to={range.to} entries={cur.entries} emps={chartEmps} colorOf={colorOf} hours={hours} showHours={showHours} />
               </div>
 
               {/* Por funcionário */}
