@@ -78,7 +78,7 @@ async function pool<T>(items: T[], size: number, fn: (x: T) => Promise<void>) {
 
 type OrderRow = {
   id: string; num_venda: string; data_venda: string | null; ship_date: string
-  status_ml: string | null; comprador_nome_img: string | null; estado_uf?: string | null
+  status_ml: string | null; comprador_nome_img: string | null; estado_uf?: string | null; comprador?: string | null
   items?: { picked: boolean }[]
 }
 
@@ -124,7 +124,8 @@ export async function refreshShopeeOrders(db: DB, integration: any, orders: Orde
         marketplace_refreshed_at: new Date().toISOString(),
         shipping_deadline_checked_at: deadline ? new Date().toISOString() : null,
       }
-      if (api.buyer_username) patch.comprador = api.buyer_username
+      // Não troca "usuario / Nome Real" (planilha) por só "usuario" (API)
+      if (api.buyer_username && !(o.comprador || '').startsWith(api.buyer_username + ' / ')) patch.comprador = api.buyer_username
       if (api.total_amount != null) patch.gross_value = api.total_amount
       if (cancelled && anyPicked && !/cancelad/i.test(o.status_ml || '')) patch.needs_attention = true
       if (cancelled && !/cancelad/i.test(o.status_ml || '')) result.cancelled++
@@ -160,4 +161,4 @@ export async function refreshShopeeOrders(db: DB, integration: any, orders: Orde
   return result
 }
 
-export const REFRESH_SELECT = 'id, num_venda, data_venda, ship_date, status_ml, comprador_nome_img, estado_uf, items:order_items(picked)'
+export const REFRESH_SELECT = 'id, num_venda, data_venda, ship_date, status_ml, comprador, comprador_nome_img, estado_uf, items:order_items(picked)'

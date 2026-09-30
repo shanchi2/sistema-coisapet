@@ -67,35 +67,53 @@ function StatusPill({ o }) {
   return <span className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded-full ${tone}`}>{label}</span>
 }
 
-// Nome do comprador. Shopee: o nome real só existe como imagem (a API
-// mascara o texto) — mostra a imagem + @usuário. ML: nome em texto.
-function BuyerName({ o, big = false }) {
-  const username = o.source === 'shopee' ? o.comprador : null
+// Comprador da Shopee: "usuario" (API) ou "usuario / Nome Real" (planilha
+// exportada da Shopee, que traz o nome em texto). Nome real também pode vir
+// como imagem (comprador_nome_img, dado de etiqueta da API).
+function buyerParts(o) {
+  const raw = o.comprador || ''
+  if (o.source !== 'shopee') return { username: null, name: raw || null }
+  const i = raw.indexOf(' / ')
+  return i >= 0 ? { username: raw.slice(0, i), name: raw.slice(i + 3) || null } : { username: raw || null, name: null }
+}
+const shippedStatus = o => /caminho|entregue|confirma|cancel/i.test(o.status_ml || '')
+
+// Nome em destaque: imagem da Shopee > nome em texto (planilha / ML)
+function BuyerNameMain({ o, big = false, inline = false }) {
+  const { name } = buyerParts(o)
   if (o.comprador_nome_img) {
-    return (
-      <div className="min-w-0">
-        <img src={o.comprador_nome_img} alt="Nome do comprador" draggable={false}
-          className={`mix-blend-multiply select-none ${big ? 'h-14' : 'h-10'} w-auto max-w-full object-contain object-left -ml-0.5`} />
-        {username && <p className={`font-semibold text-slate-400 truncate ${big ? 'text-sm' : 'text-xs'}`}>@{username}</p>}
-      </div>
-    )
+    return <img src={o.comprador_nome_img} alt="Nome do comprador" draggable={false}
+      className={`mix-blend-multiply select-none w-auto object-contain object-left ${big ? 'h-14 max-w-full' : inline ? 'h-11 max-w-[220px]' : 'h-10 max-w-full'}`} />
   }
+  if (name) return <p className={`font-bold text-slate-800 truncate ${big ? 'text-2xl' : inline ? 'text-lg' : 'text-[15px]'}`}>{name}</p>
+  return null
+}
+
+function BuyerName({ o, big = false }) {
+  const { username } = buyerParts(o)
+  const main = BuyerNameMain({ o, big })
   return (
     <div className="min-w-0">
-      <p className={`font-bold text-slate-700 truncate ${big ? 'text-lg' : 'text-[15px]'}`}>
-        {username ? <span className="text-slate-500">@{username}</span> : (o.comprador || 'Não identificado')}
-      </p>
-      {username && !/caminho|entregue|confirma|cancel/i.test(o.status_ml || '') && (
-        <p className="text-[11px] text-slate-400">nome real aparece quando o envio for organizado na Shopee</p>
+      {main || (!username && <p className={`font-bold text-slate-700 ${big ? 'text-lg' : ''}`}>Não identificado</p>)}
+      {username && <p className={`font-semibold text-slate-400 truncate ${big ? 'text-sm' : 'text-xs'}`}>@{username}</p>}
+      {username && !main && !shippedStatus(o) && (
+        <p className="text-[11px] text-slate-400">nome e estado aparecem quando o envio for organizado na Shopee</p>
       )}
     </div>
   )
 }
 
 // UF de destino (01/10): ML manda em texto; Shopee vem do código do hub
-// de entrega (ver _shared/shopeeOrders.ts). Fora de SP = viagem longa →
-// mini alerta pra caprichar na embalagem (pedido do Raphael).
-const destUF = o => { const u = clean(o.estado_uf); return u && /^[A-Za-z]{2}$/.test(u.trim()) ? u.trim().toUpperCase() : null }
+// de entrega (ver _shared/shopeeOrders.ts) ou da planilha, que escreve o
+// estado por extenso ("São Paulo") — normalizado pra sigla aqui. Fora de
+// SP = viagem longa → mini alerta pra caprichar na embalagem.
+const UF_BY_NAME = { 'acre': 'AC', 'alagoas': 'AL', 'amapa': 'AP', 'amazonas': 'AM', 'bahia': 'BA', 'ceara': 'CE', 'distrito federal': 'DF', 'espirito santo': 'ES', 'goias': 'GO', 'maranhao': 'MA', 'mato grosso': 'MT', 'mato grosso do sul': 'MS', 'minas gerais': 'MG', 'para': 'PA', 'paraiba': 'PB', 'parana': 'PR', 'pernambuco': 'PE', 'piaui': 'PI', 'rio de janeiro': 'RJ', 'rio grande do norte': 'RN', 'rio grande do sul': 'RS', 'rondonia': 'RO', 'roraima': 'RR', 'santa catarina': 'SC', 'sao paulo': 'SP', 'sergipe': 'SE', 'tocantins': 'TO' }
+const destUF = o => {
+  const u = clean(o.estado_uf)?.trim()
+  if (!u) return null
+  if (/^[A-Za-z]{2}$/.test(u)) return u.toUpperCase()
+  return UF_BY_NAME[u.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()] || null
+}
 function UfBadge({ o, big = false }) {
   const uf = destUF(o)
   if (!uf) return null
@@ -985,9 +1003,7 @@ export function ExpedicaoPage() {
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-3 min-w-0 flex-1 flex-wrap">
                       {o.num_venda && <p className="text-xl font-black text-slate-800 font-mono tracking-tight leading-tight shrink-0">#{o.num_venda}</p>}
-                      {o.comprador_nome_img
-                        ? <img src={o.comprador_nome_img} alt="Nome do comprador" draggable={false} className="h-11 w-auto max-w-[220px] object-contain object-left mix-blend-multiply select-none" />
-                        : o.source !== 'shopee' && o.comprador && <p className="text-base font-bold text-slate-700 truncate">{o.comprador}</p>}
+                      <BuyerNameMain o={o} inline />
                     </div>
                     <UfBadge o={o} />
                     <span className={`text-sm font-black px-3 py-1.5 rounded-full shrink-0 flex items-center gap-1 ${complete ? 'bg-emerald-500 text-white' : done > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
@@ -998,8 +1014,8 @@ export function ExpedicaoPage() {
                   {/* Linha 2: status + @usuário */}
                   <div className="flex items-center gap-2 flex-wrap -mt-1">
                     <StatusPill o={o} />
-                    {o.source === 'shopee' && o.comprador && <span className="text-sm font-semibold text-slate-400">@{o.comprador}</span>}
-                    {o.source === 'shopee' && !o.comprador_nome_img && !/caminho|entregue|confirma|cancel/i.test(o.status_ml || '') && (
+                    {buyerParts(o).username && <span className="text-sm font-semibold text-slate-400">@{buyerParts(o).username}</span>}
+                    {o.source === 'shopee' && !o.comprador_nome_img && !buyerParts(o).name && !shippedStatus(o) && (
                       <span className="text-[11px] text-slate-400">· nome e estado aparecem quando o envio for organizado na Shopee</span>
                     )}
                   </div>
