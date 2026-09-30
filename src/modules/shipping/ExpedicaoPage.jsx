@@ -190,6 +190,8 @@ export function ExpedicaoPage() {
   const activeBatchId = resolvedBatchId || batchId
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('todos') // todos | pendentes | fechados | mensagem | programados
+  const isMonday = new Date(viewDate + 'T12:00:00').getDay() === 1
+
   // Resolve a plataforma do lote da URL uma única vez — a partir daqui a
   // busca de pedidos é sempre por (source, ship_date), não mais por batch_id.
   useEffect(() => {
