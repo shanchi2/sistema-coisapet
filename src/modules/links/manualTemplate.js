@@ -84,6 +84,27 @@ h1,h2,h3{font-family:"DM Serif Display",serif;font-weight:400}
 .care-card li{position:relative;margin-top:2mm;padding-left:3.5mm;color:var(--muted);font-size:.63rem;line-height:1.45}
 .care-card.dark li{color:#d8c8ba}
 .care-card li:before{content:"";position:absolute;left:0;top:3px;width:1.4mm;height:1.4mm;background:var(--caramel)}
+/* ── Modelo Terrários e Alojamentos (01/10) ── */
+.specs{display:grid;grid-template-columns:repeat(auto-fit,minmax(38mm,1fr));border:1px solid var(--line);background:var(--white)}
+.spec{padding:4.5mm 5mm;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.spec small{display:block;color:var(--caramel);font-size:.55rem;font-weight:700;text-transform:uppercase;letter-spacing:1.3px}
+.spec strong{display:block;margin-top:1.5mm;font-size:.85rem}
+.parts{display:grid;grid-template-columns:repeat(2,1fr);gap:2mm 6mm}
+.part{display:flex;align-items:center;gap:3mm;padding:3mm 0;border-bottom:1px dashed var(--line);font-size:.72rem}
+.part .box{width:4mm;height:4mm;border:1.5px solid var(--terracotta);flex-shrink:0}
+.part .qty{margin-left:auto;font-weight:700;color:var(--terracotta);white-space:nowrap}
+.steps{display:grid;grid-template-columns:repeat(2,1fr);gap:3mm}
+.step{display:grid;grid-template-columns:12mm 1fr;gap:3mm;align-items:start;background:var(--cream-light);padding:4.5mm}
+.step .n{width:10mm;height:10mm;border-radius:50%;background:var(--terracotta);color:#fff;display:flex;align-items:center;justify-content:center;font-family:"DM Serif Display",serif;font-size:1.05rem}
+.step strong{display:block;font-size:.75rem}
+.step p{margin-top:1mm;color:var(--muted);font-size:.62rem;line-height:1.45}
+.video{padding-top:8mm;padding-bottom:8mm;background:var(--coffee);color:var(--cream)}
+.video-inner{display:grid;grid-template-columns:1fr auto;gap:10mm;align-items:center}
+.video small{color:var(--caramel);font-size:.55rem;font-weight:700;text-transform:uppercase;letter-spacing:1.4px}
+.video h2{margin-top:1mm;font-size:1.8rem}
+.video p{margin-top:2mm;color:#d8c8ba;font-size:.68rem}
+.video a{display:inline-block;margin-top:4mm;padding:2.5mm 5mm;background:var(--caramel);color:#fff;text-decoration:none;font-size:.7rem;font-weight:700}
+.video img{width:34mm;height:34mm;background:#fff;padding:2mm}
 .footer{padding-top:8mm;padding-bottom:8mm;background:var(--cream)}
 .footer-inner{display:flex;justify-content:space-between;align-items:center}
 .footer .brand{color:var(--coffee)}
@@ -124,6 +145,9 @@ h1,h2,h3{font-family:"DM Serif Display",serif;font-weight:400}
   .section-title{flex-direction:column;align-items:flex-start;gap:2mm}
   .section-title p{text-align:left;max-width:100%}
   .benefits,.usage-grid,.care-grid{grid-template-columns:1fr!important}
+  .parts,.steps{grid-template-columns:1fr}
+  .video-inner{grid-template-columns:1fr;text-align:center}
+  .video img{margin:0 auto}
   .animals{grid-template-columns:1fr}
   .animal{border-right:0}
   .alert{grid-template-columns:1fr;gap:3mm;text-align:center}
@@ -137,13 +161,17 @@ const LOGO_URL = 'https://lcybmdiqxmbqeuyeuhdj.supabase.co/storage/v1/object/pub
 
 function numbered(n) { return String(n).padStart(2, '0') }
 
-export function buildManualHtml({ productName, imageUrl, sections = {} }) {
+// template: 'consumivel' (Substratos, Enriquecimento, Alimentação — o
+// original) ou 'terrario' (Terrários e Alojamentos: montagem). videoUrl:
+// link do vídeo (YouTube) — vira botão + QR code (útil no manual impresso).
+export function buildManualHtml({ productName, imageUrl, sections = {}, template = 'consumivel', videoUrl = '' }) {
   const s = sections || {}
+  const isTerr = template === 'terrario'
   const title = productName ? `${productName} — Guia de Uso | Coisa Pet` : 'Guia de Uso | Coisa Pet'
 
   const heroSection = `
 <section class="hero"><div class="container">
-  <div class="topbar"><img src="${LOGO_URL}" alt="Coisa Pet"/><div class="guide">Guia de preparo e uso seguro</div></div>
+  <div class="topbar"><img src="${LOGO_URL}" alt="Coisa Pet"/><div class="guide">${isTerr ? 'Guia de montagem e uso' : 'Guia de preparo e uso seguro'}</div></div>
   <div class="hero-main">
     <div class="hero-title-row">
       ${s.tagline ? `<div class="hero-label">${escapeHtml(s.tagline)}</div>` : ''}
@@ -202,15 +230,51 @@ export function buildManualHtml({ productName, imageUrl, sections = {} }) {
   </div>
 </div></section>` : ''
 
+  const specsSection = (isTerr && Array.isArray(s.specs) && s.specs.length) ? `
+<section class="section container">
+  <div class="section-title"><h2>Especificações</h2><p>Medidas e características do produto.</p></div>
+  <div class="specs">${s.specs.map(x => `<div class="spec"><small>${escapeHtml(x.label)}</small><strong>${escapeHtml(x.value)}</strong></div>`).join('')}</div>
+</section>` : ''
+
+  const partsSection = (isTerr && Array.isArray(s.parts) && s.parts.length) ? `
+<section class="section compatibility-section"><div class="container">
+  <div class="section-title"><h2>O que vem na caixa</h2><p>Confira as peças antes de começar a montagem.</p></div>
+  <div class="parts">${s.parts.map(x => `<div class="part"><span class="box"></span><span>${escapeHtml(x.name)}</span>${x.qty ? `<span class="qty">${escapeHtml(x.qty)}</span>` : ''}</div>`).join('')}</div>
+</div></section>` : ''
+
+  const assemblySection = (isTerr && Array.isArray(s.assembly_steps) && s.assembly_steps.length) ? `
+<section class="section container">
+  <div class="section-title"><h2>Montagem passo a passo</h2><p>Siga a ordem — leva poucos minutos.</p></div>
+  <div class="steps">${s.assembly_steps.map((u, i) => `<div class="step"><span class="n">${i + 1}</span><div><strong>${escapeHtml(u.title)}</strong><p>${escapeHtml(u.desc)}</p></div></div>`).join('')}</div>
+</section>` : ''
+
+  const tipsSection = (isTerr && Array.isArray(s.setup_tips) && s.setup_tips.length) ? `
+<section class="section container">
+  <div class="section-title"><h2>Montando o habitat</h2><p>Dicas pra deixar o espaço confortável e seguro.</p></div>
+  <div class="usage-grid" style="grid-template-columns:repeat(${Math.min(s.setup_tips.length, 4)},1fr)">
+    ${s.setup_tips.map((u, i) => `<div class="usage"><span class="usage-number">${numbered(i + 1)}</span><strong>${escapeHtml(u.title)}</strong><p>${escapeHtml(u.desc)}</p></div>`).join('')}
+  </div>
+</section>` : ''
+
+  const videoSection = videoUrl ? `
+<section class="video"><div class="container video-inner">
+  <div><small>Vídeo</small><h2>${isTerr ? 'Assista à montagem' : 'Veja como usar'}</h2><p>Aponte a câmera do celular pro QR code ou toque no botão.</p><a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener">▶ Assistir ao vídeo</a></div>
+  <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=0&data=${encodeURIComponent(videoUrl)}" alt="QR code do vídeo"/>
+</div></section>` : ''
+
   const care = s.care || {}
-  const careCards = [
+  const careCards = isTerr ? [
+    care.cleaning?.length    ? { label: 'Limpeza',    title: 'Como limpar',   items: care.cleaning } : null,
+    care.maintenance?.length ? { label: 'Manutenção', title: 'Conservação',   items: care.maintenance } : null,
+    care.safety?.length      ? { label: 'Segurança',  title: 'Atenção',       items: care.safety, dark: true } : null,
+  ].filter(Boolean) : [
     care.storage?.length     ? { label: 'Armazenamento', title: 'Como guardar',  items: care.storage } : null,
     care.maintenance?.length ? { label: 'Manutenção',    title: 'No dia a dia',  items: care.maintenance } : null,
     care.discard?.length     ? { label: 'Descarte',       title: 'Hora de trocar', items: care.discard, dark: true } : null,
   ].filter(Boolean)
   const careSection = careCards.length ? `
 <section class="section container">
-  <div class="section-title"><h2>Cuidados</h2><p>Armazenamento, manutenção e sinais para descarte.</p></div>
+  <div class="section-title"><h2>Cuidados</h2><p>${isTerr ? 'Limpeza, conservação e segurança.' : 'Armazenamento, manutenção e sinais para descarte.'}</p></div>
   <div class="care-grid" style="grid-template-columns:repeat(${careCards.length},1fr)">
     ${careCards.map(c => `<div class="care-card${c.dark ? ' dark' : ''}"><span class="label">${escapeHtml(c.label)}</span><h3>${escapeHtml(c.title)}</h3><ul>${c.items.map(it => `<li>${escapeHtml(it)}</li>`).join('')}</ul></div>`).join('')}
   </div>
@@ -226,11 +290,8 @@ export function buildManualHtml({ productName, imageUrl, sections = {} }) {
 </head><body><main class="manual">
 ${heroSection}
 ${aboutSection}
-${benefitsSection}
-${compatSection}
-${usageSection}
-${amountSection}
+${isTerr ? specsSection + partsSection + assemblySection + videoSection + benefitsSection + compatSection + tipsSection : benefitsSection + compatSection + usageSection + amountSection + videoSection}
 ${careSection}
-<footer class="footer"><div class="container footer-inner"><div class="brand">COISA PET</div><p>Guia de preparo e uso seguro${productName ? ' · ' + escapeHtml(productName) : ''}</p></div></footer>
+<footer class="footer"><div class="container footer-inner"><div class="brand">COISA PET</div><p>${isTerr ? 'Guia de montagem e uso' : 'Guia de preparo e uso seguro'}${productName ? ' · ' + escapeHtml(productName) : ''}</p></div></footer>
 </main></body></html>`
 }

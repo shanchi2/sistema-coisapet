@@ -9,12 +9,13 @@ import toast from 'react-hot-toast'
 export function useProductDocs() {
   const [groups,  setGroups]  = useState([]) // [{ product, resources: [] }]
   const [loading, setLoading] = useState(true)
+  const [collections, setCollections] = useState([]) // coleções de manuais (fase88)
 
   const load = useCallback(async () => {
     setLoading(true)
     const { data, error } = await supabase
       .from('product_doc_resources')
-      .select('id, label, kind, url, file_path, sort_order, product_id, product:products(id, name, doc_title, sku, slug, photo_url)')
+      .select('id, label, kind, url, file_path, sort_order, product_id, product:products(id, name, doc_title, sku, slug, photo_url, manual_collection_id)')
       .order('sort_order')
 
     if (error) {
@@ -31,6 +32,8 @@ export function useProductDocs() {
       map.get(row.product_id).resources.push(row)
     })
     setGroups(Array.from(map.values()).sort((a, b) => a.product.name.localeCompare(b.product.name)))
+    const { data: cols } = await supabase.from('manual_collections').select('*').order('sort_order')
+    setCollections(cols ?? [])
     setLoading(false)
   }, [])
 
@@ -135,5 +138,25 @@ export function useProductDocs() {
     }
   }
 
-  return { groups, loading, searchProducts, addResource, updateResource, removeResource, setDocTitle }
+  // Coleção do produto nos Manuais & Dicas (fase88)
+  async function setProductCollection(productId, collectionId) {
+    const { error } = await supabase.from('products').update({ manual_collection_id: collectionId || null }).eq('id', productId)
+    if (error) { toast.error('Erro ao mudar a coleção: ' + error.message); return }
+    toast.success('Coleção atualizada!')
+    await load()
+  }
+
+  // Criar/editar coleção (nome, emoji, descrição, ordem, ativa)
+  async function saveCollection(col) {
+    const slug = (col.slug || col.name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    const row = { name: col.name.trim(), slug, emoji: col.emoji || null, description: col.description || null, sort_order: Number(col.sort_order) || 0, active: col.active !== false }
+    const { error } = col.id
+      ? await supabase.from('manual_collections').update(row).eq('id', col.id)
+      : await supabase.from('manual_collections').insert(row)
+    if (error) { toast.error('Erro ao salvar coleção: ' + error.message); throw error }
+    toast.success('Coleção salva!')
+    await load()
+  }
+
+  return { groups, loading, collections, searchProducts, addResource, updateResource, removeResource, setDocTitle, setProductCollection, saveCollection }
 }

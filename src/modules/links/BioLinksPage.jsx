@@ -544,8 +544,59 @@ function EditDocModal({ resource, product, onSave, onClose }) {
 }
 
 // ── Aba Manuais ─────────────────────────────────────────────────
+// Coleções dos Manuais & Dicas (fase88) — criar/editar (nome, emoji,
+// descrição, ordem, ativa). Coleção sem produto não aparece no site.
+function CollectionsModal({ collections, groups, onSave, onClose }) {
+  const [rows, setRows] = useState(() => collections.map(c => ({ ...c })))
+  const [savingId, setSavingId] = useState(null)
+  const count = id => groups.filter(g => g.product.manual_collection_id === id).length
+  function upd(i, patch) { setRows(prev => prev.map((r, x) => x === i ? { ...r, ...patch } : r)) }
+  async function save(r, i) {
+    if (!r.name?.trim()) { toast.error('Dê um nome pra coleção.'); return }
+    setSavingId(r.id || `new${i}`)
+    try { await onSave(r); if (!r.id) onClose() } catch { /* toast no hook */ } finally { setSavingId(null) }
+  }
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 sticky top-0 bg-white">
+          <div>
+            <p className="font-bold text-slate-800">Coleções de manuais</p>
+            <p className="text-xs text-slate-400">Seções da página pública de Manuais &amp; Dicas. Coleção sem produto não aparece no site.</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+        <div className="p-5 flex flex-col gap-2">
+          {rows.map((r, i) => (
+            <div key={r.id || `new${i}`} className={`grid grid-cols-[52px_1fr_1.4fr_56px_auto] gap-2 items-center p-2 rounded-xl border ${r.active === false ? 'border-slate-100 opacity-60' : 'border-slate-200'}`}>
+              <input value={r.emoji || ''} onChange={e => upd(i, { emoji: e.target.value })} placeholder="🏠" className="input text-center py-1.5 text-lg" />
+              <input value={r.name || ''} onChange={e => upd(i, { name: e.target.value })} placeholder="Nome" className="input py-1.5 text-sm font-semibold" />
+              <input value={r.description || ''} onChange={e => upd(i, { description: e.target.value })} placeholder="Descrição curta" className="input py-1.5 text-xs" />
+              <input type="number" value={r.sort_order ?? 0} onChange={e => upd(i, { sort_order: e.target.value })} title="Ordem" className="input py-1.5 text-xs text-center" />
+              <div className="flex items-center gap-1.5">
+                <label className="flex items-center gap-1 text-[11px] text-slate-500 cursor-pointer" title="Aparece no site">
+                  <input type="checkbox" checked={r.active !== false} onChange={e => upd(i, { active: e.target.checked })} /> ativa
+                </label>
+                <button onClick={() => save(r, i)} disabled={savingId === (r.id || `new${i}`)} className="text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 rounded-lg px-2.5 py-1.5 disabled:opacity-50">
+                  {savingId === (r.id || `new${i}`) ? '...' : 'Salvar'}
+                </button>
+              </div>
+              {r.id && <p className="col-span-5 text-[10px] text-slate-400 pl-1">{count(r.id)} produto(s) · coisapet.com.br/links/manuais?colecao={r.slug}</p>}
+            </div>
+          ))}
+          <button onClick={() => setRows(prev => [...prev, { name: '', emoji: '', description: '', sort_order: (prev.length + 1), active: true }])}
+            className="flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-800 mt-1 w-fit"><Plus size={14} /> Nova coleção</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ProductDocsTab() {
-  const { groups, loading, searchProducts, addResource, updateResource, removeResource, setDocTitle } = useProductDocs()
+  const { groups, loading, collections, searchProducts, addResource, updateResource, removeResource, setDocTitle, setProductCollection, saveCollection } = useProductDocs()
+  const [colFilter, setColFilter] = useState('') // '' = todas · 'none' = sem coleção
+  const [colsOpen, setColsOpen] = useState(false)
+  const shownGroups = groups.filter(g => !colFilter || (colFilter === 'none' ? !g.product.manual_collection_id : g.product.manual_collection_id === colFilter))
   const [editingDoc, setEditingDoc] = useState(null) // { resource, product }
   const [titleEdit, setTitleEdit]   = useState(null) // { id, value } — nome do produto nos manuais
   const [modalOpen, setModalOpen] = useState(false)
@@ -568,12 +619,33 @@ function ProductDocsTab() {
           Manual, instruções e vídeo por produto — publicado em{' '}
           <span className="font-mono text-xs text-slate-400">{DOC_SITE_BASE}/&lt;slug&gt;</span>
         </p>
-        <button onClick={() => openFor(null)}
-          className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors shrink-0">
-          <Plus size={16} strokeWidth={1.5} />
-          Novo manual
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={() => setColsOpen(true)}
+            className="flex items-center gap-2 bg-white border border-slate-200 hover:border-slate-300 text-slate-600 text-sm font-medium px-3 py-2 rounded-xl transition-colors">
+            🗂️ Coleções
+          </button>
+          <button onClick={() => openFor(null)}
+            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors">
+            <Plus size={16} strokeWidth={1.5} />
+            Novo manual
+          </button>
+        </div>
       </div>
+
+      {/* Filtro por coleção */}
+      {groups.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {[['', 'Todas', groups.length], ...collections.filter(c => c.active !== false).map(c => [c.id, `${c.emoji || ''} ${c.name}`, groups.filter(g => g.product.manual_collection_id === c.id).length]),
+            ['none', 'Sem coleção', groups.filter(g => !g.product.manual_collection_id).length]]
+            .filter(([k, , n]) => k === '' || n > 0 || collections.some(c => c.id === k))
+            .map(([k, l, n]) => (
+              <button key={k || 'all'} onClick={() => setColFilter(k)}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${colFilter === k ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+                {l} <span className="opacity-60">{n}</span>
+              </button>
+            ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-16 bg-white rounded-xl border border-slate-200">
@@ -586,7 +658,8 @@ function ProductDocsTab() {
         </div>
       ) : (
         <div className="space-y-3">
-          {groups.map(g => (
+          {shownGroups.length === 0 && <p className="text-sm text-slate-400 text-center py-10 bg-white rounded-xl border border-slate-200">Nenhum produto nessa coleção ainda.</p>}
+          {shownGroups.map(g => (
             <div key={g.product.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
               <div className="flex items-center gap-3 px-4 py-3 bg-slate-50/60 border-b border-slate-100">
                 <DocProductThumb photoUrl={g.product.photo_url} />
@@ -610,6 +683,12 @@ function ProductDocsTab() {
                   {g.product.doc_title?.trim() && titleEdit?.id !== g.product.id && <p className="text-[10px] text-slate-400 truncate">Cadastro: {g.product.name}</p>}
                   <p className="text-[11px] text-slate-400 font-mono truncate">{DOC_SITE_BASE}/{g.product.slug}</p>
                 </div>
+                <select value={g.product.manual_collection_id || ''} onChange={e => setProductCollection(g.product.id, e.target.value)}
+                  title="Coleção nos Manuais & Dicas"
+                  className={`text-xs border rounded-lg px-2 py-1.5 shrink-0 max-w-[170px] ${g.product.manual_collection_id ? 'border-slate-200 text-slate-600' : 'border-amber-300 bg-amber-50 text-amber-700'}`}>
+                  <option value="">— Sem coleção —</option>
+                  {collections.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+                </select>
                 <a href={`${DOC_SITE_BASE}/${g.product.slug}`} target="_blank" rel="noopener noreferrer"
                   className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors shrink-0">
                   <ExternalLink size={14} strokeWidth={1.5} />
@@ -639,6 +718,10 @@ function ProductDocsTab() {
             </div>
           ))}
         </div>
+      )}
+
+      {colsOpen && (
+        <CollectionsModal collections={collections} groups={groups} onSave={saveCollection} onClose={() => setColsOpen(false)} />
       )}
 
       {editingDoc && (

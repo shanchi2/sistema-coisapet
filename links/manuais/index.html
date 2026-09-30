@@ -160,6 +160,16 @@ body{
   background-size:200% 100%;animation:shimmer 1.4s infinite;
 }
 .app-grid .empty{grid-column:1/-1}
+/* ── Coleções (01/10): filtro + seções ── */
+.chips{width:100%;display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:22px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex-shrink:0;font-family:var(--font);font-size:13px;font-weight:700;color:var(--txt);background:var(--card);border:1px solid var(--bdr);border-radius:999px;padding:8px 14px;cursor:pointer;white-space:nowrap;transition:all .18s}
+.chip.on{background:var(--gold);border-color:var(--gold);color:#1a0f07}
+.col-section{width:100%;margin-bottom:30px}
+.col-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.col-emoji{width:38px;height:38px;border-radius:12px;background:rgba(197,144,74,.16);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.col-title{font-size:17px;font-weight:800;line-height:1.15}
+.col-desc{font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -177,6 +187,8 @@ body{
     <span class="search-icon">🔍</span>
     <input id="search-input" type="text" placeholder="Buscar produto..." autocomplete="off"/>
   </div>
+
+  <div id="chips" class="chips"></div>
 
   <div id="list-container" class="app-grid">
     <div class="app-skel"></div>
@@ -196,19 +208,49 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
 
 let products = []
+let collections = []
+let activeCol = new URLSearchParams(location.search).get('colecao') || ''
 
 function publicUrl(bucket, path) {
   if (!path) return null
   return db.storage.from(bucket).getPublicUrl(path).data.publicUrl
 }
 
+function renderChips() {
+  const used = collections.filter(c => products.some(p => p.colId === c.id))
+  const el = document.getElementById('chips')
+  if (used.length < 2) { el.style.display = 'none'; return }
+  el.innerHTML = [`<button class="chip ${!activeCol ? 'on' : ''}" data-col="">Todos</button>`]
+    .concat(used.map(c => `<button class="chip ${activeCol === c.slug ? 'on' : ''}" data-col="${c.slug}">${c.emoji || ''} ${c.name}</button>`)).join('')
+  el.querySelectorAll('.chip').forEach(b => b.onclick = () => {
+    activeCol = b.dataset.col
+    const u = new URL(location.href); activeCol ? u.searchParams.set('colecao', activeCol) : u.searchParams.delete('colecao'); history.replaceState(null, '', u)
+    renderChips(); applyFilter()
+  })
+}
+
 function render(list) {
   const container = document.getElementById('list-container')
   if (list.length === 0) {
+    container.className = 'app-grid'
     container.innerHTML = '<p class="empty">Nenhum produto encontrado.</p>'
     return
   }
-  container.innerHTML = list.map((p, i) => {
+  // Agrupa por coleção (na ordem do cadastro); sem coleção vai pro fim
+  const groups = collections.map(c => ({ c, items: list.filter(p => p.colId === c.id) })).filter(g => g.items.length)
+  const loose = list.filter(p => !collections.some(c => c.id === p.colId))
+  if (loose.length) groups.push({ c: { name: 'Outros produtos', emoji: '📄' }, items: loose })
+  container.className = ''
+  container.style.width = '100%'
+  container.innerHTML = groups.map(g => `
+    <section class="col-section">
+      ${groups.length > 1 || g.c.id ? `<div class="col-head"><div class="col-emoji">${g.c.emoji || '📄'}</div><div><div class="col-title">${g.c.name}</div>${g.c.description ? `<div class="col-desc">${g.c.description}</div>` : ''}</div></div>` : ''}
+      <div class="app-grid">${cards(g.items)}</div>
+    </section>`).join('')
+}
+
+function cards(list) {
+  return list.map((p, i) => {
     const photo = publicUrl('product-photos', p.photo_url)
     return `
       <a href="https://coisapet.com.br/doc/${p.slug}" class="app" style="animation-delay:${i*0.04}s" title="${p.name}">
@@ -222,10 +264,16 @@ function render(list) {
   }).join('')
 }
 
+function applyFilter() {
+  const q = document.getElementById('search-input').value.trim().toLowerCase()
+  const col = collections.find(c => c.slug === activeCol)
+  render(products.filter(p => (!col || p.colId === col.id) && (!q || p.name.toLowerCase().includes(q) || p.fullName.toLowerCase().includes(q))))
+}
+
 async function load() {
   const { data, error } = await db
     .from('product_doc_resources')
-    .select('product_id, product:products(id,name,doc_title,slug,photo_url)')
+    .select('product_id, product:products(id,name,doc_title,slug,photo_url,manual_collection_id)')
 
   const container = document.getElementById('list-container')
   if (error || !data) {
@@ -237,18 +285,18 @@ async function load() {
   data.forEach(row => {
     if (!row.product) return
     // doc_title = nome curto só pros manuais (vazio = nome do cadastro)
-    if (!map.has(row.product_id)) map.set(row.product_id, { ...row.product, name: (row.product.doc_title || '').trim() || row.product.name, fullName: row.product.name, count: 0 })
+    if (!map.has(row.product_id)) map.set(row.product_id, { ...row.product, name: (row.product.doc_title || '').trim() || row.product.name, fullName: row.product.name, colId: row.product.manual_collection_id, count: 0 })
     map.get(row.product_id).count++
   })
   products = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name))
 
-  render(products)
+  const { data: cols } = await db.from('manual_collections').select('id,name,slug,emoji,description,sort_order').eq('active', true).order('sort_order')
+  collections = cols || []
+  renderChips()
+  applyFilter()
 }
 
-document.getElementById('search-input').addEventListener('input', e => {
-  const q = e.target.value.trim().toLowerCase()
-  render(q ? products.filter(p => p.name.toLowerCase().includes(q) || p.fullName.toLowerCase().includes(q)) : products)
-})
+document.getElementById('search-input').addEventListener('input', applyFilter)
 
 load()
 </script>

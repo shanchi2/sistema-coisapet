@@ -275,6 +275,24 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-10-01 — Manuais & Dicas: coleções + modelo "Terrários e Alojamentos" (fase88)
+
+- `manual_collections` (Substratos, Enriquecimento Ambiental, Alimentação, Terrários e
+  Alojamentos, Brinquedos e Acessórios — as 2 últimas vazias) + `products.manual_collection_id`.
+  Tabela própria porque a categoria do cadastro não bate (Pinhas/Pedras Seixo = "Acessório").
+  Coleção sem produto não aparece no site. Admin (Links → Manuais): filtro, coleção por
+  produto e gerenciador de coleções. Site: /links/manuais com filtro e seções
+  (?colecao=<slug> abre direto numa coleção).
+- Gerador: modelo "Substratos e consumíveis" (o original, intacto) ou "Terrários e
+  Alojamentos" (specs, o que vem na caixa, montagem passo a passo, dicas do habitat,
+  limpeza/conservação/segurança) — prompt próprio na manual-ai (`template: terrario`).
+  Vídeo do YouTube vira bloco com botão + QR code (api.qrserver.com) e, opcional, link
+  na página do produto. Listas do editor reordenáveis (▲▼). Salvar manual de terrário
+  põe o produto na coleção Terrários se ele ainda não tiver coleção.
+- /doc/<slug>: link do YouTube aparece com o player embutido (youtube-nocookie).
+
+---
+
 ### 2026-10-01 — Tipo de vínculo: CLT / Horista / Prestador / Escritório (fase87)
 
 - Pedido do Gabriel. `system_users.employee_type` já existia (clt/prestador/escritorio);

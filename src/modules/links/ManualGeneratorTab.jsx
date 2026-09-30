@@ -23,16 +23,25 @@ async function uploadManualImage(file, productId) {
   return supabase.storage.from('manuals').getPublicUrl(path).data.publicUrl
 }
 
-async function callManualAi(productName, rawText) {
-  return callAiFunction('manual-ai', 'generate_sections', { product_name: productName, raw_text: rawText })
+async function callManualAi(productName, rawText, template) {
+  return callAiFunction('manual-ai', 'generate_sections', { product_name: productName, raw_text: rawText, template })
 }
+
+// Modelos do manual (01/10, Fase 88): o original (produto a granel/
+// consumível) e o de Terrários e Alojamentos (montagem). Cada um tem as
+// seções que fazem sentido pra ele — mesmo visual editorial.
+const TEMPLATES = [
+  { v: 'consumivel', label: 'Substratos e consumíveis', hint: 'Substratos, enriquecimento, alimentação — como usar, quantidade, armazenamento e descarte', defaultLabel: 'Manual de Uso' },
+  { v: 'terrario',   label: 'Terrários e Alojamentos',  hint: 'O que vem na caixa, medidas, montagem passo a passo, dicas do habitat, limpeza e segurança', defaultLabel: 'Manual de Montagem' },
+]
 
 const emptySections = () => ({
   tagline: '', hero_intro: '', tags: [],
   about_title: '', about_text: '',
   benefits: [], compatibility: [], alert: null,
   usage_steps: [], amount_formula: null,
-  care: { storage: [], maintenance: [], discard: [] },
+  specs: [], parts: [], assembly_steps: [], setup_tips: [],
+  care: { storage: [], maintenance: [], discard: [], cleaning: [], safety: [] },
 })
 
 // Editor genérico de lista de pares {a,b} — usado pra benefícios,
@@ -43,6 +52,12 @@ function PairListEditor({ items, onChange, labelA, labelB, placeholderA, placeho
   }
   function remove(i) { onChange(items.filter((_, x) => x !== i)) }
   function add() { onChange([...items, { [labelA]: '', [labelB]: '' }]) }
+  // Reordenar (01/10) — ex: passo de montagem que a IA pôs fora de ordem
+  function move(i, d) {
+    const j = i + d
+    if (j < 0 || j >= items.length) return
+    const next = [...items]; [next[i], next[j]] = [next[j], next[i]]; onChange(next)
+  }
   return (
     <div className="space-y-2">
       {items.map((it, i) => (
@@ -52,6 +67,10 @@ function PairListEditor({ items, onChange, labelA, labelB, placeholderA, placeho
               className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-slate-400 font-semibold" />
             <input value={it[labelB] || ''} onChange={e => update(i, labelB, e.target.value)} placeholder={placeholderB}
               className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-slate-400" />
+          </div>
+          <div className="flex flex-col mt-0.5">
+            <button onClick={() => move(i, -1)} disabled={i === 0} title="Subir" className="px-1 text-[11px] leading-none text-slate-300 hover:text-slate-600 disabled:opacity-30">▲</button>
+            <button onClick={() => move(i, 1)} disabled={i === items.length - 1} title="Descer" className="px-1 text-[11px] leading-none text-slate-300 hover:text-slate-600 disabled:opacity-30 mt-1">▼</button>
           </div>
           <button onClick={() => remove(i)} className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-300 hover:text-rose-500 mt-1"><Trash2 size={13} /></button>
         </div>
@@ -82,6 +101,16 @@ export function ManualGeneratorTab() {
   const [generating, setGenerating] = useState(false)
   const [sections,  setSections]  = useState(null) // null = ainda não gerou
   const [saving,    setSaving]    = useState(false)
+  const [template,  setTemplate]  = useState('consumivel')
+  const [videoUrl,  setVideoUrl]  = useState('')
+  const [publishVideo, setPublishVideo] = useState(true) // também põe o vídeo na página do produto
+  const isTerr = template === 'terrario'
+
+  function chooseTemplate(v) {
+    setTemplate(v)
+    // troca o título padrão do link se ainda não foi mexido
+    if (TEMPLATES.some(t => t.defaultLabel === label)) setLabel(TEMPLATES.find(t => t.v === v).defaultLabel)
+  }
 
   async function runSearch(q) {
     setQuery(q)
@@ -108,7 +137,7 @@ export function ManualGeneratorTab() {
     if (!rawText.trim()) { toast.error('Escreva o texto sobre o produto primeiro.'); return }
     setGenerating(true)
     try {
-      const data = await callManualAi(displayName.trim() || product.name, rawText)
+      const data = await callManualAi(displayName.trim() || product.name, rawText, template)
       setSections({ ...emptySections(), ...data, care: { ...emptySections().care, ...(data.care || {}) } })
       toast.success('Conteúdo gerado! Revise antes de salvar.')
     } catch (err) {
@@ -123,8 +152,8 @@ export function ManualGeneratorTab() {
 
   const finalHtml = useMemo(() => {
     if (!product) return ''
-    return buildManualHtml({ productName: displayName.trim() || product.name, imageUrl, sections: sections || {} })
-  }, [product, displayName, imageUrl, sections])
+    return buildManualHtml({ productName: displayName.trim() || product.name, imageUrl, sections: sections || {}, template, videoUrl: videoUrl.trim() })
+  }, [product, displayName, imageUrl, sections, template, videoUrl])
 
   function handleDownloadPdf() {
     const win = window.open('', '_blank')
@@ -144,12 +173,23 @@ export function ManualGeneratorTab() {
     try {
       const file = new File([finalHtml], 'manual-gerado.html', { type: 'text/html' })
       await addResource(product.id, { label: label.trim(), kind: 'file', file })
+      // Vídeo também vira um link na página do produto (lá ele aparece embutido)
+      const vu = videoUrl.trim()
+      if (vu && publishVideo) await addResource(product.id, { label: isTerr ? 'Vídeo de montagem' : 'Vídeo de uso', kind: 'link', url: vu }).catch(() => {})
+      // Produto sem coleção de manuais → entra na coleção do modelo usado
+      if (isTerr) {
+        const { data: prod } = await supabase.from('products').select('manual_collection_id').eq('id', product.id).maybeSingle()
+        if (prod && !prod.manual_collection_id) {
+          const { data: col } = await supabase.from('manual_collections').select('id').eq('slug', 'terrarios-e-alojamentos').maybeSingle()
+          if (col) await supabase.from('products').update({ manual_collection_id: col.id }).eq('id', product.id)
+        }
+      }
       // Nome digitado diferente do cadastro → vira o nome do produto nas
       // páginas de manuais também (fase80), pra ficar tudo igual
       const dn = displayName.trim()
       if (dn && dn !== product.name && dn !== (product.doc_title || '').trim()) await setDocTitle(product.id, dn).catch(() => {})
       setProduct(null); setQuery(''); setResults([])
-      setLabel('Manual de Uso'); setDisplayName(''); setImageUrl(''); setRawText(''); setSections(null)
+      setLabel(TEMPLATES.find(t => t.v === template).defaultLabel); setDisplayName(''); setImageUrl(''); setRawText(''); setSections(null); setVideoUrl('')
     } finally {
       setSaving(false)
     }
@@ -159,6 +199,20 @@ export function ManualGeneratorTab() {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
       {/* ── Formulário ── */}
       <div className="space-y-4">
+        {/* Modelo do manual */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-xs font-semibold text-slate-500 mb-2">Modelo do manual</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {TEMPLATES.map(t => (
+              <button key={t.v} type="button" onClick={() => chooseTemplate(t.v)}
+                className={`text-left rounded-xl border-2 px-3 py-2.5 transition-colors ${template === t.v ? 'border-amber-500 bg-amber-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                <p className={`text-sm font-bold ${template === t.v ? 'text-amber-800' : 'text-slate-700'}`}>{t.v === 'terrario' ? '🏠 ' : '🪵 '}{t.label}</p>
+                <p className="text-[11px] text-slate-500 leading-snug mt-0.5">{t.hint}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {!product ? (
           <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
             <p className="text-sm font-semibold text-slate-700">1. Escolha o produto</p>
@@ -238,9 +292,24 @@ export function ManualGeneratorTab() {
               </div>
 
               <div>
+                <label className="text-xs font-semibold text-slate-500 block mb-1.5">Vídeo no YouTube (opcional)</label>
+                <input value={videoUrl} onChange={e => setVideoUrl(e.target.value)} placeholder="https://youtu.be/..."
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+                <p className="text-[11px] text-slate-400 mt-1">Vira um bloco "{isTerr ? 'Assista à montagem' : 'Veja como usar'}" com botão e QR code (funciona no manual impresso).</p>
+                {videoUrl.trim() && (
+                  <label className="flex items-center gap-2 text-[11px] text-slate-500 mt-1.5 cursor-pointer">
+                    <input type="checkbox" checked={publishVideo} onChange={e => setPublishVideo(e.target.checked)} />
+                    Também mostrar o vídeo na página do produto (coisapet.com.br/doc/…)
+                  </label>
+                )}
+              </div>
+
+              <div>
                 <label className="text-xs font-semibold text-slate-500 block mb-1.5">4. Texto sobre o produto</label>
-                <textarea value={rawText} onChange={e => setRawText(e.target.value)} rows={5}
-                  placeholder="Escreva livremente o que precisa constar: o que é, pra que serve, como usar, cuidados, pra quais animais é indicado..."
+                <textarea value={rawText} onChange={e => setRawText(e.target.value)} rows={isTerr ? 7 : 5}
+                  placeholder={isTerr
+                    ? 'Escreva livremente: medidas, material, o que vem na caixa (peças e quantidades), como montar (na ordem), pra quais animais é indicado, dicas de substrato/enriquecimento, como limpar, cuidados de segurança...'
+                    : 'Escreva livremente o que precisa constar: o que é, pra que serve, como usar, cuidados, pra quais animais é indicado...'}
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400 resize-none" />
                 <button onClick={handleGenerate} disabled={generating || !rawText.trim()}
                   className="mt-2 flex items-center gap-2 text-sm font-semibold text-white bg-gradient-to-r from-amber-600 to-orange-600 hover:opacity-90 disabled:opacity-40 px-4 py-2 rounded-lg transition-opacity">
@@ -314,12 +383,38 @@ export function ManualGeneratorTab() {
                   )}
                 </div>
 
+                {isTerr && (<>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">Especificações (medidas, material, peso…)</label>
+                    <PairListEditor items={sections.specs || []} onChange={v => setSec({ specs: v })}
+                      labelA="label" labelB="value" placeholderA="Ex: Medidas" placeholderB="Ex: 100 x 50 x 50 cm" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">O que vem na caixa</label>
+                    <PairListEditor items={sections.parts || []} onChange={v => setSec({ parts: v })}
+                      labelA="name" labelB="qty" placeholderA="Peça / item" placeholderB="Quantidade (ex: 4)" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">Montagem passo a passo (na ordem)</label>
+                    <PairListEditor items={sections.assembly_steps || []} onChange={v => setSec({ assembly_steps: v })}
+                      labelA="title" labelB="desc" placeholderA="Ação (ex: Encaixe as laterais)" placeholderB="Detalhe do passo" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">Dicas pra montar o habitat</label>
+                    <PairListEditor items={sections.setup_tips || []} onChange={v => setSec({ setup_tips: v })}
+                      labelA="title" labelB="desc" placeholderA="Ex: Substrato" placeholderB="Dica curta" />
+                  </div>
+                </>)}
+
+                {!isTerr && (
                 <div>
                   <label className="text-[11px] font-semibold text-slate-400 block mb-1">Como usar (passos)</label>
                   <PairListEditor items={sections.usage_steps || []} onChange={v => setSec({ usage_steps: v })}
                     labelA="title" labelB="desc" placeholderA="Título do passo" placeholderB="Descrição curta" />
                 </div>
+                )}
 
+                {!isTerr && (
                 <div>
                   <label className="text-[11px] font-semibold text-slate-400 flex items-center justify-between mb-1">
                     Fórmula de quantidade (opcional, só pra produto a granel)
@@ -338,7 +433,19 @@ export function ManualGeneratorTab() {
                     </div>
                   )}
                 </div>
+                )}
 
+                {isTerr ? (
+                  <div className="grid grid-cols-1 gap-3">
+                    {[['cleaning', 'Limpeza'], ['maintenance', 'Manutenção / conservação'], ['safety', 'Segurança']].map(([k, l]) => (
+                      <div key={k}>
+                        <label className="text-[11px] font-semibold text-slate-400 block mb-1">Cuidados — {l} (1 por linha)</label>
+                        <textarea value={(sections.care?.[k] || []).join('\n')} onChange={e => setCare({ [k]: linesToArr(e.target.value) })} rows={2}
+                          className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 resize-none" />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
                 <div className="grid grid-cols-1 gap-3">
                   <div>
                     <label className="text-[11px] font-semibold text-slate-400 block mb-1">Cuidados — Armazenamento (1 por linha)</label>
@@ -356,6 +463,7 @@ export function ManualGeneratorTab() {
                       className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 resize-none" />
                   </div>
                 </div>
+                )}
               </div>
             )}
 
