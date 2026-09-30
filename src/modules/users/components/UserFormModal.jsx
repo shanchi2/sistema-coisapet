@@ -4,6 +4,7 @@ import { X, Eye, EyeOff, Check, Loader2, Upload, FileText, AlertTriangle,
 import { Modal } from '../../../components/ui/Modal'
 import { supabase } from '../../../lib/supabase'
 import toast from 'react-hot-toast'
+import { EMPLOYEE_TYPES, docName } from '../../../lib/employeeType'
 
 export const ROLES = [
   { value: 'admin',          label: 'Diretor',        color: 'bg-rose-50 text-rose-600'    },
@@ -304,12 +305,8 @@ export function UserFormModal({ open, onClose, onSave, initial, loading }) {
 
           {/* Tipo de colaborador — PRIMEIRO campo */}
           <Field label="Tipo de colaborador">
-            <div className="grid grid-cols-3 gap-2 mt-1">
-              {[
-                { v:'clt',        label:'CLT',        icon:'🏢', desc:'Funcionário registrado'      },
-                { v:'prestador',  label:'Prestador',  icon:'🔧', desc:'Prestador de serviço / PJ'   },
-                { v:'escritorio', label:'Escritório', icon:'⚖️', desc:'Contabilidade, advocacia...' },
-              ].map(t => (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
+              {EMPLOYEE_TYPES.map(t => (
                 <button key={t.v} type="button" onClick={() => set('employee_type', t.v)}
                   className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 text-xs font-semibold transition-all
                     ${form.employee_type === t.v
@@ -321,6 +318,9 @@ export function UserFormModal({ open, onClose, onSave, initial, loading }) {
                 </button>
               ))}
             </div>
+            {form.employee_type !== 'escritorio' && (
+              <p className="text-[11px] text-slate-400 mt-1.5">Documento mensal no app: <b className="text-slate-600">{docName(form.employee_type)}</b></p>
+            )}
           </Field>
 
           {/* ══ ESCRITÓRIO ══ */}

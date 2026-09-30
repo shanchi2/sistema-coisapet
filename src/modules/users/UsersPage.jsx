@@ -12,6 +12,7 @@ import { ConfirmDialog }     from '../../components/ui/ConfirmDialog'
 import { EmptyState }        from '../../components/ui/EmptyState'
 import { Modal }             from '../../components/ui/Modal'
 import toast from 'react-hot-toast'
+import { EMPLOYEE_TYPES, EmployeeTypeBadge, typeInfo } from '../../lib/employeeType'
 
 // ─── Helpers ──────────────────────────────────────────────────────
 const fmtDate = d => !d ? '—' : new Date(d+'T12:00:00').toLocaleDateString('pt-BR')
@@ -75,7 +76,7 @@ async function gerarFichaPDF(u) {
   const fmtC = v => v ? Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '—'
   const getAge = b => { if(!b) return null; const t=new Date(),bd=new Date(b+'T12:00:00'); let a=t.getFullYear()-bd.getFullYear(); if(t<new Date(t.getFullYear(),bd.getMonth(),bd.getDate())) a--; return a }
   const getService = h => { if(!h) return null; const t=new Date(),hd=new Date(h+'T12:00:00'); let y=t.getFullYear()-hd.getFullYear(),m=t.getMonth()-hd.getMonth(); if(m<0){y--;m+=12} return y>0?`${y} ano${y>1?'s':''}${m>0?` e ${m} ${m>1?'meses':'mês'}`:''}`:`${m} ${m>1?'meses':'mês'}` }
-  const typeLabel = {'clt':'CLT','prestador':'Prestador de Serviço','escritorio':'Escritório'}[u.employee_type] ?? 'CLT'
+  const typeLabel = typeInfo(u.employee_type).long
   const roleLabel = {'admin':'Diretor','administrativo':'Administrativo','atendimento':'Atendimento','producao':'Produção','equipe':'Equipe'}[u.role] ?? u.role
   const halfLabel = u.half_day ? 'Meio período — 5h/dia' : 'Integral — 8h44m/dia'
   const now = new Date().toLocaleString('pt-BR',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})
@@ -451,14 +452,7 @@ function EmployeeCard({ user: u, open, onClose, onEdit, onReset, onForceLogout, 
                 : u.must_change_password
                   ? <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-600">Aguardando 1º login</span>
                   : <><span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">✓ Ativo</span>
-                  <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full
-                    ${u.employee_type === 'prestador' ? 'bg-amber-50 text-amber-600'
-                      : u.employee_type === 'escritorio' ? 'bg-violet-50 text-violet-600'
-                      : 'bg-slate-100 text-slate-500'}`}>
-                    {u.employee_type === 'prestador' ? '🔧 Prestador'
-                      : u.employee_type === 'escritorio' ? '⚖️ Escritório'
-                      : '🏢 CLT'}
-                  </span>
+                  <EmployeeTypeBadge type={u.employee_type} />
                   {u.role === 'escritorio' && u.escritorio_sector && (
                     <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600">
                       📋 {{advocacia:'Advocacia', marcas_patentes:'Marcas e Patentes'}[u.escritorio_sector] ?? u.escritorio_sector}
@@ -570,12 +564,7 @@ function EmployeeListCard({ u, onView, onEdit, onDelete, onReset }) {
           </div>
           <div className="flex flex-col items-end gap-1">
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${roleInfo.color}`}>{roleInfo.label}</span>
-            {u.employee_type && u.employee_type !== 'clt' && (
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full
-                ${u.employee_type === 'prestador' ? 'bg-amber-50 text-amber-600' : 'bg-violet-50 text-violet-600'}`}>
-                {u.employee_type === 'prestador' ? '🔧 Prestador' : '⚖️ Escritório'}
-              </span>
-            )}
+            <EmployeeTypeBadge type={u.employee_type} small />
             {u.role === 'escritorio' && u.escritorio_sector && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-600">
                 📋 {{advocacia:'Advocacia', marcas_patentes:'Marcas e Patentes'}[u.escritorio_sector] ?? u.escritorio_sector}
@@ -624,13 +613,15 @@ export function UsersPage() {
   const [saving,       setSaving]       = useState(false)
   const [search,       setSearch]       = useState('')
   const [filterRole,   setFilterRole]   = useState('')
+  const [filterType,   setFilterType]   = useState('') // tipo de vínculo (CLT/Horista/Prestador/Escritório)
   const [viewMode,     setViewMode]     = useState('cards') // 'cards' | 'table'
 
   const filtered = useMemo(()=>
     users.filter(u=>
       (!search    ||u.name.toLowerCase().includes(search.toLowerCase())||u.email.toLowerCase().includes(search.toLowerCase()))&&
-      (!filterRole||u.role===filterRole)
-    ),[users,search,filterRole])
+      (!filterRole||u.role===filterRole)&&
+      (!filterType||(u.employee_type||'clt')===filterType)
+    ),[users,search,filterRole,filterType])
 
   const counts = useMemo(()=>{
     const map={}
@@ -724,6 +715,24 @@ export function UsersPage() {
             <p className="text-xs text-slate-400">{(counts[role.value]??0)===1?'colaborador':'colaboradores'}</p>
           </div>
         ))}
+      </div>
+
+      {/* Tipo de vínculo — filtro rápido */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-semibold text-slate-400 mr-1">Vínculo:</span>
+        <button onClick={()=>setFilterType('')}
+          className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all ${!filterType?'bg-slate-800 border-slate-800 text-white':'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+          Todos <span className="opacity-60">{users.length}</span>
+        </button>
+        {EMPLOYEE_TYPES.map(t=>{
+          const n = users.filter(u=>(u.employee_type||'clt')===t.v).length
+          return (
+            <button key={t.v} onClick={()=>setFilterType(filterType===t.v?'':t.v)}
+              className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all ${filterType===t.v?'bg-slate-800 border-slate-800 text-white':'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+              {t.icon} {t.label} <span className="opacity-60">{n}</span>
+            </button>
+          )
+        })}
       </div>
 
       {/* Filtros + toggle de view */}

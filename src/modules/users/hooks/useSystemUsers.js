@@ -300,7 +300,8 @@ export function useSystemUsers() {
   async function syncSalaryEntries(empId, empName, salary, payDay, empType) {
     const session = getSession()
     const today   = new Date()
-    const catMap  = { clt: 'salario', prestador: 'prestador', escritorio: 'escritorio' }
+    // Horista (01/10) entra como prestador no financeiro — já estava assim antes do tipo existir
+    const catMap  = { clt: 'salario', horista: 'prestador', prestador: 'prestador', escritorio: 'escritorio' }
     const category = catMap[empType] || 'salario'
 
     // Cancela lançamentos futuros existentes deste colaborador

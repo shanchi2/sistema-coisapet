@@ -275,6 +275,21 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-10-01 — Tipo de vínculo: CLT / Horista / Prestador / Escritório (fase87)
+
+- Pedido do Gabriel. `system_users.employee_type` já existia (clt/prestador/escritorio);
+  entrou `horista` (CHECK ampliado). Horistas (confirmado pelo Raphael): Luis Eduardo,
+  João Vitor, Luciene. **Diovani continua Prestador** (o *perfil de acesso* dele é que
+  é "horista" — tipo de vínculo ≠ perfil de acesso/role).
+- Documento mensal: só CLT = "Holerite"; Horista e Prestador = "Recibo de pagamento"
+  (src/lib/employeeType.jsx é a fonte única: badge, filtro, nome do documento). RH →
+  "Holerites e Recibos" com filtro por vínculo; /equipe mostra o nome certo.
+- Financeiro: horista segue na categoria "prestador" (como já estava).
+- Permissões do Claude Code: regras amplas (Bash, PowerShell, Read…) em
+  .claude/settings.local.json a pedido do Raphael ("aceite pra sempre").
+
+---
+
 ### 2026-10-01 — Produção horista: produto escolhido do cadastro no /equipe (fase86)
 
 - `production_entries.product_id` + view `production_catalog` (produto folha ativo,

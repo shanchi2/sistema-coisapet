@@ -9,6 +9,7 @@ import { Modal } from '../../components/ui/Modal'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { currentMonthISO } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
+import { EMPLOYEE_TYPES, EmployeeTypeBadge, typeInfo, docName } from '../../lib/employeeType'
 
 // ─── BANCO DE HORAS ───────────────────────────────────────────────
 export function RHHorasPage() {
@@ -802,17 +803,31 @@ function PayModal({ open, onClose, employees, onSave }) {
       onClose()
     } catch (e) { toast.error('Erro ao enviar: ' + (e?.message || 'tente novamente.')); console.error(e) } finally { setSaving(false) }
   }
+  const selEmpType = employees.find(e => e.id === form.employee_id)?.employee_type
+  const doc = form.employee_id ? docName(selEmpType) : 'Holerite / Recibo'
+  const docLow = doc.toLowerCase()
+  const [typeFilter, setTypeFilter] = useState('')
+  const empOptions = employees.filter(e => !typeFilter || (e.employee_type || 'clt') === typeFilter)
   return (
-    <Modal open={open} onClose={onClose} title="Enviar holerite"
+    <Modal open={open} onClose={onClose} title={form.employee_id ? `Enviar ${docLow}` : 'Enviar holerite / recibo de pagamento'}
       footer={<><button onClick={onClose} className="btn-secondary" disabled={saving}>Cancelar</button>
         <button onClick={()=>save()} className="btn-primary" disabled={saving||!form.employee_id||!form.month||(!file&&!mirror)}>
           {saving?<div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>:<><Upload size={14}/>Enviar</>}
         </button></>}>
       <div className="flex flex-col gap-4">
         <div><label className="form-label">Funcionário *</label>
+          <div className="flex gap-1.5 flex-wrap mb-2">
+            {[['', 'Todos'], ...EMPLOYEE_TYPES.filter(t => t.doc).map(t => [t.v, `${t.icon} ${t.label}`])].map(([v, l]) => (
+              <button key={v || 'all'} type="button" onClick={() => { setTypeFilter(v); if (v && form.employee_id && (employees.find(e => e.id === form.employee_id)?.employee_type || 'clt') !== v) set('employee_id', '') }}
+                className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${typeFilter === v ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-500'}`}>{l}</button>
+            ))}
+          </div>
           <select className="select" value={form.employee_id} onChange={e=>set('employee_id',e.target.value)}>
-            <option value="">Selecionar...</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
-          </select></div>
+            <option value="">Selecionar...</option>{empOptions.map(e=><option key={e.id} value={e.id}>{e.name} — {typeInfo(e.employee_type).label}</option>)}
+          </select>
+          {form.employee_id && (
+            <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5"><EmployeeTypeBadge type={selEmpType} small /> vai receber como <b>{doc}</b> no app</p>
+          )}</div>
         <div className="grid grid-cols-2 gap-3">
           <div><label className="form-label">Mês *</label>
             <select className="select" value={form.month} onChange={e=>set('month',e.target.value)}>
@@ -822,27 +837,27 @@ function PayModal({ open, onClose, employees, onSave }) {
         </div>
         {form.reference && <div className="bg-slate-50 rounded-xl px-4 py-2 border border-slate-100"><p className="text-xs text-slate-400">Referência: <strong className="text-slate-700">{form.reference}</strong></p></div>}
         <div>
-          <label className="form-label">Rótulo <span className="text-slate-400 font-normal">(opcional — use quando o funcionário recebe mais de um holerite no mês)</span></label>
+          <label className="form-label">Rótulo <span className="text-slate-400 font-normal">(opcional — use quando o funcionário recebe mais de um documento no mês)</span></label>
           <input className="input" maxLength={40} value={form.label} onChange={e=>set('label',e.target.value)}
             placeholder="Ex: CLT, Fim de semana, Semana 1"/>
         </div>
         <div>
           <label className="form-label">Observação do mês <span className="text-slate-400 font-normal">(opcional)</span></label>
           <input className="input" maxLength={200} value={form.notes} onChange={e=>set('notes',e.target.value)}
-            placeholder="Ex: Adiantamento de R$300 já descontado neste holerite"/>
-          <p className="text-xs text-slate-400 mt-1">Aparece pro funcionário junto do holerite no app.</p>
+            placeholder={`Ex: Adiantamento de R$300 já descontado neste ${form.employee_id ? docLow : 'documento'}`}/>
+          <p className="text-xs text-slate-400 mt-1">Aparece pro funcionário junto do {form.employee_id ? docLow : 'documento'} no app.</p>
         </div>
         {conflict && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col gap-3">
             <div className="flex items-start gap-2">
               <span className="text-amber-500 text-lg shrink-0">⚠️</span>
               <p className="text-sm font-semibold text-amber-800">
-                {employees.find(e=>e.id===form.employee_id)?.name} já tem {conflict.length === 1 ? '1 holerite' : `${conflict.length} holerites`} em {form.reference}:
+                {employees.find(e=>e.id===form.employee_id)?.name} já tem {conflict.length === 1 ? `1 ${docLow}` : `${conflict.length} documentos`} em {form.reference}:
               </p>
             </div>
             <div className="flex flex-col gap-2">
               {conflict.map(c => {
-                const what = [c.file_url && 'holerite', c.mirror_url && 'espelho'].filter(Boolean).join(' + ') || 'sem arquivo'
+                const what = [c.file_url && docLow, c.mirror_url && 'espelho'].filter(Boolean).join(' + ') || 'sem arquivo'
                 return (
                   <div key={c.id} className="flex items-center justify-between gap-2 bg-white rounded-lg px-3 py-2 border border-amber-100">
                     <div className="min-w-0">
@@ -866,7 +881,7 @@ function PayModal({ open, onClose, employees, onSave }) {
             </div>
           </div>
         )}
-        <div><label className="form-label">Holerite (PDF) <span className="text-slate-400 font-normal">(opcional)</span></label>
+        <div><label className="form-label">{form.employee_id ? doc : 'Holerite / Recibo'} (PDF) <span className="text-slate-400 font-normal">(opcional)</span></label>
           <label className="flex items-center gap-3 p-4 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-rose-300 hover:bg-rose-50/30 transition-colors">
             <Upload size={18} className="text-slate-400 shrink-0"/>
             <div className="min-w-0"><p className="text-sm font-semibold text-slate-600 truncate">{file?file.name:'Selecionar PDF'}</p><p className="text-xs text-slate-400">Clique para escolher</p></div>
@@ -927,6 +942,7 @@ export function RHHoleritesPage() {
   const [loading,   setLoading]   = useState(true)
   const [modal,     setModal]     = useState(false)
   const [selEmp,    setSelEmp]    = useState('')
+  const [selType,   setSelType]   = useState('') // filtro por vínculo
   const [delId,     setDelId]     = useState(null)
   const [editing,   setEditing]   = useState(null)
 
@@ -934,12 +950,13 @@ export function RHHoleritesPage() {
   useEffect(() => { loadPayslips() }, [selEmp])
 
   async function loadEmployees() {
-    const { data } = await supabase.from('system_users').select('id,name').eq('active',true).order('name')
+    const { data } = await supabase.from('system_users').select('id,name,employee_type').eq('active',true)
+      .not('employee_type','eq','escritorio').order('name')
     setEmployees(data ?? [])
   }
   async function loadPayslips() {
     setLoading(true)
-    let q = supabase.from('payslips').select('*,employee:system_users!employee_id(name)').order('year',{ascending:false}).order('month',{ascending:false})
+    let q = supabase.from('payslips').select('*,employee:system_users!employee_id(name,employee_type)').order('year',{ascending:false}).order('month',{ascending:false})
     if (selEmp) q = q.eq('employee_id', selEmp)
     const { data } = await q; setPayslips(data ?? []); setLoading(false)
   }
@@ -952,7 +969,8 @@ export function RHHoleritesPage() {
     if (!form.file_url)   delete payload.file_url
     if (!form.mirror_url) delete payload.mirror_url
     const { error } = await supabase.from('payslips').insert(payload)
-    if (error) throw error; toast.success('Holerite enviado!'); loadPayslips()
+    if (error) throw error
+    toast.success(`${docName(employees.find(e => e.id === form.employee_id)?.employee_type)} enviado!`); loadPayslips()
   }
   async function del(id) {
     await supabase.from('payslips').delete().eq('id',id); toast.success('Removido.'); loadPayslips()
@@ -960,7 +978,7 @@ export function RHHoleritesPage() {
   async function saveDetails(id, patch) {
     const { error } = await supabase.from('payslips').update(patch).eq('id', id)
     if (error) { toast.error('Erro ao salvar: ' + error.message); return }
-    toast.success('Holerite atualizado.'); loadPayslips()
+    toast.success('Documento atualizado.'); loadPayslips()
   }
 
   // Nomes dos meses em português
@@ -969,7 +987,7 @@ export function RHHoleritesPage() {
 
   // Agrupa payslips por ano-mês, ordenado do mais recente para o mais antigo
   const grouped = useMemo(() => {
-    const filtered = selEmp ? payslips.filter(p => p.employee_id === selEmp) : payslips
+    const filtered = payslips.filter(p => (!selEmp || p.employee_id === selEmp) && (!selType || (p.employee?.employee_type || 'clt') === selType))
     const map = new Map()
     filtered.forEach(p => {
       const key = `${p.year}-${String(p.month).padStart(2,'0')}`
@@ -980,7 +998,7 @@ export function RHHoleritesPage() {
     map.forEach(g => g.items.sort((a,b) => (a.employee?.name || '').localeCompare(b.employee?.name || '', 'pt-BR')))
     // Ordena os meses do mais recente para o mais antigo
     return Array.from(map.values()).sort((a,b) => b.year !== a.year ? b.year - a.year : b.month - a.month)
-  }, [payslips, selEmp])
+  }, [payslips, selEmp, selType])
 
   // Controla quais meses estão expandidos (abre o mais recente por padrão)
   const [openMonths, setOpenMonths] = useState(new Set())
@@ -1001,18 +1019,24 @@ export function RHHoleritesPage() {
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
-      <PageHeader title="Holerites" subtitle="Contracheques digitais por funcionário"
-        actions={<button onClick={()=>setModal(true)} className="btn-primary"><Upload size={15}/>Enviar holerite</button>}/>
+      <PageHeader title="Holerites e Recibos" subtitle="Holerite pra CLT · Recibo de pagamento pra Horista e Prestador (PJ)"
+        actions={<button onClick={()=>setModal(true)} className="btn-primary"><Upload size={15}/>Enviar documento</button>}/>
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 flex-wrap items-center">
+        <div className="flex gap-1.5 flex-wrap">
+          {[['', 'Todos'], ...EMPLOYEE_TYPES.filter(t => t.doc).map(t => [t.v, `${t.icon} ${t.label}`])].map(([v, l]) => (
+            <button key={v || 'all'} onClick={() => { setSelType(v); setSelEmp('') }}
+              className={`text-xs font-bold px-3 py-1.5 rounded-full border ${selType === v ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>{l}</button>
+          ))}
+        </div>
         <select className="select w-auto min-w-[180px]" value={selEmp} onChange={e=>setSelEmp(e.target.value)}>
           <option value="">Todos os funcionários</option>
-          {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+          {employees.filter(e => !selType || (e.employee_type || 'clt') === selType).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
         </select>
       </div>
 
       {loading ? <LoadingCard /> : grouped.length === 0 ? (
-        <EmptyState icon={Receipt} title="Nenhum holerite" description="Envie os holerites e eles ficarão disponíveis no app da equipe."
+        <EmptyState icon={Receipt} title="Nenhum documento" description="Envie os holerites/recibos e eles ficarão disponíveis no app da equipe."
           action={<button onClick={()=>setModal(true)} className="btn-primary mx-auto inline-flex"><Upload size={15}/>Enviar agora</button>}/>
       ) : (
         <div className="flex flex-col gap-3">
@@ -1032,7 +1056,7 @@ export function RHHoleritesPage() {
                     </div>
                     <div className="text-left">
                       <p className="font-semibold text-slate-800">{group.label}</p>
-                      <p className="text-xs text-slate-400">{group.items.length} {group.items.length === 1 ? 'holerite' : 'holerites'}</p>
+                      <p className="text-xs text-slate-400">{group.items.length} {group.items.length === 1 ? 'documento' : 'documentos'}</p>
                     </div>
                   </div>
                   <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}/>
@@ -1045,7 +1069,7 @@ export function RHHoleritesPage() {
                       <thead>
                         <tr>
                           <th>Funcionário</th>
-                          <th>Holerite</th>
+                          <th>Documento</th>
                           <th>Espelho de Ponto</th>
                           <th></th>
                         </tr>
@@ -1059,6 +1083,7 @@ export function RHHoleritesPage() {
                                 <div>
                                   <div className="flex items-center gap-1.5">
                                     <span className="font-semibold text-slate-800">{p.employee?.name}</span>
+                                    <EmployeeTypeBadge type={p.employee?.employee_type} small />
                                     {p.label && <span className="text-[10px] font-bold uppercase tracking-wide text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded">{p.label}</span>}
                                   </div>
                                   {p.notes && <p className="text-xs text-slate-400 italic">{p.notes}</p>}
@@ -1067,7 +1092,7 @@ export function RHHoleritesPage() {
                             </td>
                             <td>
                               {p.file_url
-                                ? <button onClick={()=>viewStorageFile(p.file_url)} className="flex items-center gap-1.5 text-xs font-bold text-sky-500 hover:text-sky-600"><Eye size={13}/>Ver PDF</button>
+                                ? <button onClick={()=>viewStorageFile(p.file_url)} className="flex items-center gap-1.5 text-xs font-bold text-sky-500 hover:text-sky-600"><Eye size={13}/>{docName(p.employee?.employee_type)}</button>
                                 : <span className="text-xs text-slate-300">—</span>}
                             </td>
                             <td>
@@ -1099,7 +1124,7 @@ export function RHHoleritesPage() {
 
       <PayModal open={modal} onClose={()=>setModal(false)} employees={employees} onSave={save}/>
       <EditPayslipModal open={!!editing} onClose={()=>setEditing(null)} payslip={editing} onSave={saveDetails}/>
-      <ConfirmDialog open={!!delId} onClose={()=>setDelId(null)} onConfirm={()=>{del(delId);setDelId(null)}} title="Remover holerite?" description="O holerite será removido do app do funcionário." confirmLabel="Remover"/>
+      <ConfirmDialog open={!!delId} onClose={()=>setDelId(null)} onConfirm={()=>{del(delId);setDelId(null)}} title="Remover documento?" description="O documento será removido do app do funcionário." confirmLabel="Remover"/>
     </div>
   )
 }

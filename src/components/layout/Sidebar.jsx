@@ -94,7 +94,7 @@ const NAV_SECTIONS = [
       { to: '/rh/atestados', moduleKey: 'rh', icon: FileText,        label: 'Atestados',          roles: ['admin','administrativo'] },
       { to: '/rh/avisos',    moduleKey: 'rh', icon: Bell,            label: 'Avisos',             roles: ['admin','administrativo'] },
       { to: '/reunioes',     moduleKey: 'reunioes', icon: CalendarCheck2, label: 'Reuniões',       roles: ['admin','administrativo'] },
-      { to: '/rh/holerites', moduleKey: 'rh', icon: Receipt,         label: 'Holerites',          roles: ['admin','administrativo'] },
+      { to: '/rh/holerites', moduleKey: 'rh', icon: Receipt,         label: 'Holerites e Recibos',roles: ['admin','administrativo'] },
       { to: '/rh/ponto',     moduleKey: 'rh', icon: Clock,           label: 'Registros de Ponto', roles: ['admin','administrativo'] },
       { to: '/rh/relatorio', moduleKey: 'rh', icon: FileSpreadsheet, label: 'Relatório de Ponto', roles: ['admin','administrativo'] },
     ],
