@@ -30,7 +30,13 @@ function mapOrderToCommon(order: any, shipment: any | null) {
   const comprador = [order.buyer?.first_name, order.buyer?.last_name].filter(Boolean).join(' ')
     || order.buyer?.nickname || null
 
-  const addr = shipment?.receiver_address
+  // Endereço: no formato novo (x-format-new, o que usamos) fica em
+  // destination.shipping_address — receiver_address vem vazio. Bug real
+  // achado 30/09: estado/cidade de TODO pedido ML vinham null (mesmo tipo
+  // de mudança do logistic_type de 27/08). Estado gravado como sigla
+  // (state.id "BR-SP" → "SP").
+  const addr = shipment?.destination?.shipping_address || shipment?.receiver_address
+  const uf = addr?.state?.id ? String(addr.state.id).replace(/^BR-/, '') : (addr?.state?.name || null)
   const items = (order.order_items || []).map((oi: any) => ({
     titulo:     oi.item?.title || '—',
     sku:        oi.item?.seller_sku || null,
@@ -67,7 +73,7 @@ function mapOrderToCommon(order: any, shipment: any | null) {
     desc:       null,
     comprador,
     cidade:     addr?.city?.name || null,
-    estado_uf:  addr?.state?.name || null,
+    estado_uf:  uf,
     cep:        addr?.zip_code || null,
     rastreio:   shipment?.tracking_number || null,
     is_pacote:  !!order.pack_id,
@@ -319,6 +325,16 @@ serve(async (req) => {
 
     const parsed = mapOrderToCommon(order, shipment)
     await saveOrder(db, parsed)
+
+    // Tipo de envio pra Expedição (30/09) — mesmo mapeamento do botão
+    // "Atualizar ML" (ml-shipping-deadline-recheck). Nunca derruba o sync.
+    const LOGISTIC: Record<string, string> = { self_service: 'Flex', cross_docking: 'Coleta', xd_drop_off: 'Agência', drop_off: 'Agência / Correios', fulfillment: 'Full' }
+    const lt = shipment?.logistic?.type
+    if (lt) {
+      await db.from('orders').update({ shipping_carrier: LOGISTIC[lt] ?? lt })
+        .eq('source', 'ml').eq('num_venda', parsed.num)
+        .then(() => {}, (e: unknown) => console.error('[ml-process-webhook] shipping_carrier:', e))
+    }
 
     await db.from('ml_webhook_events').update({
       status: 'done', processed_at: new Date().toISOString(),

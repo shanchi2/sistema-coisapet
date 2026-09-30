@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { todayISO } from '../../lib/dateBR'
+import { toUF } from '../../lib/uf'
 
 // Comparativo ML × Shopee (Diretoria, 30/09). Tudo calculado a partir dos
 // pedidos do nosso banco (orders + order_items):
@@ -328,7 +329,7 @@ export function MarketplaceComparePage() {
 
   const states = useMemo(() => {
     const m = {}
-    valid.forEach(o => { const uf = (o.estado_uf || '—').toUpperCase().slice(0, 2); (m[uf] ||= { ml: 0, shopee: 0 })[o.source]++ })
+    valid.forEach(o => { const uf = toUF(o.estado_uf) || '—'; (m[uf] ||= { ml: 0, shopee: 0 })[o.source]++ })
     return Object.entries(m).map(([uf, v]) => ({ uf, ...v, total: v.ml + v.shopee })).sort((a, b) => b.total - a.total).slice(0, 12)
   }, [valid])
 

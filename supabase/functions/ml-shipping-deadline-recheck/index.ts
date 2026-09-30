@@ -60,15 +60,25 @@ serve(async (req) => {
   let body: any = {}
   try { body = await req.json() } catch { /* cron manda sem body */ }
   const manual = body?.mode === 'manual'
+  // Preenche cidade/UF de pedidos recentes que ficaram sem (bug do
+  // endereço no formato novo, 30/09) — body { mode: 'backfill_address', days }
+  const backfill = body?.mode === 'backfill_address'
 
   const db = adminClient()
   try {
     const integration = await getValidIntegration(db)
     const today = toISODateBR(new Date())
-    const select = 'id, num_venda, pack_id, data_venda, ship_date, shipping_deadline, status_ml, is_full, items:order_items(picked)'
+    const select = 'id, num_venda, pack_id, data_venda, ship_date, shipping_deadline, status_ml, is_full, estado_uf, cidade, items:order_items(picked)'
 
     let candidates: any[] = []
-    if (manual) {
+    if (backfill) {
+      const since = new Date(Date.now() - (Number(body.days) || 60) * 86400000).toISOString()
+      const { data, error } = await db.from('orders').select(select)
+        .eq('source', 'ml').is('estado_uf', null).gte('data_venda', since)
+        .order('data_venda', { ascending: false }).limit(Number(body.limit) || 150)
+      if (error) throw error
+      candidates = data || []
+    } else if (manual) {
       const { data, error } = await db.from('orders').select(select)
         .eq('source', 'ml').eq('archived', false).eq('is_full', false)
         .gte('ship_date', today)
@@ -97,7 +107,14 @@ serve(async (req) => {
         const bufferingDate: string | null = shipment?.lead_time?.buffering?.date?.slice(0, 10) ?? null
         checked++
 
-        const patch: Record<string, unknown> = { shipping_deadline_checked_at: new Date().toISOString() }
+        const patch: Record<string, unknown> = backfill ? {} : { shipping_deadline_checked_at: new Date().toISOString() }
+        const addr = shipment?.destination?.shipping_address || shipment?.receiver_address
+        if (!o.estado_uf && addr?.state?.id) patch.estado_uf = String(addr.state.id).replace(/^BR-/, '')
+        if (!o.cidade && addr?.city?.name) patch.cidade = addr.city.name
+        if (backfill) {
+          if (Object.keys(patch).length) await db.from('orders').update(patch).eq('id', o.id)
+          return
+        }
         if (bufferingDate) patch.shipping_deadline = bufferingDate
         const LOGISTIC: Record<string, string> = { self_service: 'Flex', cross_docking: 'Coleta', xd_drop_off: 'Agência', drop_off: 'Agência / Correios', fulfillment: 'Full' }
         if (shipment?.logistic?.type) patch.shipping_carrier = LOGISTIC[shipment.logistic.type] ?? shipment.logistic.type

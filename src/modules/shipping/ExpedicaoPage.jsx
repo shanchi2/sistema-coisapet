@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Check, Package, PartyPopper, RefreshCw, ShoppingCart, ShoppingBag, PenLine, Minus, Plus, ClipboardList, ChevronLeft, ChevronRight, Calendar, Target, AlertTriangle, History, Lock, Search, Truck, Clock, MessageSquare, MapPin, CalendarClock, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { toUF } from '../../lib/uf'
 import { useSignedUrl } from '../../lib/signedUrlCache'
 import { fetchShippingOrders, toggleItemPicked, fetchShippingDayCounts, fetchSaturdayTarget, activateSaturdayTarget, clearNeedsAttention, clearDayAutoCorrected, closeShippingDay, fetchShippingClosures, fetchOverdueOrders, resolveBatchId } from './hooks/useShipping'
 import { fetchGathering, saveGatheringItem, sendShortageReport } from './hooks/usePicklistGathering'
@@ -107,13 +108,7 @@ function BuyerName({ o, big = false }) {
 // de entrega (ver _shared/shopeeOrders.ts) ou da planilha, que escreve o
 // estado por extenso ("São Paulo") — normalizado pra sigla aqui. Fora de
 // SP = viagem longa → mini alerta pra caprichar na embalagem.
-const UF_BY_NAME = { 'acre': 'AC', 'alagoas': 'AL', 'amapa': 'AP', 'amazonas': 'AM', 'bahia': 'BA', 'ceara': 'CE', 'distrito federal': 'DF', 'espirito santo': 'ES', 'goias': 'GO', 'maranhao': 'MA', 'mato grosso': 'MT', 'mato grosso do sul': 'MS', 'minas gerais': 'MG', 'para': 'PA', 'paraiba': 'PB', 'parana': 'PR', 'pernambuco': 'PE', 'piaui': 'PI', 'rio de janeiro': 'RJ', 'rio grande do norte': 'RN', 'rio grande do sul': 'RS', 'rondonia': 'RO', 'roraima': 'RR', 'santa catarina': 'SC', 'sao paulo': 'SP', 'sergipe': 'SE', 'tocantins': 'TO' }
-const destUF = o => {
-  const u = clean(o.estado_uf)?.trim()
-  if (!u) return null
-  if (/^[A-Za-z]{2}$/.test(u)) return u.toUpperCase()
-  return UF_BY_NAME[u.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()] || null
-}
+const destUF = o => toUF(o.estado_uf)
 function UfBadge({ o, big = false }) {
   const uf = destUF(o)
   if (!uf) return null
