@@ -485,7 +485,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);height
           </div>
           <input type="number" class="fib" id="lanc-qtd" placeholder="Quantidade" min="1" style="width:100%"/>
           <input type="text"   class="fib" id="lanc-prod" placeholder="Produto (ex: Rodinha 20cm Preta)" style="width:100%"/>
-          <input type="text"   class="fib" id="lanc-obs"  placeholder="Observação (opcional)" style="width:100%"/>
+          <div>
+            <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📝 Observação (opcional) — aparece pra gestão no relatório</span>
+            <textarea class="fib" id="lanc-obs" rows="2" placeholder="Ex: 3 peças com defeito, faltou material, máquina parou, retrabalho…" style="width:100%;resize:none"></textarea>
+          </div>
           <button class="btn-pri" onclick="doLancamento()" id="lanc-btn">Registrar</button>
         </div>
       </div>
@@ -1917,13 +1920,17 @@ async function loadLancamentos(){
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bdr)">
       <div>
         <div style="font-size:13px;font-weight:600;color:var(--txt)">${r.quantity}× ${r.product_name}</div>
-        ${r.notes?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${r.notes}</div>`:''}
+        ${r.notes?`<div style="font-size:12px;color:#8a5a00;background:#fff7e0;border-radius:8px;padding:4px 8px;margin-top:4px">📝 ${escHtml(r.notes)}</div>`:''}
       </div>
+      <div style="display:flex;align-items:center;flex-shrink:0">
+      <button onclick="editObsLancamento('${r.id}')" title="Observação" style="background:none;border:none;cursor:pointer;padding:6px;color:var(--muted);font-size:14px">${r.notes?'✏️':'📝'}</button>
       <button onclick="delLancamento('${r.id}')" style="background:none;border:none;cursor:pointer;padding:6px;color:var(--muted)">
         <svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
       </button>
+      </div>
     </div>`
   }).join('')
+  window._lancRows=Object.fromEntries(data.map(r=>[r.id,r]))
   tot.textContent=`Total ${isToday?'hoje':'nesse dia'}: ${totalQtd} itens produzidos`
   tot.style.display='block'
 }
@@ -1951,6 +1958,18 @@ async function doLancamento(){
   document.getElementById('lanc-prod').value=''
   document.getElementById('lanc-obs').value=''
   toast('Registrado com sucesso!')
+  loadLancamentos()
+}
+
+// Observação num lançamento já feito (01/10) — dá pra anotar depois
+function escHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+async function editObsLancamento(id){
+  const cur=(window._lancRows&&window._lancRows[id]&&window._lancRows[id].notes)||''
+  const v=prompt('Observação deste lançamento (deixe vazio pra apagar):',cur)
+  if(v===null)return
+  const{error}=await db.from('production_entries').update({notes:v.trim()||null}).eq('id',id)
+  if(error){toast('Erro ao salvar observação');console.error(error);return}
+  toast(v.trim()?'Observação salva!':'Observação removida')
   loadLancamentos()
 }
 

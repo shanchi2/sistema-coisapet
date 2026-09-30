@@ -352,7 +352,7 @@ export function HoristasReport() {
     let alive = true
     setLoading(true)
     Promise.all([
-      supabase.from('production_entries').select('employee_id, employee_name, date, quantity, product_name').gte('date', fetchFrom).lte('date', range.to).limit(10000),
+      supabase.from('production_entries').select('employee_id, employee_name, date, quantity, product_name, notes').gte('date', fetchFrom).lte('date', range.to).limit(10000),
       supabase.from('time_records').select('employee_id, punch_type, recorded_at, date, hours_worked').gte('date', fetchFrom).lte('date', range.to).limit(20000),
     ]).then(([e, p]) => {
       if (!alive) return
@@ -380,9 +380,9 @@ export function HoristasReport() {
   const isCurrent = mode !== 'periodo' && range.from <= today && range.to >= today
 
   function exportCsv() {
-    const rows = [['Data', 'Funcionário', 'Produto', 'Quantidade', 'Horas no dia (ponto)']]
+    const rows = [['Data', 'Funcionário', 'Produto', 'Quantidade', 'Horas no dia (ponto)', 'Observação']]
     for (const e of [...cur.entries].sort((a, b) => a.date.localeCompare(b.date))) {
-      rows.push([e.date, e.employee_name, e.product_name, e.quantity, fmtNum(hours[`${e.employee_id}|${e.date}`] || 0, 2)])
+      rows.push([e.date, e.employee_name, e.product_name, e.quantity, fmtNum(hours[`${e.employee_id}|${e.date}`] || 0, 2), e.notes || ''])
     }
     const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n')
     const a = document.createElement('a')
@@ -555,6 +555,32 @@ export function HoristasReport() {
                   <WeeksTrend entries={scoped} hours={hours} anchor={range.to} />
                 </div>
               </div>
+
+              {/* Observações que o funcionário escreveu no /equipe ao lançar (01/10) */}
+              {(() => {
+                const notes = [...cur.entries].filter(e => (e.notes || '').trim()).sort((a, b) => b.date.localeCompare(a.date))
+                return (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5">
+                    <p className="text-sm font-bold text-slate-700 mb-1">Observações do período <span className="font-normal text-slate-400">({notes.length})</span></p>
+                    <p className="text-[11px] text-slate-400 mb-3">O que os horistas anotaram ao lançar a produção no app da equipe.</p>
+                    {notes.length === 0 ? (
+                      <p className="text-sm text-slate-400">Nenhuma observação nesse período.</p>
+                    ) : (
+                      <div className="flex flex-col divide-y divide-slate-100">
+                        {notes.map((e, i) => (
+                          <div key={i} className="py-2.5 flex items-start gap-3">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1.5" style={{ background: colorOf(e.employee_id) }} />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs text-slate-500"><b className="text-slate-700">{fmtShort(e.date)}</b> · {e.employee_name.split(' ')[0]} · {e.quantity}× {e.product_name}</p>
+                              <p className="text-sm text-slate-800 mt-0.5 bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5 whitespace-pre-line">{e.notes}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {cur.hours === 0 && (
                 <p className="text-xs text-slate-400 text-center">Sem batidas de ponto nesse período — horas e peças/hora ficam em branco.</p>
