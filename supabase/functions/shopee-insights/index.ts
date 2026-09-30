@@ -979,6 +979,61 @@ async function returnConvertImages(integration: any, imagesBase64: string[], ima
   return { urls }
 }
 
+// ── Valor dos pedidos antigos (fase82, 30/09) ─────────────────────────
+// Pedidos da Shopee anteriores a 19/09 entraram pela planilha da picklist
+// sem preço nos itens. Busca no get_order_detail (50 por chamada) e grava:
+// preço unitário dos itens (mesmo campo que o webhook usa:
+// model_discounted_price), total pago pelo comprador e status na Shopee.
+// Nunca sobrescreve preço que já existe.
+async function ordersValueBackfill(integration: any, db: ReturnType<typeof adminClient>, limit = 400) {
+  const { data: pending } = await db.from('orders')
+    .select('id, num_venda, items:order_items(id, sku, titulo, preco_unit, qty)')
+    .eq('source', 'shopee').is('marketplace_synced_at', null)
+    .order('data_venda', { ascending: false }).limit(limit)
+  const orders = (pending || []).filter((o: any) => o.num_venda)
+  const norm = (s: string) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim()
+  let updatedOrders = 0, pricedItems = 0, notFound = 0
+
+  for (const group of chunk(orders, 50)) {
+    const detail = await shopeeFetch('/api/v2/order/get_order_detail', integration, {
+      order_sn_list: group.map((o: any) => o.num_venda).join(','),
+      response_optional_fields: 'item_list,order_status,total_amount',
+    }).catch(() => null)
+    const bySn: Record<string, any> = {}
+    for (const o of detail?.response?.order_list ?? []) bySn[o.order_sn] = o
+
+    await Promise.all(group.map(async (o: any) => {
+      const api = bySn[o.num_venda]
+      if (!api) { notFound++; await db.from('orders').update({ marketplace_synced_at: new Date().toISOString() }).eq('id', o.id); return }
+      const apiItems = (api.item_list || []).map((it: any) => ({
+        sku: norm(it.model_sku || it.item_sku || ''), name: norm(it.item_name || it.model_name || ''),
+        price: it.model_discounted_price ?? it.model_original_price ?? null, used: false,
+      }))
+      for (const item of o.items || []) {
+        if (item.preco_unit != null) continue
+        const bySku = item.sku ? apiItems.find((a: any) => !a.used && a.sku && a.sku === norm(item.sku)) : null
+        const byName = !bySku ? apiItems.find((a: any) => !a.used && a.name && a.name === norm(item.titulo)) : null
+        // Pedido de 1 item só: casa direto mesmo sem SKU/nome batendo
+        const only = !bySku && !byName && (o.items || []).length === 1 && apiItems.length === 1 ? apiItems[0] : null
+        const match = bySku || byName || only
+        if (match && match.price != null) {
+          match.used = true
+          await db.from('order_items').update({ preco_unit: match.price }).eq('id', item.id)
+          pricedItems++
+        }
+      }
+      await db.from('orders').update({
+        gross_value: api.total_amount ?? null,
+        marketplace_status: api.order_status ?? null,
+        marketplace_synced_at: new Date().toISOString(),
+      }).eq('id', o.id)
+      updatedOrders++
+    }))
+  }
+  const { count } = await db.from('orders').select('id', { count: 'exact', head: true }).eq('source', 'shopee').is('marketplace_synced_at', null)
+  return { updated_orders: updatedOrders, priced_items: pricedItems, not_found: notFound, remaining: count ?? 0 }
+}
+
 async function returnDisputeReasons(integration: any, returnSn: string) {
   const res = await shopeeFetch('/api/v2/returns/get_return_dispute_reason', integration, { return_sn: returnSn })
   return res?.response ?? res
@@ -1161,6 +1216,8 @@ serve(async (req) => {
       case 'return_detail':
         if (!body.return_sn) return json({ error: 'return_sn obrigatório' }, 400)
         return json(await returnDetail(integration, String(body.return_sn), db))
+      case 'orders_value_backfill':
+        return json(await ordersValueBackfill(integration, db, Number(body.limit || 400)))
       case 'return_convert_images':
         if (!(body.images?.length || body.image_urls?.length)) return json({ error: 'images ou image_urls obrigatório' }, 400)
         return json(await returnConvertImages(integration, (body.images || []).map(String), (body.image_urls || []).map(String)))

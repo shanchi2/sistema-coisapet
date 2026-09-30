@@ -59,6 +59,7 @@ import { QRCodePage }             from './modules/qrcode/QRCodePage'
 import { RHHorasPage, RHFeriasPage, RHAtestadosPage, RHAvisosPage, RHHoleritesPage } from './modules/rh/RHPages'
 import { VariationsPage } from './modules/products/VariationsPage'
 import { ProductionEntriesPage } from './modules/production/ProductionEntriesPage'
+import { MarketplaceComparePage } from './modules/directors/MarketplaceComparePage'
 import { BioLinksPage } from './modules/links/BioLinksPage'
 import { BlogBannersPage } from './modules/blog/BlogBannersPage'
 import { ChecklistPage } from './modules/checklist/ChecklistPage'
@@ -198,6 +199,7 @@ export default function App() {
 
                 {/* Gestão */}
                 <Route path="/financeiro"           element={<GuardedRoute moduleKey="financeiro"><FinancialPage /></GuardedRoute>} />
+                <Route path="/diretoria/ml-x-shopee" element={<GuardedRoute moduleKey="comparativo-marketplaces"><MarketplaceComparePage /></GuardedRoute>} />
                 <Route path="/financeiro-diretoria" element={<GuardedRoute moduleKey="financeiro-dir"><FinanceiroDiretoriaPage /></GuardedRoute>} />
                 <Route path="/drive"                element={<GuardedRoute moduleKey="drive"><DrivePage /></GuardedRoute>} />
                 <Route path="/coisadecor"           element={<GuardedRoute moduleKey="coisadecor"><CoisaDecorPage /></GuardedRoute>} />

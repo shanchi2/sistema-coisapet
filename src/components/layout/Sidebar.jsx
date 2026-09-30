@@ -117,6 +117,7 @@ const NAV_SECTIONS = [
     label: 'Diretoria',
     items: [
       { to: '/kanban',     moduleKey: 'kanban',     icon: Kanban,          label: 'Kanban',     roles: ['admin','administrativo'] },
+      { to: '/diretoria/ml-x-shopee', moduleKey: 'comparativo-marketplaces', icon: BarChart2, label: 'ML × Shopee', roles: ['admin'] },
       { to: '/financeiro-diretoria', moduleKey: 'financeiro-dir', icon: DollarSign, label: 'Fin. Diretoria',     roles: ['admin'] },
       { to: '/directors',            moduleKey: 'directors',       icon: Star,       label: 'Compras Diretoria', roles: ['admin'] },
       { to: '/cofre',                moduleKey: 'cofre',           icon: Lock,       label: 'Cofre de Senhas',   roles: ['admin'] },
