@@ -78,7 +78,7 @@ function aggregate(entries, hours, from, to) {
     const x = (emps[e.employee_id] ||= { id: e.employee_id, name: e.employee_name, pieces: 0, days: new Set(), products: {}, byDay: {} })
     x.pieces += e.quantity
     x.days.add(e.date)
-    x.products[e.product_name] = (x.products[e.product_name] || 0) + e.quantity
+    x.products[e.product_name] = (x.products[e.product_name] || 0) + e.quantity // (topProducts: rótulo)
     x.byDay[e.date] = (x.byDay[e.date] || 0) + e.quantity
   }
   for (const x of Object.values(emps)) {
@@ -103,7 +103,10 @@ function aggregate(entries, hours, from, to) {
   const days = new Set(inRange.map(e => e.date))
   const products = {}
   for (const e of inRange) {
-    const p = (products[e.product_name] ||= { name: e.product_name, total: 0, byEmp: {} })
+    // Agrupa pelo produto do cadastro quando vinculado (Fase 86); texto livre
+    // antigo agrupa ignorando maiúscula/espaço ("Aspen flake" = "Aspen Flake")
+    const pk = e.product_id || (e.product_name || '').trim().toLowerCase().replace(/\s+/g, ' ')
+    const p = (products[pk] ||= { key: pk, name: e.product_name, linked: !!e.product_id, total: 0, byEmp: {} })
     p.total += e.quantity
     p.byEmp[e.employee_id] = (p.byEmp[e.employee_id] || 0) + e.quantity
   }
@@ -352,7 +355,7 @@ export function HoristasReport() {
     let alive = true
     setLoading(true)
     Promise.all([
-      supabase.from('production_entries').select('employee_id, employee_name, date, quantity, product_name, notes').gte('date', fetchFrom).lte('date', range.to).limit(10000),
+      supabase.from('production_entries').select('employee_id, employee_name, date, quantity, product_name, product_id, notes').gte('date', fetchFrom).lte('date', range.to).limit(10000),
       supabase.from('time_records').select('employee_id, punch_type, recorded_at, date, hours_worked').gte('date', fetchFrom).lte('date', range.to).limit(20000),
     ]).then(([e, p]) => {
       if (!alive) return
@@ -535,9 +538,9 @@ export function HoristasReport() {
                   <p className="text-sm font-bold text-slate-700 mb-3">Por produto <span className="font-normal text-slate-400">({cur.products.length})</span></p>
                   <div className="flex flex-col gap-2.5 max-h-[420px] overflow-y-auto pr-1">
                     {cur.products.map(p => (
-                      <div key={p.name} title={chartEmps.filter(e => p.byEmp[e.id]).map(e => `${e.name.split(' ')[0]}: ${p.byEmp[e.id]}`).join(' · ')}>
+                      <div key={p.key || p.name} title={chartEmps.filter(e => p.byEmp[e.id]).map(e => `${e.name.split(' ')[0]}: ${p.byEmp[e.id]}`).join(' · ')}>
                         <div className="flex items-baseline justify-between gap-2 text-xs mb-1">
-                          <span className="text-slate-700 truncate">{p.name}</span>
+                          <span className="text-slate-700 truncate" title={p.name}>{p.name}{!p.linked && <span className="ml-1.5 text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded" title="Lançado com nome digitado, sem vínculo com o cadastro">texto livre</span>}</span>
                           <span className="font-bold text-slate-800 shrink-0">{p.total}</span>
                         </div>
                         <div className="h-2 bg-slate-100 rounded-full overflow-hidden flex" style={{ width: `${Math.max(4, (p.total / maxProd) * 100)}%`, gap: 2 }}>

@@ -238,6 +238,21 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);height
 .cal-month-summary{background:var(--card2);border:1px solid var(--bdr2);border-radius:16px;padding:16px;margin-bottom:16px}
 .cms-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .cms-row:last-child{margin:0}
+/* Seletor de produto da produção horista (01/10) */
+.pp-res{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto;margin-top:8px}
+.pp-item{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:14px;background:var(--card);border:1px solid var(--bdr);cursor:pointer;text-align:left;width:100%;color:var(--txt);font-family:'Inter',sans-serif}
+.pp-item:active{background:var(--card3)}
+.pp-img{width:52px;height:52px;border-radius:10px;object-fit:cover;flex-shrink:0;background:var(--card2)}
+.pp-var{display:inline-block;font-size:14px;font-weight:800;color:#1a0d02;background:var(--gold);border-radius:8px;padding:2px 8px;margin-bottom:4px}
+.pp-name{font-size:12.5px;line-height:1.35;color:var(--txt);white-space:normal;word-break:break-word}
+.pp-sku{font-size:10.5px;color:var(--muted);margin-top:3px;font-family:monospace}
+.pp-sel{display:flex;gap:12px;align-items:flex-start;padding:12px;border-radius:16px;background:rgba(207,158,40,.12);border:1.5px solid var(--gold)}
+.pp-sel .pp-img{width:64px;height:64px}
+.pp-sel .pp-name{font-size:13.5px}
+.pp-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.pp-chip{font-size:11.5px;font-weight:600;padding:6px 10px;border-radius:999px;background:var(--card2);border:1px solid var(--bdr2);color:var(--txt2);cursor:pointer;font-family:'Inter',sans-serif;max-width:100%;text-align:left}
+.pp-chip b{color:var(--gold)}
+.pp-link{background:none;border:none;color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;padding:6px 0;font-family:'Inter',sans-serif;text-align:left}
 </style>
 </head>
 <body>
@@ -484,7 +499,20 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);height
             <input type="date" class="fib" id="lanc-date" style="width:100%" onchange="loadLancamentos()"/>
           </div>
           <input type="number" class="fib" id="lanc-qtd" placeholder="Quantidade" min="1" style="width:100%"/>
-          <input type="text"   class="fib" id="lanc-prod" placeholder="Produto (ex: Rodinha 20cm Preta)" style="width:100%"/>
+          <div id="pp-box">
+            <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Produto — busque no cadastro (ex: <b>rodinha 20 preta</b>, <b>substrato aspen</b>)</span>
+            <div id="pp-picked" style="display:none"></div>
+            <div id="pp-search-wrap">
+              <input type="search" class="fib" id="pp-q" placeholder="🔎 Buscar produto…" autocomplete="off" style="width:100%" oninput="ppSearch()"/>
+              <div id="pp-recent"></div>
+              <div id="pp-res" class="pp-res"></div>
+              <button class="pp-link" onclick="ppManual(true)">Não achei o produto na lista →</button>
+            </div>
+            <div id="pp-manual" style="display:none">
+              <input type="text" class="fib" id="lanc-prod" placeholder="Digite o nome do produto" style="width:100%"/>
+              <button class="pp-link" onclick="ppManual(false)">← Voltar pra busca no cadastro</button>
+            </div>
+          </div>
           <div>
             <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📝 Observação (opcional) — aparece pra gestão no relatório</span>
             <textarea class="fib" id="lanc-obs" rows="2" placeholder="Ex: 3 peças com defeito, faltou material, máquina parou, retrabalho…" style="width:100%;resize:none"></textarea>
@@ -750,7 +778,7 @@ function goTo(id,btn){
   if(id==='cal')loadCal()
   if(id==='prod')loadProd()
   if(id==='espelho')loadEspelho()
-  if(id==='lancamento')loadLancamentos()
+  if(id==='lancamento'){loadLancamentos();ppLoadRecent()}
   if(id==='chat')openChatList()
 }
 
@@ -1935,13 +1963,93 @@ async function loadLancamentos(){
   tot.style.display='block'
 }
 
+// ── Seletor de produto (01/10, Fase 86) ──
+// Busca no cadastro (view production_catalog) em vez de digitar o nome —
+// assim "Rodinha Preta 25cm", "rodinha 25 preta", "Rodinhas"… viram SEMPRE
+// o mesmo produto. Variação tem o mesmo nome do pai no cadastro; o que
+// diferencia (Cor: Preto, Peso: 1Kg…) vem destacado em dourado, e o nome
+// completo aparece inteiro (quebra linha, nunca corta).
+let ppCatalog=null,ppPicked=null,ppIsManual=false
+const ppNorm=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+// "preta"/"preto"/"pretas" → "pret"; "rodinhas" → "rodinh"
+const ppStem=t=>t.length>=4?t.replace(/(as|os|a|o|s)$/,''):t
+function ppPhoto(p){
+  if(!p||!p.photo_url)return''
+  return /^https?:/.test(p.photo_url)?p.photo_url:SUPA_URL+'/storage/v1/object/public/product-photos/'+p.photo_url
+}
+function ppCard(p,extraAttrs){
+  const img=ppPhoto(p)
+  return `${img?`<img class="pp-img" src="${img}" loading="lazy" alt=""/>`:'<div class="pp-img"></div>'}
+    <div style="min-width:0;flex:1">
+      ${p.variation?`<div class="pp-var">${escHtml(p.variation)}</div>`:''}
+      <div class="pp-name">${escHtml(p.name)}</div>
+      <div class="pp-sku">${escHtml(p.sku||'')}</div>
+    </div>`
+}
+async function ppLoad(){
+  if(ppCatalog)return ppCatalog
+  const{data,error}=await db.from('production_catalog').select('id,sku,name,variation,photo_url,search').limit(2000)
+  if(error){console.error(error);ppCatalog=[];return ppCatalog}
+  ppCatalog=(data||[]).map(p=>({...p,_s:ppNorm(p.search)}))
+  return ppCatalog
+}
+async function ppSearch(){
+  const q=document.getElementById('pp-q').value
+  const el=document.getElementById('pp-res')
+  const toks=ppNorm(q).split(/\s+/).filter(Boolean).map(ppStem)
+  if(!toks.length){el.innerHTML='';return}
+  const cat=await ppLoad()
+  const hits=cat.filter(p=>toks.every(t=>p._s.includes(t)))
+    .sort((a,b)=>(ppNorm(a.name).startsWith(toks[0])?0:1)-(ppNorm(b.name).startsWith(toks[0])?0:1)||a.name.localeCompare(b.name)||(a.variation||'').localeCompare(b.variation||''))
+    .slice(0,40)
+  el.innerHTML=hits.length
+    ?hits.map(p=>`<button class="pp-item" onclick="ppPick('${p.id}')">${ppCard(p)}</button>`).join('')
+    :'<div class="empty"><p>Nenhum produto com esse nome. Tente outra palavra (ex: só "rodinha 25").</p></div>'
+}
+async function ppLoadRecent(){
+  const el=document.getElementById('pp-recent')
+  if(!el||!me)return
+  const{data}=await db.from('production_entries').select('product_id,created_at').eq('employee_id',me.id).not('product_id','is',null).order('created_at',{ascending:false}).limit(60)
+  const ids=[...new Set((data||[]).map(r=>r.product_id))].slice(0,6)
+  if(!ids.length){el.innerHTML='';return}
+  const cat=await ppLoad()
+  const items=ids.map(id=>cat.find(p=>p.id===id)).filter(Boolean)
+  el.innerHTML=items.length?`<div style="font-size:11px;color:var(--muted);margin-top:8px">Mais usados por você:</div><div class="pp-chips">${items.map(p=>`<button class="pp-chip" onclick="ppPick('${p.id}')">${p.variation?`<b>${escHtml(p.variation)}</b> · `:''}${escHtml(p.name.split(' ').slice(0,3).join(' '))}</button>`).join('')}</div>`:''
+}
+async function ppPick(id){
+  const cat=await ppLoad()
+  ppPicked=cat.find(p=>p.id===id)||null
+  if(!ppPicked)return
+  document.getElementById('pp-picked').innerHTML=`<div class="pp-sel">${ppCard(ppPicked)}</div><button class="pp-link" onclick="ppClear()">Trocar produto</button>`
+  document.getElementById('pp-picked').style.display='block'
+  document.getElementById('pp-search-wrap').style.display='none'
+}
+function ppClear(){
+  ppPicked=null
+  document.getElementById('pp-picked').style.display='none'
+  document.getElementById('pp-picked').innerHTML=''
+  document.getElementById('pp-search-wrap').style.display='block'
+  document.getElementById('pp-q').value=''
+  document.getElementById('pp-res').innerHTML=''
+  ppLoadRecent()
+}
+function ppManual(on){
+  ppIsManual=on
+  if(on)ppClear()
+  document.getElementById('pp-manual').style.display=on?'block':'none'
+  document.getElementById('pp-search-wrap').style.display=on?'none':'block'
+  if(on)document.getElementById('lanc-prod').focus()
+}
+// Rótulo legível gravado junto (relatório/lista): nome completo — variação
+const ppLabel=p=>p.variation?`${p.name} — ${p.variation}`:p.name
+
 async function doLancamento(){
   const qtd=parseInt(document.getElementById('lanc-qtd').value)
-  const prod=document.getElementById('lanc-prod').value.trim()
+  const prod=ppPicked?ppLabel(ppPicked):(ppIsManual?document.getElementById('lanc-prod').value.trim():'')
   const obs=document.getElementById('lanc-obs').value.trim()
   const date=document.getElementById('lanc-date').value||todayBR()
   if(!qtd||qtd<1){toast('Informe a quantidade');return}
-  if(!prod){toast('Informe o produto');return}
+  if(!prod){toast(ppIsManual?'Digite o nome do produto':'Escolha o produto na busca');return}
   const btn=document.getElementById('lanc-btn')
   btn.disabled=true;btn.textContent='Salvando…'
   const{error}=await db.from('production_entries').insert({
@@ -1950,6 +2058,7 @@ async function doLancamento(){
     date:date,
     quantity:qtd,
     product_name:prod,
+    product_id:ppPicked?ppPicked.id:null,
     notes:obs||null
   })
   btn.disabled=false;btn.textContent='Registrar'
@@ -1957,6 +2066,7 @@ async function doLancamento(){
   document.getElementById('lanc-qtd').value=''
   document.getElementById('lanc-prod').value=''
   document.getElementById('lanc-obs').value=''
+  if(ppIsManual)ppManual(false);else ppClear()
   toast('Registrado com sucesso!')
   loadLancamentos()
 }
