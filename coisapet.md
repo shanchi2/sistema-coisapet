@@ -275,6 +275,23 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-10-01 — Produção horista: produto escolhido do cadastro no /equipe (fase86)
+
+- `production_entries.product_id` + view `production_catalog` (produto folha ativo,
+  sem kit, rótulo da variação vindo de product_variations pelo SKU — variação tem o
+  MESMO nome do pai no cadastro). /equipe busca o produto (sem acento, stem
+  preta/preto), mostra foto + variação em destaque + nome completo; texto livre só
+  como plano B. Relatório soma por product_id.
+- **Pendente (Raphael: "depois ajustamos")**: os 137 lançamentos antigos (texto
+  livre) NÃO foram vinculados. Antes de vincular, confirmar se "Rodinha" era sempre
+  a COM suporte (ROD-xx-COR) ou às vezes a SEM suporte (ROD-SS-...).
+- Observação por lançamento já existia no /equipe (campo pouco visível); ficou maior,
+  editável depois, e aparece no relatório (card "Observações do período" + CSV).
+- Estoque de matéria-prima: números ainda fictícios (Raphael vai conferir o estoque
+  real) — por isso NÃO foi estornado o que os 2 pedidos de teste apagados somaram.
+
+---
+
 ### 2026-09-30 — Retornos Shopee: variação do produto + nossa contestação (fase85)
 
 - Devolução só traz `model_id`/`variation_sku`; nome e foto da variação vêm de
