@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Check, Package, PartyPopper, RefreshCw, ShoppingCart, ShoppingBag, PenLine, Minus, Plus, ClipboardList, ChevronLeft, ChevronRight, Calendar, Target, AlertTriangle, History, Lock, Search, Truck, Clock, MessageSquare, MapPin, CalendarClock, Settings, CloudDownload, X, Receipt } from 'lucide-react'
+import { ArrowLeft, Check, Package, PartyPopper, RefreshCw, ShoppingCart, ShoppingBag, PenLine, Minus, Plus, ClipboardList, ChevronLeft, ChevronRight, Calendar, Target, AlertTriangle, History, Lock, Search, Truck, Clock, MessageSquare, MapPin, CalendarClock, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useSignedUrl } from '../../lib/signedUrlCache'
-import { useAuth } from '../../contexts/AuthContext'
-import { CutoffSettingsModal } from '../orders/CutoffSettingsModal'
-import { fetchShippingOrders, toggleItemPicked, fetchShippingDayCounts, fetchSaturdayTarget, activateSaturdayTarget, clearNeedsAttention, clearDayAutoCorrected, closeShippingDay, fetchShippingClosures, fetchOverdueOrders, resolveBatchId, refreshMarketplaceOrders } from './hooks/useShipping'
+import { fetchShippingOrders, toggleItemPicked, fetchShippingDayCounts, fetchSaturdayTarget, activateSaturdayTarget, clearNeedsAttention, clearDayAutoCorrected, closeShippingDay, fetchShippingClosures, fetchOverdueOrders, resolveBatchId } from './hooks/useShipping'
 import { fetchGathering, saveGatheringItem, sendShortageReport } from './hooks/usePicklistGathering'
 import { fetchPackagingBoxes, fetchOrderPackaging, confirmOrderPackaging } from './hooks/usePackaging'
 import toast from 'react-hot-toast'
@@ -43,12 +41,6 @@ const fmtTime = ts => ts ? new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, hour
 const fmtShortDay = d => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : null
 const brDay = ts => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(ts))
 const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000)
-const brl = v => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-function orderValue(o) {
-  if (o.gross_value != null) return Number(o.gross_value)
-  const v = (o.items || []).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.preco_unit) || 0), 0)
-  return v || null
-}
 // Envio programado / encomenda: prazo bem mais longe que a compra
 function scheduledInfo(o) {
   if (o.source === 'shopee' && o.days_to_ship > 3) return `Encomenda — ${o.days_to_ship} dias pra enviar`
@@ -101,9 +93,10 @@ function BuyerName({ o, big = false }) {
 }
 
 // Chips de informação (compra, prazo, transportadora, local, valor)
-function InfoChips({ o, compact = false, hideValue = false }) {
+// Sem valores (R$) de propósito — Expedição é produção, valor é assunto
+// do administrativo/diretoria (pedido do Raphael, 30/09).
+function InfoChips({ o, compact = false }) {
   const loc = [clean(o.cidade), clean(o.estado_uf)].filter(Boolean).join(' / ')
-  const value = orderValue(o)
   const chip = 'inline-flex items-center gap-1 rounded-lg font-semibold whitespace-nowrap'
   const size = compact ? 'text-[11px] px-2 py-0.5' : 'text-xs px-2.5 py-1'
   const sched = scheduledInfo(o)
@@ -114,7 +107,6 @@ function InfoChips({ o, compact = false, hideValue = false }) {
       {o.shipping_carrier && <span className={`${chip} ${size} bg-sky-50 text-sky-700 border border-sky-100`}><Truck size={12} /> {o.shipping_carrier}</span>}
       {o.data_venda && <span className={`${chip} ${size} bg-slate-100 text-slate-600`}><ShoppingBag size={12} /> Comprado {fmtDateTime(o.data_venda)}</span>}
       {loc && <span className={`${chip} ${size} bg-slate-100 text-slate-600`}><MapPin size={12} /> {loc}</span>}
-      {value != null && !compact && !hideValue && <span className={`${chip} ${size} bg-emerald-50 text-emerald-700 border border-emerald-100`}><Receipt size={12} /> {brl(value)}</span>}
       {o.rastreio && !compact && <span className={`${chip} ${size} bg-slate-100 text-slate-500 font-mono`}>{o.rastreio}</span>}
     </div>
   )
@@ -196,35 +188,8 @@ export function ExpedicaoPage() {
   // exato por (source, ship_date). Cai pro batchId da URL se não achar nada.
   const [resolvedBatchId, setResolvedBatchId] = useState(null)
   const activeBatchId = resolvedBatchId || batchId
-  const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('todos') // todos | pendentes | fechados | mensagem | programados
-  const [refreshing, setRefreshing] = useState(false)
-  const [refreshResult, setRefreshResult] = useState(null)
-  const [cutoffOpen, setCutoffOpen] = useState(false)
-
-  // "Atualizar pedidos" — antecipa o cron de recheck (a cada 3h) na hora
-  async function handleRefreshMarketplace() {
-    if (!source || source === 'manual') return
-    setRefreshing(true)
-    try {
-      const r = await refreshMarketplaceOrders(source)
-      setRefreshResult({ ...r, at: new Date().toISOString() })
-      await load()
-      fetchShippingDayCounts(source).then(setDayCounts).catch(() => {})
-      fetchOverdueOrders().then(setOverdue).catch(() => {})
-      const movedN = r.moved?.length || 0
-      toast.success(`${r.checked ?? 0} pedido(s) conferidos${movedN ? ` · ${movedN} mudaram de dia` : ''}`)
-    } catch (err) {
-      toast.error('Não consegui atualizar agora: ' + err.message)
-    } finally {
-      setRefreshing(false)
-    }
-  }
-
-  const isMonday = new Date(viewDate + 'T12:00:00').getDay() === 1
-
   // Resolve a plataforma do lote da URL uma única vez — a partir daqui a
   // busca de pedidos é sempre por (source, ship_date), não mais por batch_id.
   useEffect(() => {
@@ -662,14 +627,8 @@ export function ExpedicaoPage() {
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">Comprador</p>
                 <BuyerName o={openOrder} big />
               </div>
-              {orderValue(openOrder) != null && (
-                <div className="text-right shrink-0">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Valor</p>
-                  <p className="text-lg font-black text-slate-800">{brl(orderValue(openOrder))}</p>
-                </div>
-              )}
             </div>
-            <InfoChips o={openOrder} hideValue />
+            <InfoChips o={openOrder} />
           </div>
           {openOrder.buyer_message && (
             <div className="rounded-2xl bg-amber-50 border-2 border-amber-300 px-4 py-3">
@@ -812,7 +771,6 @@ export function ExpedicaoPage() {
   const pendingCount = orders.length - doneCount
   const msgCount = orders.filter(o => o.buyer_message || o.notes).length
   const schedCount = orders.filter(o => scheduledInfo(o)).length
-  const lastRefresh = refreshResult?.at || orders.reduce((m, o) => (o.marketplace_refreshed_at && o.marketplace_refreshed_at > m ? o.marketplace_refreshed_at : m), '')
   const q = search.trim().toLowerCase()
   const visible = [...orders]
     .filter(o => filter === 'pendentes' ? !isOrderComplete(o)
@@ -848,18 +806,10 @@ export function ExpedicaoPage() {
                 <h1 className="text-xl font-black text-slate-800 leading-tight">Expedição · {plat.label}</h1>
                 <p className="text-xs text-slate-400">
                   {doneCount} de {orders.length} fechados · {totalItems} item(ns)
-                  {lastRefresh && <> · atualizado às {fmtTime(lastRefresh)}</>}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {source !== 'manual' && (
-                <button onClick={handleRefreshMarketplace} disabled={refreshing}
-                  className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-white font-black text-sm shadow-sm disabled:opacity-60 ${source === 'ml' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-orange-500 hover:bg-orange-600'}`}>
-                  <CloudDownload size={16} strokeWidth={2.5} className={refreshing ? 'animate-bounce' : ''} />
-                  {refreshing ? 'Atualizando...' : `Atualizar pedidos ${source === 'ml' ? 'do ML' : 'da Shopee'}`}
-                </button>
-              )}
               {overdue.length > 0 && (
                 <button onClick={() => setShowOverdue(true)}
                   className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-600 text-white font-black text-sm animate-pulse">
@@ -884,9 +834,6 @@ export function ExpedicaoPage() {
                 className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-100 text-rose-700 font-bold text-sm disabled:opacity-50">
                 <Lock size={16} strokeWidth={2.5} /> {closingDay ? 'Fechando...' : 'Fechar o Dia'}
               </button>
-              {isAdmin && (
-                <button onClick={() => setCutoffOpen(true)} title="Horário de corte" className="p-2.5 rounded-xl bg-slate-100 text-slate-500"><Settings size={18} /></button>
-              )}
               <button onClick={() => { load(); fetchShippingDayCounts(source).then(setDayCounts).catch(() => {}); fetchOverdueOrders().then(setOverdue).catch(() => {}) }} title="Recarregar a tela" className="p-2.5 rounded-xl bg-slate-100 text-slate-500"><RefreshCw size={18} /></button>
             </div>
           </div>
@@ -915,24 +862,6 @@ export function ExpedicaoPage() {
       </div>
 
       <div className="max-w-[1400px] mx-auto px-4 py-4 flex flex-col gap-4">
-        {/* Resultado da última atualização */}
-        {refreshResult && (
-          <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 flex items-start gap-3">
-            <CloudDownload size={18} className="text-emerald-500 shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0 text-sm text-slate-600">
-              <p><b className="text-slate-800">Pedidos atualizados às {fmtTime(refreshResult.at)}</b> — {refreshResult.checked ?? 0} conferido(s) na {source === 'ml' ? 'API do Mercado Livre' : 'API da Shopee'}
-                {refreshResult.names ? ` · ${refreshResult.names} nome(s) novo(s)` : ''}
-                {refreshResult.cancelled ? ` · ${refreshResult.cancelled} cancelado(s)` : ''}
-                {!refreshResult.moved?.length && ' · nenhum pedido mudou de dia'}.
-              </p>
-              {refreshResult.moved?.length > 0 && (
-                <p className="text-xs text-amber-700 mt-1">Mudaram de dia: {refreshResult.moved.map(m => `#${m.num_venda} (${fmtShortDay(m.from)} → ${fmtShortDay(m.to)})`).join(', ')}</p>
-              )}
-            </div>
-            <button onClick={() => setRefreshResult(null)} className="p-1 text-slate-300 hover:text-slate-500"><X size={16} /></button>
-          </div>
-        )}
-
         {/* Faixa "amanhã" */}
         {(() => {
           const tomorrow = addDays(todayISO(), 1)
@@ -1095,7 +1024,6 @@ export function ExpedicaoPage() {
         </div>
       </div>
 
-      <CutoffSettingsModal open={cutoffOpen} onClose={() => setCutoffOpen(false)} />
     </div>
   )
 }

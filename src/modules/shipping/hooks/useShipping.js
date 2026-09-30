@@ -17,7 +17,7 @@ function isCancelledStatus(estado) {
 export async function fetchShippingOrders(source, shipDate) {
   const { data, error } = await supabase
     .from('orders')
-    .select('id, num_venda, comprador, comprador_nome_img, buyer_message, cidade, estado_uf, status_ml, notes, source, batch_id, ship_date, data_venda, shipping_deadline, ship_by_at, days_to_ship, shipping_carrier, rastreio, gross_value, marketplace_refreshed_at, is_full, needs_attention, day_auto_corrected, day_auto_corrected_note, items:order_items(id, titulo, sku, variacao, qty, preco_unit, obs_item, picked, picked_at)')
+    .select('id, num_venda, comprador, comprador_nome_img, buyer_message, cidade, estado_uf, status_ml, notes, source, batch_id, ship_date, data_venda, shipping_deadline, ship_by_at, days_to_ship, shipping_carrier, rastreio, is_full, needs_attention, day_auto_corrected, day_auto_corrected_note, items:order_items(id, titulo, sku, variacao, qty, obs_item, picked, picked_at)')
     .eq('source', source)
     .eq('ship_date', shipDate)
     .eq('archived', false)

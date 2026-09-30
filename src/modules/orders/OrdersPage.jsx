@@ -12,6 +12,7 @@ import { FeiraCombinadaModal } from './FeiraCombinadaModal'
 import { MercadoLivreConnect } from './MercadoLivreConnect'
 import { ShopeeConnect } from './ShopeeConnect'
 import { CutoffSettingsModal } from './CutoffSettingsModal'
+import { MarketplaceRefreshBar } from './MarketplaceRefreshBar'
 import toast from 'react-hot-toast'
 import { OrdersReportsTab } from './OrdersReportsTab'
 import { useProducts }  from '../products/hooks/useProducts'
@@ -701,6 +702,8 @@ export function OrdersPage() {
         <OrdersReportsTab />
       ) : view === 'orders' ? (
         <>
+          <MarketplaceRefreshBar canConfigure={canSeeValues} onRefreshed={() => fetchOrders()} />
+
           {/* Alerta de SKUs não encontrados */}
           {(() => {
             const semSku = orders.flatMap(o => (o.items||[]).filter(it => it.sku_encontrado === false))
