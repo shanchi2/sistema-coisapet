@@ -36,8 +36,22 @@ const DETAIL_FIELDS = 'buyer_username,note,order_status,ship_by_date,days_to_shi
 
 const fmtBR = (d: string) => { const [, m, dd] = d.split('-'); return `${dd}/${m}` }
 
-// Busca a imagem do nome do destinatário (data URL) — null se ainda não dá
-export async function fetchRecipientNameImage(integration: any, orderSn: string, packageNumber?: string | null): Promise<string | null> {
+// Dados de etiqueta (logistics/get_shipping_document_data_info) — só
+// existem entre "envio organizado" e o despacho. Devolve:
+// - nameImg: imagem do nome do destinatário (data URL);
+// - uf: estado de destino tirado do código do hub de última milha, que a
+//   Shopee manda em TEXTO (ex.: "HUB-LSP-63" → SP, "HUB-LPB-02" → PB,
+//   "XPT-LGO-95" → GO; reserva: centro de triagem "SOC-PE4" → PE). Os
+//   campos de endereço em si só vêm como imagem e não são guardados.
+function ufFromSortCodes(sort: any): string | null {
+  const second = String(sort?.second_recipient_sort_code || '')
+  const m2 = second.match(/-L([A-Z]{2})-/)
+  if (m2) return m2[1]
+  const m1 = String(sort?.first_recipient_sort_code || '').match(/^SOC-([A-Z]{2})\d*/)
+  return m1 ? m1[1] : null
+}
+
+export async function fetchShipDocData(integration: any, orderSn: string, packageNumber?: string | null): Promise<{ nameImg: string | null; uf: string | null }> {
   try {
     const res = await shopeeWrite('/api/v2/logistics/get_shipping_document_data_info', integration, {
       order_sn: orderSn,
@@ -46,9 +60,12 @@ export async function fetchRecipientNameImage(integration: any, orderSn: string,
     })
     const info = res?.response?.recipient_address_info || []
     const img = info.find((i: any) => i.key === 'name')?.image
-    return typeof img === 'string' && img.startsWith('data:image') ? img : null
+    return {
+      nameImg: typeof img === 'string' && img.startsWith('data:image') ? img : null,
+      uf: ufFromSortCodes(res?.response?.shipping_document_info?.recipient_sort_code),
+    }
   } catch {
-    return null
+    return { nameImg: null, uf: null }
   }
 }
 
@@ -61,7 +78,7 @@ async function pool<T>(items: T[], size: number, fn: (x: T) => Promise<void>) {
 
 type OrderRow = {
   id: string; num_venda: string; data_venda: string | null; ship_date: string
-  status_ml: string | null; comprador_nome_img: string | null
+  status_ml: string | null; comprador_nome_img: string | null; estado_uf?: string | null
   items?: { picked: boolean }[]
 }
 
@@ -112,10 +129,12 @@ export async function refreshShopeeOrders(db: DB, integration: any, orders: Orde
       if (cancelled && anyPicked && !/cancelad/i.test(o.status_ml || '')) patch.needs_attention = true
       if (cancelled && !/cancelad/i.test(o.status_ml || '')) result.cancelled++
 
-      // Nome real (imagem) — só enquanto não tem e o envio já foi organizado
-      if (!o.comprador_nome_img && !cancelled && pkg?.package_number) {
-        const img = await fetchRecipientNameImage(integration, o.num_venda, pkg.package_number)
-        if (img) { patch.comprador_nome_img = img; result.names++ }
+      // Nome real (imagem) + UF do destino — só enquanto falta e o envio já
+      // foi organizado (antes/depois disso a Shopee recusa)
+      if ((!o.comprador_nome_img || !o.estado_uf) && !cancelled && pkg?.package_number) {
+        const doc = await fetchShipDocData(integration, o.num_venda, pkg.package_number)
+        if (doc.nameImg && !o.comprador_nome_img) { patch.comprador_nome_img = doc.nameImg; result.names++ }
+        if (doc.uf) patch.estado_uf = doc.uf
       }
 
       // Recalcula o dia (só pedido de hoje em diante, sem nada separado)
@@ -141,4 +160,4 @@ export async function refreshShopeeOrders(db: DB, integration: any, orders: Orde
   return result
 }
 
-export const REFRESH_SELECT = 'id, num_venda, data_venda, ship_date, status_ml, comprador_nome_img, items:order_items(picked)'
+export const REFRESH_SELECT = 'id, num_venda, data_venda, ship_date, status_ml, comprador_nome_img, estado_uf, items:order_items(picked)'

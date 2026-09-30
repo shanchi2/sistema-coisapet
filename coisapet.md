@@ -303,6 +303,13 @@ reconstruir o raciocínio do zero.
 - Expedição redesenhada (KPIs-filtro, busca, cards com nome/prazo/
   transportadora/recado/valor); PDF do picklist imprime a imagem do nome e
   o recado. Cidade/UF mascaradas da Shopee agora ficam null (não `****`).
+- **UF de destino da Shopee (01/10)**: `recipient_address` vem mascarado, mas
+  `get_shipping_document_data_info` manda em TEXTO o código do hub de
+  última milha (`recipient_sort_code.second_recipient_sort_code`, ex.
+  `HUB-LSP-63`→SP, `HUB-LPB-02`→PB, `XPT-LGO-95`→GO; reserva
+  `SOC-PE4`→PE) — gravado em `orders.estado_uf`. Mesma janela do nome
+  (envio organizado → despacho). Expedição: nome ao lado do nº do pedido,
+  badge de UF e mini alerta "fora de SP, capriche na embalagem".
 - **Achado pro Raphael**: em 30/09, 27 dos 32 pedidos Shopee do dia já
   estavam "a caminho" na Shopee sem nenhum item marcado como separado.
 

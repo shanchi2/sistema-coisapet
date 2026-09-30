@@ -92,11 +92,36 @@ function BuyerName({ o, big = false }) {
   )
 }
 
-// Chips de informação (compra, prazo, transportadora, local, valor)
+// UF de destino (01/10): ML manda em texto; Shopee vem do código do hub
+// de entrega (ver _shared/shopeeOrders.ts). Fora de SP = viagem longa →
+// mini alerta pra caprichar na embalagem (pedido do Raphael).
+const destUF = o => { const u = clean(o.estado_uf); return u && /^[A-Za-z]{2}$/.test(u.trim()) ? u.trim().toUpperCase() : null }
+function UfBadge({ o, big = false }) {
+  const uf = destUF(o)
+  if (!uf) return null
+  const far = uf !== 'SP'
+  return (
+    <span title={far ? 'Fora de SP — capriche na embalagem' : 'Destino: SP'}
+      className={`inline-flex items-center gap-1 font-black rounded-lg shrink-0 ${big ? 'text-base px-3 py-1.5' : 'text-sm px-2.5 py-1'} ${far ? 'bg-amber-400 text-amber-950' : 'bg-slate-100 text-slate-500'}`}>
+      {far && <AlertTriangle size={big ? 15 : 13} strokeWidth={2.75} />}{uf}
+    </span>
+  )
+}
+function FarAlert({ o, big = false }) {
+  const uf = destUF(o)
+  if (!uf || uf === 'SP') return null
+  return (
+    <p className={`flex items-center gap-1.5 font-bold text-amber-900 bg-amber-100 border border-amber-300 rounded-xl ${big ? 'text-base px-4 py-3' : 'text-xs px-3 py-1.5'}`}>
+      <Package size={big ? 18 : 14} className="shrink-0" /> Vai pra {uf} (fora de SP) — capriche na embalagem, a viagem é longa
+    </p>
+  )
+}
+
+// Chips de informação (compra, prazo, transportadora, cidade)
 // Sem valores (R$) de propósito — Expedição é produção, valor é assunto
 // do administrativo/diretoria (pedido do Raphael, 30/09).
 function InfoChips({ o, compact = false }) {
-  const loc = [clean(o.cidade), clean(o.estado_uf)].filter(Boolean).join(' / ')
+  const loc = clean(o.cidade)
   const chip = 'inline-flex items-center gap-1 rounded-lg font-semibold whitespace-nowrap'
   const size = compact ? 'text-[11px] px-2 py-0.5' : 'text-xs px-2.5 py-1'
   const sched = scheduledInfo(o)
@@ -629,9 +654,11 @@ export function ExpedicaoPage() {
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">Comprador</p>
                 <BuyerName o={openOrder} big />
               </div>
+              <UfBadge o={openOrder} big />
             </div>
             <InfoChips o={openOrder} />
           </div>
+          <FarAlert o={openOrder} big />
           {openOrder.buyer_message && (
             <div className="rounded-2xl bg-amber-50 border-2 border-amber-300 px-4 py-3">
               <p className="text-xs font-black text-amber-700 uppercase tracking-wide flex items-center gap-1.5"><MessageSquare size={14} /> Mensagem do comprador</p>
@@ -954,19 +981,29 @@ export function ExpedicaoPage() {
                   complete ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 shadow-sm hover:shadow'
                 }`}>
                 <div className="px-4 pt-3.5 pb-3 flex flex-col gap-2.5">
-                  {/* Linha 1: nº + progresso */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      {o.num_venda && <p className="text-xl font-black text-slate-800 font-mono tracking-tight leading-tight">#{o.num_venda}</p>}
-                      <StatusPill o={o} />
+                  {/* Linha 1: nº + nome real do comprador, lado a lado + UF + progresso */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1 flex-wrap">
+                      {o.num_venda && <p className="text-xl font-black text-slate-800 font-mono tracking-tight leading-tight shrink-0">#{o.num_venda}</p>}
+                      {o.comprador_nome_img
+                        ? <img src={o.comprador_nome_img} alt="Nome do comprador" draggable={false} className="h-11 w-auto max-w-[220px] object-contain object-left mix-blend-multiply select-none" />
+                        : o.source !== 'shopee' && o.comprador && <p className="text-base font-bold text-slate-700 truncate">{o.comprador}</p>}
                     </div>
+                    <UfBadge o={o} />
                     <span className={`text-sm font-black px-3 py-1.5 rounded-full shrink-0 flex items-center gap-1 ${complete ? 'bg-emerald-500 text-white' : done > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
                       {complete ? <><Check size={14} strokeWidth={3} /> Fechado</> : `${done}/${o.items.length}`}
                     </span>
                   </div>
 
-                  {/* Linha 2: comprador */}
-                  <BuyerName o={o} />
+                  {/* Linha 2: status + @usuário */}
+                  <div className="flex items-center gap-2 flex-wrap -mt-1">
+                    <StatusPill o={o} />
+                    {o.source === 'shopee' && o.comprador && <span className="text-sm font-semibold text-slate-400">@{o.comprador}</span>}
+                    {o.source === 'shopee' && !o.comprador_nome_img && !/caminho|entregue|confirma|cancel/i.test(o.status_ml || '') && (
+                      <span className="text-[11px] text-slate-400">· nome e estado aparecem quando o envio for organizado na Shopee</span>
+                    )}
+                  </div>
+                  <FarAlert o={o} />
 
                   {/* Linha 3: dados do envio */}
                   <InfoChips o={o} compact />
