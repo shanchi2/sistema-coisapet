@@ -275,6 +275,20 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-09-30 — Retornos Shopee: variação do produto + nossa contestação (fase85)
+
+- Devolução só traz `model_id`/`variation_sku`; nome e foto da variação vêm de
+  `product/get_model_list` → `shopee_returns.variations` (backfill feito: 576/676;
+  o resto é produto sem variação). Sync e detalhe preenchem sozinhos daqui pra frente.
+- **A API devolve o texto da nossa disputa (`dispute_text_reason`, motivo em inglês —
+  traduzido na tela) mas NÃO as fotos que mandamos** (testado: nem get_return_detail
+  nem query_proof). Por isso `shopee_returns.our_dispute` guarda o que mandamos ao
+  disputar pelo sistema; disputa feita no Seller Center → botão "Anexar fotos da
+  contestação" (fotos viram URL da Shopee via convert_image, ação
+  `return_save_our_dispute`).
+
+---
+
 ### 2026-09-30 — Expedição: nome real do comprador Shopee, corte 13h da Shopee, botão "Atualizar pedidos" (fase83)
 
 - **Nome real na Shopee**: `get_order_detail` devolve `recipient_address`

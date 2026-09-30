@@ -17,6 +17,20 @@ async function callShopeeInsights(payload) {
   return data
 }
 
+function sessionName() {
+  try { return JSON.parse(localStorage.getItem('coisapet_session') || '{}').name || null } catch { return null }
+}
+
+// Foto → JPEG base64 (máx 1600px) pra mandar pra Shopee
+export async function fileToJpegBase64(file) {
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file) })
+  const scale = Math.min(1, 1600 / Math.max(img.width, img.height))
+  const c = document.createElement('canvas')
+  c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale)
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+  return c.toDataURL('image/jpeg', 0.85).split(',')[1]
+}
+
 // Colunas da lista (sem raw/detail, que são pesados)
 const LIST_COLUMNS = [
   'return_sn', 'order_sn', 'status', 'reason', 'text_reason', 'refund_amount', 'amount_before_discount',
@@ -25,6 +39,7 @@ const LIST_COLUMNS = [
   'reverse_logistics_status', 'is_arrived_at_warehouse', 'dispute_reason', 'dispute_text_reason',
   'compensation_amount', 'compensation_status', 'compensation_due_date', 'compensation_list',
   'shipping_fee_responsibility', 'negotiation', 'seller_proof', 'purchase_date', 'detail_synced_at', 'synced_at',
+  'variations', 'our_dispute',
 ].join(',')
 
 // Tela "Retornos e Pedidos cancelados" (reescrita 29/09). Lê do espelho
@@ -112,17 +127,28 @@ export function useShopeeReturns() {
     return r
   }
 
-  async function disputeReturn(returnSn, { email, disputeReason, disputeText, images }) {
+  async function disputeReturn(returnSn, { email, disputeReason, disputeText, images, reasonLabel }) {
     const r = await callShopeeInsights({
       action: 'return_dispute', return_sn: returnSn,
       email, dispute_reason: disputeReason, dispute_text_reason: disputeText, images,
+      reason_label: reasonLabel, by: sessionName(),
     })
     await load()
     return r
   }
 
+  // Contestação feita pelo Seller Center: a API não devolve as fotos que
+  // mandamos — anexa aqui (fotos viram URL da Shopee e ficam no our_dispute)
+  async function saveOurDisputePhotos(returnSn, files) {
+    const base64 = await Promise.all(files.map(fileToJpegBase64))
+    const images = await convertProofImages({ base64 })
+    if (!images.length) throw new Error('Não consegui enviar as fotos.')
+    await callShopeeInsights({ action: 'return_save_our_dispute', return_sn: returnSn, images, by: sessionName() })
+    await load()
+  }
+
   return {
-    rows, loading, error, syncing, syncError, lastSync,
+    rows, loading, error, syncing, syncError, lastSync, saveOurDisputePhotos,
     reload: load, sync, refreshOne, getDisputeReasons, convertProofImages, confirmReturn, disputeReturn,
   }
 }

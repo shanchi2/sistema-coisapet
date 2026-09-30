@@ -33,6 +33,29 @@ const RESPONSIBILITY_LABELS = { SHOPEE: 'Shopee (custo absorvido pela Shopee)', 
 const COMP_TYPE_LABELS = { LOGISTICS_RELATED_COMPENSATION: 'Relacionada à logística' }
 const COMP_STATUS_LABELS = { NOT_REQUIRED: 'Não se aplica', PENDING: 'Em análise', APPROVED: 'Aprovada', REJECTED: 'Negada' }
 const SOLUTION_LABELS = { 0: 'Devolução e reembolso', 1: 'Só reembolso' }
+// Motivo da NOSSA disputa — a API devolve o texto em inglês
+const DISPUTE_REASON_PT = {
+  'Received return products with physical damage': 'Produto devolvido chegou com dano físico',
+  'Received incomplete return products (missing quantity/accessories)': 'Produto devolvido chegou incompleto (faltando quantidade/acessórios)',
+  'Received wrong return products': 'Recebi um produto diferente na devolução',
+  'Did not receive return products': 'Não recebi o produto devolvido',
+  'Received used return products': 'Produto devolvido chegou usado',
+}
+const disputeReasonPT = r => DISPUTE_REASON_PT[r] || r
+
+// Variação do item (Fase 85): nome + foto vindos do get_model_list
+function variationOf(r, it) {
+  if (!it) return null
+  return r.variations?.[String(it.model_id)] || (it.variation_sku ? { name: null, sku: it.variation_sku, image: null } : null)
+}
+function VariationChip({ v, big }) {
+  if (!v?.name && !v?.sku) return null
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-md font-bold bg-violet-100 text-violet-700 ${big ? 'text-sm px-2.5 py-1' : 'text-[11px] px-1.5 py-0.5'}`}>
+      {v.name || v.sku}
+    </span>
+  )
+}
 
 // ── Datas (sempre Brasília) ─────────────────────────────────────────────
 const TZ = 'America/Sao_Paulo'
@@ -235,7 +258,7 @@ function DisputeModal({ open, onClose, ret, reasons, disputeReturn, convertProof
         if (!images.length) throw new Error('Não consegui enviar as fotos de prova pra Shopee.')
       }
       setSaving('disputa')
-      await disputeReturn(ret.return_sn, { email: email.trim(), disputeReason: Number(reasonId), disputeText: text.trim(), images })
+      await disputeReturn(ret.return_sn, { email: email.trim(), disputeReason: Number(reasonId), disputeText: text.trim(), images, reasonLabel: reason ? reasonLabel(reason) : null })
       toast.success('Disputa aberta na Shopee!')
       onDone()
     } catch (err) {
@@ -353,6 +376,68 @@ function ConfirmReturnModal({ open, onClose, ret, confirmReturn, onDone }) {
 }
 
 // ── Painel de detalhe (conteúdo do Seller Center) ───────────────────────
+// Nossa contestação (Fase 85): motivo + descrição (a API devolve) e as
+// fotos que mandamos (a API NÃO devolve — guardamos ao disputar pelo
+// sistema; disputa feita no Seller Center dá pra anexar aqui depois).
+function OurDisputeSection({ r, api }) {
+  const [uploading, setUploading] = useState(false)
+  const our = r.our_dispute || {}
+  const reasons = (r.dispute_reason || []).length ? r.dispute_reason : (our.reason_label ? [our.reason_label] : [])
+  const texts = r.dispute_text_reason || []
+  const photos = our.images || []
+
+  async function attach(list) {
+    const files = Array.from(list || []).filter(f => f.type.startsWith('image/')).slice(0, 9)
+    if (!files.length) return
+    setUploading(true)
+    try {
+      await api.saveOurDisputePhotos(r.return_sn, files)
+      toast.success('Fotos anexadas à contestação.')
+    } catch (err) {
+      toast.error('Erro ao anexar: ' + err.message)
+    } finally { setUploading(false) }
+  }
+
+  return (
+    <Section icon={Scale} title="Nossa contestação" tone="bg-rose-50/50 border-rose-100">
+      {reasons.map((reason, i) => (
+        <div key={i} className="mb-3 last:mb-0">
+          <p className="text-[11px] font-bold text-rose-600 uppercase tracking-wide">Motivo</p>
+          <p className="text-sm font-semibold text-slate-800">{disputeReasonPT(reason)}</p>
+          {(texts[i] || (i === 0 && our.text)) && (
+            <>
+              <p className="text-[11px] font-bold text-rose-600 uppercase tracking-wide mt-2">Descrição do problema</p>
+              <p className="text-sm text-slate-700 bg-white border border-rose-100 rounded-lg px-3 py-2 mt-0.5 whitespace-pre-line">{texts[i] || our.text}</p>
+            </>
+          )}
+        </div>
+      ))}
+      {!reasons.length && <p className="text-sm text-slate-600">Em análise pela Shopee.</p>}
+
+      <p className="text-[11px] font-bold text-rose-600 uppercase tracking-wide mt-3 mb-1">Fotos que enviamos</p>
+      {photos.length > 0 ? (
+        <div className="flex gap-2 flex-wrap">
+          {photos.map((p, i) => <a key={i} href={p} target="_blank" rel="noreferrer"><img src={p} alt="" className="w-20 h-20 rounded-lg object-cover border border-rose-200 hover:ring-2 hover:ring-rose-300" /></a>)}
+        </div>
+      ) : (
+        <p className="text-xs text-slate-500">
+          A Shopee não devolve pela API as fotos da contestação. {our.source === 'sistema' ? 'Esta contestação foi enviada sem fotos.' : 'Se ela foi feita pelo Seller Center, anexe as mesmas fotos aqui pra ficar registrado.'}
+        </p>
+      )}
+      <label className={`mt-2 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border cursor-pointer ${uploading ? 'opacity-60 pointer-events-none' : 'bg-white border-rose-200 text-rose-700 hover:bg-rose-50'}`}>
+        {uploading ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
+        {uploading ? 'Enviando...' : photos.length ? 'Anexar mais fotos' : 'Anexar fotos da contestação'}
+        <input type="file" accept="image/*" multiple className="hidden" onChange={e => { attach(e.target.files); e.target.value = '' }} />
+      </label>
+      {(our.at || our.attached_at) && (
+        <p className="text-[11px] text-slate-400 mt-2">
+          {our.source === 'sistema' ? `Enviada pelo sistema${our.by ? ` por ${our.by}` : ''} em ${fmtDateTime(our.at)}` : `Fotos anexadas${our.attached_by ? ` por ${our.attached_by}` : ''} em ${fmtDateTime(our.attached_at)}`}
+        </p>
+      )}
+    </Section>
+  )
+}
+
 function DetailPanel({ r, api, onClose }) {
   const [refreshing, setRefreshing] = useState(false)
   const [reasons, setReasons] = useState(null) // null = verificando
@@ -436,15 +521,25 @@ function DetailPanel({ r, api, onClose }) {
 
           {/* Produto */}
           <Section icon={Package} title="Produto">
-            {(r.items || []).map((it, i) => (
-              <div key={i} className="flex items-center gap-3 mb-2 last:mb-0">
-                <div className="w-14 h-14 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200">{it.images?.[0] && <img src={it.images[0]} alt="" className="w-full h-full object-cover" />}</div>
-                <div className="min-w-0 text-sm">
-                  <p className="font-semibold text-slate-700 line-clamp-2">{it.name}</p>
-                  <p className="text-xs text-slate-400">{it.item_sku || it.variation_sku || ''} {it.amount ? `· ${it.amount} un.` : ''} {it.item_price ? `· ${fmtPreco(it.item_price)}` : ''}</p>
+            {(r.items || []).map((it, i) => {
+              const v = variationOf(r, it)
+              const img = v?.image || it.images?.[0]
+              return (
+                <div key={i} className="flex items-center gap-3 mb-3 last:mb-0">
+                  <a href={img || undefined} target="_blank" rel="noreferrer" className="w-20 h-20 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200">{img && <img src={img} alt="" className="w-full h-full object-cover" />}</a>
+                  <div className="min-w-0 text-sm flex flex-col gap-1">
+                    <p className="font-semibold text-slate-700 line-clamp-2">{it.name}</p>
+                    {v && (
+                      <p className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-bold text-slate-400 uppercase">Variação</span>
+                        <VariationChip v={v} big />
+                      </p>
+                    )}
+                    <p className="text-xs text-slate-400">{v?.sku || it.variation_sku || it.item_sku || ''} {it.amount ? `· ${it.amount} un.` : ''} {it.item_price ? `· ${fmtPreco(it.item_price)}` : ''}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
             {!item && <p className="text-sm text-slate-400">—</p>}
           </Section>
 
@@ -464,16 +559,8 @@ function DetailPanel({ r, api, onClose }) {
           </Section>
 
           {/* Disputa */}
-          {((r.dispute_reason?.length || 0) > 0 || ['JUDGING', 'SELLER_DISPUTE'].includes(r.status)) && (
-            <Section icon={Scale} title="Informações da disputa" tone="bg-rose-50/50 border-rose-100">
-              {(r.dispute_reason || []).map((reason, i) => (
-                <div key={i} className="mb-2 last:mb-0">
-                  <p className="text-sm font-semibold text-slate-700">Razão: {reason}</p>
-                  {r.dispute_text_reason?.[i] && <p className="text-sm text-slate-600 mt-0.5">{r.dispute_text_reason[i]}</p>}
-                </div>
-              ))}
-              {!(r.dispute_reason?.length) && <p className="text-sm text-slate-600">Em análise pela Shopee.</p>}
-            </Section>
+          {((r.dispute_reason?.length || 0) > 0 || ['JUDGING', 'SELLER_DISPUTE'].includes(r.status) || r.our_dispute) && (
+            <OurDisputeSection r={r} api={api} />
           )}
 
           {/* Compensação */}
@@ -684,7 +771,7 @@ export function ShopeeReturnsPage() {
               {actionable.slice(0, 6).map(r => (
                 <button key={r.return_sn} onClick={() => setOpenSn(r.return_sn)} className="flex items-center gap-3 bg-white rounded-xl px-3 py-2 text-left hover:ring-2 hover:ring-orange-200">
                   <DeadlineChip r={r} />
-                  <span className="text-sm font-semibold text-slate-700 truncate flex-1">{r.items?.[0]?.name || r.return_sn}</span>
+                  <span className="text-sm font-semibold text-slate-700 truncate flex-1 flex items-center gap-2"><span className="truncate">{r.items?.[0]?.name || r.return_sn}</span><VariationChip v={variationOf(r, r.items?.[0])} /></span>
                   <span className="text-xs text-slate-500 hidden md:inline">{deadlineOf(r).label}</span>
                   <span className="text-sm font-bold text-slate-800 shrink-0">{fmtPreco(r.refund_amount)}</span>
                 </button>
@@ -757,11 +844,12 @@ export function ShopeeReturnsPage() {
                           <p className="text-[10px] text-slate-400 font-mono truncate">{r.order_sn}</p>
                         </div>
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 shrink-0">{it?.images?.[0] ? <img src={it.images[0]} alt="" className="w-full h-full object-cover" loading="lazy" /> : <ImageIcon size={14} className="m-auto mt-3 text-slate-300" />}</div>
+                          {(() => { const v = variationOf(r, it); const img = v?.image || it?.images?.[0]; return (<>
+                          <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 shrink-0">{img ? <img src={img} alt="" className="w-full h-full object-cover" loading="lazy" /> : <ImageIcon size={14} className="m-auto mt-3 text-slate-300" />}</div>
                           <div className="min-w-0">
                             <p className="text-sm text-slate-700 truncate">{it?.name || '—'}</p>
-                            <p className="text-[11px] text-slate-400 truncate">{r.buyer_username}</p>
-                          </div>
+                            <p className="text-[11px] text-slate-400 truncate flex items-center gap-1.5"><VariationChip v={v} />{r.buyer_username}</p>
+                          </div></>) })()}
                         </div>
                         <div className="min-w-0">
                           <p className="text-xs text-slate-600 truncate">{REASON_LABELS[r.reason] || r.reason}</p>

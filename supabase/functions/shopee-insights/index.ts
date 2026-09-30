@@ -919,7 +919,47 @@ async function returnsSync(integration: any, db: ReturnType<typeof adminClient>,
       detailed += detailRows.length
     }
   }
-  return { scanned: rows.length, from_page: startPage, full, details_synced: detailed, details_pending: Math.max(0, need.length - batch.length), synced_at: new Date().toISOString() }
+  // Variação das que ainda não têm (novas + antigas, aos poucos)
+  const { data: noVar } = await db.from('shopee_returns').select('return_sn, items').is('variations', null)
+    .order('create_time', { ascending: false }).limit(Number(detailLimit) || 60)
+  const variationsDone = await enrichReturnVariations(integration, db, noVar || []).catch(() => 0)
+
+  return { scanned: rows.length, from_page: startPage, full, details_synced: detailed, variations: variationsDone, details_pending: Math.max(0, need.length - batch.length), synced_at: new Date().toISOString() }
+}
+
+// Variação do produto devolvido (30/09, Fase 85): a devolução só traz
+// model_id/variation_sku — nome ("Amadeirado") e foto da variação vêm de
+// product/get_model_list. Grava em shopee_returns.variations por model_id.
+async function modelsOfItem(integration: any, itemId: string, cache: Map<string, any>) {
+  if (cache.has(itemId)) return cache.get(itemId)
+  const res = await shopeeFetch('/api/v2/product/get_model_list', integration, { item_id: itemId }).catch(() => null)
+  const tiers = res?.response?.tier_variation || []
+  const out: Record<string, any> = {}
+  for (const m of res?.response?.model || []) {
+    const idx = m.tier_index || []
+    const name = m.model_name || idx.map((t: number, i: number) => tiers[i]?.option_list?.[t]?.option).filter(Boolean).join(', ')
+    const image = tiers[0]?.option_list?.[idx[0]]?.image?.image_url || null
+    out[String(m.model_id)] = { name: name || null, sku: m.model_sku || null, image }
+  }
+  cache.set(itemId, out)
+  return out
+}
+
+async function enrichReturnVariations(integration: any, db: ReturnType<typeof adminClient>, rows: { return_sn: string; items: any }[], cache = new Map<string, any>()) {
+  let done = 0
+  for (const r of rows) {
+    const variations: Record<string, any> = {}
+    for (const it of r.items || []) {
+      if (!it?.item_id || !it?.model_id) continue
+      const models = await modelsOfItem(integration, String(it.item_id), cache)
+      const v = models[String(it.model_id)]
+      if (v) variations[String(it.model_id)] = v
+      else if (it.variation_sku) variations[String(it.model_id)] = { name: null, sku: it.variation_sku, image: null }
+    }
+    await db.from('shopee_returns').update({ variations }).eq('return_sn', r.return_sn)
+    done++
+  }
+  return done
 }
 
 // Detalhe ao vivo + atualiza o espelho no banco
@@ -929,6 +969,7 @@ async function returnDetail(integration: any, returnSn: string, db?: ReturnType<
   if (db && d?.return_sn) {
     const { data: prev } = await db.from('shopee_returns').select('purchase_date').eq('return_sn', String(d.return_sn)).maybeSingle()
     await db.from('shopee_returns').upsert({ ...detailToRow(d), purchase_date: prev?.purchase_date ?? null }, { onConflict: 'return_sn' })
+    await enrichReturnVariations(integration, db, [{ return_sn: String(d.return_sn), items: d.item }]).catch(() => 0)
   }
   return d
 }
@@ -1051,9 +1092,14 @@ async function returnConfirm(integration: any, db: ReturnType<typeof adminClient
 async function returnDispute(
   integration: any, db: ReturnType<typeof adminClient>, returnSn: string,
   payload: { email: string; dispute_reason: string; dispute_text_reason?: string; images?: string[] },
+  meta?: { reason_label?: string; by?: string },
 ) {
   const res = await shopeeWrite('/api/v2/returns/dispute', integration, { return_sn: returnSn, ...payload })
   await db.from('shopee_item_updates').insert({ item_id: returnSn, action: 'return_dispute', detail: payload })
+  await db.from('shopee_returns').update({ our_dispute: {
+    reason: payload.dispute_reason, reason_label: meta?.reason_label || null, text: payload.dispute_text_reason || null,
+    images: payload.images || [], email: payload.email, at: new Date().toISOString(), by: meta?.by || null, source: 'sistema',
+  } }).eq('return_sn', returnSn)
   await returnDetail(integration, returnSn, db).catch(() => null)
   return { ok: true, return_sn: returnSn, raw: res }
 }
@@ -1224,6 +1270,28 @@ serve(async (req) => {
           order_sn_list: String(body.order_sn || ''),
           response_optional_fields: ORDER_DETAIL_FIELDS,
         }))
+      case 'return_save_our_dispute': {
+        // Contestação feita no Seller Center: a API não devolve as fotos —
+        // o time anexa aqui (já convertidas em URL pela return_convert_images)
+        const sn = String(body.return_sn || '')
+        const { data: prev } = await db.from('shopee_returns').select('our_dispute').eq('return_sn', sn).maybeSingle()
+        const our_dispute = {
+          ...(prev?.our_dispute || { source: 'seller_center' }),
+          images: [...((prev?.our_dispute?.images) || []), ...((body.images || []) as string[])],
+          ...(body.text ? { text: String(body.text) } : {}),
+          attached_at: new Date().toISOString(), attached_by: body.by || null,
+        }
+        const { error } = await db.from('shopee_returns').update({ our_dispute }).eq('return_sn', sn)
+        if (error) throw error
+        return json({ ok: true, our_dispute })
+      }
+      case 'returns_variations_backfill': {
+        const { data } = await db.from('shopee_returns').select('return_sn, items').is('variations', null)
+          .order('create_time', { ascending: false }).limit(Number(body.limit) || 150)
+        const done = await enrichReturnVariations(integration, db, data || [])
+        const { count } = await db.from('shopee_returns').select('return_sn', { count: 'exact', head: true }).is('variations', null)
+        return json({ done, remaining: count ?? 0 })
+      }
       case 'orders_value_backfill':
         return json(await ordersValueBackfill(integration, db, Number(body.limit || 400)))
       case 'return_convert_images':
@@ -1240,7 +1308,7 @@ serve(async (req) => {
         return json(await returnDispute(integration, db, String(body.return_sn), {
           email: body.email, dispute_reason: body.dispute_reason,
           dispute_text_reason: body.dispute_text_reason, images: body.images,
-        }))
+        }, { reason_label: body.reason_label, by: body.by }))
 
       default:
         return json({ error: `Ação desconhecida: ${body.action}` }, 400)
