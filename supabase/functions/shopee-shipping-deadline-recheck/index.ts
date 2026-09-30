@@ -1,112 +1,97 @@
-// Disparada periodicamente por um cron do Postgres (pg_cron + pg_net,
-// ver supabase/fase67-shopee-shipping-deadline-recheck-cron.sql) —
-// nunca chamada pelo frontend, mesmo padrão de
-// ml-shipping-deadline-recheck (deploy com --no-verify-jwt).
+// Duas formas de ser chamada (deploy com --no-verify-jwt):
 //
-// Objetivo: espelha o problema já resolvido pro ML (Fase 34) — a
-// Shopee às vezes ainda não calculou o prazo de envio (`ship_by_date`)
-// no exato momento em que o nosso webhook processa o pedido (quase em
-// tempo real), então `shipping_deadline` fica NULL e o ship_date cai
-// no fallback (data da venda, sem corte de horário). Diferente do ML,
-// a Shopee NÃO tinha nenhum jeito de corrigir isso depois — um pedido
-// que nascesse sem `ship_by_date` ficava PRA SEMPRE no dia errado,
-// porque `upsert_orders_safe` não atualiza `shipping_deadline`/
-// `ship_date` em pushes seguintes (fase23-arquivar-pedidos-ml.sql) e o
-// trigger que calcula ship_date só roda em BEFORE INSERT (fase20). Este
-// cron fecha esse buraco, igual o ml-shipping-deadline-recheck já faz.
+// 1) Cron do Postgres (pg_cron + pg_net, a cada 3h — ver
+//    supabase/fase67-shopee-shipping-deadline-recheck-cron.sql), sem body.
+//    Espelha o ml-shipping-deadline-recheck: a Shopee às vezes ainda não
+//    calculou o `ship_by_date` quando o webhook processa o pedido, e
+//    `ship_date` só é calculado no INSERT — este cron fecha esse buraco.
+//    Desde a Fase 83 (30/09) também completa os dados da Expedição (nome
+//    real do comprador, transportadora, mensagem) dos pedidos em aberto
+//    que ainda não têm.
+//
+// 2) Botão "Atualizar pedidos" da Expedição — body { mode: 'manual' }.
+//    Antecipa o cron na hora: atualiza TODOS os pedidos Shopee em aberto
+//    (status, prazo, nome, transportadora) e recalcula o dia de quem
+//    ainda não tem nada separado (corte 13h configurável + prazo da
+//    Shopee — regra em compute_ship_date, nunca pra antes de hoje).
+//    Devolve um resumo pra mostrar na tela.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
-import { adminClient, getValidIntegration, shopeeFetch } from '../_shared/shopee.ts'
+import { adminClient, getValidIntegration } from '../_shared/shopee.ts'
 import { toISODateBR } from '../_shared/dateBR.ts'
+import { refreshShopeeOrders, REFRESH_SELECT } from '../_shared/shopeeOrders.ts'
 
-const BATCH_LIMIT = 30
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+const json = (data: unknown, status = 200) =>
+  new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
-// DD/MM, só pra montar a nota legível do badge (Fase 66) — data já vem
-// como 'YYYY-MM-DD' (coluna DATE), sem timezone pra considerar aqui.
-function fmtBR(dateStr: string) {
-  const [, m, d] = dateStr.split('-')
-  return `${d}/${m}`
+const addDays = (s: string, n: number) => { const d = new Date(`${s}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+
+async function notifyMoved(db: ReturnType<typeof adminClient>, moved: { num_venda: string; from: string; to: string }[]) {
+  if (!moved.length) return
+  const { data: admins } = await db.from('system_users')
+    .select('id').in('role', ['admin', 'administrativo']).eq('active', true)
+  if (!admins?.length) return
+  const list = moved.map(c => `#${c.num_venda}: ${c.from} → ${c.to}`).join('; ')
+  await db.from('notifications').insert(admins.map((u: any) => ({
+    user_id: u.id,
+    type:    'shopee_shipping_deadline_corrected',
+    title:   `📅 Prazo de envio Shopee corrigido automaticamente (${moved.length})`,
+    body:    `ship_date corrigido: ${list}`,
+    link:    '/expedicao',
+  })))
 }
 
-serve(async () => {
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  let body: any = {}
+  try { body = await req.json() } catch { /* cron manda sem body */ }
+
   const db = adminClient()
   try {
     const integration = await getValidIntegration(db)
+    const today = toISODateBR(new Date())
 
+    if (body?.mode === 'manual') {
+      // Tudo que ainda está em aberto: de 3 dias atrás (atrasados) em diante
+      const { data: orders, error } = await db.from('orders')
+        .select(REFRESH_SELECT)
+        .eq('source', 'shopee').eq('archived', false)
+        .gte('ship_date', addDays(today, -3))
+        .limit(400)
+      if (error) throw error
+      const result = await refreshShopeeOrders(db, integration, orders || [], { recomputeDay: true })
+      await db.from('shopee_integration').update({ last_sync_at: new Date().toISOString() }).eq('id', integration.id)
+      return json({ ok: true, source: 'shopee', ...result })
+    }
+
+    // ── Cron ──
+    // (a) pedido que nasceu sem prazo, criado entre 2h e 48h atrás
     const now = Date.now()
-    const notBefore = new Date(now - 48 * 3600 * 1000).toISOString() // não vale a pena recheckar pedido velho demais
-    const notAfter  = new Date(now - 2  * 3600 * 1000).toISOString() // dá tempo da Shopee terminar de calcular
-
-    const { data: candidates, error } = await db.from('orders')
-      .select('id, num_venda, ship_date')
+    const { data: noDeadline } = await db.from('orders')
+      .select(REFRESH_SELECT)
       .eq('source', 'shopee').eq('archived', false)
-      .is('shipping_deadline', null)
-      .is('shipping_deadline_checked_at', null)
-      .gte('created_at', notBefore)
-      .lte('created_at', notAfter)
-      .limit(BATCH_LIMIT)
-    if (error) throw error
-    if (!candidates?.length) return new Response('Nenhum pedido pra rechecar.', { status: 200 })
+      .is('shipping_deadline', null).is('shipping_deadline_checked_at', null)
+      .gte('created_at', new Date(now - 48 * 3600 * 1000).toISOString())
+      .lte('created_at', new Date(now - 2 * 3600 * 1000).toISOString())
+      .limit(30)
+    const r1 = await refreshShopeeOrders(db, integration, noDeadline || [], { recomputeDay: true })
 
-    const corrections: { num_venda: string; from: string; to: string }[] = []
-    let checkedCount = 0
+    // (b) pedido em aberto ainda sem os dados da Expedição (nome etc.)
+    const { data: missing } = await db.from('orders')
+      .select(REFRESH_SELECT)
+      .eq('source', 'shopee').eq('archived', false)
+      .gte('ship_date', today)
+      .is('comprador_nome_img', null)
+      .limit(60)
+    const r2 = await refreshShopeeOrders(db, integration, missing || [], { recomputeDay: false })
 
-    for (const o of candidates) {
-      try {
-        const detail = await shopeeFetch('/api/v2/order/get_order_detail', integration, {
-          order_sn_list: o.num_venda,
-          response_optional_fields: 'ship_by_date',
-        })
-        const order = detail?.response?.order_list?.[0]
-        const shipByDate: number | null = order?.ship_by_date ?? null
-        // ship_by_date é epoch UTC — dia em Brasília, nunca o dia em UTC
-        // direto (mesmo achado do shopee-process-webhook, 19/09).
-        const shipByDateStr = shipByDate ? toISODateBR(new Date(shipByDate * 1000)) : null
-        checkedCount++
-
-        if (shipByDateStr) {
-          const changed = shipByDateStr !== o.ship_date
-          await db.from('orders').update({
-            shipping_deadline: shipByDateStr,
-            ship_date: shipByDateStr,
-            shipping_deadline_checked_at: new Date().toISOString(),
-            ...(changed ? {
-              day_auto_corrected: true,
-              day_auto_corrected_note: `Dia corrigido automaticamente: era ${fmtBR(o.ship_date)}, o prazo real da Shopee é ${fmtBR(shipByDateStr)}.`,
-            } : {}),
-          }).eq('id', o.id)
-          if (changed) corrections.push({ num_venda: o.num_venda, from: o.ship_date, to: shipByDateStr })
-        } else {
-          // Nunca teve prazo especial mesmo — marca como checado pra não
-          // tentar de novo pra sempre.
-          await db.from('orders').update({ shipping_deadline_checked_at: new Date().toISOString() }).eq('id', o.id)
-        }
-      } catch (err) {
-        console.error(`[shopee-shipping-deadline-recheck] falhou pedido ${o.num_venda}:`, err)
-        // Não marca como checado — tenta de novo na próxima rodada.
-      }
-    }
-
-    if (corrections.length) {
-      const { data: admins } = await db.from('system_users')
-        .select('id').in('role', ['admin', 'administrativo']).eq('active', true)
-      if (admins?.length) {
-        const list = corrections.map(c => `#${c.num_venda}: ${c.from} → ${c.to}`).join('; ')
-        await db.from('notifications').insert(admins.map((u: any) => ({
-          user_id: u.id,
-          type:    'shopee_shipping_deadline_corrected',
-          title:   `📅 Prazo de envio Shopee corrigido automaticamente (${corrections.length})`,
-          body:    `O prazo real chegou depois do pedido criado — ship_date corrigido sozinho: ${list}`,
-          link:    '/expedicao',
-        })))
-      }
-    }
-
-    return new Response(
-      `Rechecados: ${checkedCount}/${candidates.length}. Corrigidos: ${corrections.length}.`,
-      { status: 200 },
-    )
+    await notifyMoved(db, r1.moved)
+    return json({ ok: true, deadline_recheck: r1, enrich: r2 })
   } catch (err) {
     console.error('[shopee-shipping-deadline-recheck] erro:', err)
-    return new Response(String(err), { status: 500 })
+    return json({ ok: false, error: String(err) }, 500)
   }
 })

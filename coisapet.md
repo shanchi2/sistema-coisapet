@@ -275,6 +275,39 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-09-30 — Expedição: nome real do comprador Shopee, corte 13h da Shopee, botão "Atualizar pedidos" (fase83)
+
+- **Nome real na Shopee**: `get_order_detail` devolve `recipient_address`
+  todo mascarado (`****`). O nome real só vem como **imagem PNG** em
+  `logistics/get_shipping_document_data_info` (dado de etiqueta), e só
+  entre "envio organizado" (PROCESSED) e o despacho — depois de SHIPPED a
+  Shopee recusa ("cannot be printed now"). `get_buyer_invoice_info` dá
+  `region_invalid` pra BR. Guardamos só a imagem do nome
+  (`orders.comprador_nome_img`); CPF/telefone/endereço vêm junto e são
+  descartados de propósito (LGPD).
+- Colunas novas em `orders`: `comprador_nome_img`, `buyer_message`
+  (`message_to_seller` — separado porque `upsert_orders_safe` sobrescreve
+  `notes`), `shipping_carrier`, `ship_by_at`, `days_to_ship`,
+  `marketplace_refreshed_at`.
+- **Corte da Shopee (13h, configurável no ⚙️ junto do ML)** —
+  `compute_ship_date()`: corte → fim de semana vai pra segunda → nunca
+  depois do prazo da Shopee → se o prazo da Shopee for > 2 dias além do
+  corte (encomenda/envio programado), vale o prazo dela. Não retroativo.
+- **Botão "Atualizar pedidos"** na Expedição = `{mode:'manual'}` nas
+  functions `shopee-shipping-deadline-recheck` / `ml-shipping-deadline-recheck`
+  (lógica Shopee em `_shared/shopeeOrders.ts`). Atualiza status/prazo/nome/
+  transportadora e recalcula o dia só de pedido sem item separado, nunca
+  pra antes de hoje. O cron do ML passou a usar `compute_ship_date` também
+  (antes gravava o prazo cru, pulando a regra de fim de semana). O webhook
+  da Shopee já busca o nome sozinho quando o pedido chega/muda de status.
+- Expedição redesenhada (KPIs-filtro, busca, cards com nome/prazo/
+  transportadora/recado/valor); PDF do picklist imprime a imagem do nome e
+  o recado. Cidade/UF mascaradas da Shopee agora ficam null (não `****`).
+- **Achado pro Raphael**: em 30/09, 27 dos 32 pedidos Shopee do dia já
+  estavam "a caminho" na Shopee sem nenhum item marcado como separado.
+
+---
+
 ### 2026-09-26 — Chapas de MDF e sub-chapas (fase78)
 
 Como funciona de verdade: o César compra a CHAPA inteira na Duratex (ex:

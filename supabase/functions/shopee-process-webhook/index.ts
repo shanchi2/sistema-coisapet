@@ -15,18 +15,8 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { adminClient, getValidIntegration, shopeeFetch } from '../_shared/shopee.ts'
 import { toISODateBR } from '../_shared/dateBR.ts'
+import { ORDER_STATUS_PT, refreshShopeeOrders, REFRESH_SELECT } from '../_shared/shopeeOrders.ts'
 
-const ORDER_STATUS_PT: Record<string, string> = {
-  UNPAID:              'Aguardando pagamento',
-  READY_TO_SHIP:       'Pronto para envio',
-  PROCESSED:           'Processando',
-  SHIPPED:             'A caminho',
-  TO_CONFIRM_RECEIVE:  'Aguardando confirmação de recebimento',
-  COMPLETED:           'Entregue',
-  IN_CANCEL:           'Cancelamento solicitado',
-  CANCELLED:           'Cancelado',
-  INVOICE_PENDING:     'Aguardando nota fiscal',
-}
 
 function isCancelledStatus(estado: string | null) {
   return !!estado && estado.toLowerCase().includes('cancelad')
@@ -44,6 +34,8 @@ function mapShopeeOrderToCommon(order: any) {
   const estado = rawStatus ? (ORDER_STATUS_PT[rawStatus] ?? rawStatus) : null
 
   const addr = order.recipient_address || {}
+  // A Shopee mascara os dados do destinatário ("****") — guarda null, não asterisco
+  const unmask = (v: any) => (v && !/^\*+$/.test(String(v).trim()) ? v : null)
   const items = (order.item_list || []).map((it: any) => ({
     titulo:     it.item_name || it.model_name || '—',
     sku:        it.model_sku || it.item_sku || null,
@@ -65,10 +57,10 @@ function mapShopeeOrderToCommon(order: any) {
     shipping_deadline: order.ship_by_date ? toISODateBR(new Date(order.ship_by_date * 1000)) : null,
     estado,
     desc:       null,
-    comprador:  order.buyer_username || addr.name || null,
-    cidade:     addr.city || null,
-    estado_uf:  addr.state || null,
-    cep:        addr.zipcode || null,
+    comprador:  order.buyer_username || unmask(addr.name) || null,
+    cidade:     unmask(addr.city),
+    estado_uf:  unmask(addr.state),
+    cep:        unmask(addr.zipcode),
     rastreio:   order.tracking_number || null,
     is_pacote:  false,
     pack_id:    null,
@@ -268,6 +260,15 @@ serve(async (req) => {
 
     const parsed = mapShopeeOrderToCommon(order)
     await saveOrder(db, parsed)
+
+    // Fase 83: dados extras da Expedição (nome real em imagem, transportadora,
+    // mensagem do comprador, prazo com hora). Nunca derruba o sync se falhar
+    // — o nome só existe depois que o envio é organizado; o cron completa depois.
+    try {
+      const { data: row } = await db.from('orders').select(REFRESH_SELECT)
+        .eq('source', 'shopee').eq('num_venda', parsed.num).maybeSingle()
+      if (row) await refreshShopeeOrders(db, integration, [row as any], { recomputeDay: false })
+    } catch (e) { console.error('[shopee-process-webhook] enrich falhou:', e) }
 
     await db.from('shopee_webhook_events').update({
       status: 'done', processed_at: new Date().toISOString(),

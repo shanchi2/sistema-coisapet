@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Check, Package, PartyPopper, RefreshCw, ShoppingCart, ShoppingBag, PenLine, Minus, Plus, ClipboardList, ChevronLeft, ChevronRight, Calendar, Target, AlertTriangle, History, Lock } from 'lucide-react'
+import { ArrowLeft, Check, Package, PartyPopper, RefreshCw, ShoppingCart, ShoppingBag, PenLine, Minus, Plus, ClipboardList, ChevronLeft, ChevronRight, Calendar, Target, AlertTriangle, History, Lock, Search, Truck, Clock, MessageSquare, MapPin, CalendarClock, Settings, CloudDownload, X, Receipt } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useSignedUrl } from '../../lib/signedUrlCache'
-import { fetchShippingOrders, toggleItemPicked, fetchShippingDayCounts, fetchSaturdayTarget, activateSaturdayTarget, clearNeedsAttention, clearDayAutoCorrected, closeShippingDay, fetchShippingClosures, fetchOverdueOrders, resolveBatchId } from './hooks/useShipping'
+import { useAuth } from '../../contexts/AuthContext'
+import { CutoffSettingsModal } from '../orders/CutoffSettingsModal'
+import { fetchShippingOrders, toggleItemPicked, fetchShippingDayCounts, fetchSaturdayTarget, activateSaturdayTarget, clearNeedsAttention, clearDayAutoCorrected, closeShippingDay, fetchShippingClosures, fetchOverdueOrders, resolveBatchId, refreshMarketplaceOrders } from './hooks/useShipping'
 import { fetchGathering, saveGatheringItem, sendShortageReport } from './hooks/usePicklistGathering'
 import { fetchPackagingBoxes, fetchOrderPackaging, confirmOrderPackaging } from './hooks/usePackaging'
 import toast from 'react-hot-toast'
@@ -20,14 +22,102 @@ function ThumbPhoto({ photoUrl, size = 52 }) {
 }
 
 // Placa de Identificação sem nenhuma observação no pedido = ninguém informou
-// o nome pra gravar — a Carol precisa avisar o Atendimento pra cobrar o cliente
+// o nome pra gravar — a Carol precisa avisar o Atendimento pra cobrar o cliente.
+// Desde 30/09 conta também a mensagem do comprador da Shopee (buyer_message).
 function needsPlaquinhaAlert(item, orderNotes) {
   const isPlaquinha = item.titulo?.toLowerCase().includes('placa de identificação nome')
   const hasNotes = orderNotes && orderNotes.trim().length > 0
   return isPlaquinha && !hasNotes
 }
+const allNotes = o => [o.buyer_message, o.notes].filter(Boolean).join(' · ')
 function orderHasPlaquinhaAlert(order) {
-  return (order.items || []).some(it => needsPlaquinhaAlert(it, order.notes))
+  return (order.items || []).some(it => needsPlaquinhaAlert(it, allNotes(order)))
+}
+
+// ── Dados extras do pedido (Fase 83, 30/09) ─────────────────────────
+const TZ = 'America/Sao_Paulo'
+// A Shopee mascara cidade/UF ("****") — esconde em vez de mostrar asterisco
+const clean = v => (v && !/^\*+$/.test(String(v).trim()) ? v : null)
+const fmtDateTime = ts => ts ? new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(ts)).replace(',', '') : null
+const fmtTime = ts => ts ? new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(ts)) : null
+const fmtShortDay = d => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : null
+const brDay = ts => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(ts))
+const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000)
+const brl = v => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+function orderValue(o) {
+  if (o.gross_value != null) return Number(o.gross_value)
+  const v = (o.items || []).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.preco_unit) || 0), 0)
+  return v || null
+}
+// Envio programado / encomenda: prazo bem mais longe que a compra
+function scheduledInfo(o) {
+  if (o.source === 'shopee' && o.days_to_ship > 3) return `Encomenda — ${o.days_to_ship} dias pra enviar`
+  if (o.data_venda && o.ship_date && daysBetween(brDay(o.data_venda), o.ship_date) > 3) return `Envio programado pra ${fmtShortDay(o.ship_date)}`
+  return null
+}
+function shipByLabel(o) {
+  if (o.ship_by_at) return `Enviar até ${fmtDateTime(o.ship_by_at)}`
+  if (o.shipping_deadline) return `Enviar até ${fmtShortDay(o.shipping_deadline)}`
+  return null
+}
+
+// Status da plataforma com cor — deixa claro quando a Shopee/ML já
+// considera o pedido despachado (mesmo que ninguém tenha marcado aqui)
+function StatusPill({ o }) {
+  if (!o.status_ml) return null
+  const s = (o.status_ml || '').toLowerCase()
+  const tone = /cancel/.test(s) ? 'bg-rose-100 text-rose-700'
+    : /caminho|entregue|confirmação|enviado/.test(s) ? 'bg-sky-100 text-sky-700'
+    : /processando/.test(s) ? 'bg-emerald-100 text-emerald-700'
+    : /pronto/.test(s) ? 'bg-amber-100 text-amber-700'
+    : 'bg-slate-100 text-slate-500'
+  const label = /caminho/.test(s) ? 'Já despachado (a caminho)' : /processando/.test(s) && o.source === 'shopee' ? 'Envio organizado' : o.status_ml
+  return <span className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded-full ${tone}`}>{label}</span>
+}
+
+// Nome do comprador. Shopee: o nome real só existe como imagem (a API
+// mascara o texto) — mostra a imagem + @usuário. ML: nome em texto.
+function BuyerName({ o, big = false }) {
+  const username = o.source === 'shopee' ? o.comprador : null
+  if (o.comprador_nome_img) {
+    return (
+      <div className="min-w-0">
+        <img src={o.comprador_nome_img} alt="Nome do comprador" draggable={false}
+          className={`mix-blend-multiply select-none ${big ? 'h-14' : 'h-10'} w-auto max-w-full object-contain object-left -ml-0.5`} />
+        {username && <p className={`font-semibold text-slate-400 truncate ${big ? 'text-sm' : 'text-xs'}`}>@{username}</p>}
+      </div>
+    )
+  }
+  return (
+    <div className="min-w-0">
+      <p className={`font-bold text-slate-700 truncate ${big ? 'text-lg' : 'text-[15px]'}`}>
+        {username ? <span className="text-slate-500">@{username}</span> : (o.comprador || 'Não identificado')}
+      </p>
+      {username && !/caminho|entregue|confirma|cancel/i.test(o.status_ml || '') && (
+        <p className="text-[11px] text-slate-400">nome real aparece quando o envio for organizado na Shopee</p>
+      )}
+    </div>
+  )
+}
+
+// Chips de informação (compra, prazo, transportadora, local, valor)
+function InfoChips({ o, compact = false, hideValue = false }) {
+  const loc = [clean(o.cidade), clean(o.estado_uf)].filter(Boolean).join(' / ')
+  const value = orderValue(o)
+  const chip = 'inline-flex items-center gap-1 rounded-lg font-semibold whitespace-nowrap'
+  const size = compact ? 'text-[11px] px-2 py-0.5' : 'text-xs px-2.5 py-1'
+  const sched = scheduledInfo(o)
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {sched && <span className={`${chip} ${size} bg-violet-600 text-white`}><CalendarClock size={12} /> {sched}</span>}
+      {shipByLabel(o) && <span className={`${chip} ${size} bg-rose-50 text-rose-700 border border-rose-100`}><Clock size={12} /> {shipByLabel(o)}</span>}
+      {o.shipping_carrier && <span className={`${chip} ${size} bg-sky-50 text-sky-700 border border-sky-100`}><Truck size={12} /> {o.shipping_carrier}</span>}
+      {o.data_venda && <span className={`${chip} ${size} bg-slate-100 text-slate-600`}><ShoppingBag size={12} /> Comprado {fmtDateTime(o.data_venda)}</span>}
+      {loc && <span className={`${chip} ${size} bg-slate-100 text-slate-600`}><MapPin size={12} /> {loc}</span>}
+      {value != null && !compact && !hideValue && <span className={`${chip} ${size} bg-emerald-50 text-emerald-700 border border-emerald-100`}><Receipt size={12} /> {brl(value)}</span>}
+      {o.rastreio && !compact && <span className={`${chip} ${size} bg-slate-100 text-slate-500 font-mono`}>{o.rastreio}</span>}
+    </div>
+  )
 }
 
 function isOrderComplete(order) {
@@ -106,6 +196,32 @@ export function ExpedicaoPage() {
   // exato por (source, ship_date). Cai pro batchId da URL se não achar nada.
   const [resolvedBatchId, setResolvedBatchId] = useState(null)
   const activeBatchId = resolvedBatchId || batchId
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState('todos') // todos | pendentes | fechados | mensagem | programados
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshResult, setRefreshResult] = useState(null)
+  const [cutoffOpen, setCutoffOpen] = useState(false)
+
+  // "Atualizar pedidos" — antecipa o cron de recheck (a cada 3h) na hora
+  async function handleRefreshMarketplace() {
+    if (!source || source === 'manual') return
+    setRefreshing(true)
+    try {
+      const r = await refreshMarketplaceOrders(source)
+      setRefreshResult({ ...r, at: new Date().toISOString() })
+      await load()
+      fetchShippingDayCounts(source).then(setDayCounts).catch(() => {})
+      fetchOverdueOrders().then(setOverdue).catch(() => {})
+      const movedN = r.moved?.length || 0
+      toast.success(`${r.checked ?? 0} pedido(s) conferidos${movedN ? ` · ${movedN} mudaram de dia` : ''}`)
+    } catch (err) {
+      toast.error('Não consegui atualizar agora: ' + err.message)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const isMonday = new Date(viewDate + 'T12:00:00').getDay() === 1
 
@@ -424,7 +540,7 @@ export function ExpedicaoPage() {
                   <span className="text-xs font-bold text-rose-600">devia ter ido em {fmtDayLong(o.ship_date)}</span>
                 </div>
                 {o.num_venda && <p className="text-lg font-black text-slate-800 font-mono">#{o.num_venda}</p>}
-                <p className="text-sm font-semibold text-slate-600">{o.comprador || 'Não identificado'}</p>
+                <BuyerName o={o} />
                 {!sameSource && <p className="text-xs text-slate-400 mt-1">Abra a Expedição de {plat.label} pra ver esse.</p>}
               </button>
             )
@@ -519,23 +635,48 @@ export function ExpedicaoPage() {
     const plat = platformBadge(openOrder.source)
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
-        <div className={`${plat.headerBg} border-b border-slate-100 border-l-[10px] ${plat.accent} px-4 py-4 sticky top-0 z-10 flex items-center gap-3`}>
-          <button onClick={() => setOpenId(null)} className="p-3 -ml-1 rounded-xl text-slate-600 bg-white/70 shrink-0">
+        <div className={`bg-white border-b border-slate-200 border-l-[10px] ${plat.accent} px-4 py-3 sticky top-0 z-10 flex items-center gap-3 shadow-sm`}>
+          <button onClick={() => setOpenId(null)} className="p-3 -ml-1 rounded-xl text-slate-600 bg-slate-100 shrink-0">
             <ArrowLeft size={24} />
           </button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className={`flex items-center gap-1.5 text-sm font-black px-3 py-1 rounded-full w-fit ${plat.badge}`}>
-                <plat.icon size={15} strokeWidth={2.5} /> {plat.label}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`flex items-center gap-1.5 text-xs font-black px-2.5 py-1 rounded-full w-fit ${plat.badge}`}>
+                <plat.icon size={13} strokeWidth={2.5} /> {plat.label}
               </span>
+              <StatusPill o={openOrder} />
             </div>
-            {openOrder.num_venda && <p className="text-2xl font-black text-slate-900 font-mono tracking-tight leading-tight">#{openOrder.num_venda}</p>}
-            <p className="text-sm font-semibold text-slate-500 truncate">{openOrder.comprador || 'Não identificado'}</p>
-            <p className="text-xs text-slate-400 font-semibold mt-0.5">{pickedCount(openOrder)}/{openOrder.items.length} itens separados</p>
+            {openOrder.num_venda && <p className="text-2xl font-black text-slate-900 font-mono tracking-tight leading-tight mt-0.5">#{openOrder.num_venda}</p>}
+          </div>
+          <div className="text-right shrink-0">
+            <p className={`text-2xl font-black ${complete ? 'text-emerald-600' : 'text-slate-800'}`}>{pickedCount(openOrder)}/{openOrder.items.length}</p>
+            <p className="text-[11px] font-bold text-slate-400 uppercase">separados</p>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 max-w-2xl mx-auto w-full">
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 max-w-3xl mx-auto w-full">
+          {/* Quem comprou + dados do envio */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">Comprador</p>
+                <BuyerName o={openOrder} big />
+              </div>
+              {orderValue(openOrder) != null && (
+                <div className="text-right shrink-0">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Valor</p>
+                  <p className="text-lg font-black text-slate-800">{brl(orderValue(openOrder))}</p>
+                </div>
+              )}
+            </div>
+            <InfoChips o={openOrder} hideValue />
+          </div>
+          {openOrder.buyer_message && (
+            <div className="rounded-2xl bg-amber-50 border-2 border-amber-300 px-4 py-3">
+              <p className="text-xs font-black text-amber-700 uppercase tracking-wide flex items-center gap-1.5"><MessageSquare size={14} /> Mensagem do comprador</p>
+              <p className="text-lg font-bold text-amber-900 mt-1 whitespace-pre-wrap break-words">{openOrder.buyer_message}</p>
+            </div>
+          )}
           {openOrder.needs_attention && (
             <div className="rounded-xl bg-rose-600 text-white px-4 py-3">
               <p className="text-sm font-black flex items-center gap-1.5"><AlertTriangle size={16} strokeWidth={3} /> Cancelado após já ter item separado</p>
@@ -560,7 +701,7 @@ export function ExpedicaoPage() {
 
           <div className="flex flex-col gap-3">
             {openOrder.items.map(it => {
-              const alertaNome = needsPlaquinhaAlert(it, openOrder.notes)
+              const alertaNome = needsPlaquinhaAlert(it, allNotes(openOrder))
               return (
               <button key={it.id} onClick={() => handleToggleItem(it)}
                 className={`flex items-center gap-4 rounded-2xl border-2 p-4 text-left transition-all ${
@@ -662,185 +803,299 @@ export function ExpedicaoPage() {
   }
 
   // ══════════════════════ VISÃO GERAL ══════════════════════
+  // Redesenhada 30/09 (Fase 83): cabeçalho com ícone da plataforma,
+  // botão "Atualizar pedidos" (antecipa o cron), KPIs clicáveis como
+  // filtro, busca, e cards com nome real do comprador + dados do envio.
+  const plat = platformBadge(source)
+  const isToday = viewDate === todayISO()
+  const totalItems = orders.reduce((s, o) => s + o.items.reduce((si, it) => si + it.qty, 0), 0)
+  const pendingCount = orders.length - doneCount
+  const msgCount = orders.filter(o => o.buyer_message || o.notes).length
+  const schedCount = orders.filter(o => scheduledInfo(o)).length
+  const lastRefresh = refreshResult?.at || orders.reduce((m, o) => (o.marketplace_refreshed_at && o.marketplace_refreshed_at > m ? o.marketplace_refreshed_at : m), '')
+  const q = search.trim().toLowerCase()
+  const visible = [...orders]
+    .filter(o => filter === 'pendentes' ? !isOrderComplete(o)
+      : filter === 'fechados' ? isOrderComplete(o)
+      : filter === 'mensagem' ? !!(o.buyer_message || o.notes)
+      : filter === 'programados' ? !!scheduledInfo(o)
+      : true)
+    .filter(o => !q || [o.num_venda, o.comprador, o.buyer_message, o.notes, ...o.items.flatMap(it => [it.titulo, it.sku, it.variacao])]
+      .some(v => v && String(v).toLowerCase().includes(q)))
+    .sort((a, b) => Number(isOrderComplete(a)) - Number(isOrderComplete(b))
+      || String(a.ship_by_at || '').localeCompare(String(b.ship_by_at || ''))
+      || String(a.data_venda || '').localeCompare(String(b.data_venda || '')))
+
+  const kpis = [
+    { key: 'todos',       label: 'Pedidos',       value: orders.length, tone: 'text-slate-800' },
+    { key: 'pendentes',   label: 'A separar',     value: pendingCount,  tone: 'text-amber-600' },
+    { key: 'fechados',    label: 'Fechados',      value: doneCount,     tone: 'text-emerald-600' },
+    { key: 'mensagem',    label: 'Com recado',    value: msgCount,      tone: 'text-violet-600' },
+    { key: 'programados', label: 'Programados',   value: schedCount,    tone: 'text-sky-600' },
+  ]
+
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="bg-white border-b border-slate-100 px-4 py-4 sticky top-0 z-10">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-black text-slate-800">Expedição</h1>
-            <p className="text-xs text-slate-400">
-              {doneCount} de {orders.length} pedidos fechados · {orders.reduce((s, o) => s + o.items.reduce((si, it) => si + it.qty, 0), 0)} item(ns) no total
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {overdue.length > 0 && (
-              <button onClick={() => setShowOverdue(true)}
-                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-600 text-white font-black text-sm animate-pulse">
-                <AlertTriangle size={16} strokeWidth={2.5} /> {overdue.length} atrasado{overdue.length !== 1 ? 's' : ''}
+      {/* ── Cabeçalho ── */}
+      <div className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+        <div className="max-w-[1400px] mx-auto px-4 py-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${source === 'ml' ? 'bg-gradient-to-br from-amber-300 to-amber-500' : source === 'shopee' ? 'bg-gradient-to-br from-orange-400 to-orange-600' : 'bg-gradient-to-br from-slate-500 to-slate-700'}`}>
+                <plat.icon size={20} strokeWidth={2} className="text-white" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-xl font-black text-slate-800 leading-tight">Expedição · {plat.label}</h1>
+                <p className="text-xs text-slate-400">
+                  {doneCount} de {orders.length} fechados · {totalItems} item(ns)
+                  {lastRefresh && <> · atualizado às {fmtTime(lastRefresh)}</>}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {source !== 'manual' && (
+                <button onClick={handleRefreshMarketplace} disabled={refreshing}
+                  className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-white font-black text-sm shadow-sm disabled:opacity-60 ${source === 'ml' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-orange-500 hover:bg-orange-600'}`}>
+                  <CloudDownload size={16} strokeWidth={2.5} className={refreshing ? 'animate-bounce' : ''} />
+                  {refreshing ? 'Atualizando...' : `Atualizar pedidos ${source === 'ml' ? 'do ML' : 'da Shopee'}`}
+                </button>
+              )}
+              {overdue.length > 0 && (
+                <button onClick={() => setShowOverdue(true)}
+                  className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-600 text-white font-black text-sm animate-pulse">
+                  <AlertTriangle size={16} strokeWidth={2.5} /> {overdue.length} atrasado{overdue.length !== 1 ? 's' : ''}
+                </button>
+              )}
+              {isMonday && !satTarget && (
+                <button onClick={handleActivateSaturdayTarget} disabled={activatingTarget || orders.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-amber-100 text-amber-700 font-bold text-sm disabled:opacity-50">
+                  <Target size={16} strokeWidth={2.5} /> {activatingTarget ? 'Calculando...' : 'Envios de Sábado'}
+                </button>
+              )}
+              <button onClick={() => { setReportSent(false); setShowChecklist(true) }}
+                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-violet-100 text-violet-700 font-bold text-sm">
+                <ClipboardList size={16} strokeWidth={2.5} /> Lista de Itens
               </button>
-            )}
-            {isMonday && !satTarget && (
-              <button onClick={handleActivateSaturdayTarget} disabled={activatingTarget || orders.length === 0}
-                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-amber-100 text-amber-700 font-bold text-sm disabled:opacity-50">
-                <Target size={16} strokeWidth={2.5} /> {activatingTarget ? 'Calculando...' : 'Envios de Sábado'}
+              <button onClick={openHistory}
+                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm">
+                <History size={16} strokeWidth={2.5} /> Histórico
               </button>
-            )}
-            <button onClick={() => { setReportSent(false); setShowChecklist(true) }}
-              className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-violet-100 text-violet-700 font-bold text-sm">
-              <ClipboardList size={16} strokeWidth={2.5} /> Lista de Itens
-            </button>
-            <button onClick={openHistory}
-              className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm">
-              <History size={16} strokeWidth={2.5} /> Histórico
-            </button>
-            <button onClick={handleCloseDay} disabled={closingDay || orders.length === 0}
-              className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-100 text-rose-700 font-bold text-sm disabled:opacity-50">
-              <Lock size={16} strokeWidth={2.5} /> {closingDay ? 'Fechando...' : 'Fechar o Dia'}
-            </button>
-            <button onClick={() => { load(); fetchShippingDayCounts(source).then(setDayCounts).catch(() => {}); fetchOverdueOrders().then(setOverdue).catch(() => {}) }} className="p-2.5 rounded-xl bg-slate-100 text-slate-500"><RefreshCw size={18} /></button>
+              <button onClick={handleCloseDay} disabled={closingDay || orders.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-100 text-rose-700 font-bold text-sm disabled:opacity-50">
+                <Lock size={16} strokeWidth={2.5} /> {closingDay ? 'Fechando...' : 'Fechar o Dia'}
+              </button>
+              {isAdmin && (
+                <button onClick={() => setCutoffOpen(true)} title="Horário de corte" className="p-2.5 rounded-xl bg-slate-100 text-slate-500"><Settings size={18} /></button>
+              )}
+              <button onClick={() => { load(); fetchShippingDayCounts(source).then(setDayCounts).catch(() => {}); fetchOverdueOrders().then(setOverdue).catch(() => {}) }} title="Recarregar a tela" className="p-2.5 rounded-xl bg-slate-100 text-slate-500"><RefreshCw size={18} /></button>
+            </div>
           </div>
-        </div>
-        <div className="h-2 bg-slate-100 rounded-full overflow-hidden mt-3">
-          <div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${orders.length ? (doneCount / orders.length) * 100 : 0}%` }} />
-        </div>
 
-        {/* Navegação por dia */}
-        <div className="flex items-center gap-2 mt-3">
-          <button onClick={() => setViewDate(addDays(viewDate, -1))}
-            className="p-2 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"><ChevronLeft size={16} /></button>
-          <button onClick={() => setViewDate(todayISO())}
-            disabled={viewDate === todayISO()}
-            className={`px-3 py-2 rounded-xl text-xs font-bold ${viewDate === todayISO() ? 'bg-slate-100 text-slate-300' : 'bg-rose-100 text-rose-600'}`}>
-            Hoje
-          </button>
-          <input type="date" value={viewDate} onChange={e => setViewDate(e.target.value)}
-            className="flex-1 text-xs px-2.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-600" />
-          <button onClick={() => setViewDate(addDays(viewDate, 1))}
-            className="p-2 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"><ChevronRight size={16} /></button>
+          {/* Navegação por dia */}
+          <div className="flex items-center gap-2 mt-3">
+            <button onClick={() => setViewDate(addDays(viewDate, -1))}
+              className="p-2.5 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"><ChevronLeft size={18} /></button>
+            <button onClick={() => setViewDate(todayISO())} disabled={isToday}
+              className={`px-3.5 py-2.5 rounded-xl text-xs font-bold ${isToday ? 'bg-slate-100 text-slate-300' : 'bg-rose-100 text-rose-600'}`}>
+              Hoje
+            </button>
+            <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border ${isToday ? 'bg-slate-50 border-slate-200' : 'bg-amber-50 border-amber-200'}`}>
+              <Calendar size={15} className={isToday ? 'text-slate-400' : 'text-amber-500'} />
+              <p className={`text-sm font-bold capitalize truncate flex-1 ${isToday ? 'text-slate-700' : 'text-amber-700'}`}>{fmtDayLong(viewDate)}</p>
+              <input type="date" value={viewDate} onChange={e => e.target.value && setViewDate(e.target.value)}
+                className="text-xs px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 w-[130px]" />
+            </div>
+            <button onClick={() => setViewDate(addDays(viewDate, 1))}
+              className="p-2.5 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"><ChevronRight size={18} /></button>
+          </div>
+          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mt-3">
+            <div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${orders.length ? (doneCount / orders.length) * 100 : 0}%` }} />
+          </div>
         </div>
       </div>
 
-      {/* Faixa de resumo do dia — avisa claramente que dia está sendo visto */}
-      <div className={`px-4 py-3 border-b ${viewDate === todayISO() ? 'bg-white border-slate-100' : 'bg-amber-50 border-amber-100'}`}>
-        <div className="flex items-center gap-2">
-          <Calendar size={15} className={viewDate === todayISO() ? 'text-slate-400' : 'text-amber-500'} />
-          <p className={`text-sm font-bold capitalize ${viewDate === todayISO() ? 'text-slate-700' : 'text-amber-700'}`}>
-            {fmtDayLong(viewDate)}
-          </p>
-        </div>
-        <p className="text-xs text-slate-400 mt-0.5 pl-[23px]">
-          {orders.length} pedido(s)
-        </p>
+      <div className="max-w-[1400px] mx-auto px-4 py-4 flex flex-col gap-4">
+        {/* Resultado da última atualização */}
+        {refreshResult && (
+          <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 flex items-start gap-3">
+            <CloudDownload size={18} className="text-emerald-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 text-sm text-slate-600">
+              <p><b className="text-slate-800">Pedidos atualizados às {fmtTime(refreshResult.at)}</b> — {refreshResult.checked ?? 0} conferido(s) na {source === 'ml' ? 'API do Mercado Livre' : 'API da Shopee'}
+                {refreshResult.names ? ` · ${refreshResult.names} nome(s) novo(s)` : ''}
+                {refreshResult.cancelled ? ` · ${refreshResult.cancelled} cancelado(s)` : ''}
+                {!refreshResult.moved?.length && ' · nenhum pedido mudou de dia'}.
+              </p>
+              {refreshResult.moved?.length > 0 && (
+                <p className="text-xs text-amber-700 mt-1">Mudaram de dia: {refreshResult.moved.map(m => `#${m.num_venda} (${fmtShortDay(m.from)} → ${fmtShortDay(m.to)})`).join(', ')}</p>
+              )}
+            </div>
+            <button onClick={() => setRefreshResult(null)} className="p-1 text-slate-300 hover:text-slate-500"><X size={16} /></button>
+          </div>
+        )}
+
+        {/* Faixa "amanhã" */}
         {(() => {
           const tomorrow = addDays(todayISO(), 1)
           const tomorrowCount = dayCounts[tomorrow]
-          return viewDate === todayISO() && tomorrowCount > 0 && (
+          return isToday && tomorrowCount > 0 && (
             <button onClick={() => setViewDate(tomorrow)}
-              className="mt-2 ml-[23px] text-xs font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg hover:bg-amber-100">
+              className="text-left text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2.5 rounded-2xl hover:bg-amber-100">
               📦 {tomorrowCount} pedido(s) de amanhã já esperando pra adiantar →
             </button>
           )
         })()}
-      </div>
 
-      {/* Painel da meta de sábado — bem visual, é isso que o Marlon confere */}
-      {satTarget && (
-        <div className="px-4 py-4 bg-gradient-to-r from-amber-400 to-orange-400">
-          <div className="flex items-center gap-2 mb-2">
-            <Target size={18} className="text-white" />
-            <p className="text-white font-black text-sm">Meta de Envios de Sábado</p>
-          </div>
-          <div className="flex items-end justify-between mb-2">
-            <p className="text-white text-3xl font-black">
-              {satProgress} <span className="text-lg font-bold text-white/80">/ {satTarget.target_count}</span>
+        {/* Meta de sábado — bem visual, é isso que o Marlon confere */}
+        {satTarget && (
+          <div className="px-5 py-4 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-400 shadow-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <Target size={18} className="text-white" />
+              <p className="text-white font-black text-sm">Meta de Envios de Sábado</p>
+            </div>
+            <div className="flex items-end justify-between mb-2">
+              <p className="text-white text-3xl font-black">
+                {satProgress} <span className="text-lg font-bold text-white/80">/ {satTarget.target_count}</span>
+              </p>
+              <p className="text-white/90 text-xs font-semibold text-right">
+                20% de {satTarget.total_orders_at_activation} + 1<br/>
+                {satProgress >= satTarget.target_count ? '✅ Meta batida!' : `Faltam ${satTarget.target_count - satProgress}`}
+              </p>
+            </div>
+            <div className="h-3 bg-white/30 rounded-full overflow-hidden">
+              <div className="h-full bg-white rounded-full transition-all"
+                style={{ width: `${Math.min(100, (satProgress / satTarget.target_count) * 100)}%` }} />
+            </div>
+            <p className="text-white/70 text-[11px] mt-2">
+              Ativada por {satTarget.activator?.name || '—'} às {new Date(satTarget.activated_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
             </p>
-            <p className="text-white/90 text-xs font-semibold text-right">
-              20% de {satTarget.total_orders_at_activation} + 1<br/>
-              {satProgress >= satTarget.target_count ? '✅ Meta batida!' : `Faltam ${satTarget.target_count - satProgress}`}
-            </p>
           </div>
-          <div className="h-3 bg-white/30 rounded-full overflow-hidden">
-            <div className="h-full bg-white rounded-full transition-all"
-              style={{ width: `${Math.min(100, (satProgress / satTarget.target_count) * 100)}%` }} />
+        )}
+
+        {/* KPIs = filtros */}
+        {orders.length > 0 && (
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+            {kpis.map(k => (
+              <button key={k.key} onClick={() => setFilter(filter === k.key && k.key !== 'todos' ? 'todos' : k.key)}
+                className={`rounded-2xl border px-3 py-2.5 text-left transition-colors ${filter === k.key ? 'bg-slate-800 border-slate-800' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
+                <p className={`text-2xl font-black ${filter === k.key ? 'text-white' : k.tone}`}>{k.value}</p>
+                <p className={`text-[11px] font-bold uppercase tracking-wide ${filter === k.key ? 'text-white/70' : 'text-slate-400'}`}>{k.label}</p>
+              </button>
+            ))}
           </div>
-          <p className="text-white/70 text-[11px] mt-2">
-            Ativada por {satTarget.activator?.name || '—'} às {new Date(satTarget.activated_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-          </p>
-        </div>
-      )}
+        )}
 
-      {orders.length === 0 ? (
-        <div className="flex items-center justify-center py-24 text-slate-400 text-center px-6">
-          {viewDate === todayISO() ? 'Nenhum pedido pra separar hoje.' : `Nenhum pedido de ${fmtDayLong(viewDate)} ainda.`}
-        </div>
-      ) : doneCount === orders.length ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-3 px-6 text-center">
-          <PartyPopper size={48} className="text-emerald-500" />
-          <p className="text-xl font-black text-emerald-700">Tudo separado! 🎉</p>
-        </div>
-      ) : null}
+        {/* Busca */}
+        {orders.length > 0 && (
+          <div className="relative">
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nº do pedido, @usuário, produto, SKU ou recado..."
+              className="w-full pl-10 pr-10 py-3 rounded-2xl bg-white border border-slate-200 text-sm focus:outline-none focus:border-slate-400" />
+            {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400"><X size={16} /></button>}
+          </div>
+        )}
 
-      <div className="p-3 flex flex-col gap-3">
-        {[...orders].sort((a, b) => Number(isOrderComplete(a)) - Number(isOrderComplete(b))).map(o => {
-          const complete = isOrderComplete(o)
-          const done = pickedCount(o)
-          const plat = platformBadge(o.source)
-          return (
-            <button key={o.id} onClick={() => setOpenId(o.id)}
-              className={`rounded-2xl p-4 text-left border-t-2 border-r-2 border-b-2 border-l-[10px] transition-transform active:scale-[0.98] ${plat.accent} ${
-                complete ? 'bg-emerald-100 border-t-emerald-300 border-r-emerald-300 border-b-emerald-300' : 'bg-amber-50 border-t-amber-300 border-r-amber-300 border-b-amber-300'
-              }`}>
-              {/* Cabeçalho do card */}
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <div className="min-w-0">
-                  <span className={`flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full w-fit mb-1 ${plat.badge}`}>
-                    <plat.icon size={13} strokeWidth={2.5} /> {plat.label}
-                  </span>
-                  {o.num_venda && <p className="text-2xl font-black text-slate-800 font-mono tracking-tight">#{o.num_venda}</p>}
-                  <p className={`text-sm font-semibold truncate mt-0.5 ${complete ? 'text-emerald-700' : 'text-amber-800'}`}>{o.comprador || 'Não identificado'}</p>
-                  {o.needs_attention && (
-                    <span className="flex items-center gap-1 text-[11px] font-black px-2 py-1 rounded-full bg-rose-600 text-white w-fit mt-1.5">
-                      <AlertTriangle size={12} strokeWidth={3} /> CANCELADO APÓS SEPARADO — VERIFICAR
+        {orders.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-slate-400 text-center px-6 bg-white rounded-2xl border border-slate-200">
+            <Package size={40} className="text-slate-200 mb-3" />
+            {isToday ? 'Nenhum pedido pra separar hoje.' : `Nenhum pedido de ${fmtDayLong(viewDate)} ainda.`}
+          </div>
+        ) : doneCount === orders.length && filter === 'todos' && !q ? (
+          <div className="flex flex-col items-center justify-center py-8 gap-2 px-6 text-center bg-emerald-50 border border-emerald-200 rounded-2xl">
+            <PartyPopper size={40} className="text-emerald-500" />
+            <p className="text-xl font-black text-emerald-700">Tudo separado! 🎉</p>
+          </div>
+        ) : null}
+
+        {orders.length > 0 && visible.length === 0 && (
+          <p className="text-center text-sm text-slate-400 py-10">Nenhum pedido com esse filtro.</p>
+        )}
+
+        {/* Cards dos pedidos */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {visible.map(o => {
+            const complete = isOrderComplete(o)
+            const done = pickedCount(o)
+            const p = platformBadge(o.source)
+            const recado = o.buyer_message || o.notes
+            return (
+              <button key={o.id} onClick={() => setOpenId(o.id)}
+                className={`rounded-2xl text-left border border-l-[8px] ${p.accent} transition-transform active:scale-[0.99] overflow-hidden flex flex-col ${
+                  complete ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 shadow-sm hover:shadow'
+                }`}>
+                <div className="px-4 pt-3.5 pb-3 flex flex-col gap-2.5">
+                  {/* Linha 1: nº + progresso */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      {o.num_venda && <p className="text-xl font-black text-slate-800 font-mono tracking-tight leading-tight">#{o.num_venda}</p>}
+                      <StatusPill o={o} />
+                    </div>
+                    <span className={`text-sm font-black px-3 py-1.5 rounded-full shrink-0 flex items-center gap-1 ${complete ? 'bg-emerald-500 text-white' : done > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                      {complete ? <><Check size={14} strokeWidth={3} /> Fechado</> : `${done}/${o.items.length}`}
                     </span>
+                  </div>
+
+                  {/* Linha 2: comprador */}
+                  <BuyerName o={o} />
+
+                  {/* Linha 3: dados do envio */}
+                  <InfoChips o={o} compact />
+
+                  {/* Avisos */}
+                  {(o.needs_attention || o.day_auto_corrected || orderHasPlaquinhaAlert(o)) && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {o.needs_attention && (
+                        <span className="flex items-center gap-1 text-[11px] font-black px-2 py-1 rounded-full bg-rose-600 text-white">
+                          <AlertTriangle size={12} strokeWidth={3} /> CANCELADO APÓS SEPARADO — VERIFICAR
+                        </span>
+                      )}
+                      {o.day_auto_corrected && (
+                        <span className="flex items-center gap-1 text-[11px] font-black px-2 py-1 rounded-full bg-amber-500 text-white">
+                          <Calendar size={12} strokeWidth={3} /> DIA CORRIGIDO
+                        </span>
+                      )}
+                      {orderHasPlaquinhaAlert(o) && (
+                        <span className="flex items-center gap-1 text-[11px] font-black px-2 py-1 rounded-full bg-rose-500 text-white animate-pulse">
+                          ⚠️ SEM NOME — avisar Atendimento
+                        </span>
+                      )}
+                    </div>
                   )}
-                  {o.day_auto_corrected && (
-                    <span className="flex items-center gap-1 text-[11px] font-black px-2 py-1 rounded-full bg-amber-500 text-white w-fit mt-1.5">
-                      <Calendar size={12} strokeWidth={3} /> DIA CORRIGIDO AUTOMATICAMENTE
-                    </span>
-                  )}
-                  {orderHasPlaquinhaAlert(o) && (
-                    <span className="flex items-center gap-1 text-[11px] font-black px-2 py-1 rounded-full bg-rose-500 text-white w-fit mt-1.5 animate-pulse">
-                      ⚠️ SEM NOME — avisar Atendimento
-                    </span>
+
+                  {recado && (
+                    <p className="text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 line-clamp-2">
+                      <MessageSquare size={13} className="inline -mt-0.5 mr-1" />{recado}
+                    </p>
                   )}
                 </div>
-                <span className={`text-sm font-bold px-3 py-1.5 rounded-full shrink-0 flex items-center gap-1.5 ${complete ? 'bg-emerald-200 text-emerald-800' : 'bg-amber-200 text-amber-800'}`}>
-                  {complete ? <>✓ Fechado</> : `${done}/${o.items.length}`}
-                </span>
-              </div>
 
-              {/* Itens do pedido — pra Carol já ver o que é, sem abrir */}
-              <div className={`rounded-xl p-3 flex flex-col gap-2 ${complete ? 'bg-white/60' : 'bg-white/70'}`}>
-                {o.items.map(it => {
-                  const alertaNome = needsPlaquinhaAlert(it, o.notes)
-                  return (
-                  <div key={it.id} className={`flex items-center gap-2 ${alertaNome ? 'bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5' : ''}`}>
-                    {it.picked
-                      ? <Check size={16} className="text-emerald-500 shrink-0" strokeWidth={3} />
-                      : <div className="w-4 h-4 rounded-full border-2 border-slate-300 shrink-0" />
-                    }
-                    <p className={`text-sm flex-1 min-w-0 truncate ${alertaNome ? 'text-rose-700 font-bold' : it.picked ? 'text-slate-400 line-through' : 'text-slate-700 font-semibold'}`}>
-                      {alertaNome && '⚠️ '}{it.titulo}
-                    </p>
-                    <span className={`text-sm font-black shrink-0 ${it.qty >= 2 ? 'bg-amber-400 text-white px-2 py-0.5 rounded-lg' : 'text-slate-500'}`}>×{it.qty}</span>
-                  </div>
-                  )
-                })}
-              </div>
-            </button>
-          )
-        })}
+                {/* Itens — pra Carol já ver o que é, sem abrir */}
+                <div className={`mt-auto border-t px-4 py-2.5 flex flex-col gap-1.5 ${complete ? 'border-emerald-200 bg-white/50' : 'border-slate-100 bg-slate-50/70'}`}>
+                  {o.items.map(it => {
+                    const alertaNome = needsPlaquinhaAlert(it, allNotes(o))
+                    return (
+                      <div key={it.id} className={`flex items-center gap-2.5 ${alertaNome ? 'bg-rose-50 border border-rose-200 rounded-lg px-2 py-1' : ''}`}>
+                        {it.picked
+                          ? <div className="w-5 h-5 rounded-md bg-emerald-500 flex items-center justify-center shrink-0"><Check size={13} className="text-white" strokeWidth={3} /></div>
+                          : <div className="w-5 h-5 rounded-md border-2 border-slate-300 shrink-0" />}
+                        <ThumbPhoto photoUrl={it.photo_url} size={34} />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm truncate ${alertaNome ? 'text-rose-700 font-bold' : it.picked ? 'text-slate-400 line-through' : 'text-slate-700 font-semibold'}`}>
+                            {alertaNome && '⚠️ '}{it.titulo}
+                          </p>
+                          {it.variacao && <p className="text-[11px] font-bold text-violet-600 truncate">{it.variacao}</p>}
+                        </div>
+                        <span className={`text-sm font-black shrink-0 ${it.qty >= 2 ? 'bg-amber-400 text-white px-2 py-0.5 rounded-lg' : 'text-slate-500'}`}>×{it.qty}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </button>
+            )
+          })}
+        </div>
       </div>
+
+      <CutoffSettingsModal open={cutoffOpen} onClose={() => setCutoffOpen(false)} />
     </div>
   )
 }

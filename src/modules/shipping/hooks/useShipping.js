@@ -17,7 +17,7 @@ function isCancelledStatus(estado) {
 export async function fetchShippingOrders(source, shipDate) {
   const { data, error } = await supabase
     .from('orders')
-    .select('id, num_venda, comprador, cidade, estado_uf, status_ml, notes, source, batch_id, ship_date, is_full, needs_attention, day_auto_corrected, day_auto_corrected_note, items:order_items(id, titulo, sku, variacao, qty, obs_item, picked, picked_at)')
+    .select('id, num_venda, comprador, comprador_nome_img, buyer_message, cidade, estado_uf, status_ml, notes, source, batch_id, ship_date, data_venda, shipping_deadline, ship_by_at, days_to_ship, shipping_carrier, rastreio, gross_value, marketplace_refreshed_at, is_full, needs_attention, day_auto_corrected, day_auto_corrected_note, items:order_items(id, titulo, sku, variacao, qty, preco_unit, obs_item, picked, picked_at)')
     .eq('source', source)
     .eq('ship_date', shipDate)
     .eq('archived', false)
@@ -46,6 +46,19 @@ export async function fetchShippingOrders(source, shipDate) {
     ...o,
     items: o.items.map(it => ({ ...it, photo_url: it.sku ? photoMap[it.sku] : null })),
   }))
+}
+
+// Botão "Atualizar pedidos" (30/09, Fase 83) — antecipa na hora o cron de
+// recheck (que roda sozinho a cada 3h): consulta a API da plataforma pra
+// todos os pedidos em aberto, atualiza status/prazo/nome/transportadora e
+// reorganiza o dia de quem ainda não tem item separado (corte de horário
+// configurável + prazo real da plataforma). Devolve um resumo.
+export async function refreshMarketplaceOrders(source) {
+  const fn = source === 'ml' ? 'ml-shipping-deadline-recheck' : 'shopee-shipping-deadline-recheck'
+  const { data, error } = await supabase.functions.invoke(fn, { body: { mode: 'manual' } })
+  if (error) throw error
+  if (data && data.ok === false) throw new Error(data.error || 'Falha ao atualizar')
+  return data
 }
 
 // Marca/desmarca um item como separado
@@ -158,7 +171,7 @@ export async function fetchOverdueOrders() {
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const { data, error } = await supabase
     .from('orders')
-    .select('id, num_venda, comprador, source, ship_date, batch_id, status_ml, is_full, needs_attention, day_auto_corrected, day_auto_corrected_note, items:order_items(id, picked)')
+    .select('id, num_venda, comprador, comprador_nome_img, source, ship_date, batch_id, status_ml, is_full, needs_attention, day_auto_corrected, day_auto_corrected_note, items:order_items(id, picked)')
     .eq('archived', false)
     .lt('ship_date', todayStr)
 

@@ -1034,6 +1034,8 @@ async function ordersValueBackfill(integration: any, db: ReturnType<typeof admin
   return { updated_orders: updatedOrders, priced_items: pricedItems, not_found: notFound, remaining: count ?? 0 }
 }
 
+const ORDER_DETAIL_FIELDS = 'buyer_user_id,buyer_username,recipient_address,note,item_list,order_status,ship_by_date,days_to_ship,pay_time,shipping_carrier,checkout_shipping_carrier,total_amount,package_list,pickup_done_time,fulfillment_flag,estimated_shipping_fee,actual_shipping_fee,payment_method,cancel_by,cancel_reason,buyer_cancel_reason,invoice_data,order_chargeable_weight_gram,prescription_images,edt,dropshipper'
+
 async function returnDisputeReasons(integration: any, returnSn: string) {
   const res = await shopeeFetch('/api/v2/returns/get_return_dispute_reason', integration, { return_sn: returnSn })
   return res?.response ?? res
@@ -1216,6 +1218,12 @@ serve(async (req) => {
       case 'return_detail':
         if (!body.return_sn) return json({ error: 'return_sn obrigatório' }, 400)
         return json(await returnDetail(integration, String(body.return_sn), db))
+      case 'order_detail_raw':
+        // Só leitura — resposta crua do get_order_detail (depuração)
+        return json(await shopeeFetch('/api/v2/order/get_order_detail', integration, {
+          order_sn_list: String(body.order_sn || ''),
+          response_optional_fields: ORDER_DETAIL_FIELDS,
+        }))
       case 'orders_value_backfill':
         return json(await ordersValueBackfill(integration, db, Number(body.limit || 400)))
       case 'return_convert_images':
