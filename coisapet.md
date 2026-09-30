@@ -275,6 +275,17 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-10-01 (2ª parte) — Gerador próprio pra Terrários + manual sem produto (fase89)
+
+- Correção de entendimento: o Raphael queria um LOCAL separado (aba própria) pra
+  lançar manual de Terrários/Alojamentos, igual ao de Substratos — não um seletor de
+  modelo dentro do gerador. Agora Links tem "Gerador — Substratos" (o original, sem
+  seletor) e "Gerador — Terrários e Alojamentos" (modelo de montagem).
+- No de Terrários dá pra "Criar sem vincular a produto": product_doc_resources aceita
+  product_id null + collection_id/title/cover_image_url (CHECK: avulso exige título e
+  coleção). Aparece no site na coleção, abre direto no /doc/ver.html. Admin → Manuais
+  lista "Manuais sem produto vinculado" (abrir, renomear, trocar coleção, apagar).
+
 ### 2026-10-01 — Manuais & Dicas: coleções + modelo "Terrários e Alojamentos" (fase88)
 
 - `manual_collections` (Substratos, Enriquecimento Ambiental, Alimentação, Terrários e

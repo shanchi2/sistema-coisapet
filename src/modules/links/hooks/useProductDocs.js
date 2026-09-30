@@ -10,12 +10,13 @@ export function useProductDocs() {
   const [groups,  setGroups]  = useState([]) // [{ product, resources: [] }]
   const [loading, setLoading] = useState(true)
   const [collections, setCollections] = useState([]) // coleções de manuais (fase88)
+  const [standalone, setStandalone] = useState([])   // manuais sem produto vinculado (fase89)
 
   const load = useCallback(async () => {
     setLoading(true)
     const { data, error } = await supabase
       .from('product_doc_resources')
-      .select('id, label, kind, url, file_path, sort_order, product_id, product:products(id, name, doc_title, sku, slug, photo_url, manual_collection_id)')
+      .select('id, label, kind, url, file_path, sort_order, product_id, collection_id, title, cover_image_url, created_at, product:products(id, name, doc_title, sku, slug, photo_url, manual_collection_id)')
       .order('sort_order')
 
     if (error) {
@@ -32,6 +33,7 @@ export function useProductDocs() {
       map.get(row.product_id).resources.push(row)
     })
     setGroups(Array.from(map.values()).sort((a, b) => a.product.name.localeCompare(b.product.name)))
+    setStandalone((data ?? []).filter(r => !r.product_id).sort((a, b) => (a.title || '').localeCompare(b.title || '')))
     const { data: cols } = await supabase.from('manual_collections').select('*').order('sort_order')
     setCollections(cols ?? [])
     setLoading(false)
@@ -123,8 +125,32 @@ export function useProductDocs() {
     await load()
   }
 
+  // Manual avulso — sem produto (fase89): HTML gerado vai pro bucket e o
+  // registro guarda título/capa/coleção pra aparecer no site sozinho.
+  async function addStandalone({ title, label, html, collectionSlug, coverImageUrl }) {
+    const { data: col } = await supabase.from('manual_collections').select('id').eq('slug', collectionSlug).maybeSingle()
+    if (!col) throw new Error('Coleção não encontrada.')
+    const path = `docs/avulsos/${Date.now()}-${Math.random().toString(36).slice(2)}.html`
+    const { error: upErr } = await supabase.storage.from('product-docs').upload(path, new File([html], 'manual.html', { type: 'text/html' }), { contentType: 'text/html' })
+    if (upErr) throw upErr
+    const { error } = await supabase.from('product_doc_resources').insert({
+      product_id: null, collection_id: col.id, title: title.trim(), label: label.trim(),
+      kind: 'file', file_path: path, cover_image_url: coverImageUrl || null, sort_order: 0,
+    })
+    if (error) throw error
+    toast.success('Manual publicado!')
+    await load()
+  }
+
+  async function updateStandalone(id, patch) {
+    const { error } = await supabase.from('product_doc_resources').update(patch).eq('id', id)
+    if (error) { toast.error('Erro ao salvar: ' + error.message); throw error }
+    toast.success('Manual atualizado!')
+    await load()
+  }
+
   async function removeResource(id) {
-    const resource = groups.flatMap(g => g.resources).find(r => r.id === id)
+    const resource = [...groups.flatMap(g => g.resources), ...standalone].find(r => r.id === id)
     if (!resource) return
     try {
       if (resource.file_path) await supabase.storage.from('product-docs').remove([resource.file_path])
@@ -158,5 +184,5 @@ export function useProductDocs() {
     await load()
   }
 
-  return { groups, loading, collections, searchProducts, addResource, updateResource, removeResource, setDocTitle, setProductCollection, saveCollection }
+  return { groups, loading, collections, standalone, addStandalone, updateStandalone, searchProducts, addResource, updateResource, removeResource, setDocTitle, setProductCollection, saveCollection }
 }

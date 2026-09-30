@@ -251,9 +251,9 @@ function render(list) {
 
 function cards(list) {
   return list.map((p, i) => {
-    const photo = publicUrl('product-photos', p.photo_url)
+    const photo = p.cover || publicUrl('product-photos', p.photo_url)
     return `
-      <a href="https://coisapet.com.br/doc/${p.slug}" class="app" style="animation-delay:${i*0.04}s" title="${p.name}">
+      <a href="${p.href || 'https://coisapet.com.br/doc/' + p.slug}" class="app" style="animation-delay:${i*0.04}s" title="${p.name}">
         <div class="app-icon">
           ${photo ? `<img src="${photo}" alt="${p.name}" loading="lazy"/>` : '<span class="fallback">📄</span>'}
           ${p.count > 1 ? `<span class="app-badge">${p.count}</span>` : ''}
@@ -273,7 +273,7 @@ function applyFilter() {
 async function load() {
   const { data, error } = await db
     .from('product_doc_resources')
-    .select('product_id, product:products(id,name,doc_title,slug,photo_url,manual_collection_id)')
+    .select('id, product_id, collection_id, title, cover_image_url, file_path, product:products(id,name,doc_title,slug,photo_url,manual_collection_id)')
 
   const container = document.getElementById('list-container')
   if (error || !data) {
@@ -283,6 +283,13 @@ async function load() {
 
   const map = new Map()
   data.forEach(row => {
+    // Manual avulso (sem produto, fase89) — card próprio que abre o manual direto
+    if (!row.product_id && row.title && row.file_path) {
+      const params = new URLSearchParams({ path: row.file_path, title: row.title, back: location.href })
+      map.set('avulso-' + row.id, { name: row.title, fullName: row.title, colId: row.collection_id, cover: row.cover_image_url,
+        href: 'https://coisapet.com.br/doc/ver.html?' + params.toString(), count: 1 })
+      return
+    }
     if (!row.product) return
     // doc_title = nome curto só pros manuais (vazio = nome do cadastro)
     if (!map.has(row.product_id)) map.set(row.product_id, { ...row.product, name: (row.product.doc_title || '').trim() || row.product.name, fullName: row.product.name, colId: row.product.manual_collection_id, count: 0 })

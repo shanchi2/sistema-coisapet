@@ -84,13 +84,17 @@ function PairListEditor({ items, onChange, labelA, labelB, placeholderA, placeho
 
 function linesToArr(text) { return text.split('\n').map(l => l.trim()).filter(Boolean) }
 
-export function ManualGeneratorTab() {
-  const { searchProducts, addResource, setDocTitle } = useProductDocs()
+// fixedTemplate: cada aba de Links tem o seu gerador (01/10) — "Gerador —
+// Substratos" (consumivel, o original) e "Gerador — Terrários e Alojamentos"
+// (terrario). allowNoProduct: no de Terrários dá pra criar manual avulso,
+// sem vincular a produto (aparece no site na coleção Terrários).
+export function ManualGeneratorTab({ fixedTemplate = 'consumivel', allowNoProduct = false }) {
+  const { searchProducts, addResource, setDocTitle, addStandalone } = useProductDocs()
   const [product,   setProduct]   = useState(null)
   const [query,     setQuery]     = useState('')
   const [results,   setResults]   = useState([])
   const [searching, setSearching] = useState(false)
-  const [label,     setLabel]     = useState('Manual de Uso')
+  const [label,     setLabel]     = useState(fixedTemplate === 'terrario' ? 'Manual de Montagem' : 'Manual de Uso')
   // Nome que aparece NO manual (topo, rodapé, título da página) — vem com o
   // nome do produto, mas dá pra encurtar/limpar (28/09: tem produto com nome
   // de anúncio, cheio de palavra-chave). O vínculo continua sendo o produto.
@@ -101,16 +105,12 @@ export function ManualGeneratorTab() {
   const [generating, setGenerating] = useState(false)
   const [sections,  setSections]  = useState(null) // null = ainda não gerou
   const [saving,    setSaving]    = useState(false)
-  const [template,  setTemplate]  = useState('consumivel')
+  const template = fixedTemplate
   const [videoUrl,  setVideoUrl]  = useState('')
   const [publishVideo, setPublishVideo] = useState(true) // também põe o vídeo na página do produto
   const isTerr = template === 'terrario'
 
-  function chooseTemplate(v) {
-    setTemplate(v)
-    // troca o título padrão do link se ainda não foi mexido
-    if (TEMPLATES.some(t => t.defaultLabel === label)) setLabel(TEMPLATES.find(t => t.v === v).defaultLabel)
-  }
+  const isStandalone = !!product?.standalone
 
   async function runSearch(q) {
     setQuery(q)
@@ -124,7 +124,7 @@ export function ManualGeneratorTab() {
     if (!file || !product) return
     setUploadingImg(true)
     try {
-      setImageUrl(await uploadManualImage(file, product.id))
+      setImageUrl(await uploadManualImage(file, product.id || 'avulsos'))
       toast.success('Imagem enviada!')
     } catch (err) {
       toast.error('Erro ao subir imagem: ' + err.message)
@@ -169,13 +169,20 @@ export function ManualGeneratorTab() {
       toast.error('Escolha o produto, o título e gere o conteúdo primeiro.')
       return
     }
+    if (isStandalone && !displayName.trim()) { toast.error('Dê um nome pro manual.'); return }
     setSaving(true)
     try {
+      if (isStandalone) {
+        await addStandalone({ title: displayName, label, html: finalHtml, collectionSlug: 'terrarios-e-alojamentos', coverImageUrl: imageUrl })
+        setProduct(null); setQuery(''); setResults([])
+        setLabel(TEMPLATES.find(t => t.v === template).defaultLabel); setDisplayName(''); setImageUrl(''); setRawText(''); setSections(null); setVideoUrl('')
+        return
+      }
       const file = new File([finalHtml], 'manual-gerado.html', { type: 'text/html' })
       await addResource(product.id, { label: label.trim(), kind: 'file', file })
       // Vídeo também vira um link na página do produto (lá ele aparece embutido)
       const vu = videoUrl.trim()
-      if (vu && publishVideo) await addResource(product.id, { label: isTerr ? 'Vídeo de montagem' : 'Vídeo de uso', kind: 'link', url: vu }).catch(() => {})
+      if (vu && publishVideo && !isStandalone) await addResource(product.id, { label: isTerr ? 'Vídeo de montagem' : 'Vídeo de uso', kind: 'link', url: vu }).catch(() => {})
       // Produto sem coleção de manuais → entra na coleção do modelo usado
       if (isTerr) {
         const { data: prod } = await supabase.from('products').select('manual_collection_id').eq('id', product.id).maybeSingle()
@@ -199,20 +206,6 @@ export function ManualGeneratorTab() {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
       {/* ── Formulário ── */}
       <div className="space-y-4">
-        {/* Modelo do manual */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <p className="text-xs font-semibold text-slate-500 mb-2">Modelo do manual</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {TEMPLATES.map(t => (
-              <button key={t.v} type="button" onClick={() => chooseTemplate(t.v)}
-                className={`text-left rounded-xl border-2 px-3 py-2.5 transition-colors ${template === t.v ? 'border-amber-500 bg-amber-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                <p className={`text-sm font-bold ${template === t.v ? 'text-amber-800' : 'text-slate-700'}`}>{t.v === 'terrario' ? '🏠 ' : '🪵 '}{t.label}</p>
-                <p className="text-[11px] text-slate-500 leading-snug mt-0.5">{t.hint}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-
         {!product ? (
           <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
             <p className="text-sm font-semibold text-slate-700">1. Escolha o produto</p>
@@ -241,6 +234,13 @@ export function ManualGeneratorTab() {
                 )}
               </div>
             )}
+            {allowNoProduct && (
+              <button onClick={() => { setProduct({ id: null, name: '', standalone: true }); setDisplayName('') }}
+                className="w-full text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg px-3 py-2.5 text-left">
+                📄 Criar sem vincular a produto
+                <span className="block text-[11px] font-normal text-amber-700">Manual avulso — aparece no site na seção Terrários e Alojamentos, com nome e imagem próprios.</span>
+              </button>
+            )}
           </div>
         ) : (
           <>
@@ -249,17 +249,17 @@ export function ManualGeneratorTab() {
                 <ArrowLeft size={15} />
               </button>
               <GenProductThumb photoUrl={product.photo_url} />
-              <p className="text-sm font-semibold text-slate-700 truncate">{product.name}</p>
+              <p className="text-sm font-semibold text-slate-700 truncate">{isStandalone ? '📄 Manual sem produto vinculado' : product.name}</p>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
               <div>
-                <label className="text-xs font-semibold text-slate-500 block mb-1.5">2. Nome do produto no manual</label>
-                <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={product.name}
+                <label className="text-xs font-semibold text-slate-500 block mb-1.5">{isStandalone ? '2. Nome do manual *' : '2. Nome do produto no manual'}</label>
+                <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={isStandalone ? 'Ex: Terrário 100x50x50' : product.name}
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
                 <div className="flex items-center justify-between mt-1">
                   <p className="text-[11px] text-slate-400">Aparece no topo e no rodapé do manual e na página de manuais do produto. Ex: "Comedouro Topolino".</p>
-                  {displayName !== product.name && (
+                  {!isStandalone && displayName !== product.name && (
                     <button type="button" onClick={() => setDisplayName(product.name)} className="text-[11px] font-semibold text-slate-400 hover:text-slate-600 shrink-0 ml-2">usar nome do produto</button>
                   )}
                 </div>
@@ -296,7 +296,7 @@ export function ManualGeneratorTab() {
                 <input value={videoUrl} onChange={e => setVideoUrl(e.target.value)} placeholder="https://youtu.be/..."
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
                 <p className="text-[11px] text-slate-400 mt-1">Vira um bloco "{isTerr ? 'Assista à montagem' : 'Veja como usar'}" com botão e QR code (funciona no manual impresso).</p>
-                {videoUrl.trim() && (
+                {videoUrl.trim() && !isStandalone && (
                   <label className="flex items-center gap-2 text-[11px] text-slate-500 mt-1.5 cursor-pointer">
                     <input type="checkbox" checked={publishVideo} onChange={e => setPublishVideo(e.target.checked)} />
                     Também mostrar o vídeo na página do produto (coisapet.com.br/doc/…)
@@ -475,7 +475,7 @@ export function ManualGeneratorTab() {
               <button onClick={handleSave} disabled={saving || !sections || !label.trim()}
                 className="flex-1 py-2.5 text-sm font-medium text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-lg transition-colors flex items-center justify-center gap-2">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                Salvar e vincular ao produto
+                {isStandalone ? 'Publicar manual' : 'Salvar e vincular ao produto'}
               </button>
             </div>
           </>

@@ -593,7 +593,8 @@ function CollectionsModal({ collections, groups, onSave, onClose }) {
 }
 
 function ProductDocsTab() {
-  const { groups, loading, collections, searchProducts, addResource, updateResource, removeResource, setDocTitle, setProductCollection, saveCollection } = useProductDocs()
+  const { groups, loading, collections, standalone, updateStandalone, searchProducts, addResource, updateResource, removeResource, setDocTitle, setProductCollection, saveCollection } = useProductDocs()
+  const [renaming, setRenaming] = useState(null) // { id, value } — título do manual avulso
   const [colFilter, setColFilter] = useState('') // '' = todas · 'none' = sem coleção
   const [colsOpen, setColsOpen] = useState(false)
   const shownGroups = groups.filter(g => !colFilter || (colFilter === 'none' ? !g.product.manual_collection_id : g.product.manual_collection_id === colFilter))
@@ -717,6 +718,47 @@ function ProductDocsTab() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Manuais sem produto vinculado (fase89) — criados no Gerador de Terrários */}
+      {!loading && standalone.length > 0 && (!colFilter || standalone.some(r => r.collection_id === colFilter)) && colFilter !== 'none' && (
+        <div className="bg-white border border-amber-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 bg-amber-50/70 border-b border-amber-100">
+            <p className="text-sm font-semibold text-amber-900">📄 Manuais sem produto vinculado</p>
+            <p className="text-[11px] text-amber-700">Aparecem no site na coleção deles, com nome e imagem próprios.</p>
+          </div>
+          <div className="divide-y divide-slate-50">
+            {standalone.filter(r => !colFilter || r.collection_id === colFilter).map(r => {
+              const viewUrl = `${DOC_SITE_BASE}/ver.html?${new URLSearchParams({ path: r.file_path || '', title: r.title || r.label }).toString()}`
+              return (
+                <div key={r.id} className="flex items-center gap-3 px-4 py-2.5">
+                  {r.cover_image_url ? <img src={r.cover_image_url} alt="" className="w-9 h-9 rounded-lg object-cover border border-slate-100 shrink-0" /> : <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0"><FileText size={14} className="text-slate-300" /></div>}
+                  <div className="flex-1 min-w-0">
+                    {renaming?.id === r.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <input value={renaming.value} onChange={e => setRenaming({ ...renaming, value: e.target.value })} autoFocus
+                          onKeyDown={e => { if (e.key === 'Enter' && renaming.value.trim()) updateStandalone(r.id, { title: renaming.value.trim() }).then(() => setRenaming(null)).catch(() => {}); if (e.key === 'Escape') setRenaming(null) }}
+                          className="flex-1 min-w-0 text-sm font-semibold border border-slate-300 rounded-lg px-2 py-1" />
+                        <button onClick={() => renaming.value.trim() && updateStandalone(r.id, { title: renaming.value.trim() }).then(() => setRenaming(null)).catch(() => {})} className="p-1 rounded-lg text-emerald-600 hover:bg-emerald-50"><Check size={14} /></button>
+                        <button onClick={() => setRenaming(null)} className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"><X size={14} /></button>
+                      </div>
+                    ) : (
+                      <p className="text-sm font-semibold text-slate-800 truncate">{r.title}</p>
+                    )}
+                    <p className="text-[11px] text-slate-400 truncate">{r.label}</p>
+                  </div>
+                  <select value={r.collection_id || ''} onChange={e => e.target.value && updateStandalone(r.id, { collection_id: e.target.value })}
+                    className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 shrink-0 max-w-[170px] text-slate-600" title="Coleção no site">
+                    {collections.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+                  </select>
+                  <a href={viewUrl} target="_blank" rel="noopener noreferrer" title="Abrir" className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 shrink-0"><ExternalLink size={14} strokeWidth={1.5} /></a>
+                  <button onClick={() => setRenaming({ id: r.id, value: r.title || '' })} title="Renomear" className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 shrink-0"><Pencil size={13} strokeWidth={1.5} /></button>
+                  <button onClick={() => { if (confirm(`Apagar o manual "${r.title}"? Ele sai do site.`)) removeResource(r.id) }} title="Apagar" className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 shrink-0"><Trash2 size={13} strokeWidth={1.5} /></button>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -849,7 +891,8 @@ export function BioLinksPage() {
           {[
             { key: 'links',     label: 'Links',            icon: Link2     },
             { key: 'manuais',   label: 'Manuais',          icon: FileText  },
-            { key: 'gerador',   label: 'Gerador de Manual', icon: Wand2    },
+            { key: 'gerador',   label: 'Gerador — Substratos', icon: Wand2 },
+            { key: 'gerador-terrarios', label: 'Gerador — Terrários e Alojamentos', icon: Wand2 },
             { key: 'analytics', label: 'Analytics',        icon: BarChart2 },
           ].map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
@@ -940,7 +983,8 @@ export function BioLinksPage() {
         {tab === 'manuais' && <ProductDocsTab />}
 
         {/* ── ABA GERADOR DE MANUAL ── */}
-        {tab === 'gerador' && <ManualGeneratorTab />}
+        {tab === 'gerador' && <ManualGeneratorTab key="g-subs" fixedTemplate="consumivel" />}
+        {tab === 'gerador-terrarios' && <ManualGeneratorTab key="g-terr" fixedTemplate="terrario" allowNoProduct />}
 
         {/* ── ABA ANALYTICS ── */}
         {tab === 'analytics' && (
