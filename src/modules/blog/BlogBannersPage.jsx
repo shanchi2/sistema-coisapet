@@ -63,6 +63,7 @@ export function BlogBannersPage() {
       include_rodinhas: settings.include_rodinhas,
       show_on_ml: settings.show_on_ml,
       show_on_shopee: settings.show_on_shopee,
+      show_coupon: settings.show_coupon !== false,
     })
   }
 
@@ -107,14 +108,18 @@ export function BlogBannersPage() {
         <Toggle
           checked={!!settings.active}
           onChange={v => patch({ active: v })}
-          label={settings.active ? 'Banners ativos' : 'Banners desativados'}
-          hint={settings.active ? 'A function blog-banner está sorteando normalmente.' : 'A function vai responder "indisponível" pra quem chamar — nenhum banner aparece no blog.'}
+          label={settings.active ? 'Sorteio geral ligado' : 'Sorteio geral desligado'}
+          hint={settings.active ? 'Posts no modo "Sorteio geral" mostram um produto sorteado das categorias abaixo.' : 'Posts no modo "Sorteio geral" não mostram banner.'}
         />
+        <p className="text-[11px] text-slate-400 mt-2">Cada post escolhe o próprio banner no editor do post (bloco <b>Banners deste post</b>): sorteio geral, produtos escolhidos ou sem banner. Posts com <b>produtos escolhidos</b> mostram o banner mesmo com o sorteio desligado.</p>
       </div>
 
       {/* Configuração */}
       <div className="card space-y-4">
         <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2"><Tag size={15} className="text-rose-400" /> Cupom e desconto</h2>
+        <Toggle checked={settings.show_coupon !== false} onChange={v => patch({ show_coupon: v })}
+          label={settings.show_coupon !== false ? 'Divulgar cupom nos banners' : 'Só banners (sem cupom)'}
+          hint="Padrão do blog — cada post pode trocar (Divulgar cupom / Só banner) no editor." />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-semibold text-slate-500">Código do cupom</label>

@@ -15,6 +15,7 @@ import { BlogPreviewModal } from './components/BlogPreviewModal'
 import { ProductReferencePicker } from './components/ProductReferencePicker'
 import { callBlogAi } from './blogAi'
 import { computeSeoChecks, stripHtml, countWords } from './seoChecks'
+import { PostBannerCard, BannerIcon } from './components/PostBannerCard'
 
 // Faixa Unicode dos acentos "soltos" (combining diacritical marks) que
 // sobram depois do normalize('NFD') — montada via fromCharCode de
@@ -110,6 +111,16 @@ export function BlogPostEditorPage() {
   const [scheduledAtSaved, setScheduledAtSaved] = useState(null) // ISO, o que já está salvo (pra exibir no badge)
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
+  // Banners deste post (fase90)
+  const [bannerMode, setBannerMode] = useState('padrao')
+  const [bannerCoupon, setBannerCoupon] = useState('padrao')
+  const [bannerSpecies, setBannerSpecies] = useState([])
+  const [bannerProductIds, setBannerProductIds] = useState([])
+  const [bannerSettings, setBannerSettings] = useState(null)
+  useEffect(() => {
+    supabase.from('blog_banner_settings').select('active, coupon_code, discount_label, show_coupon').eq('id', 'default').maybeSingle()
+      .then(({ data }) => setBannerSettings(data || null))
+  }, [])
   const scheduleBoxRef = useRef(null)
 
   const [aiContext, setAiContext] = useState('')
@@ -148,6 +159,10 @@ export function BlogPostEditorPage() {
     setScheduledAtSaved(post.scheduled_at || null)
     setAiContext(post.ai_context || '')
     setAiTargetWords(post.ai_target_words || 600)
+    setBannerMode(post.banner_mode || 'padrao')
+    setBannerCoupon(post.banner_coupon || 'padrao')
+    setBannerSpecies(post.banner_species || [])
+    setBannerProductIds(post.banner_product_ids || [])
     setEditorResetKey(`loaded-${post.id}`)
   }, [post])
 
@@ -182,6 +197,10 @@ export function BlogPostEditorPage() {
       tags: secondaryKeywords.length ? secondaryKeywords : null,
       ai_context: aiContext.trim() || null,
       ai_target_words: aiTargetWords || null,
+      banner_mode: bannerMode,
+      banner_coupon: bannerCoupon,
+      banner_species: bannerSpecies,
+      banner_product_ids: bannerProductIds,
       status: finalStatus,
       scheduled_at: finalStatus === 'scheduled' ? overrideScheduledAt : null,
       ...(overrideStatus === 'published' && !post?.published_at ? { published_at: new Date().toISOString() } : {}),
@@ -190,6 +209,7 @@ export function BlogPostEditorPage() {
 
   async function handleSave(overrideStatus, overrideScheduledAt) {
     if (!title.trim()) return toast.error('Dá um título pro post antes de salvar.')
+    if (bannerMode === 'escolhidos' && bannerProductIds.length === 0) return toast.error('Banners: escolha pelo menos 1 produto (ou troque pra "Sorteio geral"/"Sem banner").')
     if (!slug.trim()) return toast.error('O slug não pode ficar vazio.')
     setSaving(true)
     try {
@@ -531,6 +551,13 @@ export function BlogPostEditorPage() {
                 {generating ? 'Gerando...' : contentHtml ? 'Gerar de novo' : 'Gerar conteúdo'}
               </button>
             </div>
+          </Card>
+
+          {/* Banners deste post (fase90) */}
+          <Card title="Banners deste post" icon={BannerIcon}>
+            <PostBannerCard mode={bannerMode} setMode={setBannerMode} coupon={bannerCoupon} setCoupon={setBannerCoupon}
+              species={bannerSpecies} setSpecies={setBannerSpecies} productIds={bannerProductIds} setProductIds={setBannerProductIds}
+              postText={`${title} ${focusKeyword}`} globalSettings={bannerSettings} />
           </Card>
 
           {/* SEO */}
