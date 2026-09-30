@@ -111,6 +111,39 @@ export function ManualGeneratorTab({ fixedTemplate = 'consumivel', allowNoProduc
   const isTerr = template === 'terrario'
 
   const isStandalone = !!product?.standalone
+  // Tipo do material (01/10) — no de Terrários, antes do gerador vem a mesma
+  // escolha da tela "Novo recurso": link direto, arquivo pronto, ou criar
+  // o HTML no gerador. No de Substratos é sempre o gerador.
+  const [mode, setMode] = useState(allowNoProduct ? '' : 'gerador') // '' | 'link' | 'file' | 'gerador'
+  const [quickUrl, setQuickUrl] = useState('')
+  const [quickFile, setQuickFile] = useState(null)
+  const effMode = allowNoProduct ? (mode || 'link') : 'gerador'
+
+  async function handleQuickSave() {
+    if (!label.trim()) { toast.error('Dê um título pro material.'); return }
+    if (isStandalone && !displayName.trim()) { toast.error('Dê um nome pro manual.'); return }
+    if (effMode === 'link' && !quickUrl.trim()) { toast.error('Informe a URL.'); return }
+    if (effMode === 'file' && !quickFile) { toast.error('Selecione o arquivo.'); return }
+    setSaving(true)
+    try {
+      if (isStandalone) {
+        await addStandalone({ title: displayName, label, kind: effMode, url: quickUrl, file: quickFile, collectionSlug: 'terrarios-e-alojamentos', coverImageUrl: imageUrl })
+      } else {
+        await addResource(product.id, { label: label.trim(), kind: effMode, url: quickUrl, file: quickFile })
+        const { data: prod } = await supabase.from('products').select('manual_collection_id').eq('id', product.id).maybeSingle()
+        if (prod && !prod.manual_collection_id) {
+          const { data: col } = await supabase.from('manual_collections').select('id').eq('slug', 'terrarios-e-alojamentos').maybeSingle()
+          if (col) await supabase.from('products').update({ manual_collection_id: col.id }).eq('id', product.id)
+        }
+      }
+      setProduct(null); setQuery(''); setResults([]); setMode(''); setQuickUrl(''); setQuickFile(null)
+      setDisplayName(''); setImageUrl(''); setLabel(TEMPLATES.find(t => t.v === template).defaultLabel)
+    } catch (err) {
+      toast.error('Erro: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function runSearch(q) {
     setQuery(q)
@@ -245,13 +278,85 @@ export function ManualGeneratorTab({ fixedTemplate = 'consumivel', allowNoProduc
         ) : (
           <>
             <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50">
-              <button onClick={() => { setProduct(null); setImageUrl(''); setSections(null); setRawText('') }} className="p-1 rounded-lg hover:bg-slate-200 text-slate-400 shrink-0">
+              <button onClick={() => { setProduct(null); setImageUrl(''); setSections(null); setRawText(''); setMode(''); setQuickUrl(''); setQuickFile(null) }} className="p-1 rounded-lg hover:bg-slate-200 text-slate-400 shrink-0">
                 <ArrowLeft size={15} />
               </button>
               <GenProductThumb photoUrl={product.photo_url} />
               <p className="text-sm font-semibold text-slate-700 truncate">{isStandalone ? '📄 Manual sem produto vinculado' : product.name}</p>
             </div>
 
+            {allowNoProduct && (
+              <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+                {isStandalone && effMode !== 'gerador' && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 block mb-1.5">Nome do manual no site *</label>
+                    <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Ex: Terrário 100x50x50"
+                      className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+                  </div>
+                )}
+                {effMode !== 'gerador' && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 block mb-1.5">Título do recurso *</label>
+                    <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Ex: Manual de Montagem, Instruções de Uso, Vídeo de Montagem..."
+                      className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+                  </div>
+                )}
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 block mb-1.5">Tipo</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[['link', 'Link (URL)'], ['file', 'Arquivo (.html/.pdf)'], ['gerador', '✨ Criar HTML no gerador']].map(([k, l]) => (
+                      <button key={k} type="button" onClick={() => setMode(k)}
+                        className={`text-xs font-semibold py-2 px-2 rounded-lg border transition-colors ${effMode === k ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {effMode === 'link' && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 block mb-1.5">URL *</label>
+                    <input value={quickUrl} onChange={e => setQuickUrl(e.target.value)} placeholder="https://... (vídeo do YouTube, PDF, Drive...)"
+                      className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+                    <p className="text-[11px] text-slate-400 mt-1">Link do YouTube aparece com o vídeo tocando direto na página.</p>
+                  </div>
+                )}
+                {effMode === 'file' && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 block mb-1.5">Arquivo (.html ou .pdf, máx 10MB) *</label>
+                    <input type="file" accept=".html,.htm,.pdf" onChange={e => setQuickFile(e.target.files?.[0] || null)} className="w-full text-sm" />
+                  </div>
+                )}
+                {isStandalone && effMode !== 'gerador' && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 block mb-1.5">Imagem de capa no site (opcional)</label>
+                    {imageUrl ? (
+                      <div className="relative w-fit">
+                        <img src={imageUrl} alt="" className="h-20 rounded-lg border border-slate-200 object-contain bg-slate-50 p-1" />
+                        <button onClick={() => setImageUrl('')} className="absolute -top-2 -right-2 bg-white border border-slate-200 rounded-full p-1 text-slate-400 hover:text-rose-500"><X size={12} /></button>
+                      </div>
+                    ) : (
+                      <label className="flex items-center gap-2 text-sm text-slate-500 border border-dashed border-slate-300 rounded-lg px-3 py-2.5 cursor-pointer hover:border-slate-400 hover:bg-slate-50 w-fit">
+                        {uploadingImg ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                        {uploadingImg ? 'Enviando...' : 'Enviar imagem'}
+                        <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" className="hidden" onChange={e => handleImage(e.target.files?.[0])} disabled={uploadingImg} />
+                      </label>
+                    )}
+                  </div>
+                )}
+                {effMode !== 'gerador' && (
+                  <div className="flex gap-3 pt-1">
+                    <button onClick={() => { setProduct(null); setMode('') }} className="flex-1 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">Cancelar</button>
+                    <button onClick={handleQuickSave} disabled={saving}
+                      className="flex-1 py-2.5 text-sm font-medium text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-lg transition-colors flex items-center justify-center gap-2">
+                      {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                      Adicionar
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {effMode === 'gerador' && (<>
             <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
               <div>
                 <label className="text-xs font-semibold text-slate-500 block mb-1.5">{isStandalone ? '2. Nome do manual *' : '2. Nome do produto no manual'}</label>
@@ -478,11 +583,21 @@ export function ManualGeneratorTab({ fixedTemplate = 'consumivel', allowNoProduc
                 {isStandalone ? 'Publicar manual' : 'Salvar e vincular ao produto'}
               </button>
             </div>
+            </>)}
           </>
         )}
       </div>
 
-      {/* ── Pré-visualização ao vivo ── */}
+      {/* ── Pré-visualização ao vivo (só quando é o gerador) ── */}
+      {product && effMode !== 'gerador' ? (
+        <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-6 h-fit text-sm text-slate-500 space-y-2">
+          <p className="font-semibold text-slate-700">Como vai aparecer</p>
+          <p>{isStandalone
+            ? 'No site (coisapet.com.br/links/manuais), na seção Terrários e Alojamentos, como um card com o nome e a capa que você escolher.'
+            : 'Na página de manuais do produto (coisapet.com.br/doc/…), junto dos outros materiais dele.'}</p>
+          <p>{effMode === 'link' ? 'Ao tocar, abre o link. Se for vídeo do YouTube, ele toca direto na página do produto.' : 'Ao tocar, abre o arquivo (PDF ou HTML).'}</p>
+        </div>
+      ) : (
       <div className="bg-slate-100 border border-slate-200 rounded-xl p-3 lg:sticky lg:top-4 h-fit">
         <p className="text-xs font-semibold text-slate-500 mb-2 px-1">Pré-visualização</p>
         <div className="bg-white rounded-lg overflow-hidden border border-slate-200" style={{ height: 640 }}>
@@ -491,6 +606,7 @@ export function ManualGeneratorTab({ fixedTemplate = 'consumivel', allowNoProduc
             : <div className="flex items-center justify-center h-full text-xs text-slate-400 text-center px-8">Escolha um produto e gere o conteúdo pra ver a prévia aqui.</div>}
         </div>
       </div>
+      )}
     </div>
   )
 }

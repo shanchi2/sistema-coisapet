@@ -127,15 +127,24 @@ export function useProductDocs() {
 
   // Manual avulso — sem produto (fase89): HTML gerado vai pro bucket e o
   // registro guarda título/capa/coleção pra aparecer no site sozinho.
-  async function addStandalone({ title, label, html, collectionSlug, coverImageUrl }) {
+  // kind: 'html' (gerado no gerador) · 'file' (upload .html/.pdf) · 'link' (URL)
+  async function addStandalone({ title, label, kind = 'html', html, file, url, collectionSlug, coverImageUrl }) {
     const { data: col } = await supabase.from('manual_collections').select('id').eq('slug', collectionSlug).maybeSingle()
     if (!col) throw new Error('Coleção não encontrada.')
-    const path = `docs/avulsos/${Date.now()}-${Math.random().toString(36).slice(2)}.html`
-    const { error: upErr } = await supabase.storage.from('product-docs').upload(path, new File([html], 'manual.html', { type: 'text/html' }), { contentType: 'text/html' })
-    if (upErr) throw upErr
+    let path = null
+    if (kind === 'html' || kind === 'file') {
+      const src = kind === 'html' ? new File([html], 'manual.html', { type: 'text/html' }) : file
+      if (!src) throw new Error('Selecione um arquivo.')
+      if (src.size > 10 * 1024 * 1024) throw new Error('Máx 10 MB.')
+      const ext = kind === 'html' ? 'html' : src.name.split('.').pop().toLowerCase()
+      path = `docs/avulsos/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const { error: upErr } = await supabase.storage.from('product-docs').upload(path, src, { contentType: ext === 'pdf' ? 'application/pdf' : 'text/html' })
+      if (upErr) throw upErr
+    } else if (!url?.trim()) throw new Error('Informe a URL.')
     const { error } = await supabase.from('product_doc_resources').insert({
       product_id: null, collection_id: col.id, title: title.trim(), label: label.trim(),
-      kind: 'file', file_path: path, cover_image_url: coverImageUrl || null, sort_order: 0,
+      kind: kind === 'link' ? 'link' : 'file', url: kind === 'link' ? url.trim() : null,
+      file_path: path, cover_image_url: coverImageUrl || null, sort_order: 0,
     })
     if (error) throw error
     toast.success('Manual publicado!')

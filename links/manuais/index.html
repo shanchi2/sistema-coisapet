@@ -253,7 +253,7 @@ function cards(list) {
   return list.map((p, i) => {
     const photo = p.cover || publicUrl('product-photos', p.photo_url)
     return `
-      <a href="${p.href || 'https://coisapet.com.br/doc/' + p.slug}" class="app" style="animation-delay:${i*0.04}s" title="${p.name}">
+      <a href="${p.href || 'https://coisapet.com.br/doc/' + p.slug}"${p.external ? ' target="_blank" rel="noopener noreferrer"' : ''} class="app" style="animation-delay:${i*0.04}s" title="${p.name}">
         <div class="app-icon">
           ${photo ? `<img src="${photo}" alt="${p.name}" loading="lazy"/>` : '<span class="fallback">📄</span>'}
           ${p.count > 1 ? `<span class="app-badge">${p.count}</span>` : ''}
@@ -273,7 +273,7 @@ function applyFilter() {
 async function load() {
   const { data, error } = await db
     .from('product_doc_resources')
-    .select('id, product_id, collection_id, title, cover_image_url, file_path, product:products(id,name,doc_title,slug,photo_url,manual_collection_id)')
+    .select('id, product_id, collection_id, title, cover_image_url, file_path, kind, url, product:products(id,name,doc_title,slug,photo_url,manual_collection_id)')
 
   const container = document.getElementById('list-container')
   if (error || !data) {
@@ -284,10 +284,13 @@ async function load() {
   const map = new Map()
   data.forEach(row => {
     // Manual avulso (sem produto, fase89) — card próprio que abre o manual direto
-    if (!row.product_id && row.title && row.file_path) {
-      const params = new URLSearchParams({ path: row.file_path, title: row.title, back: location.href })
-      map.set('avulso-' + row.id, { name: row.title, fullName: row.title, colId: row.collection_id, cover: row.cover_image_url,
-        href: 'https://coisapet.com.br/doc/ver.html?' + params.toString(), count: 1 })
+    if (!row.product_id && row.title && (row.file_path || row.url)) {
+      // link → vai direto · PDF → arquivo · HTML → visualizador (Supabase não renderiza .html)
+      let href = row.url
+      if (row.kind !== 'link') href = /\.html?$/i.test(row.file_path)
+        ? 'https://coisapet.com.br/doc/ver.html?' + new URLSearchParams({ path: row.file_path, title: row.title, back: location.href }).toString()
+        : publicUrl('product-docs', row.file_path)
+      map.set('avulso-' + row.id, { name: row.title, fullName: row.title, colId: row.collection_id, cover: row.cover_image_url, href, external: row.kind === 'link', count: 1 })
       return
     }
     if (!row.product) return

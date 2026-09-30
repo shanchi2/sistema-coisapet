@@ -730,7 +730,9 @@ function ProductDocsTab() {
           </div>
           <div className="divide-y divide-slate-50">
             {standalone.filter(r => !colFilter || r.collection_id === colFilter).map(r => {
-              const viewUrl = `${DOC_SITE_BASE}/ver.html?${new URLSearchParams({ path: r.file_path || '', title: r.title || r.label }).toString()}`
+              const viewUrl = r.kind === 'link' ? r.url
+                : /\.html?$/i.test(r.file_path || '') ? `${DOC_SITE_BASE}/ver.html?${new URLSearchParams({ path: r.file_path || '', title: r.title || r.label }).toString()}`
+                : supabase.storage.from('product-docs').getPublicUrl(r.file_path).data.publicUrl
               return (
                 <div key={r.id} className="flex items-center gap-3 px-4 py-2.5">
                   {r.cover_image_url ? <img src={r.cover_image_url} alt="" className="w-9 h-9 rounded-lg object-cover border border-slate-100 shrink-0" /> : <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0"><FileText size={14} className="text-slate-300" /></div>}
