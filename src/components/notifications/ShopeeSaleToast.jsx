@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { ShoppingBag, X, Trash2, ArrowRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { isSaleSoundMuted } from '../../lib/soundPrefs'
+import { playCancelSound } from '../../lib/sounds'
 
 function getSession() {
   try { return JSON.parse(localStorage.getItem('coisapet_session') || '{}') } catch { return {} }
@@ -118,7 +119,8 @@ export function ShopeeSaleToast() {
       pendingRef.current.set(n.id, n)
       if (playSound) {
         if (navigator.vibrate) navigator.vibrate(60)
-        playSaleChime()
+        // Pedido que já chega cancelado: som triste no lugar do de venda (01/10)
+        if ((n.body || '').includes('🚫')) playCancelSound(); else playSaleChime()
         flashTitle('🛒 Novo pedido!')
         window.dispatchEvent(new CustomEvent('shopee-sale-ping'))
       }
