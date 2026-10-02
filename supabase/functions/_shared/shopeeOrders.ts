@@ -5,6 +5,12 @@
 // O que atualiza em cada pedido:
 // - status (PT + código cru), prazo de envio (dia + hora exata),
 //   days_to_ship, transportadora, mensagem do comprador;
+// - nota do vendedor (`note` — a "Nota" que a equipe escreve no Seller
+//   Centre, ex.: "ENVIAR A RODINHA COM O SUPORTE") → `notes`. Até 02/10
+//   o campo era pedido na API mas nunca gravado aqui: a nota escrita
+//   DEPOIS do pedido chegar só aparecia no próximo push de status ou numa
+//   reimportação da planilha (atraso relatado pelo Vini). Nota vazia na
+//   API não apaga a que já existe (mesma regra do upsert_orders_safe);
 // - nome REAL do destinatário: a Shopee só entrega mascarado ("****") no
 //   get_order_detail — o nome de verdade só vem como IMAGEM PNG no
 //   logistics/get_shipping_document_data_info (dado de etiqueta), e só
@@ -124,6 +130,8 @@ export async function refreshShopeeOrders(db: DB, integration: any, orders: Orde
         marketplace_refreshed_at: new Date().toISOString(),
         shipping_deadline_checked_at: deadline ? new Date().toISOString() : null,
       }
+      const sellerNote = (api.note || '').trim()
+      if (sellerNote) patch.notes = sellerNote
       // Não troca "usuario / Nome Real" (planilha) por só "usuario" (API)
       if (api.buyer_username && !(o.comprador || '').startsWith(api.buyer_username + ' / ')) patch.comprador = api.buyer_username
       if (api.total_amount != null) patch.gross_value = api.total_amount

@@ -275,6 +275,20 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-10-02 — Picklist: nota do vendedor Shopee demorava a aparecer
+
+Vini relatou que o picklist "não puxava as obs" (Shopee e ML); horas depois
+apareceu. Causa (Shopee): a "Nota" que a equipe escreve no Seller Centre
+depois do pedido chegar só entrava em `orders.notes` no próximo push de
+status ou numa reimportação da planilha — `refreshShopeeOrders` pedia o
+campo `note` na API mas nunca gravava, e o cron de 3h só rechecava pedido
+sem nome. Corrigido: refresh grava `note` (vazio não apaga) e o cron
+rechecha todo pedido em aberto (ship_date >= hoje). Botão "Atualizar
+pedidos" da Expedição traz na hora. **Pendente**: deploy de
+`shopee-process-webhook` e `shopee-shipping-deadline-recheck` (usam o
+`_shared`). ML: nem API nem planilha trazem obs/nota do pedido hoje
+(`notes: null` fixo) — precisa de chamada nova (`/orders/{id}/notes`).
+
 ### 2026-10-01 (2ª parte) — Gerador próprio pra Terrários + manual sem produto (fase89)
 
 - Correção de entendimento: o Raphael queria um LOCAL separado (aba própria) pra

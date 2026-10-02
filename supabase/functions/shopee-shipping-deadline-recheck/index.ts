@@ -7,7 +7,8 @@
 //    `ship_date` só é calculado no INSERT — este cron fecha esse buraco.
 //    Desde a Fase 83 (30/09) também completa os dados da Expedição (nome
 //    real do comprador, transportadora, mensagem) dos pedidos em aberto
-//    que ainda não têm.
+//    que ainda não têm; desde 02/10 rechecha todos os em aberto (nota do
+//    vendedor escrita depois do pedido chegar).
 //
 // 2) Botão "Atualizar pedidos" da Expedição — body { mode: 'manual' }.
 //    Antecipa o cron na hora: atualiza TODOS os pedidos Shopee em aberto
@@ -79,13 +80,16 @@ serve(async (req) => {
       .limit(30)
     const r1 = await refreshShopeeOrders(db, integration, noDeadline || [], { recomputeDay: true })
 
-    // (b) pedido em aberto ainda sem os dados da Expedição (nome etc.)
+    // (b) todo pedido em aberto (de hoje em diante): completa os dados da
+    // Expedição (nome etc.) e traz nota do vendedor / mensagem do
+    // comprador escritas depois que o pedido chegou — a Shopee não manda
+    // push quando só a nota muda. Antes (até 02/10) pegava só quem ainda
+    // não tinha o nome, e a nota nova ficava sem atualizar.
     const { data: missing } = await db.from('orders')
       .select(REFRESH_SELECT)
       .eq('source', 'shopee').eq('archived', false)
       .gte('ship_date', today)
-      .is('comprador_nome_img', null)
-      .limit(60)
+      .limit(400)
     const r2 = await refreshShopeeOrders(db, integration, missing || [], { recomputeDay: false })
 
     await notifyMoved(db, r1.moved)
