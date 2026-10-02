@@ -304,24 +304,28 @@ reconstruir o raciocínio do zero.
 - `*_conversions` são TAXA, não quantidade; `broad_order_amount` (por
   campanha) é QUANTIDADE, não R$; `ctr` vem em fração; `cpc` por campanha
   é custo/conversão. Por isso o front recalcula ROAS/ACOS/CTR/CPC.
-- Saldo lido: **R$ 0,00 com recarga automática DESLIGADA**, mesmo com
-  gasto de ~R$140/dia — entender com o Raphael como o crédito está sendo
-  pago antes de ligar o alerta de saldo baixo (senão vira alarme falso).
+- Saldo: às 12h lia R$0,00 (recarga automática desligada); ~3h depois já
+  estava R$258,74 — houve recarga manual no meio. Alerta de saldo baixo
+  ligado com limite padrão R$50 (ajustável na aba Créditos).
 - **NÃO existe endpoint de recarga** na API: recarga continua pelo Seller
   Center; o sistema só registra/concilia.
+- Teste ponta a ponta (02/10, 30 dias): R$756 gastos → R$20.949 em vendas
+  por Ads (ROAS ~27,7x), 251 pedidos; 22 campanhas; ROAS recomendado ok.
 
-**Pendências (não concluídas nesta sessão):**
-- [ ] Aplicar `supabase/fase92-shopee-ads.sql` (2 tentativas via MCP deram
-      timeout; nada foi criado). Pode rodar no SQL Editor. O bloco do cron
-      no fim do arquivo: decidir antes por causa do saldo R$0 acima.
-- [ ] Deploy: `supabase functions deploy shopee-ads` e
-      `supabase functions deploy shopee-ads-balance-check --no-verify-jwt`.
-      ⚠️ Hoje a `shopee-ads` no ar é uma SONDA temporária de leitura usada
-      pra validar os campos — a tela só funciona depois desse deploy.
-- [ ] Conferir o link do Seller Center em `ads/adsUtils.jsx`
-      (`SELLER_ADS_URL`) — não foi clicado.
-- [ ] Ações de escrita (pausar, orçamento, ROAS alvo) não foram testadas
-      ao vivo — testar a primeira numa campanha pequena.
+**Aplicado em produção (02/10):**
+- Tabelas da fase92 criadas (sem FK pra bills/system_users — o MCP dava
+  timeout criando FK/lotes grandes; comando por comando funcionou).
+- `shopee-ads` (v2, JWT) e `shopee-ads-balance-check` (sem JWT) no ar.
+- Cron `shopee-ads-balance-check-periodico` (`45 */3 * * *`) agendado e
+  testado.
+
+**Pendências:**
+- [ ] Merge da branch na `main` pra tela subir (deploy do Hostinger).
+- [ ] Conferir o link do Seller Center em `ads/adsUtils.jsx` (`SELLER_ADS_URL`).
+- [ ] Ações de escrita (pausar, orçamento, ROAS alvo) não testadas ao vivo
+      — testar a primeira numa campanha pequena.
+- [ ] Lançar um "Ajuste" com o saldo atual na aba Créditos pra começar a
+      conciliação.
 
 ---
 

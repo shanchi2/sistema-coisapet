@@ -26,11 +26,15 @@ CREATE TABLE IF NOT EXISTS public.shopee_ads_credits (
                   CHECK (tipo IN ('recarga','recarga_automatica','bonus','estorno','ajuste')),
   forma_pagamento TEXT,                                       -- pix, cartão, boleto, saldo Shopee...
   observacao      TEXT,
-  bill_id         UUID        REFERENCES public.bills(id) ON DELETE SET NULL, -- conta criada no Financeiro (opcional)
-  created_by      UUID        REFERENCES public.system_users(id) ON DELETE SET NULL,
+  bill_id         UUID,       -- conta criada no Financeiro (opcional) — sem FK de propósito, ver nota abaixo
+  created_by      UUID,       -- system_users.id — sem FK de propósito, ver nota abaixo
   created_by_name TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Sem FOREIGN KEY pra bills/system_users: criar FK exige trava nessas
+-- tabelas (muito usadas) e a migration ficou presa em timeout 2x em 02/10.
+-- Integridade aqui é só informativa (a recarga continua válida mesmo se
+-- a conta do Financeiro for apagada).
 CREATE INDEX IF NOT EXISTS idx_shopee_ads_credits_data ON public.shopee_ads_credits(data DESC);
 
 -- ── 2. Histórico do saldo real (lido da API) ─────────────────────
