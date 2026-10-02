@@ -284,9 +284,10 @@ status ou numa reimportação da planilha — `refreshShopeeOrders` pedia o
 campo `note` na API mas nunca gravava, e o cron de 3h só rechecava pedido
 sem nome. Corrigido: refresh grava `note` (vazio não apaga) e o cron
 rechecha todo pedido em aberto (ship_date >= hoje). Botão "Atualizar
-pedidos" da Expedição traz na hora. **Pendente**: deploy de
-`shopee-process-webhook` e `shopee-shipping-deadline-recheck` (usam o
-`_shared`). ML: nem API nem planilha trazem obs/nota do pedido hoje
+pedidos" da Expedição traz na hora. Deploy feito pelo Claude via
+conector Supabase (recheck v11, process-webhook v13, `verify_jwt` false
+mantido); disparo manual do cron OK: 36 pedidos em aberto atualizados,
+sem erro. ML: nem API nem planilha trazem obs/nota do pedido hoje
 (`notes: null` fixo) — precisa de chamada nova (`/orders/{id}/notes`).
 
 ### 2026-10-01 (2ª parte) — Gerador próprio pra Terrários + manual sem produto (fase89)
