@@ -48,6 +48,7 @@ const NAV_SECTIONS = [
       { to: '/shopee/full',     moduleKey: 'shopee-insights', icon: Warehouse,       label: 'Estoque Full', roles: ['admin','marketplace'] },
       { to: '/shopee/cupons',     moduleKey: 'shopee-insights', icon: Ticket, label: 'Cupons', roles: ['admin','marketplace'] },
       { to: '/shopee/flash-sale', moduleKey: 'shopee-insights', icon: Zap,    label: 'Flash Sale', roles: ['admin','marketplace'] },
+      { to: '/shopee/ads',        moduleKey: 'shopee-insights', icon: Megaphone, label: 'Shopee Ads', roles: ['admin','marketplace'] },
     ],
   },
   {

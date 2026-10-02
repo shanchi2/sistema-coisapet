@@ -73,6 +73,7 @@ import { ShopeeItemDetailPage } from './modules/shopee-insights/ShopeeItemDetail
 import { ShopeeFullStockPage } from './modules/shopee-insights/ShopeeFullStockPage'
 import { ShopeeVouchersPage } from './modules/shopee-insights/ShopeeVouchersPage'
 import { ShopeeFlashSalePage } from './modules/shopee-insights/ShopeeFlashSalePage'
+import { ShopeeAdsPage } from './modules/shopee-insights/ShopeeAdsPage'
 import { MlTrafficPage } from './modules/ml-insights/MlTrafficPage'
 import { MlHealthPage } from './modules/ml-insights/MlHealthPage'
 import { MlUpdatesHistoryPage } from './modules/ml-insights/MlUpdatesHistoryPage'
@@ -171,6 +172,7 @@ export default function App() {
                 <Route path="/shopee/full"        element={<GuardedRoute moduleKey="shopee-insights"><ShopeeFullStockPage /></GuardedRoute>} />
                 <Route path="/shopee/cupons"      element={<GuardedRoute moduleKey="shopee-insights"><ShopeeVouchersPage /></GuardedRoute>} />
                 <Route path="/shopee/flash-sale"  element={<GuardedRoute moduleKey="shopee-insights"><ShopeeFlashSalePage /></GuardedRoute>} />
+                <Route path="/shopee/ads"         element={<GuardedRoute moduleKey="shopee-insights"><ShopeeAdsPage /></GuardedRoute>} />
                 <Route path="/ml/trafego"        element={<GuardedRoute moduleKey="ml-insights"><MlTrafficPage /></GuardedRoute>} />
                 <Route path="/ml/saude"          element={<GuardedRoute moduleKey="ml-insights"><MlHealthPage /></GuardedRoute>} />
                 <Route path="/ml/saude/:itemId"  element={<GuardedRoute moduleKey="ml-insights"><MlItemDetailPage /></GuardedRoute>} />
