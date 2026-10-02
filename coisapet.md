@@ -288,7 +288,11 @@ pedidos" da Expedição traz na hora. Deploy feito pelo Claude via
 conector Supabase (recheck v11, process-webhook v13, `verify_jwt` false
 mantido); disparo manual do cron OK: 36 pedidos em aberto atualizados,
 sem erro. ML: nem API nem planilha trazem obs/nota do pedido hoje
-(`notes: null` fixo) — precisa de chamada nova (`/orders/{id}/notes`).
+(`notes: null` fixo). Testado ao vivo (via pg_net, token do banco):
+`GET /orders/{id}/notes` funciona (200), mas **0 notas em 296 pedidos**
+(abertos + últimos 30 dias) — a equipe não usa nota de vendedor no ML.
+Instrução de cliente do ML chega por mensagem pós-venda (chat), outra API;
+aguardando decisão do Raphael antes de implementar.
 
 ### 2026-10-01 (2ª parte) — Gerador próprio pra Terrários + manual sem produto (fase89)
 
