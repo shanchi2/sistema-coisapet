@@ -275,6 +275,56 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-10-02 (2ª parte) — Módulo Shopee Ads (/shopee/ads) — fase92
+
+**O que foi feito:**
+- Tela nova `/shopee/ads` (menu Shopee → "Shopee Ads") com 5 abas:
+  Visão Geral (alertas, KPIs com comparação ao período anterior, funil,
+  gasto × vendas por dia/hora, ROAS diário, top campanhas), Campanhas
+  (tabela filtrável + painel lateral com pausar/retomar/encerrar,
+  orçamento diário, ROAS alvo, data de término — sempre com
+  ConfirmWriteModal), Produtos (desempenho por produto + recomendados pela
+  Shopee), Créditos (saldo real, previsão de quando acaba, mês × orçamento,
+  conciliação, recargas lançadas com opção de criar conta paga no
+  Financeiro, configurações/metas) e Relatórios (mês a mês até 12 meses,
+  dia da semana, log de alterações, export Excel).
+- Edge functions novas: `shopee-ads` (JWT, todas as ações) e
+  `shopee-ads-balance-check` (cron, `--no-verify-jwt`, sem input: snapshot
+  do saldo + alerta de saldo baixo no sino). Helper `_shared/shopeeAds.ts`.
+- Migration `supabase/fase92-shopee-ads.sql`: `shopee_ads_credits`,
+  `shopee_ads_balance_snapshots`, `shopee_ads_settings`,
+  `shopee_ads_actions_log` + cron a cada 3h.
+
+**Confirmado AO VIVO contra a loja real (02/10):**
+- API de Ads liberada pro nosso app. 22 campanhas (13 em andamento), todas
+  `ad_type=manual`, a maioria com `bidding_method=auto` + ROAS alvo.
+- Limite de 1 mês por consulta de desempenho
+  (`ads.performance.error_date_range_too_long`) — a função quebra em
+  blocos de 30 dias. Histórico existe pelo menos desde abr/2026.
+- `*_conversions` são TAXA, não quantidade; `broad_order_amount` (por
+  campanha) é QUANTIDADE, não R$; `ctr` vem em fração; `cpc` por campanha
+  é custo/conversão. Por isso o front recalcula ROAS/ACOS/CTR/CPC.
+- Saldo lido: **R$ 0,00 com recarga automática DESLIGADA**, mesmo com
+  gasto de ~R$140/dia — entender com o Raphael como o crédito está sendo
+  pago antes de ligar o alerta de saldo baixo (senão vira alarme falso).
+- **NÃO existe endpoint de recarga** na API: recarga continua pelo Seller
+  Center; o sistema só registra/concilia.
+
+**Pendências (não concluídas nesta sessão):**
+- [ ] Aplicar `supabase/fase92-shopee-ads.sql` (2 tentativas via MCP deram
+      timeout; nada foi criado). Pode rodar no SQL Editor. O bloco do cron
+      no fim do arquivo: decidir antes por causa do saldo R$0 acima.
+- [ ] Deploy: `supabase functions deploy shopee-ads` e
+      `supabase functions deploy shopee-ads-balance-check --no-verify-jwt`.
+      ⚠️ Hoje a `shopee-ads` no ar é uma SONDA temporária de leitura usada
+      pra validar os campos — a tela só funciona depois desse deploy.
+- [ ] Conferir o link do Seller Center em `ads/adsUtils.jsx`
+      (`SELLER_ADS_URL`) — não foi clicado.
+- [ ] Ações de escrita (pausar, orçamento, ROAS alvo) não foram testadas
+      ao vivo — testar a primeira numa campanha pequena.
+
+---
+
 ### 2026-10-02 — Picklist: nota do vendedor Shopee demorava a aparecer
 
 Vini relatou que o picklist "não puxava as obs" (Shopee e ML); horas depois
