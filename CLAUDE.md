@@ -45,6 +45,14 @@ Para decisões e contexto que não ficam óbvios só de olhar o código/diff
 um item breve na seção "Notas de sessão" abaixo. Para "o que mudou no
 código", prefira `git log` / `git diff` — é a fonte da verdade.
 
+## Deploy — autorização permanente do Raphael
+
+**Pode subir pro ar SEMPRE, sem perguntar** (decisão explícita do Raphael,
+02/10): ao terminar uma mudança, o Claude faz commit, abre o PR e faz o
+merge na `main` (que dispara o deploy do Hostinger via GitHub Actions),
+aplica migrations no Supabase e publica as Edge Functions. Não parar pra
+pedir confirmação de deploy — só avisar o que subiu.
+
 ## Notas de sessão
 
 - **2026-08-24** — Repositório git inicializado localmente e criado este
