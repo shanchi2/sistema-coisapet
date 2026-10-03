@@ -322,8 +322,11 @@ reconstruir o raciocínio do zero.
 **Pendências:**
 - [ ] Merge da branch na `main` pra tela subir (deploy do Hostinger).
 - [ ] Conferir o link do Seller Center em `ads/adsUtils.jsx` (`SELLER_ADS_URL`).
-- [ ] Ações de escrita (pausar, orçamento, ROAS alvo) não testadas ao vivo
-      — testar a primeira numa campanha pequena.
+- [x] Escrita testada ao vivo (03/10): o pedido de mudar orçamento CHEGOU
+      na Shopee e foi recusado por regra deles — **orçamento diário mínimo
+      R$10 (ou 0 = ilimitado)** (`ads.campaign.error_daily_budget_range`).
+      A tela agora barra isso antes de enviar e traduz os erros da Shopee.
+      Pausar/retomar e ROAS alvo ainda sem teste ao vivo.
 - [ ] Lançar um "Ajuste" com o saldo atual na aba Créditos pra começar a
       conciliação.
 

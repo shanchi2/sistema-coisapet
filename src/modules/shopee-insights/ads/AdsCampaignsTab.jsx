@@ -47,10 +47,13 @@ function roasTone(roas, target) {
 }
 
 // ── Modal de edição (orçamento / ROAS alvo / data fim) ────────────────
-function EditValueModal({ open, title, label, help, initial, step = '0.01', type = 'number', onCancel, onNext }) {
+// `validate(v)` devolve a mensagem de erro (ou null) — barra na tela o que
+// a Shopee recusaria, em vez de mandar e tomar erro em inglês.
+function EditValueModal({ open, title, label, help, initial, step = '0.01', type = 'number', validate, onCancel, onNext }) {
   const [v, setV] = useState(initial ?? '')
   useEffect(() => { setV(initial ?? '') }, [initial, open])
   if (!open) return null
+  const invalid = v === '' || v == null ? null : validate?.(v)
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[55] p-4" onClick={onCancel}>
       <div className="bg-white rounded-2xl w-full max-w-sm p-6 space-y-4" onClick={e => e.stopPropagation()}>
@@ -59,11 +62,13 @@ function EditValueModal({ open, title, label, help, initial, step = '0.01', type
           <label className="text-xs font-semibold text-slate-500">{label}</label>
           <input type={type} step={step} value={v} onChange={e => setV(e.target.value)} autoFocus
             className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200"/>
-          {help && <p className="text-[11px] text-slate-400 mt-1">{help}</p>}
+          {invalid
+            ? <p className="text-[11px] text-rose-600 font-semibold mt-1">{invalid}</p>
+            : help && <p className="text-[11px] text-slate-400 mt-1">{help}</p>}
         </div>
         <div className="flex justify-end gap-2">
           <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">Cancelar</button>
-          <button onClick={() => onNext(v)} disabled={v === '' || v == null}
+          <button onClick={() => onNext(v)} disabled={v === '' || v == null || !!invalid}
             className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50" style={{ background: SHOPEE_ORANGE }}>Continuar</button>
         </div>
       </div>
@@ -383,15 +388,18 @@ function CampaignDrawer({ c, items, settings, onClose, onChanged }) {
       </div>
 
       <EditValueModal open={editing === 'budget'} title="Orçamento diário" label="Novo orçamento diário (R$)"
-        help={`Atual: ${c.budget === 0 ? 'ilimitado' : fmtMoney(c.budget)}. É o máximo que a campanha pode gastar por dia.`}
+        help={`Atual: ${c.budget === 0 ? 'ilimitado' : fmtMoney(c.budget)}. Mínimo da Shopee: R$ 10,00 (ou 0 = ilimitado).`}
+        validate={v => { const n = Number(v); return n < 0 || (n > 0 && n < 10) ? 'A Shopee só aceita orçamento de R$ 10,00 pra cima — ou 0 pra ilimitado.' : null }}
         initial={c.budget || ''} onCancel={() => setEditing(null)}
-        onNext={v => { setEditing(null); ask('change_budget', { budget: Number(v) }, { description: 'Muda o orçamento diário da campanha na Shopee.', node: <p className="text-sm text-slate-700">{c.budget === 0 ? 'Ilimitado' : fmtMoney(c.budget)} → <b>{fmtMoney(Number(v))}</b> por dia</p> }) }}/>
+        onNext={v => { setEditing(null); ask('change_budget', { budget: Number(v) }, { description: 'Muda o orçamento diário da campanha na Shopee.', node: <p className="text-sm text-slate-700">{c.budget === 0 ? 'Ilimitado' : fmtMoney(c.budget)} → <b>{Number(v) === 0 ? 'Ilimitado' : `${fmtMoney(Number(v))} por dia`}</b></p> }) }}/>
       <EditValueModal open={editing === 'roas'} title="ROAS alvo" label="Novo ROAS alvo (ex.: 8 = R$8 em vendas pra cada R$1)"
         help={`Atual: ${c.roas_target ? fmtRoas(c.roas_target) : 'automático'}.${roasRec?.exact?.value ? ` Recomendado pela Shopee: ${fmtRoas(roasRec.exact.value)}.` : ''}`}
+        validate={v => (Number(v) <= 0 ? 'O ROAS alvo precisa ser maior que zero.' : null)}
         initial={c.roas_target || ''} step="0.1" onCancel={() => setEditing(null)}
         onNext={v => { setEditing(null); ask('change_roas_target', { roas_target: Number(v) }, { description: 'Muda o ROAS alvo — a Shopee ajusta os lances sozinha pra tentar bater esse retorno.', node: <p className="text-sm text-slate-700">{c.roas_target ? fmtRoas(c.roas_target) : 'automático'} → <b>{fmtRoas(Number(v))}</b></p> }) }}/>
       <EditValueModal open={editing === 'end'} title="Data de término" label="Rodar até (inclusive)" type="date" step={undefined}
         help="A Shopee não aceita data no passado. Pra rodar sem data de término, use o Seller Center."
+        validate={v => (v < todayISO() ? 'A data de término não pode ser no passado.' : null)}
         initial={addDays(todayISO(), 30)} onCancel={() => setEditing(null)}
         onNext={v => { setEditing(null); ask('change_duration', { start_date: todayISO(), end_date: v }, { description: 'Define até quando a campanha roda.', node: <p className="text-sm text-slate-700">Término: <b>{v.split('-').reverse().join('/')}</b></p> }) }}/>
 
