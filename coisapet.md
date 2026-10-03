@@ -275,6 +275,32 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-10-03 — Modo escuro no sistema inteiro
+
+**O que foi feito:** botão sol/lua no cabeçalho (Claro → Escuro →
+Automático, que segue o Windows/celular). Fica salvo por navegador/PC.
+Fundo #151515 (pedido do Raphael), cards #1C1C1C, menu lateral #0E0E0E.
+
+**Como funciona (importante pra quem mexer depois):** NÃO tem `dark:` nas
+telas. Toda cor do Tailwind virou variável CSS em `tailwind.config.js`
+(modo claro = exatamente os hex de antes, conferido pixel a pixel contra a
+`main`: idêntico, só muda o ícone novo). Com `.dark` no `<html>` as
+variáveis trocam. Cinzas → escala escura própria; `white` → cor do card
+(`text-white` forçado de volta pra branco); cores (verde, rosa…) espelham
+(fundo claro vira escuro, texto escuro vira claro). Ajustes fora da
+paleta (hex fixo em `style=`, Recharts, fundo de modal, toast, login,
+sidebar) ficam no bloco "MODO ESCURO" de `src/index.css`.
+**Tela nova:** usar as classes normais (bg-white, text-slate-800…) que o
+escuro vem de graça; evitar hex fixo em `style=` — se precisar, usar
+`rgb(var(--c-slate-100))` ou similar.
+
+**Pendências:** telas com muito hex fixo em `style=` podem ter pontos
+claros no escuro (ex.: tela "Acesso restrito", algumas da Diretoria) —
+corrigir conforme aparecer. `/equipe`, `/links`, `/doc` e o site são
+projetos separados, sem modo escuro.
+
+---
+
 ### 2026-10-02 (2ª parte) — Módulo Shopee Ads (/shopee/ads) — fase92
 
 **O que foi feito:**
