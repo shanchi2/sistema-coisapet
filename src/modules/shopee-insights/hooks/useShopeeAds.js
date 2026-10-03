@@ -7,6 +7,24 @@ import { toISODateBR } from '../../../lib/dateBR'
 // (separada do shopee-insights). O que é NOSSO (recargas, configurações,
 // histórico de saldo, log de alterações) é lido/gravado direto nas tabelas
 // da fase92.
+// Erros da API de Ads vêm em inglês, embrulhados em "Erro na API da Shopee
+// (...): 200 {json}". Traduz os códigos conhecidos (o primeiro visto ao
+// vivo em 03/10: orçamento abaixo de R$10) e, pros outros, mostra ao menos
+// a mensagem da Shopee sem o JSON todo.
+const SHOPEE_ADS_ERRORS = {
+  'ads.campaign.error_daily_budget_range': 'A Shopee só aceita orçamento diário de R$ 10,00 pra cima (ou 0 = ilimitado).',
+}
+function friendlyShopeeError(msg) {
+  const m = /\{.*\}$/s.exec(msg || '')
+  if (!m) return msg
+  try {
+    const j = JSON.parse(m[0])
+    if (SHOPEE_ADS_ERRORS[j.error]) return SHOPEE_ADS_ERRORS[j.error]
+    if (j.message) return `A Shopee recusou: ${j.message} (${j.error})`
+  } catch { /* não era JSON — devolve a mensagem crua */ }
+  return msg
+}
+
 async function callShopeeAds(payload) {
   const { data, error } = await supabase.functions.invoke('shopee-ads', { body: payload })
   if (error) {
@@ -15,9 +33,9 @@ async function callShopeeAds(payload) {
       const parsed = await error.context?.json?.()
       if (parsed?.error) msg = parsed.error
     } catch { /* usa a mensagem genérica */ }
-    throw new Error(msg)
+    throw new Error(friendlyShopeeError(msg))
   }
-  if (data?.error) throw new Error(data.error)
+  if (data?.error) throw new Error(friendlyShopeeError(data.error))
   return data
 }
 
