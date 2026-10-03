@@ -79,7 +79,7 @@ function LayoutInner() {
                      w-12 h-12 rounded-2xl shadow-lg
                      flex items-center justify-center
                      transition-all active:scale-95"
-          style={{ backgroundColor: '#1E293B' }}
+          style={{ backgroundColor: 'var(--sidebar-bg)' }}
           aria-label="Abrir menu"
         >
           <Menu size={20} color="white" />

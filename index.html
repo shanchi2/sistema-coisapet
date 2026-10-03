@@ -6,6 +6,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CoisaPet — Sistema de Gestão</title>
+    <!-- Aplica o tema escuro ANTES do React carregar (sem piscar branco).
+         Mesma regra do src/contexts/ThemeContext.jsx. -->
+    <script>
+      try {
+        var t = localStorage.getItem('coisapet-theme') || 'light';
+        if (t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches))
+          document.documentElement.classList.add('dark');
+      } catch (e) {}
+    </script>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐾</text></svg>" />
   </head>
   <body>

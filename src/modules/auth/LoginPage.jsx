@@ -35,10 +35,7 @@ export function LoginPage() {
   }
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center p-4"
-      style={{ background: 'linear-gradient(135deg, #FFF1F5 0%, #ffffff 50%, #F0F9FF 100%)' }}
-    >
+    <div className="login-bg min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-3xl p-8 border border-slate-100"
              style={{ boxShadow: '0 8px 40px rgba(0,0,0,0.10)' }}>

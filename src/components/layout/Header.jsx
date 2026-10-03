@@ -1,6 +1,7 @@
 import { useAuth } from '../../contexts/AuthContext'
 import { NotificationBell } from '../notifications/NotificationBell'
 import { SaleSoundToggle } from '../notifications/SaleSoundToggle'
+import { ThemeToggle } from './ThemeToggle'
 
 const ROLE_LABELS = {
   admin:          'Diretor',
@@ -31,6 +32,7 @@ export function Header({ title }) {
 
       {/* Direita — não encolhe */}
       <div className="flex items-center gap-3 shrink-0">
+        <ThemeToggle />
         <SaleSoundToggle />
         <NotificationBell />
 

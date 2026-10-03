@@ -6,6 +6,75 @@
 @tailwind utilities;
 
 /* ─────────────────────────────────────────────
+   MODO ESCURO — o que fica fora da paleta do Tailwind
+   (a paleta em si troca sozinha: ver tailwind.config.js)
+───────────────────────────────────────────── */
+:root {
+  --sidebar-bg: #1E293B;
+  --toast-bg: #FFFFFF;
+  --toast-fg: #1E293B;
+  --toast-border: #F1F5F9;
+}
+.dark {
+  color-scheme: dark;              /* inputs, selects, calendário e scroll nativos no escuro */
+  --sidebar-bg: #0E0E0E;
+  --toast-bg: #232323;
+  --toast-fg: #E3E3E3;
+  --toast-border: #2E2E2E;
+}
+
+/* `white` virou a cor do card (#1C1C1C) — texto branco continua branco
+   (botões coloridos, ícones em cabeçalhos com gradiente etc.) */
+.dark .text-white { color: #fff; }
+.dark .text-white\/90 { color: rgb(255 255 255 / .9); }
+.dark .text-white\/80 { color: rgb(255 255 255 / .8); }
+.dark .text-white\/70 { color: rgb(255 255 255 / .7); }
+.dark .text-white\/60 { color: rgb(255 255 255 / .6); }
+.dark .text-white\/50 { color: rgb(255 255 255 / .5); }
+
+/* Botão/pílula "escuro com texto branco" (bg-slate-800 text-white): no
+   escuro o fundo vira cinza claro, então o texto vira escuro */
+.dark :is(.bg-slate-700, .bg-slate-800, .bg-slate-900, .bg-slate-950,
+          .bg-gray-700, .bg-gray-800, .bg-gray-900).text-white,
+.dark :is(.bg-slate-700, .bg-slate-800, .bg-slate-900, .bg-slate-950,
+          .bg-gray-700, .bg-gray-800, .bg-gray-900) .text-white {
+  color: #151515;
+}
+
+/* Fundo escurecido atrás de modais/gavetas (bg-slate-900/40 etc.): no
+   escuro o slate-900 vira claro, então força preto translúcido */
+.dark .bg-slate-900\/40, .dark .bg-slate-800\/40 { background-color: rgb(0 0 0 / .55); }
+.dark .bg-slate-900\/50, .dark .bg-slate-800\/50 { background-color: rgb(0 0 0 / .6); }
+.dark .bg-slate-900\/60, .dark .bg-slate-800\/60 { background-color: rgb(0 0 0 / .65); }
+.dark .bg-slate-900\/70, .dark .bg-slate-800\/70 { background-color: rgb(0 0 0 / .7); }
+.dark .bg-slate-900\/80, .dark .bg-slate-900\/85,
+.dark .bg-slate-900\/90, .dark .bg-slate-800\/90 { background-color: rgb(0 0 0 / .85); }
+
+/* Tela de login */
+.login-bg { background: linear-gradient(135deg, #FFF1F5 0%, #ffffff 50%, #F0F9FF 100%); }
+.dark .login-bg { background: linear-gradient(135deg, #1F0E14 0%, #151515 50%, #0D1820 100%); }
+
+/* Sombras quase invisíveis no escuro — reforça um pouco */
+.dark .shadow-card, .dark .card, .dark .table-wrapper { box-shadow: 0 2px 12px rgba(0, 0, 0, .35); }
+
+/* Hex fixos em style={{...}} mais comuns (fundos claros de cards/linhas) */
+.dark [style*="background-color: rgb(255, 255, 255)"],
+.dark [style*="background: rgb(255, 255, 255)"]   { background-color: #1C1C1C !important; }
+.dark [style*="background-color: rgb(248, 250, 252)"],
+.dark [style*="background: rgb(248, 250, 252)"]   { background-color: #151515 !important; }
+.dark [style*="background-color: rgb(241, 245, 249)"],
+.dark [style*="background: rgb(241, 245, 249)"]   { background-color: #242424 !important; }
+.dark [style*="background-color: rgb(226, 232, 240)"] { background-color: #2E2E2E !important; }
+.dark [style*="border-color: rgb(241, 245, 249)"],
+.dark [style*="border-color: rgb(226, 232, 240)"]  { border-color: #2E2E2E !important; }
+
+/* Gráficos (Recharts): grade, cursor do tooltip e rótulos */
+.dark .recharts-cartesian-grid line { stroke: #2A2A2A; }
+.dark .recharts-tooltip-cursor { fill: #232323; stroke: #3A3A3A; }
+.dark .recharts-default-tooltip { background-color: #232323 !important; border-color: #2E2E2E !important; }
+.dark .recharts-pie-sector path[stroke="#fff"], .dark .recharts-pie-sector path[stroke="#ffffff"] { stroke: #1C1C1C; }
+
+/* ─────────────────────────────────────────────
    BASE
 ───────────────────────────────────────────── */
 @layer base {
@@ -14,8 +83,8 @@
   }
 
   body {
-    background-color: #F8FAFC;
-    color: #1E293B;
+    background-color: rgb(var(--c-slate-50));
+    color: rgb(var(--c-slate-800));
     font-family: 'Nunito Sans', sans-serif;
     -webkit-font-smoothing: antialiased;
   }
@@ -33,11 +102,11 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #CBD5E1;
+    background: rgb(var(--c-slate-300));
     border-radius: 99px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #94A3B8;
+    background: rgb(var(--c-slate-400));
   }
 }
 

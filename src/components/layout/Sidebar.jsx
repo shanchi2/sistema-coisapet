@@ -320,7 +320,7 @@ export function Sidebar({ open, onToggle }) {
         width: open ? '224px' : '56px',
         minWidth: open ? '224px' : '56px',
         maxWidth: open ? '224px' : '56px',
-        backgroundColor: '#1E293B',
+        backgroundColor: 'var(--sidebar-bg)',
       }}
     >
       {/* Logo + botão toggle */}
