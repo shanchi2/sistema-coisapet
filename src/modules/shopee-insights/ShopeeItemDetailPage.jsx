@@ -86,7 +86,11 @@ export function ShopeeItemDetailPage() {
   const [customInstruction, setCustomInstruction] = useState('')
   const [generatedImage, setGeneratedImage] = useState(null)
   const [generatingImage, setGeneratingImage] = useState(false)
-  const [pendingAttachImage, setPendingAttachImage] = useState(false)
+  // Foto esperando confirmação pra entrar no anúncio — gerada por IA ou
+  // enviada à mão. { base64, kind: 'ia' | 'manual' }. Com o anúncio cheio
+  // (9 fotos, máximo da Shopee), `replaceImageId` diz qual foto sai.
+  const [attachPayload, setAttachPayload] = useState(null)
+  const [replaceImageId, setReplaceImageId] = useState(null)
   const [attachingImage, setAttachingImage] = useState(false)
   const [deleteImageTarget, setDeleteImageTarget] = useState(null)
   const [deletingImage, setDeletingImage] = useState(false)
@@ -251,19 +255,29 @@ export function ShopeeItemDetailPage() {
     }
   }
 
+  const MAX_SHOPEE_IMAGES = 9
+  const imagesFull = (item?.image_id_list?.length || 0) >= MAX_SHOPEE_IMAGES
+
+  function openAttach(base64, kind) {
+    setReplaceImageId(null)
+    setAttachPayload({ base64, kind })
+  }
+
   async function confirmAttachImage() {
+    if (!attachPayload) return
+    if (imagesFull && !replaceImageId) { toast.error('Escolha qual foto a nova vai substituir.'); return }
     setAttachingImage(true)
     try {
-      await attachItemImage(item.item_id, generatedImage.image_base64)
-      toast.success('Imagem adicionada ao anúncio na Shopee!')
-      setGeneratedImage(null)
-      setImageSuggestions(null)
+      await attachItemImage(item.item_id, attachPayload.base64, imagesFull ? replaceImageId : undefined)
+      toast.success(imagesFull ? 'Foto substituída no anúncio da Shopee!' : 'Imagem adicionada ao anúncio na Shopee!')
+      if (attachPayload.kind === 'ia') { setGeneratedImage(null); setImageSuggestions(null) }
+      setAttachPayload(null)
+      setReplaceImageId(null)
       await load()
     } catch (err) {
       toast.error('Erro ao adicionar imagem: ' + err.message)
     } finally {
       setAttachingImage(false)
-      setPendingAttachImage(false)
     }
   }
 
@@ -280,6 +294,8 @@ export function ShopeeItemDetailPage() {
         reader.onerror = reject
         reader.readAsDataURL(file)
       })
+      // Anúncio cheio: abre a confirmação pra escolher qual foto sai
+      if (imagesFull) { openAttach(base64, 'manual'); return }
       await attachItemImage(item.item_id, base64)
       toast.success('Foto adicionada ao anúncio!')
       await load()
@@ -564,7 +580,7 @@ export function ShopeeItemDetailPage() {
         {/* ── Aba: Imagens & IA ─────────────────────────────────── */}
         {tab === 'imagens' && (
           <div className="space-y-4">
-            <Card icon={Images} title="Fotos do anúncio" caption={`${item.images.length} foto${item.images.length === 1 ? '' : 's'} — a Shopee recomenda pelo menos 3`}>
+            <Card icon={Images} title="Fotos do anúncio" caption={`${item.images.length} de ${MAX_SHOPEE_IMAGES} fotos (máximo da Shopee) — recomendado pelo menos 3${item.images.length >= MAX_SHOPEE_IMAGES ? '. Anúncio cheio: foto nova substitui uma existente' : ''}`}>
               <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-3 w-fit">
                 <label className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${uploadingImage ? 'bg-slate-200 text-slate-400' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'}`}>
                   {uploadingImage ? <Loader2 size={13} className="animate-spin"/> : <Upload size={13}/>}
@@ -640,9 +656,9 @@ export function ShopeeItemDetailPage() {
                         <p className="text-sm font-semibold text-violet-800">{generatedImage.source}</p>
                         <p className="text-xs text-violet-500 mt-1">Prévia — ainda não foi adicionada ao anúncio.</p>
                         <div className="flex gap-2 mt-3">
-                          <button onClick={() => setPendingAttachImage(true)} disabled={attachingImage}
+                          <button onClick={() => openAttach(generatedImage.image_base64, 'ia')} disabled={attachingImage}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg disabled:opacity-50">
-                            <Plus size={12}/> Adicionar ao anúncio
+                            <Plus size={12}/> {imagesFull ? 'Substituir uma foto do anúncio' : 'Adicionar ao anúncio'}
                           </button>
                           <button onClick={() => setGeneratedImage(null)} className="px-3 py-1.5 text-xs text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg">
                             Descartar
@@ -777,15 +793,44 @@ export function ShopeeItemDetailPage() {
       />
 
       <ConfirmWriteModal
-        open={pendingAttachImage}
+        open={!!attachPayload}
         platform="Shopee"
-        title="Adicionar foto ao anúncio"
-        confirmLabel="Sim, adicionar"
-        description="Vai adicionar essa nova foto (gerada por IA) ao anúncio real na Shopee agora mesmo, sem remover nenhuma foto existente."
+        title={imagesFull ? 'Substituir foto do anúncio' : 'Adicionar foto ao anúncio'}
+        confirmLabel={imagesFull ? 'Sim, substituir' : 'Sim, adicionar'}
+        description={imagesFull
+          ? `O anúncio já tem ${MAX_SHOPEE_IMAGES} fotos (máximo da Shopee). Clique na foto que vai SAIR — a nova entra no lugar dela, na mesma posição.`
+          : `Vai adicionar essa nova foto${attachPayload?.kind === 'ia' ? ' (gerada por IA)' : ''} ao anúncio real na Shopee agora mesmo, sem remover nenhuma foto existente.`}
         confirming={attachingImage}
+        confirmDisabled={imagesFull && !replaceImageId}
         onConfirm={confirmAttachImage}
-        onCancel={() => setPendingAttachImage(false)}
-        detail={generatedImage && <img src={`data:image/png;base64,${generatedImage.image_base64}`} alt="" className="w-24 h-24 rounded-lg object-cover"/>}
+        onCancel={() => { setAttachPayload(null); setReplaceImageId(null) }}
+        detail={attachPayload && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <img src={`data:image/png;base64,${attachPayload.base64}`} alt="" className="w-16 h-16 rounded-lg object-cover border border-violet-300"/>
+              <p className="text-xs text-slate-500">Foto nova</p>
+            </div>
+            {imagesFull && (
+              <div>
+                <p className="text-xs font-semibold text-slate-600 mb-1.5">Qual foto sai?</p>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {item.images.map((url, i) => {
+                    const id = item.image_id_list[i]
+                    const picked = replaceImageId === id
+                    return (
+                      <button key={id} type="button" onClick={() => setReplaceImageId(id)} title={`Foto ${i + 1}`}
+                        className={`relative aspect-square rounded-md overflow-hidden border-2 transition-all ${picked ? 'border-rose-500 ring-2 ring-rose-200' : 'border-transparent opacity-80 hover:opacity-100'}`}>
+                        <img src={url} alt="" className="w-full h-full object-cover"/>
+                        <span className="absolute top-0 left-0 text-[9px] font-bold bg-black/60 text-white px-1 rounded-br">{i + 1}</span>
+                        {picked && <span className="absolute inset-0 bg-rose-500/30 flex items-center justify-center"><Trash2 size={14} className="text-white"/></span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       />
 
       <ConfirmWriteModal
