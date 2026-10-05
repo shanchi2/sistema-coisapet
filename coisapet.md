@@ -275,6 +275,36 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-10-05 (3ª parte) — Recebimento interno das devoluções + visualizador de fotos/vídeos (fase93)
+
+**Pedido do Raphael:** a produção registrar o que CHEGOU de volta —
+status interno, observação e fotos/vídeos (importante quando tem avaria);
+e ver fotos/vídeos sem abrir aba nova.
+
+**Feito (tela `/shopee/retornos`, painel de cada devolução):**
+- Seção "Recebimento na CoisaPet (interno)": status (Aguardando chegada ·
+  Chegou perfeito — volta pro estoque [+ "já coloquei no estoque"] ·
+  Avaria transporte · Avaria causada pelo comprador · Incompleto · Outro
+  produto · Não chegou/extraviado), observação, fotos/vídeos e histórico
+  (quem mudou o quê). Avaria/incompleto/errado EXIGE ≥1 foto/vídeo e
+  descrição. Mídia grava NA HORA do upload (não se perde se fechar sem
+  salvar); foto é reduzida pra JPEG 1600px, vídeo sobe original (≤100 MB).
+- Ao marcar avaria: aviso no sino pra admin + atendimento.
+- Lista: etiqueta do recebimento em cada linha ("Chegou — conferir" quando
+  a Shopee diz que entregou e ninguém registrou) + filtros "Recebimento
+  pendente" (qualquer período) e "Chegou com avaria".
+- `src/components/ui/MediaViewer.jsx`: visualizador reaproveitável (←/→,
+  Esc, miniaturas, baixar). Usado em fotos/vídeos do comprador, da nossa
+  contestação, do recebimento, foto do produto e exemplos da disputa.
+
+**Banco (aplicado 05/10):** `shopee_return_receipts` (1 linha por
+return_sn) + bucket público `return-receipts`. Ver
+`supabase/fase93-recebimento-devolucoes.sql`. Controle 100% nosso — nada
+vai pra Shopee. NÃO mexe no estoque sozinho ("volta pro estoque" é só
+registro). Testado com fluxo simulado como role producao.
+
+---
+
 ### 2026-10-05 (2ª parte) — Retornos Shopee liberado pra Atendimento e Produção, sem valores
 
 **Pedido do Raphael:** Atendimento e Produção precisam ver os chamados de

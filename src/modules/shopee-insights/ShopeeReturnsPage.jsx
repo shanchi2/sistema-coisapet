@@ -2,9 +2,10 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   RotateCcw, Loader2, AlertTriangle, ShieldAlert, CheckCircle2, ExternalLink, Clock, AlertCircle,
   TrendingDown, TrendingUp, Search, X, Package, Truck, User, Wallet, ScrollText, Scale, Copy,
-  RefreshCw, BarChart3, LayoutList, Image as ImageIcon, Hourglass, Ban,
+  RefreshCw, BarChart3, LayoutList, Image as ImageIcon, Hourglass, Ban, PackageCheck, Camera, Save, Trash2, History,
 } from 'lucide-react'
-import { useShopeeReturns } from './hooks/useShopeeReturns'
+import { useShopeeReturns, RECEIPT_STATUS } from './hooks/useShopeeReturns'
+import { MediaViewer, MediaThumb } from '../../components/ui/MediaViewer'
 import { Modal } from '../../components/ui/Modal'
 import toast from 'react-hot-toast'
 import { useAuth } from '../../contexts/AuthContext'
@@ -91,6 +92,10 @@ function ago(iso) {
 
 // ── Regras de negócio ───────────────────────────────────────────────────
 const itemBack = r => r.reverse_logistics_status === 'LOGISTICS_DELIVERY_DONE'
+// Devolução em que o produto volta fisicamente pra cá (dá pra conferir):
+// "devolução e reembolso" (return_solution 0), ou já tem rastreio/chegou.
+const expectsPhysical = r => itemBack(r) || ((r.return_solution === 0 || !!r.tracking_number) && !['CANCELLED', 'REJECTED'].includes(r.status))
+const receiptPending = (r, rec) => expectsPhysical(r) && (!rec || rec.status === 'aguardando')
 
 // Qual prazo importa agora e se ele é NOSSO (precisa agir) ou só informativo
 function deadlineOf(r) {
@@ -125,12 +130,14 @@ function urgencyOf(r) {
 }
 
 const FILTERS = [
-  ['acao', 'Precisa agir'], ['andamento', 'Em andamento'], ['disputa', 'Com disputa'], ['compensacao', 'Com compensação'],
+  ['acao', 'Precisa agir'], ['receber', 'Recebimento pendente'], ['avaria', 'Chegou com avaria'], ['andamento', 'Em andamento'], ['disputa', 'Com disputa'], ['compensacao', 'Com compensação'],
   ['reembolsadas', 'Reembolsadas'], ['canceladas', 'Canceladas'], ['todas', 'Todas'],
 ]
-function matchFilter(r, f) {
+function matchFilter(r, f, rec) {
   switch (f) {
     case 'acao': return !!deadlineOf(r)?.ours
+    case 'receber': return receiptPending(r, rec)
+    case 'avaria': return !!RECEIPT_STATUS[rec?.status]?.avaria
     case 'andamento': return outcomeOf(r) === 'open'
     case 'disputa': return (r.dispute_reason?.length || 0) > 0 || ['JUDGING', 'SELLER_DISPUTE'].includes(r.status)
     case 'compensacao': return Number(r.compensation_amount) > 0
@@ -225,6 +232,7 @@ async function fileToJpegBase64(file) {
 // (até 256) → provas (fotos suas e/ou as fotos que o comprador mandou) →
 // confirmação. Fotos viram URL da Shopee (convert_image) e vão na disputa.
 function DisputeModal({ open, onClose, ret, reasons, disputeReturn, convertProofImages, onDone }) {
+  const [sampleViewer, setSampleViewer] = useState(null)
   const [reasonId, setReasonId] = useState('')
   const [text, setText]         = useState('')
   const [email, setEmail]       = useState('raphael@coisapet.com.br')
@@ -303,7 +311,7 @@ function DisputeModal({ open, onClose, ret, reasons, disputeReturn, convertProof
               ))}
               {reason.requirement && <p className="whitespace-pre-line text-slate-500">{reason.requirement}</p>}
               {reason.samples?.length > 0 && (
-                <div className="flex gap-1.5 pt-1">{reason.samples.map((s, i) => <a key={i} href={s.url} target="_blank" rel="noreferrer"><img src={s.thumbnail || s.url} alt="" className="w-12 h-12 rounded object-cover border" title="Exemplo de prova" /></a>)}</div>
+                <div className="flex gap-1.5 pt-1">{reason.samples.map((s, i) => <button type="button" key={i} onClick={() => setSampleViewer({ items: reason.samples.map(x => ({ url: x.url, type: 'image', label: 'Exemplo de prova (Shopee)' })), index: i })}><img src={s.thumbnail || s.url} alt="" className="w-12 h-12 rounded object-cover border" title="Exemplo de prova" /></button>)}</div>
               )}
             </div>
           )}
@@ -356,6 +364,7 @@ function DisputeModal({ open, onClose, ret, reasons, disputeReturn, convertProof
           <input value={email} onChange={e => setEmail(e.target.value)} className="input" type="email" disabled={confirming} />
         </div>
       </div>
+      {sampleViewer && <MediaViewer items={sampleViewer.items} index={sampleViewer.index} onClose={() => setSampleViewer(null)} />}
     </Modal>
   )
 }
@@ -391,7 +400,7 @@ function ConfirmReturnModal({ open, onClose, ret, confirmReturn, onDone }) {
 // Nossa contestação (Fase 85): motivo + descrição (a API devolve) e as
 // fotos que mandamos (a API NÃO devolve — guardamos ao disputar pelo
 // sistema; disputa feita no Seller Center dá pra anexar aqui depois).
-function OurDisputeSection({ r, api }) {
+function OurDisputeSection({ r, api, openViewer }) {
   const [uploading, setUploading] = useState(false)
   const our = r.our_dispute || {}
   const reasons = (r.dispute_reason || []).length ? r.dispute_reason : (our.reason_label ? [our.reason_label] : [])
@@ -429,7 +438,7 @@ function OurDisputeSection({ r, api }) {
       <p className="text-[11px] font-bold text-rose-600 uppercase tracking-wide mt-3 mb-1">Fotos que enviamos</p>
       {photos.length > 0 ? (
         <div className="flex gap-2 flex-wrap">
-          {photos.map((p, i) => <a key={i} href={p} target="_blank" rel="noreferrer"><img src={p} alt="" className="w-20 h-20 rounded-lg object-cover border border-rose-200 hover:ring-2 hover:ring-rose-300" /></a>)}
+          {photos.map((p, i) => <MediaThumb key={i} item={{ url: p, type: 'image' }} className="border-rose-200" onClick={() => openViewer(photos.map(u => ({ url: u, type: 'image', label: 'Nossa contestação' })), i)} />)}
         </div>
       ) : (
         <p className="text-xs text-slate-500">
@@ -450,12 +459,147 @@ function OurDisputeSection({ r, api }) {
   )
 }
 
+// ── Recebimento na CoisaPet (fase93) ────────────────────────────────────
+// A produção registra o que chegou: status interno, observação e
+// fotos/vídeos (obrigatórios em avaria). Controle nosso — não vai pra Shopee.
+function ReceiptSection({ r, api, openViewer }) {
+  const rec = api.receipts[r.return_sn]
+  const [status, setStatus] = useState(rec?.status || 'aguardando')
+  const [notes, setNotes] = useState(rec?.notes || '')
+  const [restocked, setRestocked] = useState(!!rec?.restocked)
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  useEffect(() => {
+    setStatus(rec?.status || 'aguardando'); setNotes(rec?.notes || ''); setRestocked(!!rec?.restocked)
+  }, [r.return_sn]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const media = rec?.media || []
+  const needsMedia = RECEIPT_STATUS[status]?.avaria
+  const dirty = status !== (rec?.status || 'aguardando') || (notes || '') !== (rec?.notes || '') || restocked !== !!rec?.restocked
+
+  async function upload(list) {
+    const files = Array.from(list || [])
+    if (!files.length) return
+    setUploading(true)
+    try {
+      const added = await api.uploadReceiptMedia(r.return_sn, files)
+      if (!added.length) { toast.error('Só dá pra enviar foto ou vídeo.'); return }
+      await api.saveReceiptMedia(r.return_sn, [...media, ...added])
+      toast.success(`${added.length} arquivo(s) enviado(s).`)
+    } catch (err) {
+      toast.error(err.message, { duration: 7000 })
+    } finally { setUploading(false) }
+  }
+
+  async function removeMedia(m) {
+    if (!window.confirm('Excluir este arquivo do recebimento?')) return
+    try {
+      await api.saveReceiptMedia(r.return_sn, media.filter(x => x.path !== m.path))
+      await api.deleteReceiptFile(m.path)
+      toast.success('Arquivo excluído.')
+    } catch (err) { toast.error(err.message) }
+  }
+
+  async function save() {
+    if (needsMedia && media.length === 0) { toast.error('Com avaria, envie pelo menos 1 foto ou vídeo antes de salvar.'); return }
+    if (status !== 'aguardando' && status !== 'perfeito' && !notes.trim()) { toast.error('Descreva o problema na observação.'); return }
+    setSaving(true)
+    try {
+      await api.saveReceipt(r, { status, notes: notes.trim(), media, restocked: status === 'perfeito' && restocked })
+      toast.success('Recebimento salvo!')
+    } catch (err) { toast.error('Erro ao salvar: ' + err.message) }
+    finally { setSaving(false) }
+  }
+
+  const viewerItems = media.map(m => ({ url: m.url, type: m.type, label: `Recebimento${m.by ? ` · ${m.by}` : ''}` }))
+
+  return (
+    <Section icon={PackageCheck} title="Recebimento na CoisaPet (interno)" tone={RECEIPT_STATUS[rec?.status]?.avaria ? 'bg-rose-50/40 border-rose-100' : rec?.status === 'perfeito' ? 'bg-emerald-50/40 border-emerald-100' : 'bg-white border-orange-200'}>
+      {!expectsPhysical(r) && !rec && (
+        <p className="text-xs text-slate-500 mb-2">Pela Shopee, este caso não tem produto voltando (só reembolso ou cancelado). Preencha só se o produto chegou mesmo assim.</p>
+      )}
+      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Como o produto chegou?</p>
+      <div className="flex flex-wrap gap-1.5">
+        {Object.entries(RECEIPT_STATUS).map(([k, v]) => (
+          <button key={k} type="button" onClick={() => setStatus(k)}
+            className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all ${status === k ? `${v.tone} ring-2 ring-offset-1 ring-orange-300` : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {status === 'perfeito' && (
+        <label className="flex items-center gap-2 text-sm text-slate-700 mt-3 cursor-pointer">
+          <input type="checkbox" checked={restocked} onChange={e => setRestocked(e.target.checked)} className="accent-emerald-600 w-4 h-4" />
+          Já coloquei de volta no estoque
+          {rec?.restocked_at && <span className="text-xs text-slate-400">({fmtDateTime(rec.restocked_at)})</span>}
+        </label>
+      )}
+
+      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-1">Observação</p>
+      <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
+        placeholder={needsMedia ? 'Descreva o problema: o que quebrou, como veio a embalagem, se dá pra consertar...' : 'Algum detalhe do recebimento (opcional)'}
+        className="input text-sm resize-y" />
+
+      <div className="flex items-center justify-between gap-2 mt-3 mb-1.5">
+        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+          Fotos e vídeos {needsMedia && <span className="text-rose-600 normal-case font-semibold">· obrigatório com avaria</span>}
+        </p>
+        <label className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border cursor-pointer ${uploading ? 'opacity-60 pointer-events-none' : 'bg-white border-slate-200 text-slate-700 hover:border-orange-300'}`}>
+          {uploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
+          {uploading ? 'Enviando...' : 'Adicionar fotos/vídeos'}
+          <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => { upload(e.target.files); e.target.value = '' }} />
+        </label>
+      </div>
+      {media.length > 0 ? (
+        <div className="flex gap-2 flex-wrap">
+          {media.map((m, i) => (
+            <div key={m.path} className="relative group">
+              <MediaThumb item={m} onClick={() => openViewer(viewerItems, i)} />
+              <button onClick={() => removeMedia(m)} title="Excluir"
+                className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-white border border-slate-200 text-rose-500 flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-slate-400">{needsMedia ? 'Tire fotos do produto e da embalagem mostrando o dano — servem de prova na disputa com a Shopee.' : 'Nenhum arquivo.'}</p>
+      )}
+
+      <div className="flex items-center justify-between gap-2 mt-4 flex-wrap">
+        <p className="text-[11px] text-slate-400">
+          {rec?.updated_by_name ? `Última alteração: ${rec.updated_by_name} em ${fmtDateTime(rec.updated_at)}` : 'Ainda não registrado'}
+          {(rec?.history?.length || 0) > 0 && <button onClick={() => setShowHistory(v => !v)} className="ml-2 text-slate-500 hover:text-orange-600 inline-flex items-center gap-1"><History size={11} />{showHistory ? 'esconder histórico' : `histórico (${rec.history.length})`}</button>}
+        </p>
+        <button onClick={save} disabled={saving || !dirty}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: SHOPEE_ORANGE }}>
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar recebimento
+        </button>
+      </div>
+      {showHistory && (
+        <ul className="mt-2 space-y-1.5 border-t border-slate-100 pt-2">
+          {[...(rec?.history || [])].reverse().map((h, i) => (
+            <li key={i} className="text-xs text-slate-600">
+              <span className="text-slate-400">{fmtDateTime(h.at)} · {h.by || '—'}:</span> <b>{RECEIPT_STATUS[h.status]?.label || h.status}</b>
+              {h.restocked && ' · voltou pro estoque'}{h.notes && <span className="text-slate-500"> — {h.notes}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  )
+}
+
 function DetailPanel({ r, api, onClose }) {
   const showValues = useShowValues()
   const [refreshing, setRefreshing] = useState(false)
   const [reasons, setReasons] = useState(null) // null = verificando
   const [disputeOpen, setDisputeOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [viewer, setViewer] = useState(null) // { items, index } — fotos/vídeos em tela cheia
+  const openViewer = (items, index = 0) => setViewer({ items, index })
   const d = deadlineOf(r)
   const actionable = !!d?.ours
 
@@ -511,6 +655,9 @@ function DetailPanel({ r, api, onClose }) {
             </div>
           )}
 
+          {/* Recebimento interno — a produção preenche quando o produto chega */}
+          <ReceiptSection r={r} api={api} openViewer={openViewer} />
+
           {/* Linha do tempo */}
           <Section icon={Clock} title="Linha do tempo">
             <div className="flex flex-col gap-2">
@@ -539,7 +686,7 @@ function DetailPanel({ r, api, onClose }) {
               const img = v?.image || it.images?.[0]
               return (
                 <div key={i} className="flex items-center gap-3 mb-3 last:mb-0">
-                  <a href={img || undefined} target="_blank" rel="noreferrer" className="w-20 h-20 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200">{img && <img src={img} alt="" className="w-full h-full object-cover" />}</a>
+                  <button type="button" onClick={() => img && openViewer([{ url: img, type: 'image', label: it.name }])} className="w-20 h-20 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200">{img && <img src={img} alt="" className="w-full h-full object-cover" />}</button>
                   <div className="min-w-0 text-sm flex flex-col gap-1">
                     <p className="font-semibold text-slate-700 line-clamp-2">{it.name}</p>
                     {v && (
@@ -565,15 +712,17 @@ function DetailPanel({ r, api, onClose }) {
             {r.text_reason && <p className="text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2 mt-1 italic">&ldquo;{r.text_reason}&rdquo;</p>}
             {(photos.length > 0 || videos.length > 0) && (
               <div className="flex gap-2 flex-wrap mt-2">
-                {photos.map((p, i) => <a key={i} href={p} target="_blank" rel="noreferrer"><img src={p} alt="" className="w-20 h-20 rounded-lg object-cover border border-slate-200 hover:ring-2 hover:ring-orange-300" /></a>)}
-                {videos.map((v, i) => <a key={`v${i}`} href={v} target="_blank" rel="noreferrer" className="w-20 h-20 rounded-lg bg-slate-800 text-white text-xs flex items-center justify-center">▶ vídeo</a>)}
+                {(() => {
+                  const all = [...photos.map(u => ({ url: u, type: 'image', label: 'Enviado pelo comprador' })), ...videos.map(u => ({ url: u, type: 'video', label: 'Enviado pelo comprador' }))]
+                  return all.map((m, i) => <MediaThumb key={i} item={m} onClick={() => openViewer(all, i)} />)
+                })()}
               </div>
             )}
           </Section>
 
           {/* Disputa */}
           {((r.dispute_reason?.length || 0) > 0 || ['JUDGING', 'SELLER_DISPUTE'].includes(r.status) || r.our_dispute) && (
-            <OurDisputeSection r={r} api={api} />
+            <OurDisputeSection r={r} api={api} openViewer={openViewer} />
           )}
 
           {/* Compensação */}
@@ -618,6 +767,7 @@ function DetailPanel({ r, api, onClose }) {
           onClose={() => setDisputeOpen(false)} onDone={() => { setDisputeOpen(false); onClose() }} />
         <ConfirmReturnModal open={confirmOpen} ret={r} confirmReturn={api.confirmReturn}
           onClose={() => setConfirmOpen(false)} onDone={() => { setConfirmOpen(false); onClose() }} />
+        {viewer && <MediaViewer items={viewer.items} index={viewer.index} onClose={() => setViewer(null)} />}
       </div>
     </div>
   )
@@ -742,10 +892,12 @@ export function ShopeeReturnsPage() {
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase()
-    let l = (filter === 'acao' ? actionable : inPeriod).filter(r => matchFilter(r, filter))
+    let l = (filter === 'acao' || filter === 'receber' ? (filter === 'acao' ? actionable : rows) : inPeriod).filter(r => matchFilter(r, filter, api.receipts[r.return_sn]))
     if (s) l = l.filter(r => [r.return_sn, r.order_sn, r.buyer_username, r.items?.[0]?.name].some(x => (x || '').toLowerCase().includes(s)))
     return l
-  }, [inPeriod, actionable, filter, q])
+  }, [inPeriod, actionable, rows, filter, q, api.receipts])
+  // Recebimento pendente: de qualquer período (igual ao "Precisa agir")
+  const pendingReceipts = useMemo(() => rows.filter(r => receiptPending(r, api.receipts[r.return_sn])).length, [rows, api.receipts])
 
   const openRow = rows.find(r => r.return_sn === openSn)
   const overdue = actionable.filter(r => urgencyOf(r) === 'overdue').length
@@ -835,10 +987,10 @@ export function ShopeeReturnsPage() {
               {FILTERS.map(([key, label]) => (
                 <button key={key} onClick={() => setFilter(key)}
                   className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${filter === key ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>
-                  {label}{key === 'acao' && actionable.length ? ` (${actionable.length})` : ''}
+                  {label}{key === 'acao' && actionable.length ? ` (${actionable.length})` : ''}{key === 'receber' && pendingReceipts ? ` (${pendingReceipts})` : ''}
                 </button>
               ))}
-              <span className="text-xs text-slate-400 ml-1">{list.length} resultado(s){filter === 'acao' ? ' — de qualquer período' : ''}</span>
+              <span className="text-xs text-slate-400 ml-1">{list.length} resultado(s){filter === 'acao' || filter === 'receber' ? ' — de qualquer período' : ''}</span>
             </div>
 
             {loading ? (
@@ -877,6 +1029,12 @@ export function ShopeeReturnsPage() {
                         <div className="flex items-center gap-1.5 flex-wrap md:justify-end">
                           <OutcomeBadge r={r} />
                           <DeadlineChip r={r} />
+                          {(() => {
+                            const rec = api.receipts[r.return_sn]
+                            if (rec && rec.status !== 'aguardando') return <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${RECEIPT_STATUS[rec.status]?.tone}`}><PackageCheck size={11} />{RECEIPT_STATUS[rec.status]?.label}{rec.media?.length ? ` · ${rec.media.length} 📷` : ''}</span>
+                            if (receiptPending(r, rec) && itemBack(r)) return <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border bg-orange-50 text-orange-700 border-orange-200 inline-flex items-center gap-1"><PackageCheck size={11} />Chegou — conferir</span>
+                            return null
+                          })()}
                           {Number(r.compensation_amount) > 0 && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">{showValues ? `+${fmtPreco(r.compensation_amount)}` : 'Compensado'}</span>}
                         </div>
                       </div>
