@@ -31,6 +31,32 @@ export async function fileToJpegBase64(file) {
   return c.toDataURL('image/jpeg', 0.85).split(',')[1]
 }
 
+// Recebimento interno (fase93) — status que a produção registra quando a
+// devolução CHEGA aqui. `avaria` = exige pelo menos 1 foto/vídeo.
+export const RECEIPT_STATUS = {
+  aguardando:        { label: 'Aguardando chegada',                    tone: 'bg-slate-100 text-slate-600 border-slate-200' },
+  perfeito:          { label: 'Chegou perfeito — volta pro estoque',   tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  avaria_transporte: { label: 'Chegou com avaria (transporte)',        tone: 'bg-rose-50 text-rose-700 border-rose-200', avaria: true },
+  avaria_comprador:  { label: 'Chegou com avaria (causada pelo comprador)', tone: 'bg-rose-50 text-rose-700 border-rose-200', avaria: true },
+  incompleto:        { label: 'Chegou incompleto / faltando peças',    tone: 'bg-amber-50 text-amber-700 border-amber-200', avaria: true },
+  produto_errado:    { label: 'Chegou outro produto',                  tone: 'bg-amber-50 text-amber-700 border-amber-200', avaria: true },
+  nao_retornou:      { label: 'Não chegou / extraviado',               tone: 'bg-slate-100 text-slate-600 border-slate-300' },
+}
+
+// Foto do celular pode ter 5-10 MB: reduz pra JPEG 1600px antes de subir.
+// HEIC (iPhone) o navegador não consegue redesenhar — sobe o original.
+async function compressImage(file) {
+  try {
+    const b64 = await fileToJpegBase64(file)
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k)
+    return { blob: new Blob([bytes], { type: 'image/jpeg' }), ext: 'jpg', type: 'image/jpeg' }
+  } catch {
+    return { blob: file, ext: (file.name.split('.').pop() || 'jpg').toLowerCase(), type: file.type || 'image/jpeg' }
+  }
+}
+
 // Colunas da lista (sem raw/detail, que são pesados)
 const LIST_COLUMNS = [
   'return_sn', 'order_sn', 'status', 'reason', 'text_reason', 'refund_amount', 'amount_before_discount',
@@ -54,7 +80,14 @@ export function useShopeeReturns() {
   const [syncing, setSyncing]   = useState(false)
   const [syncError, setSyncError] = useState(null)
   const [lastSync, setLastSync] = useState(null)
+  const [receipts, setReceipts] = useState({}) // return_sn → recebimento interno (fase93)
   const syncingRef = useRef(false)
+
+  const loadReceipts = useCallback(async () => {
+    const { data } = await supabase.from('shopee_return_receipts').select('*').limit(5000)
+    setReceipts(Object.fromEntries((data || []).map(r => [r.return_sn, r])))
+  }, [])
+  useEffect(() => { loadReceipts() }, [loadReceipts])
 
   const load = useCallback(async () => {
     const { data, error: err } = await supabase.from('shopee_returns').select(LIST_COLUMNS)
@@ -147,7 +180,79 @@ export function useShopeeReturns() {
     await load()
   }
 
+  // ── Recebimento interno (fase93) ─────────────────────────────────────
+  // Salva status/observação (e a lista de mídias já enviadas). Guarda no
+  // histórico quem mudou e pra quê. Se virou avaria, avisa diretoria +
+  // atendimento no sino.
+  async function saveReceipt(ret, { status, notes, media, restocked }) {
+    const prev = receipts[ret.return_sn]
+    const by = sessionName()
+    const now = new Date().toISOString()
+    const entry = { at: now, by, status, notes: notes || null, restocked: !!restocked }
+    const row = {
+      return_sn: ret.return_sn, status, notes: notes || null, media: media || [],
+      restocked: !!restocked,
+      restocked_at: restocked ? (prev?.restocked_at || now) : null,
+      history: [...(prev?.history || []), entry],
+      updated_by_name: by, updated_at: now,
+    }
+    const { data, error: err } = await supabase.from('shopee_return_receipts').upsert(row).select().single()
+    if (err) throw err
+    setReceipts(m => ({ ...m, [ret.return_sn]: data }))
+
+    const virouAvaria = RECEIPT_STATUS[status]?.avaria && prev?.status !== status
+    if (virouAvaria) {
+      const { data: users } = await supabase.from('system_users').select('id').in('role', ['admin', 'atendimento']).eq('active', true)
+      if (users?.length) {
+        await supabase.from('notifications').insert(users.map(u => ({
+          user_id: u.id,
+          type: 'shopee_return_damaged',
+          title: '📦 Devolução chegou com problema',
+          body: `${RECEIPT_STATUS[status].label} — ${ret.items?.[0]?.name || 'produto'} (pedido ${ret.order_sn}). Registrado por ${by || 'alguém'}${notes ? `: "${notes.slice(0, 120)}"` : '.'}`,
+          link: '/shopee/retornos',
+        })))
+      }
+    }
+    return data
+  }
+
+  // Sobe fotos/vídeos pro bucket return-receipts e devolve as entradas
+  // pra lista `media` (quem salva no banco é o saveReceipt).
+  async function uploadReceiptMedia(returnSn, files) {
+    const by = sessionName()
+    const out = []
+    for (const file of files) {
+      const isVideo = file.type.startsWith('video/')
+      if (!isVideo && !file.type.startsWith('image/')) continue
+      if (file.size > 100 * 1024 * 1024) throw new Error(`"${file.name}" passa de 100 MB — grave um vídeo mais curto.`)
+      const up = isVideo ? { blob: file, ext: (file.name.split('.').pop() || 'mp4').toLowerCase(), type: file.type } : await compressImage(file)
+      const path = `${returnSn}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${up.ext}`
+      const { error: err } = await supabase.storage.from('return-receipts').upload(path, up.blob, { contentType: up.type, upsert: false })
+      if (err) throw new Error(`Erro ao enviar "${file.name}": ${err.message}`)
+      const { data } = supabase.storage.from('return-receipts').getPublicUrl(path)
+      out.push({ path, url: data.publicUrl, type: isVideo ? 'video' : 'image', name: file.name, size: up.blob.size, by, at: new Date().toISOString() })
+    }
+    return out
+  }
+
+  async function deleteReceiptFile(path) {
+    await supabase.storage.from('return-receipts').remove([path])
+  }
+
+  // Grava SÓ a lista de mídias, na hora (sem mexer no status nem no
+  // histórico) — assim foto que já subiu nunca se perde, mesmo se a pessoa
+  // fechar a tela sem clicar em "Salvar recebimento".
+  async function saveReceiptMedia(returnSn, media) {
+    const { data, error: err } = await supabase.from('shopee_return_receipts')
+      .upsert({ return_sn: returnSn, media, updated_at: new Date().toISOString(), updated_by_name: sessionName() })
+      .select().single()
+    if (err) throw err
+    setReceipts(m => ({ ...m, [returnSn]: data }))
+    return data
+  }
+
   return {
+    receipts, saveReceipt, saveReceiptMedia, uploadReceiptMedia, deleteReceiptFile, reloadReceipts: loadReceipts,
     rows, loading, error, syncing, syncError, lastSync, saveOurDisputePhotos,
     reload: load, sync, refreshOne, getDisputeReasons, convertProofImages, confirmReturn, disputeReturn,
   }
