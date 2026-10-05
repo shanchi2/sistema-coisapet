@@ -275,6 +275,20 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-10-05 — Shopee: foto nova com anúncio cheio (9 fotos) substitui uma
+
+**Bug real:** adicionar foto (IA ou própria) num anúncio que já tinha 9
+fotos dava `media.image.quantity.range` (actual 10 / upper 9) — a Shopee
+aceita no máximo 9. **Agora:** com 9 fotos, a confirmação mostra as fotos
+atuais numeradas pra escolher qual SAI; a nova entra na mesma posição.
+Feito só no front (`useShopeeInsights.attachItemImage` com
+`replaceImageId`), usando ações que já estavam no ar (`item_detail` →
+`upload_image` → `replace_item_images`, as mesmas do Publicar Fotos) — sem
+redeploy de edge function. O log `shopee_item_updates` (pictures_replaced)
+guarda a lista anterior. Testado com anúncio simulado de 9 fotos.
+
+---
+
 ### 2026-10-03 — Modo escuro no sistema inteiro
 
 **O que foi feito:** botão sol/lua no cabeçalho (Claro → Escuro →

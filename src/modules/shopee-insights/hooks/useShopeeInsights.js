@@ -238,8 +238,28 @@ export function useShopeeInsights() {
     return callShopeeInsights({ action: 'generate_item_image_custom', picture_url: pictureUrl, instruction })
   }, [])
 
-  const attachItemImage = useCallback(async (itemId, imageBase64) => {
-    return callShopeeInsights({ action: 'attach_item_image', item_id: itemId, image_base64: imageBase64 })
+  // Shopee aceita no máximo 9 fotos por anúncio (erro real 05/10:
+  // `media.image.quantity.range`). Sem `replaceImageId` só adiciona no fim.
+  // Com ele, a foto nova entra NA MESMA POSIÇÃO da que sai — feito aqui no
+  // front com as ações que já existem (upload_image + replace_item_images,
+  // as mesmas do Publicar Fotos), relendo a lista atual da Shopee antes,
+  // porque o replace_item_images troca a lista inteira. O log
+  // (shopee_item_updates, 'pictures_replaced') guarda a lista anterior.
+  const attachItemImage = useCallback(async (itemId, imageBase64, replaceImageId) => {
+    if (!replaceImageId) {
+      return callShopeeInsights({ action: 'attach_item_image', item_id: itemId, image_base64: imageBase64 })
+    }
+    const fresh = await callShopeeInsights({ action: 'item_detail', item_id: itemId })
+    const current = fresh?.image_id_list || []
+    const idx = current.indexOf(replaceImageId)
+    if (idx === -1) throw new Error('A foto escolhida pra substituir não está mais no anúncio — recarregue a página.')
+    const { image_id: newId } = await callShopeeInsights({ action: 'upload_image', image_base64: imageBase64 })
+    if (!newId) throw new Error('A Shopee não devolveu o código da imagem enviada.')
+    const newList = current.map((id, i) => (i === idx ? newId : id))
+    return callShopeeInsights({
+      action: 'replace_item_images', item_id: itemId, image_ids: newList,
+      source: { kind: 'replace_one', replaced: replaceImageId, position: idx + 1, new_image_id: newId },
+    })
   }, [])
 
   const deleteItemImage = useCallback(async (itemId, imageId) => {
