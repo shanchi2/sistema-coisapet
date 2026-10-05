@@ -169,7 +169,7 @@ export default function App() {
                 <Route path="/shopee"            element={<GuardedRoute moduleKey="shopee-insights"><ShopeeOverviewPage /></GuardedRoute>} />
                 <Route path="/shopee/anuncios"    element={<GuardedRoute moduleKey="shopee-insights"><ShopeeActiveListingsPage /></GuardedRoute>} />
                 <Route path="/shopee/saude"       element={<GuardedRoute moduleKey="shopee-insights"><ShopeeHealthPage /></GuardedRoute>} />
-                <Route path="/shopee/retornos"    element={<GuardedRoute moduleKey="shopee-insights"><ShopeeReturnsPage /></GuardedRoute>} />
+                <Route path="/shopee/retornos"    element={<GuardedRoute moduleKey="shopee-retornos"><ShopeeReturnsPage /></GuardedRoute>} />
                 <Route path="/shopee/item/:itemId" element={<GuardedRoute moduleKey="shopee-insights"><ShopeeItemDetailPage /></GuardedRoute>} />
                 <Route path="/shopee/full"        element={<GuardedRoute moduleKey="shopee-insights"><ShopeeFullStockPage /></GuardedRoute>} />
                 <Route path="/shopee/cupons"      element={<GuardedRoute moduleKey="shopee-insights"><ShopeeVouchersPage /></GuardedRoute>} />

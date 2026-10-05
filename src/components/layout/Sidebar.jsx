@@ -44,7 +44,7 @@ const NAV_SECTIONS = [
       { to: '/shopee',          moduleKey: 'shopee-insights', icon: LayoutDashboard, label: 'Visão Geral', roles: ['admin','marketplace'] },
       { to: '/shopee/anuncios', moduleKey: 'shopee-insights', icon: Store,           label: 'Anúncios',    roles: ['admin','marketplace'] },
       { to: '/shopee/saude',    moduleKey: 'shopee-insights', icon: HeartPulse,      label: 'Saúde dos Anúncios', roles: ['admin','marketplace'] },
-      { to: '/shopee/retornos', moduleKey: 'shopee-insights', icon: RotateCcw,       label: 'Retornos', roles: ['admin','marketplace'] },
+      { to: '/shopee/retornos', moduleKey: 'shopee-retornos', icon: RotateCcw,       label: 'Retornos', roles: ['admin','marketplace','atendimento','producao'] },
       { to: '/shopee/full',     moduleKey: 'shopee-insights', icon: Warehouse,       label: 'Estoque Full', roles: ['admin','marketplace'] },
       { to: '/shopee/cupons',     moduleKey: 'shopee-insights', icon: Ticket, label: 'Cupons', roles: ['admin','marketplace'] },
       { to: '/shopee/flash-sale', moduleKey: 'shopee-insights', icon: Zap,    label: 'Flash Sale', roles: ['admin','marketplace'] },

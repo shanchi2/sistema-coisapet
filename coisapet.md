@@ -275,6 +275,23 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-10-05 (2ª parte) — Retornos Shopee liberado pra Atendimento e Produção, sem valores
+
+**Pedido do Raphael:** Atendimento e Produção precisam ver os chamados de
+`/shopee/retornos`; valores (reembolso, compensação, preço) só pra
+diretoria. **Feito:** módulo próprio `shopee-retornos` (mesmo padrão do
+`ml-historico`) — rota e menu usam ele; `role_permissions` liberado pra
+atendimento/producao (aplicado no banco 05/10), aparece no Controle de
+Acesso como "Retornos Shopee (sem valores)". Na tela, `showValues =
+role === 'admin'`: some todo R$ (lista, "precisa agir", detalhe, modal de
+aceitar, relatório) e os cartões mostram nº de casos. Conferido com
+teste automático: 0 valores como atendimento, todos como admin.
+**Limite conhecido:** só esconde na tela — `shopee_returns` é legível pela
+chave anon (o app não usa sessão do Supabase Auth). Eles continuam podendo
+usar Aceitar/Contestar.
+
+---
+
 ### 2026-10-05 — Shopee: foto nova com anúncio cheio (9 fotos) substitui uma
 
 **Bug real:** adicionar foto (IA ou própria) num anúncio que já tinha 9

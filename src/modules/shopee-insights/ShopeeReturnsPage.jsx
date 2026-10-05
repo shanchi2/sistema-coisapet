@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   RotateCcw, Loader2, AlertTriangle, ShieldAlert, CheckCircle2, ExternalLink, Clock, AlertCircle,
   TrendingDown, TrendingUp, Search, X, Package, Truck, User, Wallet, ScrollText, Scale, Copy,
@@ -7,6 +7,7 @@ import {
 import { useShopeeReturns } from './hooks/useShopeeReturns'
 import { Modal } from '../../components/ui/Modal'
 import toast from 'react-hot-toast'
+import { useAuth } from '../../contexts/AuthContext'
 
 const SHOPEE_ORANGE = '#EE4D2D'
 
@@ -61,6 +62,14 @@ function VariationChip({ v, big }) {
 const TZ = 'America/Sao_Paulo'
 function fmtDate(iso) { return iso ? new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)) : '—' }
 function fmtDateTime(iso) { return iso ? new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(iso)) : '—' }
+// Valores (reembolso, compensação, preço) só pra diretoria (role admin) —
+// Atendimento e Produção usam esta tela pra acompanhar os chamados, mas sem
+// ver dinheiro (pedido do Raphael, 05/10). Só esconde na TELA: a tabela
+// shopee_returns continua legível pela chave anon (o app não usa sessão do
+// Supabase Auth, então não há como filtrar coluna por usuário no banco).
+const ShowValuesCtx = createContext(true)
+const useShowValues = () => useContext(ShowValuesCtx)
+
 function fmtPreco(v) { return (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 function hoursUntil(iso) { return iso ? (new Date(iso).getTime() - Date.now()) / 3600000 : null }
 function fmtCountdown(iso) {
@@ -352,6 +361,7 @@ function DisputeModal({ open, onClose, ret, reasons, disputeReturn, convertProof
 }
 
 function ConfirmReturnModal({ open, onClose, ret, confirmReturn, onDone }) {
+  const showValues = useShowValues()
   const [saving, setSaving] = useState(false)
   async function handleConfirm() {
     setSaving(true)
@@ -369,7 +379,9 @@ function ConfirmReturnModal({ open, onClose, ret, confirmReturn, onDone }) {
       </>}>
       <p className="flex items-start gap-1.5 text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2.5">
         <AlertTriangle size={15} className="shrink-0 mt-0.5 text-orange-500" />
-        Aceita a devolução direto na Shopee e libera <strong>&nbsp;{fmtPreco(ret?.refund_amount)}&nbsp;</strong> de reembolso pro comprador, sem disputa. Não dá pra desfazer.
+        {showValues
+          ? <>Aceita a devolução direto na Shopee e libera <strong>&nbsp;{fmtPreco(ret?.refund_amount)}&nbsp;</strong> de reembolso pro comprador, sem disputa. Não dá pra desfazer.</>
+          : <>Aceita a devolução direto na Shopee e libera o reembolso pro comprador, sem disputa. Não dá pra desfazer.</>}
       </p>
     </Modal>
   )
@@ -439,6 +451,7 @@ function OurDisputeSection({ r, api }) {
 }
 
 function DetailPanel({ r, api, onClose }) {
+  const showValues = useShowValues()
   const [refreshing, setRefreshing] = useState(false)
   const [reasons, setReasons] = useState(null) // null = verificando
   const [disputeOpen, setDisputeOpen] = useState(false)
@@ -535,7 +548,7 @@ function DetailPanel({ r, api, onClose }) {
                         <VariationChip v={v} big />
                       </p>
                     )}
-                    <p className="text-xs text-slate-400">{v?.sku || it.variation_sku || it.item_sku || ''} {it.amount ? `· ${it.amount} un.` : ''} {it.item_price ? `· ${fmtPreco(it.item_price)}` : ''}</p>
+                    <p className="text-xs text-slate-400">{v?.sku || it.variation_sku || it.item_sku || ''} {it.amount ? `· ${it.amount} un.` : ''} {showValues && it.item_price ? `· ${fmtPreco(it.item_price)}` : ''}</p>
                   </div>
                 </div>
               )
@@ -546,7 +559,7 @@ function DetailPanel({ r, api, onClose }) {
           {/* Solicitado pelo comprador */}
           <Section icon={User} title="Solicitado pelo comprador">
             <Field label="Comprador">{r.buyer_username || '—'}</Field>
-            <Field label="Valor do reembolso"><b>{fmtPreco(r.refund_amount)}</b>{Number(r.amount_before_discount) > Number(r.refund_amount) && <span className="text-xs text-slate-400"> (antes do desconto {fmtPreco(r.amount_before_discount)})</span>}</Field>
+            {showValues && <Field label="Valor do reembolso"><b>{fmtPreco(r.refund_amount)}</b>{Number(r.amount_before_discount) > Number(r.refund_amount) && <span className="text-xs text-slate-400"> (antes do desconto {fmtPreco(r.amount_before_discount)})</span>}</Field>}
             <Field label="Tipo">{SOLUTION_LABELS[r.return_solution] ?? '—'}</Field>
             <Field label="Motivo">{REASON_LABELS[r.reason] || r.reason || '—'}</Field>
             {r.text_reason && <p className="text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2 mt-1 italic">&ldquo;{r.text_reason}&rdquo;</p>}
@@ -567,8 +580,8 @@ function DetailPanel({ r, api, onClose }) {
           <Section icon={Wallet} title="Compensação pra você (vendedor)" tone={Number(r.compensation_amount) > 0 ? 'bg-violet-50/60 border-violet-100' : undefined}>
             {Number(r.compensation_amount) > 0 ? (
               <>
-                <Field label="Valor"><b className="text-violet-700 text-base">{fmtPreco(r.compensation_amount)}</b></Field>
-                {(r.compensation_list || []).map((c, i) => <Field key={i} label="Tipo">{COMP_TYPE_LABELS[c.compensation_type] || c.compensation_type} · {fmtPreco(c.compensation_amount)}</Field>)}
+                {showValues && <Field label="Valor"><b className="text-violet-700 text-base">{fmtPreco(r.compensation_amount)}</b></Field>}
+                {(r.compensation_list || []).map((c, i) => <Field key={i} label="Tipo">{COMP_TYPE_LABELS[c.compensation_type] || c.compensation_type}{showValues ? ` · ${fmtPreco(c.compensation_amount)}` : ''}</Field>)}
                 {r.compensation_status && <Field label="Situação">{COMP_STATUS_LABELS[r.compensation_status] || r.compensation_status}</Field>}
                 <p className="text-[11px] text-slate-400 mt-1">Valor definido pela Shopee pra cobrir o prejuízo (ajuste de carteira). Confira o extrato da carteira no Seller Center.</p>
               </>
@@ -612,6 +625,7 @@ function DetailPanel({ r, api, onClose }) {
 
 // ── Relatório ───────────────────────────────────────────────────────────
 function ReportTab({ rows }) {
+  const showValues = useShowValues()
   const byReason = useMemo(() => {
     const m = {}
     rows.forEach(r => { m[r.reason] = (m[r.reason] || 0) + 1 })
@@ -682,7 +696,7 @@ function ReportTab({ rows }) {
               <p className="text-xs text-slate-700 flex-1 min-w-0 line-clamp-2">{p.name}</p>
               <div className="text-right shrink-0">
                 <p className="text-sm font-black text-slate-800">{p.count}×</p>
-                {p.refunded > 0 && <p className="text-[10px] text-rose-600">{fmtPreco(p.refunded)} reemb.</p>}
+                {showValues && p.refunded > 0 && <p className="text-[10px] text-rose-600">{fmtPreco(p.refunded)} reemb.</p>}
               </div>
             </div>
           ))}
@@ -694,6 +708,8 @@ function ReportTab({ rows }) {
 
 // ── Página ──────────────────────────────────────────────────────────────
 export function ShopeeReturnsPage() {
+  const { user } = useAuth()
+  const showValues = user?.role === 'admin'
   const api = useShopeeReturns()
   const { rows, loading, error, syncing, syncError, lastSync, sync } = api
   const [tab, setTab]       = useState('lista')
@@ -736,6 +752,7 @@ export function ShopeeReturnsPage() {
   const soon = actionable.filter(r => urgencyOf(r) === 'soon').length
 
   return (
+    <ShowValuesCtx.Provider value={showValues}>
     <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
       <div className="max-w-[1400px] mx-auto space-y-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -773,7 +790,7 @@ export function ShopeeReturnsPage() {
                   <DeadlineChip r={r} />
                   <span className="text-sm font-semibold text-slate-700 truncate flex-1 flex items-center gap-2"><span className="truncate">{r.items?.[0]?.name || r.return_sn}</span><VariationChip v={variationOf(r, r.items?.[0])} /></span>
                   <span className="text-xs text-slate-500 hidden md:inline">{deadlineOf(r).label}</span>
-                  <span className="text-sm font-bold text-slate-800 shrink-0">{fmtPreco(r.refund_amount)}</span>
+                  {showValues && <span className="text-sm font-bold text-slate-800 shrink-0">{fmtPreco(r.refund_amount)}</span>}
                 </button>
               ))}
             </div>
@@ -791,10 +808,11 @@ export function ShopeeReturnsPage() {
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <Kpi icon={LayoutList} label="Solicitações" value={kpis.total} color="#64748b" bg="#f1f5f9" onClick={() => setFilter('todas')} />
-          <Kpi icon={TrendingDown} label="Reembolsado ao comprador" value={fmtPreco(kpis.refunded)} sub={`${kpis.refundedN} caso(s)`} color="#e11d48" bg="#fff1f2" onClick={() => setFilter('reembolsadas')} />
-          <Kpi icon={Wallet} label="Compensação recebida" value={fmtPreco(kpis.comp)} sub={`${kpis.compN} caso(s) — ajuste de carteira`} color="#7c3aed" bg="#f5f3ff" onClick={() => setFilter('compensacao')} />
-          <Kpi icon={TrendingUp} label="Canceladas — valor mantido" value={fmtPreco(kpis.kept)} sub={`${kpis.keptN} caso(s)`} color="#059669" bg="#ecfdf5" onClick={() => setFilter('canceladas')} />
-          <Kpi icon={Hourglass} label="Em andamento" value={fmtPreco(kpis.open)} sub={`${kpis.openN} caso(s)`} color="#0284c7" bg="#f0f9ff" onClick={() => setFilter('andamento')} />
+          {/* Sem permissão de valores: o cartão mostra a QUANTIDADE de casos no lugar do R$ */}
+          <Kpi icon={TrendingDown} label="Reembolsado ao comprador" value={showValues ? fmtPreco(kpis.refunded) : kpis.refundedN} sub={showValues ? `${kpis.refundedN} caso(s)` : 'caso(s)'} color="#e11d48" bg="#fff1f2" onClick={() => setFilter('reembolsadas')} />
+          <Kpi icon={Wallet} label="Compensação recebida" value={showValues ? fmtPreco(kpis.comp) : kpis.compN} sub={showValues ? `${kpis.compN} caso(s) — ajuste de carteira` : 'caso(s) — ajuste de carteira'} color="#7c3aed" bg="#f5f3ff" onClick={() => setFilter('compensacao')} />
+          <Kpi icon={TrendingUp} label={showValues ? 'Canceladas — valor mantido' : 'Canceladas'} value={showValues ? fmtPreco(kpis.kept) : kpis.keptN} sub={showValues ? `${kpis.keptN} caso(s)` : 'caso(s)'} color="#059669" bg="#ecfdf5" onClick={() => setFilter('canceladas')} />
+          <Kpi icon={Hourglass} label="Em andamento" value={showValues ? fmtPreco(kpis.open) : kpis.openN} sub={showValues ? `${kpis.openN} caso(s)` : 'caso(s)'} color="#0284c7" bg="#f0f9ff" onClick={() => setFilter('andamento')} />
         </div>
 
         {/* Abas */}
@@ -855,11 +873,11 @@ export function ShopeeReturnsPage() {
                           <p className="text-xs text-slate-600 truncate">{REASON_LABELS[r.reason] || r.reason}</p>
                           {(r.dispute_reason?.length > 0) && <p className="text-[10px] font-bold text-rose-600 flex items-center gap-1"><Scale size={10} /> Disputa aberta</p>}
                         </div>
-                        <div className="text-sm font-bold text-slate-800 md:text-right">{fmtPreco(r.refund_amount)}</div>
+                        <div className="text-sm font-bold text-slate-800 md:text-right">{showValues ? fmtPreco(r.refund_amount) : ''}</div>
                         <div className="flex items-center gap-1.5 flex-wrap md:justify-end">
                           <OutcomeBadge r={r} />
                           <DeadlineChip r={r} />
-                          {Number(r.compensation_amount) > 0 && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">+{fmtPreco(r.compensation_amount)}</span>}
+                          {Number(r.compensation_amount) > 0 && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">{showValues ? `+${fmtPreco(r.compensation_amount)}` : 'Compensado'}</span>}
                         </div>
                       </div>
                     </button>
@@ -874,5 +892,6 @@ export function ShopeeReturnsPage() {
 
       {openRow && <DetailPanel r={openRow} api={api} onClose={() => setOpenSn(null)} />}
     </div>
+    </ShowValuesCtx.Provider>
   )
 }
