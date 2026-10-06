@@ -37,6 +37,7 @@ function defaultCompetence() {
 
 export function HonorariosPage() {
   const api = useHonorarios()
+  const { load } = api
   const [{ y, m }, setComp] = useState(defaultCompetence)
   const [rows, setRows] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -44,10 +45,10 @@ export function HonorariosPage() {
 
   const reload = useCallback(async () => {
     setLoading(true)
-    try { setRows(await api.load(y, m)) }
+    try { setRows(await load(y, m)) }
     catch (e) { toast.error('Erro ao carregar: ' + e.message) }
     finally { setLoading(false) }
-  }, [api, y, m])
+  }, [load, y, m])
   useEffect(() => { reload() }, [reload])
 
   const shift = delta => setComp(({ y, m }) => {

@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { buildPixPayload, normalizePixKey } from '../../../lib/pix'
 
@@ -197,5 +197,7 @@ export function useHonorarios() {
     if (error) throw error
   }, [])
 
-  return { load, generatePix, uploadReceipt, markPaid }
+  // Objeto estável: sem o useMemo, cada render devolvia um objeto novo e o
+  // useEffect da página (que depende dele) recarregava em loop infinito.
+  return useMemo(() => ({ load, generatePix, uploadReceipt, markPaid }), [load, generatePix, uploadReceipt, markPaid])
 }
