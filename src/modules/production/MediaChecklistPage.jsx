@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Package, Upload, Trash2, Video as VideoIcon,
-  MessageSquare, StickyNote, Loader2, Check, Lightbulb, AlertTriangle,
+  MessageSquare, Loader2, Check, Lightbulb, AlertTriangle,
   Sparkles, Target, Wand2, Play, X, Eye, Send,
 } from 'lucide-react'
 import { useProductMediaDetail } from './hooks/useProductMediaStatus'
@@ -19,6 +19,7 @@ import { PdpSimulatorModal } from './PdpSimulatorModal'
 import { PublishPhotosModal } from './PublishPhotosModal'
 import { StorageImage } from '../../components/ui/StorageImage'
 import { useFreshSignedUrl } from '../../lib/signedUrlCache'
+import { MediaNotesSection } from './MediaNotesSection'
 
 // Só os slots 3 (o que acompanha) e 4 (dimensões) têm dado real o
 // suficiente no cadastro do produto pra gerar sozinho, sem IA.
@@ -246,33 +247,16 @@ function FeedbackModal({ open, onClose, media, onSave }) {
   )
 }
 
-function NoteModal({ open, onClose, media, onSave }) {
-  const [value, setValue] = useState('')
-  useEffect(() => { if (open) setValue(media?.observations || '') }, [open, media])
-
-  return (
-    <Modal open={open} onClose={onClose} size="sm" title="Observações"
-      footer={<>
-        <button onClick={onClose} className="btn-secondary">Cancelar</button>
-        <button onClick={() => onSave(value)} className="btn-primary"><Check size={14} /> Salvar</button>
-      </>}>
-      <textarea value={value} onChange={e => setValue(e.target.value)} rows={5}
-        className="input" placeholder="Escreva aqui..." autoFocus />
-    </Modal>
-  )
-}
-
 export function MediaChecklistPage() {
   const { productId } = useParams()
   const navigate = useNavigate()
   const {
     product, siblings, checks, media, loading,
-    uploadCheckPhoto, removeCheckPhoto, uploadVideo, removeVideo, saveFeedback, saveNotes,
+    uploadCheckPhoto, removeCheckPhoto, uploadVideo, removeVideo, saveFeedback,
   } = useProductMediaDetail(productId)
   const { bySlot: examplesBySlot, uploadToSlot: uploadExample, removeExample } = useGuideExamples()
 
   const [feedbackOpen, setFeedbackOpen] = useState(false)
-  const [noteOpen, setNoteOpen] = useState(false)
   const [genSlot, setGenSlot] = useState(null) // 3 | 4 | null — slot sendo gerado agora
   const [aiGenSlot, setAiGenSlot] = useState(null) // slot sendo gerado com IA agora
   const [pdpOpen, setPdpOpen] = useState(false)     // simulador do anúncio
@@ -357,10 +341,10 @@ export function MediaChecklistPage() {
         <VideoCard media={media} videoSrc={videoUrl} onVideoError={onVideoError} onUpload={uploadVideo} onRemove={removeVideo} onPlay={() => setVideoOpen(true)} />
       </div>
 
-      {/* Feedback + Observações */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Feedback de montagem */}
+      <div className="mb-3">
         <button onClick={() => setFeedbackOpen(true)}
-          className="flex items-center gap-3 p-4 bg-white border border-slate-100 rounded-2xl hover:border-violet-200 transition-colors text-left">
+          className="w-full flex items-center gap-3 p-4 bg-white border border-slate-100 rounded-2xl hover:border-violet-200 transition-colors text-left">
           <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center shrink-0">
             <MessageSquare size={16} className="text-slate-400" />
           </div>
@@ -371,22 +355,13 @@ export function MediaChecklistPage() {
             </p>
           </div>
         </button>
-        <button onClick={() => setNoteOpen(true)}
-          className="flex items-center gap-3 p-4 bg-white border border-slate-100 rounded-2xl hover:border-violet-200 transition-colors text-left">
-          <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center shrink-0">
-            <StickyNote size={16} className="text-slate-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-bold text-slate-700">Observações</p>
-            <p className="text-[11px] text-slate-400 truncate">{media?.observations?.trim() || 'Nenhuma observação'}</p>
-          </div>
-        </button>
       </div>
+
+      {/* Observações com fotos/vídeos (06/10) — substitui o campo de texto único */}
+      <MediaNotesSection productId={product.id} />
 
       <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} media={media}
         onSave={(v, d) => { saveFeedback(v, d); setFeedbackOpen(false) }} />
-      <NoteModal open={noteOpen} onClose={() => setNoteOpen(false)} media={media}
-        onSave={v => { saveNotes(v); setNoteOpen(false) }} />
       <GeneratedSlotImageModal open={!!genSlot} slot={genSlot} product={product}
         heroPhotoPath={checks[1]?.photo_url} onClose={() => setGenSlot(null)}
         onUse={async file => { await uploadCheckPhoto(genSlot, file); setGenSlot(null) }} />
