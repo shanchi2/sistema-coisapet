@@ -366,7 +366,7 @@ function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, isHo
           {isHoliday  && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-600">FERIADO</span>}
           {isVacation && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">🌴 FÉRIAS</span>}
           {isAtestado && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700" title="Atestado médico aprovado — conta 100% da meta do dia">🩺 ATESTADO</span>}
-          {isHomeOffice && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700" title="Home office combinado — conta 100% da meta do dia">🏠 HOME OFFICE</span>}
+          {isHomeOffice && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700" title="Home office combinado — conta 100% da meta do dia">HO</span>}
           {!isHoliday && !isWeekend && (
             <button onClick={() => onToggleHoliday?.(date)}
               className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 text-[9px] text-purple-400 hover:text-purple-600 font-semibold"
@@ -1255,16 +1255,14 @@ export function RHRelatorioPage() {
 
       // Rodapé com meta total + trabalhado + saldo
       html += '<tr class="total-row">'
-      html += '<td colspan="2"><strong>Total ' + MONTH_NAMES[month] + ' ' + year + '</strong></td>'
+      const temHO = days.some(d => isHomeOfficeDay(emp.id, d.date, d.isHoliday))
+      html += '<td colspan="2"><strong>Total ' + MONTH_NAMES[month] + ' ' + year + '</strong>'
+        + (temHO ? ' <span style="font-size:8px;font-weight:600;color:#64748b;margin-left:6px"><span class="hob" style="margin-left:0">HO</span> = Home office</span>' : '') + '</td>'
       html += '<td colspan="2" style="text-align:right;font-size:9px;color:#64748b;font-weight:600">Meta do período: ' + fmtH(metaH) + '</td>'
       html += '<td class="c">' + totalDays + ' dias</td>'
       html += '<td class="r">' + fmtH(totalH) + '</td>'
       html += '<td class="r">' + saldoFinal + '</td>'
-      html += '</tr></tbody></table>'
-      if (days.some(d => isHomeOfficeDay(emp.id, d.date, d.isHoliday))) {
-        html += '<div style="font-size:8px;color:#64748b;margin-top:4px"><span class="hob" style="margin-left:0">HO</span> = home office combinado (conta 100% da meta do dia)</div>'
-      }
-      html += '</div>'
+      html += '</tr></tbody></table></div>'
     }
 
     html += '</body></html>'
