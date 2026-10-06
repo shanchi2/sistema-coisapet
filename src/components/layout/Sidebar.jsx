@@ -8,7 +8,7 @@ import {
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
   PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
   HeartPulse, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film, Zap,
-  Briefcase, Crown, Bookmark, Component, RotateCcw,
+  Briefcase, Crown, Bookmark, Component, RotateCcw, Headset,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
@@ -59,10 +59,22 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    // 06/10 (decidido com Raphael/Gabriel): módulos voltados a marketing e
+    // atendimento saíram de "Produção". Só o lugar no menu mudou — quem
+    // acessa cada um continua igual (roles + Controle de Acesso).
+    label: 'Mkt & Atendimento',
+    items: [
+      { to: '/avaliacoes', moduleKey: 'avaliacoes', icon: Star, label: 'Avaliações', roles: ['admin','administrativo','atendimento'] },
+      { to: '/orcamentos',     moduleKey: 'orcamentos',   icon: Receipt,        label: 'Orçamentos',         roles: ['admin','administrativo','atendimento'] },
+      { to: '/qrcode',        moduleKey: 'qrcode',       icon: QrCode,         label: 'QR Code',           roles: ['admin','administrativo','atendimento','producao'] },
+      { to: '/producao/midia',  moduleKey: 'controle-midia', icon: Film,        label: 'Atualização de Mídia', roles: ['admin','administrativo','atendimento'] },
+      { to: '/checklist',      moduleKey: 'checklist',    icon: ClipboardCheck, label: 'Checklist Diário',  roles: ['admin','administrativo','atendimento'] },
+    ],
+  },
+  {
     label: 'Produção',
     items: [
       { to: '/pedidos',        moduleKey: 'pedidos',      icon: ClipboardList,  label: 'Pedidos',            roles: ['admin','administrativo','atendimento'] },
-      { to: '/orcamentos',     moduleKey: 'orcamentos',   icon: Receipt,        label: 'Orçamentos',         roles: ['admin','administrativo','atendimento'] },
       { to: '/kanban-op',      moduleKey: 'kanban-op',    icon: Kanban,         label: 'Kanban Operacional', roles: ['admin','administrativo','atendimento','producao','marketplace'] },
       { to: '/materia-prima',  moduleKey: 'materiais',    icon: Boxes,          label: 'Matéria-Prima',     roles: ['admin','administrativo','producao','marketplace'] },
       { to: '/packaging',      moduleKey: 'packaging',    icon: Package,        label: 'Embalagem',         roles: ['admin','administrativo','producao'] },
@@ -71,10 +83,7 @@ const NAV_SECTIONS = [
       { to: '/variacoes',      moduleKey: 'produtos',     icon: Layers,         label: 'Variações',         roles: ['admin','administrativo','marketplace'] },
       { to: '/producao',       moduleKey: 'producao',     icon: Factory,        label: 'Produção',          roles: ['admin','administrativo','producao'] },
       { to: '/producao/chapas', moduleKey: 'producao',    icon: Layers,         label: 'Planos de corte',   roles: ['admin','administrativo','producao'] },
-      { to: '/producao/midia',  moduleKey: 'controle-midia', icon: Film,        label: 'Atualização de Mídia', roles: ['admin','administrativo','atendimento'] },
-      { to: '/checklist',      moduleKey: 'checklist',    icon: ClipboardCheck, label: 'Checklist Diário',  roles: ['admin','administrativo','atendimento'] },
       { to: '/manuais',        moduleKey: 'manuais',      icon: BookOpen,       label: 'Manuais',           roles: ['admin','administrativo','producao'] },
-      { to: '/qrcode',        moduleKey: 'qrcode',       icon: QrCode,         label: 'QR Code',           roles: ['admin','administrativo','atendimento','producao'] },
       { to: '/manutencao',     moduleKey: 'manutencao',   icon: Wrench,         label: 'Manutenção',        roles: ['admin','administrativo','producao'] },
       { to: '/servicos',        moduleKey: 'manutencao',   icon: ShoppingCart,   label: 'Serviços', roles: ['admin','administrativo','producao'] },
       { to: '/baixa-diaria',   moduleKey: 'baixa-diaria', icon: PackageMinus,   label: 'Baixa Diária',      roles: ['admin','administrativo','producao'] },
@@ -82,7 +91,6 @@ const NAV_SECTIONS = [
       { to: '/conferencia-materia-prima', moduleKey: 'conferencia-materia-prima', icon: ClipboardCheck, label: 'Conferência de Matéria-Prima', roles: ['admin','administrativo','producao'] },
       { to: '/producao-horistas', moduleKey: 'producao-horistas', icon: Clock, label: 'Produção Horistas', roles: ['admin'] },
       { to: '/passagem-turno', moduleKey: 'producao',     icon: ClipboardList,  label: 'Passagem de Turno', roles: ['admin','administrativo','producao'] },
-      { to: '/avaliacoes', moduleKey: 'avaliacoes', icon: Star, label: 'Avaliações', roles: ['admin','administrativo','atendimento'] },
     ],
   },
   {
@@ -170,6 +178,7 @@ const SECTION_COLORS = {
   'Otimização ML':    { base: '#F59E0B', light: '#FCD34D' }, // amber
   'Shopee':           { base: '#EE4D2D', light: '#FDBA74' }, // laranja Shopee
   'Blog':              { base: '#6366F1', light: '#A5B4FC' }, // indigo
+  'Mkt & Atendimento': { base: '#EC4899', light: '#F9A8D4' }, // pink
   'Produção':         { base: '#10B981', light: '#6EE7B7' }, // emerald
   'Recursos Humanos': { base: '#8B5CF6', light: '#C4B5FD' }, // violeta
   'Gestão':           { base: '#0EA5E9', light: '#7DD3FC' }, // azul
@@ -185,6 +194,7 @@ const SECTION_ICONS = {
   'Otimização ML':    TrendingUp,
   'Shopee':           ShoppingBag,
   'Blog':              Newspaper,
+  'Mkt & Atendimento': Headset,
   'Produção':         Factory,
   'Recursos Humanos': Users,
   'Gestão':           Briefcase,
