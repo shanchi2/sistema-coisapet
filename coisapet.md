@@ -6681,3 +6681,17 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
   versão minha, com mais itens, foi revertida — PR #14 — pra decidir junto).
 - Controle de Acesso agrupa esses 5 em "Mkt & Atendimento". Só o lugar no
   menu mudou — roles e permissões iguais.
+
+### 06/10 — Dashboard novo (dados reais por perfil)
+- Refeito do zero: `src/modules/dashboard/` = `useDashboardData.js` (busca),
+  `widgets.jsx` (peças visuais), `DashboardPage.jsx` (montagem por perfil).
+- **Achado:** `orders.total_value/total_brl` estão vazios em todos os pedidos
+  (pelo menos desde set/26) — o card antigo "Vendas por plataforma" mostrava
+  R$ 0. Faturamento agora vem dos itens (preço × qtd), como na Visão Geral Shopee.
+- Regra de visibilidade: cada bloco exige o módulo no Controle de Acesso
+  (canAccess) + perfil da lista. **R$ só pro diretor** — o hook nem busca
+  preço pros outros perfis. Produção vê envios de hoje/atrasados (só
+  quantidade), produção, devoluções, matéria-prima e tarefas.
+- Gerente (administrativo) não tem Pedidos/Orçamentos/Produção liberados no
+  Controle de Acesso, então o dashboard dele fica enxuto (antes via pedidos
+  sem ter o módulo). Atalhos do topo também respeitam o acesso.
