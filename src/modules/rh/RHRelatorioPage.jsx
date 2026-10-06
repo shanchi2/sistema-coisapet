@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, User, Printer, TrendingUp, Pencil, Check, X, CalendarX, Plus, Trash2, DollarSign, FileDown, Wallet } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, User, Printer, TrendingUp, Pencil, Check, X, CalendarX, Plus, Trash2, DollarSign, FileDown, Wallet, Send } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { fmtH, PageHeader, LoadingCard, Avatar } from './rhHelpers'
 import { RHPontoPage } from './RHPontoPage'
@@ -7,6 +7,7 @@ import { RHPontoSemanalPage } from './RHPontoSemanalPage'
 import { RHHorasFimSemanaPage } from './RHHorasFimSemanaPage'
 import { todayISO } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 
 // ── Helpers ───────────────────────────────────────────────────
 const fmtT   = d => !d ? '—' : new Date(d).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})
@@ -570,6 +571,8 @@ export function RHRelatorioPage() {
   const [editingSalary, setEditingSalary] = useState(null) // guarda o id do funcionário em edição
   const [salaryVal,     setSalaryVal]     = useState('')
   const [generatingHolerite, setGeneratingHolerite] = useState(false)
+  const [mirrorConfirm, setMirrorConfirm] = useState(null) // { emp, existing } — confirmação do "Enviar pra ficha"
+  const [sendingMirror, setSendingMirror] = useState(false)
 
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const today = now.toISOString().split('T')[0]
@@ -981,7 +984,8 @@ export function RHRelatorioPage() {
     }
   }
 
-  function handlePrint() {
+  // Monta o HTML do extrato (usado no Imprimir e no "Enviar pra ficha")
+  function buildExtratoHtml(empsOverride) {
     // Funcionários com registros nos últimos 6 meses
   const sixMonthsAgo = new Date()
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
@@ -992,14 +996,13 @@ export function RHRelatorioPage() {
   })
 
   // targetEmps respeita dropdown E focusEmp
-  const targetEmps = focusEmp
+  const targetEmps = empsOverride || (focusEmp
     ? employees.filter(e => e.id === focusEmp)
     : selEmp === 'all'
       ? [] // sem foco = não mostra tabela
-      : employees.filter(e => e.id === selEmp)
+      : employees.filter(e => e.id === selEmp))
     const now2 = new Date()
     const genDate = now2.toLocaleDateString('pt-BR') + ' às ' + now2.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})
-    const w = window.open('','_blank')
 
     // Helper para células de horário
     function fmtCell(r) {
@@ -1279,10 +1282,105 @@ export function RHRelatorioPage() {
     }
 
     html += '</body></html>'
+    return html
+  }
+
+  function handlePrint() {
+    const html = buildExtratoHtml()
+    const w = window.open('','_blank')
     w.document.write(html)
     w.document.close()
     w.focus()
     setTimeout(() => w.print(), 500)
+  }
+
+  // ── Enviar espelho pra ficha do funcionário (06/10) ─────────────
+  // Antes: imprimir o extrato, salvar PDF e anexar à mão em Holerites.
+  // Agora: gera o PDF do MESMO extrato do "Imprimir" e anexa como espelho
+  // de ponto daquele mês (payslips.mirror_url) — aparece na ficha do
+  // usuário e no app da equipe, igual ao anexo manual.
+  async function askSendMirror(emp) {
+    const { data: existing } = await supabase.from('payslips')
+      .select('id, file_url, mirror_url, label')
+      .eq('employee_id', emp.id).eq('month', month + 1).eq('year', year)
+      .order('created_at', { ascending: true })
+    setMirrorConfirm({ emp, existing: existing || [] })
+  }
+
+  async function htmlToPdfBlob(html) {
+    const PAGE_PX = 1123 // largura de um A4 deitado a 96dpi
+    const iframe = document.createElement('iframe')
+    Object.assign(iframe.style, { position: 'fixed', left: '-20000px', top: '0', width: PAGE_PX + 'px', height: '900px', border: '0' })
+    document.body.appendChild(iframe)
+    try {
+      const d = iframe.contentDocument
+      d.open(); d.write(html.replace('</head>', '<style>body{padding:18px 22px}</style></head>')); d.close()
+      await new Promise(r => setTimeout(r, 300))
+      iframe.style.height = d.body.scrollHeight + 'px'
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([import('html2canvas'), import('jspdf')])
+      const canvas = await html2canvas(d.body, { scale: 2, backgroundColor: '#ffffff', windowWidth: PAGE_PX })
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const M = 6, W = 297 - 2 * M, H = 210 - 2 * M
+      const pxPerMm = canvas.width / W
+      const pageHpx = Math.floor(H * pxPerMm)
+      if (canvas.height <= pageHpx * 1.5) {
+        // Cabe numa folha com até ~1/3 de redução: encolhe em vez de quebrar
+        // página (objetivo de sempre: espelho do mês em 1 folha só)
+        const k = Math.min(1, pageHpx / canvas.height)
+        const w = W * k, h = (canvas.height / pxPerMm) * k
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', M + (W - w) / 2, M, w, h)
+      } else {
+        for (let y = 0, first = true; y < canvas.height; y += pageHpx, first = false) {
+          const slice = document.createElement('canvas')
+          slice.width = canvas.width; slice.height = Math.min(pageHpx, canvas.height - y)
+          slice.getContext('2d').drawImage(canvas, 0, y, canvas.width, slice.height, 0, 0, canvas.width, slice.height)
+          if (!first) pdf.addPage()
+          pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', M, M, W, slice.height / pxPerMm)
+        }
+      }
+      return pdf.output('blob')
+    } finally {
+      iframe.remove()
+    }
+  }
+
+  async function sendMirror() {
+    const { emp, existing } = mirrorConfirm
+    setSendingMirror(true)
+    try {
+      const blob = await htmlToPdfBlob(buildExtratoHtml([emp]))
+      const mm = String(month + 1).padStart(2, '0')
+      const path = `holerites/${emp.id}/${year}-${mm}-espelho-ponto.pdf`
+      const { error: upErr } = await supabase.storage.from('employee-docs')
+        .upload(path, blob, { upsert: true, contentType: 'application/pdf' })
+      if (upErr) throw upErr
+
+      // Já existe holerite/recibo do mês? Anexa nele (o sem rótulo primeiro).
+      // Senão cria o registro do mês só com o espelho.
+      const target = existing.find(r => !r.label) || existing[0]
+      if (target) {
+        const { error } = await supabase.from('payslips').update({ mirror_url: path }).eq('id', target.id)
+        if (error) throw error
+        if (target.mirror_url && target.mirror_url !== path) {
+          await supabase.storage.from('employee-docs').remove([target.mirror_url])
+        }
+      } else {
+        let createdBy = null
+        try { createdBy = JSON.parse(localStorage.getItem('coisapet_session') || '{}').id || null } catch { /* sem sessão */ }
+        const { error } = await supabase.from('payslips').insert({
+          employee_id: emp.id, month: month + 1, year,
+          reference: `${MONTH_NAMES[month]}/${year}`, mirror_url: path, created_by: createdBy,
+        })
+        if (error) throw error
+      }
+      toast.success(`Espelho de ${MONTH_NAMES[month]}/${year} anexado na ficha de ${emp.name.split(' ')[0]}!`)
+      setMirrorConfirm(null)
+    } catch (e) {
+      console.error(e)
+      toast.error('Erro ao enviar o espelho: ' + (e?.message || 'tente novamente.'))
+    } finally {
+      setSendingMirror(false)
+    }
   }
 
   // Funcionários com registros nos últimos 6 meses
@@ -1301,6 +1399,8 @@ export function RHRelatorioPage() {
       ? [] // sem foco = não mostra tabela
       : employees.filter(e => e.id === selEmp)
   const isNextDisabled = year === now.getFullYear() && month === now.getMonth()
+  // Um funcionário só em foco → dá pra mandar o espelho dele pra ficha
+  const mirrorEmp = targetEmps.length === 1 ? targetEmps[0] : null
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
@@ -1308,9 +1408,17 @@ export function RHRelatorioPage() {
         title="Relatório de Ponto"
         subtitle="Horas trabalhadas por funcionário"
         actions={
-          <button onClick={handlePrint} className="btn-primary flex items-center gap-1.5">
-            <Printer size={15}/> Imprimir / Exportar
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {mirrorEmp && (
+              <button onClick={() => askSendMirror(mirrorEmp)} className="btn-secondary flex items-center gap-1.5"
+                title="Gera o PDF deste extrato e anexa como espelho de ponto na ficha do funcionário">
+                <Send size={15}/> Enviar espelho pra ficha
+              </button>
+            )}
+            <button onClick={handlePrint} className="btn-primary flex items-center gap-1.5">
+              <Printer size={15}/> Imprimir / Exportar
+            </button>
+          </div>
         }
       />
 
@@ -1787,6 +1895,23 @@ export function RHRelatorioPage() {
           })}
         </>
       )}
+
+      {/* Confirmação: enviar espelho pra ficha */}
+      <ConfirmDialog
+        open={!!mirrorConfirm}
+        onClose={() => !sendingMirror && setMirrorConfirm(null)}
+        onConfirm={sendMirror}
+        loading={sendingMirror}
+        danger={false}
+        confirmLabel="Enviar pra ficha"
+        title={mirrorConfirm ? `Enviar espelho de ${MONTH_NAMES[month]}/${year} pra ficha de ${mirrorConfirm.emp.name.split(' ')[0]}?` : ''}
+        description={mirrorConfirm ? [
+          'Gera o PDF deste extrato (o mesmo do Imprimir) e anexa como espelho de ponto do mês na ficha do funcionário — ele também vê no app.',
+          mirrorConfirm.existing.some(r => r.mirror_url) ? 'Já existe um espelho anexado neste mês: ele será SUBSTITUÍDO por este.' : null,
+          mirrorConfirm.existing.length > 0 && !mirrorConfirm.existing.some(r => r.mirror_url) ? 'Vai junto do holerite/recibo que já está anexado neste mês.' : null,
+          year === now.getFullYear() && month === now.getMonth() ? 'Atenção: o mês ainda não acabou.' : null,
+        ].filter(Boolean).join(' ') : ''}
+      />
 
       {/* Modal de edição */}
       {editModal && (
