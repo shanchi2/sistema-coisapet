@@ -13,15 +13,15 @@ function getSession() {
 // não precisar de deploy se a plataforma mudar a política.
 // - ML (default 11h): só vale quando o ML não manda o prazo real do envio
 //   (buffering.date) — se manda, o prazo dele manda.
-// - Shopee (default 13h, desde 30/09 — Fase 83): vale sempre, mas nunca
-//   passa do prazo da própria Shopee, e se a Shopee der um prazo bem mais
-//   longo que o normal (envio programado/encomenda), vale o prazo dela.
+// - Shopee (default 13h): desde 06/10 (Fase 94) o dia é o PRAZO da própria
+//   Shopee ("Enviar até"); o corte só vale quando a Shopee não manda prazo
+//   (ex.: pedido importado por planilha antiga).
 // Regra toda no banco: compute_ship_date().
 const PLATFORMS = [
   { source: 'ml',     label: 'Mercado Livre', icon: ShoppingCart, def: 11, tone: 'bg-amber-50 border-amber-200 text-amber-800',
     help: 'Só vale quando o ML não informa o dia real de envio do pedido — quando informa (envio programado, volumoso), o dia do ML manda.' },
   { source: 'shopee', label: 'Shopee',        icon: ShoppingBag,  def: 13, tone: 'bg-orange-50 border-orange-200 text-orange-800',
-    help: 'Nunca passa do prazo da Shopee. Se a Shopee der um prazo bem mais longo que o normal (envio programado / encomenda), vale o prazo dela.' },
+    help: 'Só vale quando a Shopee não informa o prazo ("Enviar até") — quando informa, o pedido vai pro picklist no dia do prazo dela.' },
 ]
 
 export function CutoffSettingsModal({ open, onClose }) {

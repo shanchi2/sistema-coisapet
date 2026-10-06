@@ -69,7 +69,7 @@ export function MarketplaceRefreshBar({ canConfigure, onRefreshed }) {
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-700">Atualizar pedidos com as plataformas</p>
             <p className="text-[11px] text-slate-400">
-              Automático a cada 3h · corte ML {String(cutoffs.ml).padStart(2, '0')}h · Shopee {String(cutoffs.shopee).padStart(2, '0')}h · envio programado sempre tem prioridade
+              Automático a cada 3h · corte ML {String(cutoffs.ml).padStart(2, '0')}h · Shopee {String(cutoffs.shopee).padStart(2, '0')}h · prazo da plataforma sempre tem prioridade
             </p>
           </div>
         </div>

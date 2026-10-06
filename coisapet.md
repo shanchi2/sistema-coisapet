@@ -275,6 +275,26 @@ reconstruir o raciocínio do zero.
 
 ---
 
+### 2026-10-06 — Shopee vai pro picklist no dia do PRAZO dela (fase94)
+
+**Pergunta do Raphael:** pedidos com "Enviar até 06/10" estavam no picklist
+de 05/10. Não era bug: a regra (fase83) mandava pelo corte das 13h → 1º dia
+útil (venda de domingo antes das 13h → segunda), e o prazo da Shopee era só
+o limite. **Decisão (opção 2):** pedido Shopee com prazo vai pro picklist
+NO DIA DO PRAZO da Shopee, igual ao ML. Prazo em sáb/dom (raríssimo: 2 de
+~1.500 em 60 dias) volta pra sexta; nunca antes do dia da compra. Sem prazo
+→ corte das 13h como reserva.
+
+Testado lado a lado nos 2.490 pedidos reais de 60 dias antes de aplicar:
+ML 805/805 iguais; Shopee 313 vão mais tarde, nenhum depois do prazo, em
+fim de semana ou antes da compra. `compute_ship_date` aplicada no banco em
+05/10 23:54 BRT. Não retroativo (vale pra pedido novo e pros recálculos de
+pedido sem nada separado). Textos do ⚙️ de corte atualizados.
+**Pendência boba:** sobrou a função de teste `compute_ship_date_teste94`
+no banco (o DROP foi cancelado na confirmação) — inofensiva, pode apagar.
+
+---
+
 ### 2026-10-05 (3ª parte) — Recebimento interno das devoluções + visualizador de fotos/vídeos (fase93)
 
 **Pedido do Raphael:** a produção registrar o que CHEGOU de volta —
