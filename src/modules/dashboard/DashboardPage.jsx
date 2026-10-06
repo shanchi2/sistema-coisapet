@@ -1,201 +1,100 @@
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { supabase } from '../../lib/supabase'
-import { toISODateBR } from '../../lib/dateBR'
-import { fetchAllRows } from '../../lib/fetchAllRows'
+import { usePermissions } from '../../contexts/PermissionsContext'
+import { todayISO } from '../../lib/dateBR'
 import {
   ClipboardList, Receipt, ClipboardCheck, MessageSquare, AlertTriangle,
-  ArrowRight, Package, Users, Calendar, PackageSearch, Wrench,
-  LayoutGrid, TrendingUp, Clock, MousePointerClick,
+  Package, Users, Calendar, PackageSearch, Wrench, LayoutGrid,
+  MousePointerClick, Truck, RotateCcw, Star, MessageCircleQuestion, Factory,
+  RefreshCw, Boxes, CalendarClock,
 } from 'lucide-react'
+import { useDashboardData } from './useDashboardData'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts'
+  Panel, Delta, StatTile, Meter, DailyBars, PlatformShare, AttentionList, TaskList,
+  fmtBRL, fmtBRLShort, fmtInt, fmtDayShort,
+} from './widgets'
 
-function getSession() {
-  try { return JSON.parse(localStorage.getItem('coisapet_session') || '{}') } catch { return {} }
-}
-function fmtPreco(v) {
-  const n = parseFloat(v)
-  if (!n || isNaN(n)) return 'R$ 0,00'
-  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
-function fmtDateShort(iso) {
-  const [, m, d] = iso.split('-')
-  return `${d}/${m}`
-}
-function localISO(d = new Date()) {
-  const tz = d.getTimezoneOffset() * 60000
-  return new Date(d - tz).toISOString().slice(0, 10)
-}
-function isOverdue(due_date, status) {
-  return due_date && status !== 'done' && due_date < localISO()
-}
-function fmtTaskDate(d) {
-  if (!d) return ''
-  return new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-}
+// ─────────────────────────────────────────────────────────────────────
+// Dashboard (refeito 06/10, pedido do Raphael: visual novo + dados reais).
+//
+// QUEM VÊ O QUÊ — cada bloco aparece só se o perfil tem o módulo liberado
+// no Controle de Acesso (canAccess) E está na lista de perfis daquele bloco.
+// Valores em R$ (faturamento, ticket, total orçado) são SÓ do diretor
+// (role 'admin'); os demais veem quantidades.
+// ─────────────────────────────────────────────────────────────────────
 
-const PLATFORM_COLORS = { ml: '#f59e0b', shopee: '#EE4D2D', manual: '#64748b' }
-
-// ─── Atalhos rápidos por perfil ──────────────────────────────────
 const QUICK_LINKS = {
   admin: [
-    { to: '/pedidos',         label: 'Pedidos',            icon: ClipboardList, color: '#F43F5E' },
-    { to: '/orcamentos',      label: 'Orçamentos',         icon: Receipt,       color: '#8B5CF6' },
-    { to: '/kanban-op',       label: 'Kanban Operacional', icon: LayoutGrid,    color: '#F59E0B' },
-    { to: '/kanban',          label: 'Kanban Diretoria',   icon: LayoutGrid,    color: '#D946EF' },
-    { to: '/rh/mensagens',    label: 'Mensagens',          icon: MessageSquare, color: '#0EA5E9' },
-    { to: '/rh/ponto-semanal',label: 'Ponto Semanal',      icon: Calendar,      color: '#10B981' },
+    { to: '/pedidos', mod: 'pedidos',          label: 'Pedidos',            icon: ClipboardList },
+    { to: '/pick-list', mod: 'pedidos',        label: 'Pick List',          icon: PackageSearch },
+    { to: '/kanban-op', mod: 'kanban-op',        label: 'Kanban Operacional', icon: LayoutGrid },
+    { to: '/kanban', mod: 'kanban',           label: 'Kanban Diretoria',   icon: LayoutGrid },
+    { to: '/rh/mensagens', mod: 'mensagens',     label: 'Mensagens',          icon: MessageSquare },
+    { to: '/rh/ponto-semanal', mod: 'rh', label: 'Ponto Semanal',      icon: Calendar },
   ],
   administrativo: [
-    { to: '/kanban-op',  label: 'Kanban Operacional', icon: LayoutGrid, color: '#F59E0B' },
-    { to: '/orcamentos', label: 'Orçamentos',         icon: Receipt,    color: '#8B5CF6' },
-    { to: '/rh',         label: 'RH',                 icon: Users,      color: '#0EA5E9' },
-    { to: '/pedidos',    label: 'Pedidos',            icon: ClipboardList, color: '#F43F5E' },
+    { to: '/kanban-op', mod: 'kanban-op',  label: 'Kanban Operacional', icon: LayoutGrid },
+    { to: '/pedidos', mod: 'pedidos',    label: 'Pedidos',            icon: ClipboardList },
+    { to: '/orcamentos', mod: 'orcamentos', label: 'Orçamentos',         icon: Receipt },
+    { to: '/rh', mod: 'rh',         label: 'RH',                 icon: Users },
   ],
   atendimento: [
-    { to: '/pedidos',    label: 'Pedidos',            icon: ClipboardList, color: '#F43F5E' },
-    { to: '/orcamentos', label: 'Orçamentos',         icon: Receipt,       color: '#8B5CF6' },
-    { to: '/pick-list',  label: 'Pick List',          icon: PackageSearch, color: '#F97316' },
-    { to: '/kanban-op',  label: 'Kanban Operacional', icon: LayoutGrid,    color: '#F59E0B' },
+    { to: '/pedidos', mod: 'pedidos',    label: 'Pedidos',            icon: ClipboardList },
+    { to: '/pick-list', mod: 'pedidos',  label: 'Pick List',          icon: PackageSearch },
+    { to: '/orcamentos', mod: 'orcamentos', label: 'Orçamentos',         icon: Receipt },
+    { to: '/checklist', mod: 'checklist',  label: 'Checklist Diário',   icon: ClipboardCheck },
+    { to: '/kanban-op', mod: 'kanban-op',  label: 'Kanban Operacional', icon: LayoutGrid },
   ],
   producao: [
-    { to: '/kanban-op',    label: 'Kanban Operacional', icon: LayoutGrid,      color: '#F59E0B' },
-    { to: '/checklist',    label: 'Checklist Diário',   icon: ClipboardCheck, color: '#10B981' },
-    { to: '/baixa-diaria', label: 'Baixa Diária',       icon: Package,        color: '#0EA5E9' },
-    { to: '/manutencao',   label: 'Manutenção',         icon: Wrench,         color: '#64748B' },
+    { to: '/kanban-op', mod: 'kanban-op',    label: 'Kanban Operacional', icon: LayoutGrid },
+    { to: '/producao', mod: 'producao',     label: 'Produção',           icon: Factory },
+    { to: '/baixa-diaria', mod: 'baixa-diaria', label: 'Baixa Diária',       icon: Package },
+    { to: '/manutencao', mod: 'manutencao',   label: 'Manutenção',         icon: Wrench },
   ],
   marketplace: [
-    { to: '/pedidos',   label: 'Pedidos',   icon: ClipboardList, color: '#F43F5E' },
-    { to: '/pick-list', label: 'Pick List', icon: PackageSearch, color: '#F97316' },
+    { to: '/pedidos', mod: 'pedidos',   label: 'Pedidos',   icon: ClipboardList },
+    { to: '/pick-list', mod: 'pedidos', label: 'Pick List', icon: PackageSearch },
   ],
 }
 
-// ─── Card de estatística ─────────────────────────────────────────
-function StatCard({ icon: Icon, label, value, color, to }) {
-  const content = (
-    <div className="card flex items-center gap-3 hover:shadow-md transition-shadow h-full">
-      <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: color + '15' }}>
-        <Icon size={20} style={{ color }} />
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide truncate">{label}</p>
-        <p className="text-2xl font-black text-slate-800" style={{ fontFamily: 'Nunito,sans-serif' }}>{value}</p>
-      </div>
-    </div>
-  )
-  return to ? <Link to={to}>{content}</Link> : content
+const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+
+function greeting() {
+  const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23' }).format(new Date()))
+  return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'
 }
 
-// ─── Página principal ─────────────────────────────────────────────
 export function DashboardPage() {
   const { user } = useAuth()
+  const { canAccess } = usePermissions()
   const role = user?.role || 'equipe'
-  const uid  = user?.id || getSession()?.id
-  const firstName = user?.name?.split(' ')[0] ?? 'usuário'
+  const isIn = (...roles) => roles.includes(role)
+  const firstName = user?.name?.split(' ')[0] ?? 'tudo bem'
 
-  const [loading, setLoading] = useState(true)
-  const [stats, setStats] = useState(null)
+  const can = useMemo(() => ({
+    money:      role === 'admin',
+    orders:     isIn('admin', 'administrativo', 'atendimento', 'marketplace') && canAccess('pedidos'),
+    shipping:   isIn('admin', 'administrativo', 'atendimento', 'marketplace', 'producao') && canAccess('pedidos'),
+    budgets:    isIn('admin', 'administrativo', 'atendimento') && canAccess('orcamentos'),
+    tasks:      true,
+    allTasks:   role === 'admin',
+    messages:   role === 'admin',
+    materials:  isIn('admin', 'administrativo', 'producao') && canAccess('materiais'),
+    production: isIn('admin', 'administrativo', 'producao') && canAccess('producao'),
+    returns:    canAccess('shopee-retornos'),
+    reviews:    isIn('admin', 'administrativo', 'atendimento') && canAccess('avaliacoes'),
+    checklist:  role === 'atendimento' && canAccess('checklist'),
+    clicks:     isIn('admin', 'administrativo'),
+  }), [role, canAccess]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { load() }, [role, uid])
+  const { data, loading, updatedAt, reload } = useDashboardData(can, user?.id)
+  const today = todayISO()
+  const monthName = MONTHS[Number(today.slice(5, 7)) - 1]
+  const dateRaw = new Date(today + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+  const dateLabel = dateRaw.charAt(0).toUpperCase() + dateRaw.slice(1)
 
-  async function load() {
-    setLoading(true)
-    try {
-      const now = new Date()
-      const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-      const start7d    = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-      const isDirector  = role === 'admin'
-      const canSeeOrders  = ['admin', 'atendimento', 'administrativo', 'marketplace'].includes(role)
-      const canSeeBudgets = ['admin', 'atendimento', 'administrativo'].includes(role)
-
-      const queries = {}
-
-      // Pedidos do mês (por plataforma) — pra quem lida com pedidos.
-      // Paginado (21/09): o mês passado fechou com 954 pedidos, a 46 do
-      // teto silencioso de 1000 linhas do PostgREST — sem paginar, os
-      // KPIs daqui iam começar a contar a menos sozinhos, sem erro
-      // nenhum na tela (mesmo bug achado na Visão Geral da Shopee).
-      if (canSeeOrders) {
-        // total_brl/total_value também: só pro card "Vendas por
-        // plataforma" (só diretor vê) — mesmo fallback já usado no
-        // Pedidos (total_value > 0 ? total_value : total_brl).
-        queries.orders = fetchAllRows((from, to) => supabase.from('orders')
-          .select('id, source, data_venda, status_ml, total_brl, total_value')
-          .gte('data_venda', startMonth)
-          .order('id', { ascending: true })
-          .range(from, to))
-        queries.ordersWeek = fetchAllRows((from, to) => supabase.from('orders')
-          .select('id, source, data_venda')
-          .gte('data_venda', start7d)
-          .order('id', { ascending: true })
-          .range(from, to))
-      }
-
-      // Orçamentos do mês
-      if (canSeeBudgets) {
-        queries.budgets = supabase.from('budgets')
-          .select('id, total, created_at, customer_name, code')
-          .gte('created_at', startMonth)
-          .order('created_at', { ascending: false })
-          .then(r => r.data ?? [])
-      }
-
-      // Tarefas — todo mundo vê as próprias; admin vê o sistema inteiro
-      queries.tasks = (isDirector
-        ? supabase.from('tasks').select('id, title, status, due_date, priority, color, task_code, kanban_type, assignee:system_users!assigned_to(name)').neq('status', 'done')
-        : supabase.from('tasks').select('id, title, status, due_date, priority, color, task_code, kanban_type').eq('assigned_to', uid).neq('status', 'done')
-      ).then(r => r.data ?? [])
-
-      // Mensagens pendentes — só diretor
-      if (isDirector) {
-        queries.messages = supabase.from('employee_messages')
-          .select('id, message, created_at, employee:system_users!employee_id(name)')
-          .eq('status', 'pendente')
-          .order('created_at', { ascending: false })
-          .then(r => r.data ?? [])
-      }
-
-      // Cliques no site — últimos 7 dias (Diretor + Administrativo)
-      if (['admin', 'administrativo'].includes(role)) {
-        queries.clicks = (async () => {
-          let allData = [], from = 0
-          const batchSize = 1000
-          while (true) {
-            const { data, error } = await supabase
-              .from('product_clicks')
-              .select('id, clicked_at, platform, page')
-              .gte('clicked_at', start7d)
-              .order('clicked_at', { ascending: true })
-              .range(from, from + batchSize - 1)
-            if (error || !data || data.length === 0) break
-            allData = allData.concat(data)
-            if (data.length < batchSize) break
-            from += batchSize
-          }
-          return allData
-        })()
-      }
-
-      // Estoque de matéria-prima — Diretor + Administrativo
-      if (['admin', 'administrativo'].includes(role)) {
-        queries.materials = supabase.from('raw_materials')
-          .select('id, name, unit, stock_qty, stock_min')
-          .eq('active', true)
-          .order('stock_qty', { ascending: true })
-          .then(r => r.data ?? [])
-      }
-
-      const entries = await Promise.all(Object.entries(queries).map(async ([k, p]) => [k, await p]))
-      setStats(Object.fromEntries(entries))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (loading || !stats) {
+  if (!data) {
     return (
       <div className="flex items-center justify-center py-24">
         <div className="w-8 h-8 border-4 border-rose-100 border-t-rose-400 rounded-full animate-spin" />
@@ -203,427 +102,248 @@ export function DashboardPage() {
     )
   }
 
-  // ── Processa os dados brutos ────────────────────────────────────
-  const orders      = stats.orders || []
-  const ordersWeek   = stats.ordersWeek || []
-  const budgets      = stats.budgets || []
-  const tasks        = stats.tasks || []
-  const messages     = stats.messages || []
-  const clicks       = stats.clicks || []
-  const materials    = stats.materials || []
+  const s = data.sales
+  const quickLinks = (QUICK_LINKS[role] || QUICK_LINKS.atendimento).filter(l => canAccess(l.mod))
 
-  function materialStatus(m) {
-    const min = parseFloat(m.stock_min) || 0
-    const qty = parseFloat(m.stock_qty) || 0
-    if (min <= 0) return 'ok'
-    if (qty <= min) return 'danger'
-    if (qty <= min * 1.3) return 'warn'
-    return 'ok'
+  // ── Indicadores (até 4, na ordem de importância do perfil) ─────────
+  const tiles = []
+  if (s) {
+    tiles.push(<StatTile key="hoje" icon={ClipboardList} tone="rose" label="Pedidos hoje" to="/pedidos"
+      value={fmtInt(s.today)} detail={`Ontem: ${fmtInt(s.yesterday)}`} />)
   }
-  const materialsWithStatus = materials.map(m => ({ ...m, _status: materialStatus(m) }))
-  const materialsCritical   = materialsWithStatus.filter(m => m._status === 'danger')
-  const materialsLow        = materialsWithStatus.filter(m => m._status === 'warn')
-
-  const clicksByDay = {}
-  clicks.forEach(c => {
-    const d = c.clicked_at.slice(0, 10)
-    if (!clicksByDay[d]) clicksByDay[d] = 0
-    clicksByDay[d]++
-  })
-  const clicksLast7 = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i)
-    const key = localISO(d)
-    clicksLast7.push({ date: key, total: clicksByDay[key] || 0 })
+  if (data.shipToday) {
+    const st = data.shipToday
+    tiles.push(<StatTile key="enviar" icon={Truck} tone={st.total && st.done === st.total ? 'good' : 'sky'} label="Para enviar hoje" to="/pick-list"
+      value={fmtInt(st.total)} detail={st.total ? `${fmtInt(st.done)} de ${fmtInt(st.total)} já separados` : 'Nada programado pra hoje'}>
+      {st.total > 0 && <Meter value={st.done} max={st.total} tone={st.done === st.total ? 'good' : 'rose'} />}
+    </StatTile>)
+    tiles.push(<StatTile key="atrasados" icon={AlertTriangle} tone={data.overdue ? 'critical' : 'good'} label="Envios atrasados" to="/pick-list"
+      value={fmtInt(data.overdue)} detail={data.overdue ? 'Dia de envio já passou e falta separar' : 'Nenhum pendente de dias anteriores'} />)
   }
-  const clicksByPlatform = clicks.reduce((acc, c) => {
-    const key = c.page === 'clo' ? 'clo' : c.platform
-    acc[key] = (acc[key] || 0) + 1
-    return acc
-  }, {})
-  const CLICK_PLAT_CFG = {
-    shopee: { label: 'Shopee', color: '#EE4D2D', emoji: '🛍️' },
-    ml: { label: 'Mercado Livre', color: '#f59e0b', emoji: '🛒' },
-    whatsapp: { label: 'WhatsApp', color: '#25d366', emoji: '💬' },
-    clo: { label: 'Clô', color: '#a855f7', emoji: '🐾' },
+  if (data.checklist) {
+    const c = data.checklist
+    tiles.push(<StatTile key="check" icon={ClipboardCheck} tone={c.total && c.done >= c.total ? 'good' : 'violet'} label="Meu checklist de hoje" to="/checklist"
+      value={`${fmtInt(c.done)}/${fmtInt(c.total)}`} detail={c.total && c.done >= c.total ? 'Tudo feito 🎉' : 'itens concluídos'}>
+      <Meter value={c.done} max={c.total} tone={c.total && c.done >= c.total ? 'good' : 'rose'} />
+    </StatTile>)
+  }
+  if (data.production) {
+    tiles.push(<StatTile key="prod" icon={Factory} tone="good" label="Produzido hoje" to="/producao"
+      value={fmtInt(data.production.today)} detail={`${fmtInt(data.production.month)} peças em ${monthName}`} />)
+  }
+  if (data.budgets && !s) {
+    tiles.push(<StatTile key="orc" icon={Receipt} tone="violet" label="Orçamentos no mês" to="/orcamentos" value={fmtInt(data.budgets.count)} />)
+  }
+  if (data.returns && !s) {
+    tiles.push(<StatTile key="ret" icon={RotateCcw} tone={data.returns.toReceive ? 'warning' : 'good'} label="Devoluções a receber" to="/shopee/retornos"
+      value={fmtInt(data.returns.toReceive)} detail="Produto voltando pra conferir" />)
+  }
+  if (data.materials && !s) {
+    tiles.push(<StatTile key="mat" icon={Boxes} tone={data.materials.critical ? 'critical' : 'good'} label="Matéria-prima crítica" to="/materia-prima"
+      value={fmtInt(data.materials.critical)} detail={data.materials.low ? `+ ${fmtInt(data.materials.low)} em nível baixo` : 'Estoque em dia'} />)
+  }
+  if (data.tasks && tiles.length < 4) {
+    tiles.push(<StatTile key="tar" icon={CalendarClock} tone={data.tasks.overdue ? 'critical' : 'neutral'} label={can.allTasks ? 'Tarefas atrasadas (todos)' : 'Minhas tarefas atrasadas'} to="/kanban-op"
+      value={fmtInt(data.tasks.overdue)} detail={`${fmtInt(data.tasks.dueToday)} vencem hoje`} />)
   }
 
-  const ordersCancelled = orders.filter(o => (o.status_ml || '').toLowerCase().includes('cancelad')).length
-  const ordersActive    = orders.length - ordersCancelled
-  const activeOrders    = orders.filter(o => !(o.status_ml || '').toLowerCase().includes('cancelad'))
-  const ordersByPlatform = activeOrders
-    .reduce((acc, o) => { acc[o.source] = (acc[o.source] || 0) + 1; return acc }, { ml: 0, shopee: 0, manual: 0 })
+  // ── Precisa de atenção ────────────────────────────────────────────
+  const attention = [
+    data.messages    && { key: 'msg', icon: MessageSquare, label: 'Mensagens de funcionários', hint: 'Aguardando resposta no app', count: data.messages.length, to: '/rh/mensagens', level: 'warning' },
+    data.tasks       && { key: 'tar', icon: CalendarClock, label: can.allTasks ? 'Tarefas atrasadas (todos)' : 'Minhas tarefas atrasadas', count: data.tasks.overdue, to: '/kanban-op', level: 'critical' },
+    data.materials   && { key: 'mat', icon: Boxes, label: 'Matéria-prima crítica', hint: data.materials.low ? `+ ${data.materials.low} em nível baixo` : undefined, count: data.materials.critical, to: '/materia-prima', level: 'critical' },
+    data.returns     && { key: 'ret', icon: RotateCcw, label: 'Devoluções a receber', hint: 'Shopee — conferir quando chegar', count: data.returns.toReceive, to: '/shopee/retornos', level: 'warning' },
+    data.returns     && { key: 'ava', icon: AlertTriangle, label: 'Devoluções com avaria', count: data.returns.damaged, to: '/shopee/retornos', level: 'info' },
+    data.reviews     && { key: 'rev', icon: Star, label: 'Avaliações para aprovar', count: data.reviews.pending, to: '/avaliacoes', level: 'info' },
+    data.reviews     && { key: 'per', icon: MessageCircleQuestion, label: 'Perguntas sem resposta', hint: 'Site', count: data.reviews.questions, to: '/avaliacoes', level: 'warning' },
+  ]
 
-  // Vendas por plataforma (valor + qtd) — só o que o Raphael pediu
-  // ver no dashboard de diretor: "quanto e quantos venderam por
-  // plataforma". Mesmo fallback de valor já usado no Pedidos
-  // (total_value > 0 ? total_value : total_brl).
-  const salesByPlatform = activeOrders.reduce((acc, o) => {
-    const key = acc[o.source] ? o.source : 'manual'
-    const value = Number(o.total_value) > 0 ? Number(o.total_value) : Number(o.total_brl) || 0
-    acc[key].value += value
-    acc[key].count += 1
-    return acc
-  }, {
-    ml:     { value: 0, count: 0 },
-    shopee: { value: 0, count: 0 },
-    manual: { value: 0, count: 0 },
-  })
+  // ── Destaque principal ────────────────────────────────────────────
+  let hero = null
+  if (s && can.money) {
+    hero = (
+      <Panel className="lg:col-span-2" title={`Faturamento de ${monthName}`} subtitle="Vendas sem cancelados · ML, Shopee e manuais" to="/pedidos" linkLabel="Pedidos">
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-2 mb-5">
+          <p className="font-display font-extrabold text-[44px] sm:text-5xl leading-none text-slate-800">{fmtBRL(s.mtd.value)}</p>
+          <div className="flex flex-col gap-1 pb-1">
+            <Delta current={s.mtd.value} previous={s.prev.value} suffix={`vs 1–${Number(today.slice(8, 10))} do mês passado`} />
+            <span className="text-xs text-slate-400">{fmtInt(s.mtd.orders)} pedidos · ticket médio {fmtBRL(s.mtd.orders ? s.mtd.value / s.mtd.orders : 0)}</span>
+          </div>
+        </div>
+        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Por dia · últimos 30 dias</p>
+        <DailyBars data={s.daily} dataKey="value" format={fmtBRL} axisFormat={v => fmtBRLShort(v).replace('R$ ', '')} />
+      </Panel>
+    )
+  } else if (s) {
+    hero = (
+      <Panel className="lg:col-span-2" title={`Pedidos em ${monthName}`} subtitle="Sem cancelados · ML, Shopee e manuais" to="/pedidos" linkLabel="Pedidos">
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-2 mb-5">
+          <p className="font-display font-extrabold text-5xl leading-none text-slate-800">{fmtInt(s.mtd.orders)}</p>
+          <div className="pb-1"><Delta current={s.mtd.orders} previous={s.prev.orders} suffix={`vs 1–${Number(today.slice(8, 10))} do mês passado`} /></div>
+        </div>
+        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Por dia · últimos 30 dias</p>
+        <DailyBars data={s.daily} dataKey="orders" unit="pedidos" format={v => `${fmtInt(v)} pedidos`} />
+      </Panel>
+    )
+  } else if (data.production) {
+    const p = data.production
+    hero = (
+      <Panel className="lg:col-span-2" title="Produção" subtitle="Peças lançadas pela equipe" to="/producao" linkLabel="Produção">
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-2 mb-5">
+          <div>
+            <p className="font-display font-extrabold text-5xl leading-none text-slate-800">{fmtInt(p.today)}</p>
+            <p className="text-xs text-slate-400 mt-1.5">peças hoje</p>
+          </div>
+          <div className="pb-1">
+            <p className="font-display font-extrabold text-2xl leading-none text-slate-700">{fmtInt(p.month)}</p>
+            <p className="text-xs text-slate-400 mt-1.5">no mês de {monthName}</p>
+          </div>
+        </div>
+        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Por dia · últimas 2 semanas</p>
+        <DailyBars data={p.daily} dataKey="qty" unit="peças" format={v => `${fmtInt(v)} peças`} />
+      </Panel>
+    )
+  }
 
-  const budgetsTotal = budgets.reduce((a, b) => a + (parseFloat(b.total) || 0), 0)
+  const attentionPanel = attention.some(Boolean) && (
+    <Panel title="Precisa de atenção" subtitle="O que está esperando alguém agir">
+      <AttentionList items={attention} />
+    </Panel>
+  )
 
-  const overdueTasks  = tasks.filter(t => isOverdue(t.due_date, t.status))
-  const dueTodayTasks = tasks.filter(t => t.due_date === localISO() && t.status !== 'done')
-
-  // Gráfico: pedidos últimos 7 dias por plataforma
-  const chartMap = {}
-  ordersWeek.forEach(o => {
-    if (!o.data_venda) return
-    const day = toISODateBR(new Date(o.data_venda))
-    if (!chartMap[day]) chartMap[day] = { date: day, ml: 0, shopee: 0, manual: 0 }
-    if (chartMap[day][o.source] !== undefined) chartMap[day][o.source]++
-  })
-  const chartData = Object.values(chartMap).sort((a, b) => a.date.localeCompare(b.date))
-
-  const quickLinks = QUICK_LINKS[role] || QUICK_LINKS.atendimento
-  const isDirectorView = role === 'admin'
+  const materialsPanel = data.materials && data.materials.list.length > 0 && (
+    <Panel title="Estoque de matéria-prima" subtitle="Itens no mínimo ou perto dele" to="/materia-prima">
+      <ul className="flex flex-col gap-3">
+        {data.materials.list.slice(0, 5).map(m => {
+          const crit = m._s === 'critical'
+          return (
+            <li key={m.id}>
+              <div className="flex items-baseline justify-between gap-2 mb-1">
+                <span className="text-sm font-semibold text-slate-700 truncate">{m.name}</span>
+                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-md shrink-0 ${crit ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
+                  {crit ? '⚠ Crítico' : 'Baixo'}
+                </span>
+              </div>
+              <Meter value={Number(m.stock_qty) || 0} max={(Number(m.stock_min) || 1) * 2} tone={crit ? 'rose' : 'warning'} />
+              <p className="text-[11px] text-slate-400 mt-1">{fmtInt(m.stock_qty)} {m.unit} · mínimo {fmtInt(m.stock_min)}</p>
+            </li>
+          )
+        })}
+      </ul>
+    </Panel>
+  )
 
   return (
-    <div className="flex flex-col gap-6 animate-fade-in">
+    <div className={`flex flex-col gap-5 animate-fade-in transition-opacity ${loading ? 'opacity-60' : ''}`}>
 
-      {/* Saudação */}
-      <div>
-        <h2 className="text-slate-800 leading-tight" style={{ fontFamily: 'Nunito,sans-serif', fontWeight: 800, fontSize: '24px' }}>
-          Olá, {firstName}! 👋
-        </h2>
-        <p className="text-sm text-slate-400 mt-1">
-          {role === 'admin' ? 'Aqui está o resumo geral da CoisaPet.' : 'Aqui está o resumo do seu dia.'}
-        </p>
+      {/* Cabeçalho */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold text-slate-400">{dateLabel}</p>
+          <h2 className="font-display font-extrabold text-[26px] leading-tight text-slate-800 mt-0.5">{greeting()}, {firstName}!</h2>
+        </div>
+        <button onClick={reload} disabled={loading}
+          className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          {updatedAt ? `Atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Atualizar'}
+        </button>
       </div>
 
-      {/* Alerta de mensagens pendentes — bem visível */}
-      {role === 'admin' && messages.length > 0 && (
-        <Link to="/rh/mensagens" className="flex items-center gap-3 bg-sky-50 border border-sky-100 rounded-2xl px-4 py-3 hover:bg-sky-100/60 transition-colors">
-          <MessageSquare size={18} className="text-sky-500 shrink-0" />
-          <p className="text-sm text-sky-700">
-            <strong>{messages.length}</strong> mensagem{messages.length > 1 ? 'ns' : ''} de funcionário{messages.length > 1 ? 's' : ''} aguardando resposta no app.
-          </p>
-          <ArrowRight size={14} className="text-sky-400 ml-auto shrink-0" />
-        </Link>
-      )}
-
-      {/* Atalhos rápidos */}
-      <div className="flex flex-wrap gap-2.5">
-        {quickLinks.map(({ to, label, icon: Icon, color }) => (
+      {/* Atalhos */}
+      <div className="flex flex-wrap gap-2">
+        {quickLinks.map(({ to, label, icon: Icon }) => (
           <Link key={to} to={to}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
-            <Icon size={16} style={{ color }} />
-            <span className="text-sm font-semibold text-slate-700">{label}</span>
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-sm font-semibold text-slate-600 hover:border-rose-300 hover:text-rose-600 transition-colors">
+            <Icon size={15} />{label}
           </Link>
         ))}
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {['admin', 'atendimento', 'administrativo', 'marketplace'].includes(role) && (
-          <>
-            <StatCard icon={ClipboardList} label="Pedidos ML" value={ordersByPlatform.ml} color="#f59e0b" to="/pedidos" />
-            <StatCard icon={ClipboardList} label="Pedidos Shopee" value={ordersByPlatform.shopee} color="#EE4D2D" to="/pedidos" />
-            <StatCard icon={ClipboardList} label="Pedidos Manuais" value={ordersByPlatform.manual} color="#64748b" to="/pedidos" />
-          </>
-        )}
-        {['admin', 'atendimento', 'administrativo'].includes(role) && (
-          <StatCard icon={Receipt} label="Orçamentos no mês" value={budgets.length} color="#8B5CF6" to="/orcamentos" />
-        )}
-        <StatCard
-          icon={AlertTriangle}
-          label={role === 'admin' ? 'Tarefas atrasadas (todos)' : 'Minhas tarefas atrasadas'}
-          value={overdueTasks.length}
-          color="#EF4444"
-          to="/kanban-op"
-        />
-        <StatCard icon={Clock} label="Vencem hoje" value={dueTodayTasks.length} color="#F59E0B" to="/kanban-op" />
-        {role === 'admin' && (
-          <StatCard icon={MessageSquare} label="Mensagens aguardando" value={messages.length} color="#0EA5E9" to="/rh/mensagens" />
-        )}
-        {isDirectorView && budgets.length > 0 && (
-          <StatCard icon={TrendingUp} label="Total orçado no mês" value={fmtPreco(budgetsTotal)} color="#10B981" to="/orcamentos" />
-        )}
-        {['admin', 'administrativo'].includes(role) && (
-          <StatCard icon={MousePointerClick} label="Cliques no site (7d)" value={clicks.length} color="#a855f7" to="/cliques" />
-        )}
-        {['admin', 'administrativo'].includes(role) && (
-          <StatCard icon={AlertTriangle} label="Estoque crítico" value={materialsCritical.length} color="#EF4444" to="/materia-prima" />
-        )}
-      </div>
-
-      {/* Vendas por plataforma (valor + qtd) — só diretor, pedido do
-          Raphael: quanto (R$) e quantos (pedidos) venderam por
-          plataforma, sem mais nada junto. */}
-      {isDirectorView && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-slate-800" style={{ fontFamily: 'Nunito,sans-serif', fontWeight: 700, fontSize: '15px' }}>
-                Vendas por plataforma
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">Valor total e quantidade de pedidos no mês</p>
-            </div>
-            <Link to="/pedidos" className="flex items-center gap-1 text-xs font-semibold text-rose-400 hover:text-rose-500">
-              Ver tudo <ArrowRight size={13} />
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {[
-              { key: 'ml',     label: 'Mercado Livre', emoji: '🛒' },
-              { key: 'shopee', label: 'Shopee',         emoji: '🛍️' },
-              { key: 'manual', label: 'Manual',         emoji: '📝' },
-            ].map(p => {
-              const s = salesByPlatform[p.key]
-              return (
-                <div key={p.key} className="rounded-xl border border-slate-100 p-4"
-                  style={{ borderLeft: `4px solid ${PLATFORM_COLORS[p.key]}` }}>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{p.emoji} {p.label}</p>
-                  <p className="text-xl font-black text-slate-800 mt-1.5" style={{ fontFamily: 'Nunito,sans-serif' }}>
-                    {fmtPreco(s.value)}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">{s.count} pedido{s.count !== 1 ? 's' : ''}</p>
-                </div>
-              )
-            })}
-          </div>
+      {/* Indicadores */}
+      {tiles.length > 0 && (
+        <div className={`grid grid-cols-2 gap-3 ${tiles.length >= 4 ? 'lg:grid-cols-4' : tiles.length === 3 ? 'lg:grid-cols-3' : ''}`}>
+          {tiles.slice(0, 4)}
         </div>
       )}
 
-      {/* Painéis inferiores */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-        {/* Gráfico de pedidos — quem lida com pedidos */}
-        {['admin', 'atendimento', 'administrativo', 'marketplace'].includes(role) && (
-          <div className="card lg:col-span-2">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-slate-800" style={{ fontFamily: 'Nunito,sans-serif', fontWeight: 700, fontSize: '15px' }}>
-                  Pedidos — últimos 7 dias
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">Por plataforma</p>
-              </div>
-              <Link to="/pedidos" className="flex items-center gap-1 text-xs font-semibold text-rose-400 hover:text-rose-500">
-                Ver tudo <ArrowRight size={13} />
-              </Link>
-            </div>
-            {chartData.length === 0 ? (
-              <div className="flex items-center justify-center h-40 text-slate-300 text-sm">Sem pedidos nos últimos 7 dias</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <AreaChart data={chartData}>
-                  <defs>
-                    {Object.entries(PLATFORM_COLORS).map(([k, c]) => (
-                      <linearGradient key={k} id={`dgrad-${k}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={c} stopOpacity={0.3} />
-                        <stop offset="95%" stopColor={c} stopOpacity={0} />
-                      </linearGradient>
-                    ))}
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="date" tickFormatter={fmtDateShort} tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
-                  <Tooltip labelFormatter={fmtDateShort} />
-                  <Area type="monotone" dataKey="ml" name="Mercado Livre" stroke={PLATFORM_COLORS.ml} fill="url(#dgrad-ml)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="shopee" name="Shopee" stroke={PLATFORM_COLORS.shopee} fill="url(#dgrad-shopee)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="manual" name="Manual" stroke={PLATFORM_COLORS.manual} fill="url(#dgrad-manual)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        )}
-
-        {/* Painel lateral — Mensagens (admin) ou Tarefas (demais) */}
-        <div className={['admin', 'atendimento', 'administrativo', 'marketplace'].includes(role) ? '' : 'lg:col-span-2'}>
-          {role === 'admin' ? (
-            <div className="card h-full">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-slate-800" style={{ fontFamily: 'Nunito,sans-serif', fontWeight: 700, fontSize: '15px' }}>
-                  Mensagens aguardando
-                </h3>
-                <Link to="/rh/mensagens" className="text-xs font-semibold text-rose-400 hover:text-rose-500">Ver tudo</Link>
-              </div>
-              {messages.length === 0 ? (
-                <p className="text-sm text-slate-300 text-center py-8">Nenhuma mensagem pendente 🎉</p>
-              ) : (
-                <div className="flex flex-col divide-y divide-slate-50">
-                  {messages.slice(0, 5).map(m => (
-                    <Link key={m.id} to="/rh/mensagens" className="py-2.5 flex flex-col hover:bg-slate-50/60 -mx-2 px-2 rounded-lg">
-                      <p className="text-xs font-bold text-slate-700">{m.employee?.name || 'Funcionário'}</p>
-                      <p className="text-xs text-slate-400 truncate">{m.message}</p>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="card h-full">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-slate-800" style={{ fontFamily: 'Nunito,sans-serif', fontWeight: 700, fontSize: '15px' }}>
-                  Minhas tarefas
-                </h3>
-                <Link to="/kanban-op" className="text-xs font-semibold text-rose-400 hover:text-rose-500">Ver tudo</Link>
-              </div>
-              {tasks.length === 0 ? (
-                <p className="text-sm text-slate-300 text-center py-8">Nenhuma tarefa em aberto 🎉</p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {tasks
-                    .slice()
-                    .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1)
-                    .slice(0, 6)
-                    .map(t => {
-                    const overdue  = isOverdue(t.due_date, t.status)
-                    const dueToday = t.due_date === localISO() && t.status !== 'done'
-                    const link = t.kanban_type === 'diretoria' ? `/kanban?task=${t.task_code}` : `/kanban-op?task=${t.task_code}`
-                    return (
-                      <Link key={t.id} to={link}
-                        className={`flex items-center gap-2.5 rounded-b-xl border-l-4 px-3 py-2.5 hover:shadow-sm transition-shadow ${
-                          overdue ? 'bg-rose-50/50' : dueToday ? 'bg-amber-50/50' : 'bg-slate-50/60'
-                        }`}
-                        style={{ borderLeftColor: t.color || '#cbd5e1' }}>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-slate-700 truncate">{t.title}</p>
-                          {isDirectorView && t.assignee?.name && (
-                            <p className="text-[10px] text-slate-400 truncate">{t.assignee.name}</p>
-                          )}
-                        </div>
-                        {t.due_date && (
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
-                            overdue ? 'bg-rose-100 text-rose-600' : dueToday ? 'bg-amber-100 text-amber-600' : 'bg-white text-slate-400'
-                          }`}>
-                            {overdue ? '⚠ ' : dueToday ? '⏰ ' : ''}{fmtTaskDate(t.due_date)}
-                          </span>
-                        )}
-                      </Link>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Últimos orçamentos — quem lida com orçamentos */}
-      {['admin', 'atendimento', 'administrativo'].includes(role) && budgets.length > 0 && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-slate-800" style={{ fontFamily: 'Nunito,sans-serif', fontWeight: 700, fontSize: '15px' }}>
-              Últimos orçamentos
-            </h3>
-            <Link to="/orcamentos" className="flex items-center gap-1 text-xs font-semibold text-rose-400 hover:text-rose-500">
-              Ver tudo <ArrowRight size={13} />
-            </Link>
-          </div>
-          <div className="flex flex-col divide-y divide-slate-50">
-            {budgets.slice(0, 5).map(b => (
-              <div key={b.id} className="py-2.5 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-slate-700">{b.customer_name || 'Cliente não informado'}</p>
-                  <p className="text-xs text-slate-400 font-mono">{b.code}</p>
-                </div>
-                <p className="text-sm font-bold text-emerald-600">{isDirectorView ? fmtPreco(b.total) : ''}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {/* Status de estoque — matéria-prima */}
-      {['admin', 'administrativo'].includes(role) && (materialsCritical.length > 0 || materialsLow.length > 0) && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-slate-800" style={{ fontFamily: 'Nunito,sans-serif', fontWeight: 700, fontSize: '15px' }}>
-                Status de Estoque
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">Matérias-primas em nível baixo ou crítico</p>
-            </div>
-            <Link to="/materia-prima" className="flex items-center gap-1 text-xs font-semibold text-rose-400 hover:text-rose-500">
-              Ver tudo <ArrowRight size={13} />
-            </Link>
-          </div>
-          <div className="flex flex-col divide-y divide-slate-50">
-            {[...materialsCritical, ...materialsLow].slice(0, 6).map(m => (
-              <div key={m.id} className="flex items-center justify-between py-2.5">
-                <div>
-                  <p className="text-sm font-semibold text-slate-700">{m.name}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{m.stock_qty} {m.unit} em estoque{m.stock_min ? ` · mínimo ${m.stock_min}` : ''}</p>
-                </div>
-                <span className={m._status === 'danger' ? 'badge-danger' : 'badge-warn'}>
-                  {m._status === 'danger' ? 'Crítico' : 'Baixo'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Cliques no site */}
-      {['admin', 'administrativo'].includes(role) && (
+      {/* Destaque + lateral */}
+      {hero && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="card lg:col-span-2">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-slate-800" style={{ fontFamily: 'Nunito,sans-serif', fontWeight: 700, fontSize: '15px' }}>
-                  Cliques no site — últimos 7 dias
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">Total de {clicks.length} clique{clicks.length !== 1 ? 's' : ''} no período</p>
-              </div>
-              <Link to="/cliques" className="flex items-center gap-1 text-xs font-semibold text-rose-400 hover:text-rose-500">
-                Ver tudo <ArrowRight size={13} />
-              </Link>
-            </div>
-            {clicks.length === 0 ? (
-              <div className="flex items-center justify-center h-32 text-slate-300 text-sm">Sem cliques registrados</div>
-            ) : (
-              <div className="flex flex-col gap-2.5">
-                {clicksLast7.map(d => {
-                  const max = Math.max(...clicksLast7.map(x => x.total), 1)
-                  return (
-                    <div key={d.date} className="flex items-center gap-2">
-                      <span className="text-[10px] font-semibold text-slate-500 w-10 shrink-0">{fmtDateShort(d.date)}</span>
-                      <div className="flex-1 h-5 bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-violet-400 flex items-center justify-end pr-1.5"
-                          style={{ width: `${Math.round(d.total / max * 100)}%`, minWidth: d.total > 0 ? '28px' : '0' }}>
-                          {d.total > 0 && <span className="text-[9px] font-black text-white">{d.total}</span>}
-                        </div>
-                      </div>
-                      {d.total === 0 && <span className="text-[10px] text-slate-300">0</span>}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
+          {hero}
+          {s
+            ? <Panel title={can.money ? 'Por plataforma' : 'Pedidos por plataforma'} subtitle={`Em ${monthName}`}><PlatformShare platforms={s.platforms} money={can.money} /></Panel>
+            : attentionPanel}
+        </div>
+      )}
 
-          <div className="card">
-            <h3 className="text-slate-800 mb-4" style={{ fontFamily: 'Nunito,sans-serif', fontWeight: 700, fontSize: '15px' }}>
-              Por plataforma
-            </h3>
-            <div className="flex flex-col gap-3">
-              {Object.entries(CLICK_PLAT_CFG).map(([k, v]) => {
-                const val = clicksByPlatform[k] || 0
-                const max = Math.max(...Object.values(clicksByPlatform), 1)
-                return (
-                  <div key={k}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-semibold text-slate-600">{v.emoji} {v.label}</span>
-                      <span className="text-xs font-black text-slate-800">{val}</span>
-                    </div>
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${Math.round(val / max * 100)}%`, background: v.color }} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+      {/* Atenção + tarefas */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {s && attentionPanel}
+        {data.tasks && (
+          <Panel className={(s ? attentionPanel : materialsPanel) ? 'lg:col-span-2' : 'lg:col-span-3'}
+            title={can.allTasks ? 'Tarefas em aberto' : 'Minhas tarefas'}
+            subtitle={`${fmtInt(data.tasks.list.length)} em aberto · ${fmtInt(data.tasks.overdue)} atrasada${data.tasks.overdue === 1 ? '' : 's'}`}
+            to="/kanban-op">
+            <TaskList tasks={data.tasks.list} today={today} showAssignee={can.allTasks} limit={can.allTasks ? 8 : 6} />
+          </Panel>
+        )}
+        {!s && materialsPanel}
+      </div>
+
+      {/* Linha de baixo: mensagens, orçamentos, estoque, cliques */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {data.messages && data.messages.length > 0 && (
+          <Panel title="Mensagens aguardando" to="/rh/mensagens">
+            <ul className="flex flex-col -mx-2">
+              {data.messages.slice(0, 5).map(m => (
+                <li key={m.id}>
+                  <Link to="/rh/mensagens" className="block px-2 py-2 rounded-xl hover:bg-slate-50">
+                    <span className="block text-sm font-semibold text-slate-700">{m.employee?.name || 'Funcionário'}</span>
+                    <span className="block text-xs text-slate-400 truncate">{m.message}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        )}
+
+        {data.budgets && data.budgets.count > 0 && (
+          <Panel title="Orçamentos do mês" subtitle={can.money ? `${fmtInt(data.budgets.count)} · ${fmtBRL(data.budgets.total)} orçados` : `${fmtInt(data.budgets.count)} criados em ${monthName}`} to="/orcamentos">
+            <ul className="flex flex-col -mx-2">
+              {data.budgets.latest.map(b => (
+                <li key={b.id} className="flex items-center justify-between gap-2 px-2 py-2">
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-slate-700 truncate">{b.customer_name || 'Cliente não informado'}</span>
+                    <span className="block text-[11px] text-slate-400 font-mono">{b.code} · {fmtDayShort(b.created_at.slice(0, 10))}</span>
+                  </span>
+                  {can.money && <span className="text-sm font-bold text-slate-700 shrink-0">{fmtBRL(b.total)}</span>}
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        )}
+
+        {s && materialsPanel}
+
+      </div>
+
+      {(data.clicks || (data.production && s)) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {data.clicks && (
+            <Panel title="Cliques no site" subtitle={`${fmtInt(data.clicks.total)} nos últimos 7 dias`} to="/cliques">
+              <DailyBars data={data.clicks.daily} dataKey="total" unit="cliques" format={v => `${fmtInt(v)} cliques`} height={130} />
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
+                {[['shopee', 'Shopee'], ['ml', 'Mercado Livre'], ['whatsapp', 'WhatsApp'], ['clo', 'Clô']].map(([k, l]) => (
+                  <span key={k} className="text-xs text-slate-500"><MousePointerClick size={11} className="inline -mt-0.5 mr-1 text-slate-400" />{l} <strong className="text-slate-700">{fmtInt(data.clicks.byPlat[k] || 0)}</strong></span>
+                ))}
+              </div>
+            </Panel>
+          )}
+          {data.production && s && (
+            <Panel className={data.clicks ? 'lg:col-span-2' : 'lg:col-span-3'} title="Produção" subtitle={`${fmtInt(data.production.today)} peças hoje · ${fmtInt(data.production.month)} em ${monthName}`} to="/producao">
+              <DailyBars data={data.production.daily} dataKey="qty" unit="peças" format={v => `${fmtInt(v)} peças`} height={180} />
+            </Panel>
+          )}
         </div>
       )}
     </div>
