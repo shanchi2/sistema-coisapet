@@ -106,6 +106,10 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
   ]
 
   const [times,   setTimes]   = useState({})
+  // De qual registro original veio o horário de cada campo (06/10): a
+  // setinha só MOVE um horário batido pelo funcionário — isso não é ajuste
+  // manual. Digitar no campo zera a origem (aí sim vira manual).
+  const [origin,  setOrigin]  = useState({})
   const [saving,  setSaving]  = useState(false)
 
   // Troca o valor desse campo com o campo vizinho (pra cima ou pra baixo)
@@ -121,16 +125,19 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
       [fromType]: t[toType] || '',
       [toType]: t[fromType] || '',
     }))
+    setOrigin(o => ({ ...o, [fromType]: o[toType] || null, [toType]: o[fromType] || null }))
   }
 
   useEffect(() => {
     if (!open) return
-    const init = {}
+    const init = {}, orig = {}
     PUNCHES.forEach(({ type }) => {
       const rec = records.find(r => r.punch_type === type)
       init[type] = rec ? fmtT(rec.recorded_at) : ''
+      orig[type] = rec || null
     })
     setTimes(init)
+    setOrigin(orig)
   }, [open, records])
 
   async function handleSave() {
@@ -141,12 +148,15 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
         const val = times[type]?.trim()
 
         if (val) {
-          const iso = toISO(date, val)
+          // Horário que veio de outro campo pela setinha, sem ser redigitado:
+          // usa o timestamp original (mantém os segundos) e herda a flag dele.
+          const src   = origin[type]
+          const moved = src && fmtT(src.recorded_at) === val
+          const iso   = moved ? src.recorded_at : toISO(date, val)
 
           // Verifica se o horário realmente mudou em relação ao que está no banco
-          // Compara HH:MM do campo digitado com HH:MM do registro existente
           const originalTime = existing ? fmtT(existing.recorded_at) : null
-          const wasChanged   = val !== originalTime  // ex: "08:05" !== "08:00"
+          const wasChanged   = moved ? src.id !== existing?.id : val !== originalTime
           const isNew        = !existing             // registro que não existia antes
 
           // Só faz upsert se mudou ou é novo
@@ -160,8 +170,6 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
             })
             if (error) throw error
 
-            // Só marca como editado manualmente se era existente e foi alterado,
-            // ou se é um registro inserido do zero pelo admin
             let targetId = existing?.id ?? null
             if (!targetId) {
               const { data: fresh } = await supabase
@@ -171,8 +179,13 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
                 .single()
               targetId = fresh?.id ?? null
             }
+            // Manual (caixa laranja) só pra horário digitado/novo de verdade.
+            // Movido pela setinha → fica com a flag do registro de onde veio.
             if (targetId) {
-              await supabase.rpc('admin_mark_manual', { p_record_id: targetId })
+              await supabase.rpc('admin_set_manual', {
+                p_record_id: targetId,
+                p_manual:    moved ? !!src.manually_edited : true,
+              })
             }
           }
           // Se não mudou: não faz nada, mantém o flag original do banco
@@ -248,7 +261,7 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
                 type="time"
                 className="input flex-1 text-sm"
                 value={times[type] || ''}
-                onChange={e => setTimes(t => ({ ...t, [type]: e.target.value }))}
+                onChange={e => { setTimes(t => ({ ...t, [type]: e.target.value })); setOrigin(o => ({ ...o, [type]: null })) }}
               />
               <div className="flex flex-col shrink-0 -my-1">
                 <button onClick={() => shiftValue(idx, -1)} disabled={idx === 0}
