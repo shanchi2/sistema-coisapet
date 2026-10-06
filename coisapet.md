@@ -6658,3 +6658,11 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
   recebem chamada direta do ML — `ml-oauth-callback` e `ml-webhook` —
   precisam de `--no-verify-jwt`; `ml-process-webhook` não, porque é
   chamada de dentro do próprio Supabase)
+
+### 06/10 — Ponto: setinha não marca mais como "manual" (fase95)
+- No "Ajustar Ponto", horário só MOVIDO pela setinha (troca de posição) ficava
+  com a caixa laranja de manual. Agora o modal guarda de qual registro veio
+  cada horário: movido sem redigitar → mantém o timestamp original e herda a
+  flag do registro de origem; digitado/novo → manual. Nova RPC
+  `admin_set_manual(id, bool)` (fase95, aplicada) — a antiga só ligava a flag.
+- Registros que já ficaram marcados errado antes disso continuam marcados.
