@@ -6674,3 +6674,10 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
 - Lista (cards e tabela) separada em blocos por vínculo. Hierarquia continua
   no select ao lado da busca e na etiqueta de cada pessoa. Só visualização —
   nada mudou no banco nem nos acessos.
+
+### 06/10 — Menu: seção "Mkt & Atendimento" (decidido com Raphael/Gabriel)
+- Saíram de "Produção" pra nova seção: Avaliações, Orçamentos, QR Code,
+  Atualização de Mídia, Checklist Diário. Resto do menu igual (uma primeira
+  versão minha, com mais itens, foi revertida — PR #14 — pra decidir junto).
+- Controle de Acesso agrupa esses 5 em "Mkt & Atendimento". Só o lugar no
+  menu mudou — roles e permissões iguais.
