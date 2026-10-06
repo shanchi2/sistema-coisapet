@@ -6733,3 +6733,22 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
   Aparece na ficha do usuário e no app da equipe, igual ao anexo manual.
 - `handlePrint` virou `buildExtratoHtml(emps)` + `handlePrint` (mesmo HTML
   nos dois caminhos).
+
+### 06/10 — Pagamento de Honorários via Pix (fase97)
+- Ficha (aba Contrato, só diretor vê): chave Pix (tipo + chave + titular) —
+  `system_users.pix_key/pix_key_type/pix_holder`.
+- Diretoria → **Pagamento de Honorários** (`/honorarios`, só admin): lista a
+  competência (padrão = mês passado) com valor calculado:
+  salário fixo − faltas (mesma regra do Relatório de Ponto) · salário mensal
+  (+ horas de fim de semana × valor/hora se "fds separado") · horas do ponto
+  × valor/hora · senão valor do lançamento do Fin. Diretoria.
+- Modal: valor editável (alterar exige motivo) → gera **Pix copia e cola +
+  QR** (BR Code estático, `src/lib/pix.js`, validado contra o exemplo
+  oficial do BCB). Não existe "link que abre o banco" universal — o padrão
+  é copia e cola/QR, funciona em qualquer banco.
+- "Já paguei": dá baixa no lançamento `director_entries` do mês (o que o
+  salário da ficha já gera; NÃO cria conta no Financeiro pra não duplicar)
+  ou cria um já pago; comprovante (agora ou depois) vai pra
+  `employee-docs/pagamentos/...` e vira o "Recibo" do mês na ficha.
+- Tabela `employee_payments` (sem FK — FK pelo MCP dá timeout).
+- Fase 2 combinada: controle de empréstimos com parcelas descontando sozinho.

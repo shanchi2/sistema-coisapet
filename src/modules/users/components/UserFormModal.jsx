@@ -5,6 +5,7 @@ import { Modal } from '../../../components/ui/Modal'
 import { supabase } from '../../../lib/supabase'
 import toast from 'react-hot-toast'
 import { EMPLOYEE_TYPES, docName } from '../../../lib/employeeType'
+import { PIX_KEY_TYPES, pixKeyProblem } from '../../../lib/pix'
 
 export const ROLES = [
   { value: 'admin',          label: 'Diretor',        color: 'bg-rose-50 text-rose-600'    },
@@ -48,6 +49,7 @@ const EMPTY = {
   half_day: false,
   employee_type: 'clt',
   payment_day:   '5',
+  pix_key: '', pix_key_type: 'cpf', pix_holder: '',
   company_name:  '',
   company_cnpj:  '',
   kanban_access:     false,
@@ -134,6 +136,9 @@ export function UserFormModal({ open, onClose, onSave, initial, loading }) {
         contract_url:        initial.contract_url       ?? '',
         employee_type:       initial.employee_type      ?? 'clt',
         payment_day:         initial.payment_day ? String(initial.payment_day) : '5',
+        pix_key:             initial.pix_key            ?? '',
+        pix_key_type:        initial.pix_key_type       ?? 'cpf',
+        pix_holder:          initial.pix_holder         ?? '',
         company_name:        initial.company_name       ?? '',
         company_cnpj:        initial.company_cnpj       ?? '',
         kanban_access:       initial.role === 'escritorio',
@@ -230,6 +235,9 @@ export function UserFormModal({ open, onClose, onSave, initial, loading }) {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
     else toast.error('Erro ao abrir arquivo.')
   }
+
+  // Chave Pix só aparece pra diretor (06/10)
+  const isDirectorViewer = (() => { try { return JSON.parse(localStorage.getItem('coisapet_session') || '{}').role === 'admin' } catch { return false } })()
 
   function handleSalary(e) {
     const digits = e.target.value.replace(/\D/g,'')
@@ -597,6 +605,24 @@ export function UserFormModal({ open, onClose, onSave, initial, loading }) {
               )}
             </Field>
           </div>
+
+          {/* Chave Pix pro Pagamento de Honorários (06/10) — só diretor vê/edita */}
+          {isDirectorViewer && (
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3 flex flex-col gap-2">
+              <p className="text-xs font-bold text-emerald-700">Chave Pix pra pagamento <span className="font-normal text-emerald-600/70">— usada em Diretoria → Pagamento de Honorários</span></p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <select className="select" value={form.pix_key_type} onChange={e => set('pix_key_type', e.target.value)}>
+                  {PIX_KEY_TYPES.map(t => <option key={t.v} value={t.v}>{t.label}</option>)}
+                </select>
+                <input className="input sm:col-span-2" value={form.pix_key} onChange={e => set('pix_key', e.target.value)}
+                  placeholder={{ cpf: '000.000.000-00', cnpj: '00.000.000/0000-00', telefone: '(11) 99999-9999', email: 'nome@email.com', aleatoria: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' }[form.pix_key_type]} />
+              </div>
+              <input className="input" value={form.pix_holder} onChange={e => set('pix_holder', e.target.value)} placeholder="Nome do titular da conta (pra conferência)" />
+              {form.pix_key?.trim() && pixKeyProblem(form.pix_key, form.pix_key_type) && (
+                <p className="text-[11px] text-amber-600 font-semibold">⚠ {pixKeyProblem(form.pix_key, form.pix_key_type)}</p>
+              )}
+            </div>
+          )}
 
           <Field label="Arquivo do contrato (PDF)">
             <div className="flex items-center gap-2">

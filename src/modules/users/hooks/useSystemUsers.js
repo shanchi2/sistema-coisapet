@@ -33,7 +33,7 @@ export function useSystemUsers() {
     setLoading(true)
     const { data, error } = await supabase
       .from('system_users')
-.select('id, name, email, notification_email, email_notifications, role, job_title, phone, cpf, hire_date, birthday, monthly_salary, monthly_hours, address, emergency_name, emergency_phone, notes, must_change_password, last_login_at, created_at, document_personal, photo_url, medical_certs_notes, contract_signed, warnings_notes, half_day, contract_url, cnh, employee_type, payment_day, company_name, company_cnpj, escritorio_sector').eq('active', true)
+.select('id, name, email, notification_email, email_notifications, role, job_title, phone, cpf, hire_date, birthday, monthly_salary, monthly_hours, address, emergency_name, emergency_phone, notes, must_change_password, last_login_at, created_at, document_personal, photo_url, medical_certs_notes, contract_signed, warnings_notes, half_day, contract_url, cnh, employee_type, payment_day, company_name, company_cnpj, escritorio_sector, pix_key, pix_key_type, pix_holder').eq('active', true)
       .order('name')
 
     if (error) { toast.error('Erro ao carregar usuários.'); console.error(error) }
@@ -157,6 +157,10 @@ export function useSystemUsers() {
       address:        payload.address        || null,
       notification_email: payload.notification_email?.trim() || payload.email || null,
       email_notifications: payload.email_notifications !== false,
+      // Chave Pix pro Pagamento de Honorários (fase97)
+      pix_key:        payload.pix_key?.trim()    || null,
+      pix_key_type:   payload.pix_key?.trim() ? (payload.pix_key_type || 'cpf') : null,
+      pix_holder:     payload.pix_holder?.trim() || null,
     }).eq('id', newId)
 
     // Salva contatos se prestador PJ
@@ -216,6 +220,10 @@ export function useSystemUsers() {
       company_name:        payload.company_name        || null,
       company_cnpj:        payload.company_cnpj        || null,
       escritorio_sector:   payload.escritorio_sector    || null,
+      // Chave Pix pro Pagamento de Honorários (fase97)
+      pix_key:             payload.pix_key?.trim()    || null,
+      pix_key_type:        payload.pix_key?.trim() ? (payload.pix_key_type || 'cpf') : null,
+      pix_holder:          payload.pix_holder?.trim() || null,
       // active só muda quando contract_signed é alterado explicitamente no modal de contrato
       // payload.set_active vem true/false apenas quando o toggle foi tocado
       ...(payload.set_active !== undefined ? { active: payload.set_active } : {}),
