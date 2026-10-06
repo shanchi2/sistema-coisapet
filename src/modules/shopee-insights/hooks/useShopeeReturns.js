@@ -45,7 +45,7 @@ export const RECEIPT_STATUS = {
 
 // Foto do celular pode ter 5-10 MB: reduz pra JPEG 1600px antes de subir.
 // HEIC (iPhone) o navegador não consegue redesenhar — sobe o original.
-async function compressImage(file) {
+export async function compressImage(file) {
   try {
     const b64 = await fileToJpegBase64(file)
     const bin = atob(b64)

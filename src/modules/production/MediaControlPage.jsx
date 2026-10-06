@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Film, Search, Package, Layers, Video, CheckCircle2, Clock, Star, Target } from 'lucide-react'
+import { Film, Search, Package, Layers, Video, CheckCircle2, Clock, Star, Target, StickyNote } from 'lucide-react'
 import { useMediaProductsList } from './hooks/useProductMediaStatus'
 import { useSignedUrl } from '../../lib/signedUrlCache'
+import { supabase } from '../../lib/supabase'
 
 const CHECK_COUNT = 9
 
@@ -24,7 +25,7 @@ function ProgressBadge({ checksFilled, hasVideo }) {
   )
 }
 
-function ProductCard({ product, variations, isGroup, isPriority, onOpen, onTogglePriority }) {
+function ProductCard({ product, variations, isGroup, isPriority, onOpen, onTogglePriority, openNotes = 0 }) {
   return (
     <div className="w-full flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-2xl hover:border-violet-200 hover:shadow-sm transition-all">
       <button onClick={e => { e.stopPropagation(); onTogglePriority(product.id, !isPriority) }}
@@ -46,6 +47,11 @@ function ProductCard({ product, variations, isGroup, isPriority, onOpen, onToggl
             )}
           </div>
         </div>
+        {openNotes > 0 && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg bg-amber-100 text-amber-700" title="Observações em aberto">
+            <StickyNote size={11} /> {openNotes} em aberto
+          </span>
+        )}
         <ProgressBadge checksFilled={product.checksFilled} hasVideo={product.hasVideo} />
       </button>
     </div>
@@ -57,14 +63,30 @@ export function MediaControlPage() {
   const [search, setSearch] = useState('')
   const navigate = useNavigate()
 
+  // Observações em aberto por produto (06/10) — pra produção achar rápido
+  // o que precisa revisar sem abrir produto por produto
+  const [openNotes, setOpenNotes] = useState({})
+  const [onlyNotes, setOnlyNotes] = useState(false)
+  useEffect(() => {
+    supabase.from('product_media_notes').select('product_id').eq('status', 'aberto')
+      .then(({ data }) => {
+        const map = {}
+        ;(data || []).forEach(n => { map[n.product_id] = (map[n.product_id] || 0) + 1 })
+        setOpenNotes(map)
+      })
+  }, [])
+  const notesOf = g => [g.master, ...g.variations].reduce((s, p) => s + (openNotes[p.id] || 0), 0)
+  const productsWithNotes = groups.filter(g => notesOf(g) > 0).length
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return groups
+    const base = onlyNotes ? groups.filter(g => notesOf(g) > 0) : groups
+    if (!search.trim()) return base
     const q = search.toLowerCase()
-    return groups.filter(g =>
+    return base.filter(g =>
       g.master.name.toLowerCase().includes(q) || g.master.sku?.toLowerCase().includes(q) ||
       g.variations.some(v => v.name.toLowerCase().includes(q) || v.sku?.toLowerCase().includes(q))
     )
-  }, [groups, search])
+  }, [groups, search, onlyNotes, openNotes]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const priorityGroups = useMemo(() =>
     filtered.filter(g => g.master.isPriority)
@@ -109,6 +131,16 @@ export function MediaControlPage() {
         </div>
       </div>
 
+      {/* Observações em aberto */}
+      {productsWithNotes > 0 && (
+        <button onClick={() => setOnlyNotes(v => !v)}
+          className={`w-full flex items-center gap-2 mb-4 px-4 py-2.5 rounded-2xl border text-left text-sm transition-colors ${onlyNotes ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'}`}>
+          <StickyNote size={15} className="shrink-0" />
+          <span><b>{productsWithNotes}</b> produto{productsWithNotes > 1 ? 's' : ''} com observação em aberto (projeto a revisar, defeito relatado…)</span>
+          <span className="ml-auto text-xs font-bold shrink-0">{onlyNotes ? 'Mostrar todos' : 'Ver só esses'}</span>
+        </button>
+      )}
+
       {/* Busca */}
       <div className="relative mb-4 max-w-md">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -143,7 +175,7 @@ export function MediaControlPage() {
               <div className="flex flex-col gap-2">
                 {priorityGroups.map(g => (
                   <ProductCard key={g.key} product={g.master} variations={g.variations} isGroup={g.isGroup}
-                    isPriority onOpen={openProduct} onTogglePriority={togglePriority} />
+                    isPriority onOpen={openProduct} onTogglePriority={togglePriority} openNotes={notesOf(g)} />
                 ))}
               </div>
             )}
@@ -161,7 +193,7 @@ export function MediaControlPage() {
                 </div>
               ) : regularGroups.map(g => (
                 <ProductCard key={g.key} product={g.master} variations={g.variations} isGroup={g.isGroup}
-                  isPriority={false} onOpen={openProduct} onTogglePriority={togglePriority} />
+                  isPriority={false} onOpen={openProduct} onTogglePriority={togglePriority} openNotes={notesOf(g)} />
               ))}
             </div>
           </div>

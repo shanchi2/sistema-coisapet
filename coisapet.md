@@ -6752,3 +6752,15 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
   `employee-docs/pagamentos/...` e vira o "Recibo" do mês na ficha.
 - Tabela `employee_payments` (sem FK — FK pelo MCP dá timeout).
 - Fase 2 combinada: controle de empréstimos com parcelas descontando sozinho.
+
+### 06/10 — Atualização de Mídia: observações com fotos/vídeos (fase98)
+- O campo de texto único "Observações" do produto virou um **histórico de
+  relatos**: texto + fotos/vídeos (até 10 por relato, foto comprimida,
+  vídeo até 100 MB), autor/data, **Em aberto → Resolvido** (quem/quando),
+  reabrir, apagar. Tabela `product_media_notes`, bucket público
+  `media-notes`. Visualizador de fotos/vídeos em modal (MediaViewer).
+- Lista de produtos ganhou o selo "N em aberto" + atalho "Ver só esses".
+- Produção (login producao@ que o Vini usa) ganhou o módulo
+  `controle-midia` no Controle de Acesso e no menu — antes não via.
+- `product_media_status.observations` não tinha nenhum texto salvo (nada
+  a migrar); campo antigo fica no banco sem uso.
