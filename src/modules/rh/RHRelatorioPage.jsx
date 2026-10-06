@@ -1034,6 +1034,10 @@ export function RHRelatorioPage() {
     html += 'th.c { text-align: center; } th.r { text-align: right; }'
     html += 'td { padding: 4.5px 8px; border-bottom: 1px solid #f1f5f9; font-size: 9.5px; }'
     html += 'td.c { text-align: center; } td.r { text-align: right; font-weight: 700; }'
+    // Coluna do dia numa linha só — o badge "🏠 Home office" quebrava a linha
+    // dos dias de HO (qui/sex da Isabelly) e o extrato não cabia em 1 folha
+    // sem reduzir muito a escala na impressão (06/10). Agora é "HO".
+    html += 'td:first-child { white-space: nowrap; }'
     html += 'tr.wk td { background: #f8fafc; color: #94a3b8; }'
     html += 'tr.hol td { background: #faf5ff; } tr.hol td:first-child { color: #7c3aed; font-weight: 700; }'
     html += 'tr.norec td { color: #cbd5e1; }'
@@ -1212,7 +1216,7 @@ export function RHRelatorioPage() {
         const saldo  = (isHO || isAT) ? 0 : (h != null ? h - tgtMin / 60 : null)
 
         const cls = isVac ? 'vac' : isHol ? 'hol' : isWeekend ? 'wk' : isAT ? 'at' : isHO ? 'ho' : dr.length === 0 ? 'norec' : ''
-        const holBadge = isHol ? '<span class="hb">Feriado</span>' : isVac ? '<span class="vb">&#127796; F&eacute;rias</span>' : isAT ? '<span class="atb">&#129658; Atestado</span>' : isHO ? '<span class="hob">&#127968; Home office</span>' : ''
+        const holBadge = isHol ? '<span class="hb">Feriado</span>' : isVac ? '<span class="vb">&#127796; F&eacute;rias</span>' : isAT ? '<span class="atb">&#129658; Atestado</span>' : isHO ? '<span class="hob" title="Home office">HO</span>' : ''
 
         let totalCell = ''
         if (isHO || isAT) totalCell = fmtH(tgtMin/60)
@@ -1256,7 +1260,11 @@ export function RHRelatorioPage() {
       html += '<td class="c">' + totalDays + ' dias</td>'
       html += '<td class="r">' + fmtH(totalH) + '</td>'
       html += '<td class="r">' + saldoFinal + '</td>'
-      html += '</tr></tbody></table></div>'
+      html += '</tr></tbody></table>'
+      if (days.some(d => isHomeOfficeDay(emp.id, d.date, d.isHoliday))) {
+        html += '<div style="font-size:8px;color:#64748b;margin-top:4px"><span class="hob" style="margin-left:0">HO</span> = home office combinado (conta 100% da meta do dia)</div>'
+      }
+      html += '</div>'
     }
 
     html += '</body></html>'
