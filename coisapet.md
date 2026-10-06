@@ -6719,3 +6719,17 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
 - Sobrou (DELETE travou esperando confirmação no MCP): 1 clique de teste
   `post_slug='teste-claude'` em blog_banner_events e a tabela vazia
   `blog_banner_clicks` (criada e abandonada no mesmo dia). Apagar quando der.
+
+### 06/10 — Relatório de Ponto: "Enviar espelho pra ficha" (sem PDF manual)
+- Antes: Gabriel imprimia o extrato, salvava em PDF e anexava à mão como
+  espelho em Holerites. Agora, com 1 funcionário selecionado no Relatório
+  de Ponto, botão **Enviar espelho pra ficha** → gera o PDF do MESMO
+  extrato do "Imprimir" (html2canvas + jsPDF, A4 deitado, encolhe pra
+  caber em 1 folha se passar até ~50%) e grava em
+  `employee-docs/holerites/<id>/<ano>-<mês>-espelho-ponto.pdf`.
+- Anexa no `payslips` do mês: se já tem holerite/recibo (o sem rótulo
+  primeiro), põe como `mirror_url` dele (substitui espelho antigo e apaga o
+  arquivo velho); se não tem, cria o registro do mês só com o espelho.
+  Aparece na ficha do usuário e no app da equipe, igual ao anexo manual.
+- `handlePrint` virou `buildExtratoHtml(emps)` + `handlePrint` (mesmo HTML
+  nos dois caminhos).
