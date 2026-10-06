@@ -6674,10 +6674,3 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
 - Lista (cards e tabela) separada em blocos por vínculo. Hierarquia continua
   no select ao lado da busca e na etiqueta de cada pessoa. Só visualização —
   nada mudou no banco nem nos acessos.
-
-### 06/10 — Menu: nova seção "Atendimento & Marketing" (pedido do Gabriel)
-- Saíram de "Produção": Pedidos, Orçamentos, Avaliações, Checklist Diário,
-  Atualização de Mídia. Saíram de "Diretoria": Banners do Blog, Links da Bio.
-  A seção "Blog" (Posts, Geração em Massa) foi absorvida pela nova seção.
-- Controle de Acesso: os mesmos módulos agrupados sob "Atendimento & Marketing".
-- Só o lugar no menu mudou — roles, permissões e rotas continuam iguais.
