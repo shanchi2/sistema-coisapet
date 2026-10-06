@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { fetchAllRows } from '../../../lib/fetchAllRows'
+import { toISODateBR } from '../../../lib/dateBR'
 import toast from 'react-hot-toast'
 
 function getSession() {
@@ -39,53 +41,74 @@ export function useBlogBanners() {
     }
   }, [])
 
-  // Estatística: total de impressões/cliques no período, quebra por
-  // produto e por plataforma. Cliques só aparecem de verdade quando o
-  // site público reportar de volta (POST action:'click') — enquanto
-  // isso não estiver implementado do lado deles, fica sempre 0, e a
-  // tela avisa isso.
+  // Estatística dos banners (refeita 06/10 — fase96): exibições e cliques
+  // gravados pelo próprio site (coisapet-site) em blog_banner_events, com
+  // post, produto, plataforma e se o banner mostrava cupom.
   const fetchStats = useCallback(async (days = 30) => {
     setLoading(true)
     try {
       const since = new Date(Date.now() - days * 86400000).toISOString()
-      const { data, error } = await supabase
+      const events = await fetchAllRows((from, to) => supabase
         .from('blog_banner_events')
-        .select('event_type, product_id, product_name, platform, created_at')
+        .select('id, event_type, product_id, product_name, platform, post_slug, coupon_shown, created_at')
         .gte('created_at', since)
-        .order('created_at', { ascending: false })
-      if (error) throw error
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to))
 
-      const events = data || []
       const impressions = events.filter(e => e.event_type === 'impression')
       const clicks      = events.filter(e => e.event_type === 'click')
+      const inc = (map, key, init, field) => {
+        const cur = map.get(key) || { ...init, impressions: 0, clicks: 0 }
+        cur[field]++
+        map.set(key, cur)
+      }
 
-      const byProduct = new Map()
-      impressions.forEach(e => {
-        const key = e.product_name || 'Sem nome'
-        const entry = byProduct.get(key) || { name: key, impressions: 0, clicks: 0 }
-        entry.impressions++
-        byProduct.set(key, entry)
-      })
-      clicks.forEach(e => {
-        const key = e.product_name || 'Sem nome'
-        const entry = byProduct.get(key) || { name: key, impressions: 0, clicks: 0 }
-        entry.clicks++
-        byProduct.set(key, entry)
-      })
-
-      const byPlatform = new Map()
-      impressions.forEach(e => {
-        const key = e.platform || '—'
-        byPlatform.set(key, (byPlatform.get(key) || 0) + 1)
+      // Por plataforma / produto / post / com×sem cupom
+      const byPlatform = new Map(), byProduct = new Map(), byPost = new Map(), byCoupon = new Map(), ranking = new Map()
+      events.forEach(e => {
+        const field = e.event_type === 'click' ? 'clicks' : 'impressions'
+        const plat = normPlatform(e.platform)
+        inc(byPlatform, plat, { label: plat }, field)
+        inc(byProduct, e.product_id || e.product_name || '—', { name: e.product_name || 'Sem nome' }, field)
+        if (e.post_slug) inc(byPost, e.post_slug, { slug: e.post_slug }, field)
+        if (e.coupon_shown != null) inc(byCoupon, e.coupon_shown ? 'com' : 'sem', { label: e.coupon_shown ? 'Com cupom' : 'Sem cupom' }, field)
+        if (e.event_type === 'click') {
+          const k = `${e.post_slug}|${e.product_id || e.product_name}|${plat}`
+          const cur = ranking.get(k) || { post_slug: e.post_slug, product: e.product_name || 'Sem nome', platform: plat, clicks: 0 }
+          cur.clicks++
+          ranking.set(k, cur)
+        }
       })
 
+      // Título dos posts (o evento guarda só o slug)
+      const slugs = [...byPost.keys()]
+      const titles = {}
+      if (slugs.length) {
+        const { data: posts } = await supabase.from('blog_posts').select('slug, title').in('slug', slugs)
+        ;(posts || []).forEach(p => { titles[p.slug] = p.title })
+      }
+
+      // Cliques por dia (pro gráfico)
+      const perDay = {}
+      for (let d = days - 1; d >= 0; d--) perDay[toISODateBR(new Date(Date.now() - d * 86400000))] = 0
+      clicks.forEach(e => { const k = toISODateBR(new Date(e.created_at)); if (perDay[k] !== undefined) perDay[k]++ })
+
+      const ctr = x => (x.impressions ? (x.clicks / x.impressions) * 100 : null)
+      const withCtr = arr => arr.map(x => ({ ...x, ctr: ctr(x) }))
       return {
         total_impressions: impressions.length,
         total_clicks: clicks.length,
         ctr: impressions.length ? (clicks.length / impressions.length) * 100 : 0,
-        by_product: [...byProduct.values()].sort((a, b) => b.impressions - a.impressions).slice(0, 15),
-        by_platform: [...byPlatform.entries()].map(([label, count]) => ({ label, count })),
-        recent: events.slice(0, 20),
+        last_event: events.length ? events[events.length - 1].created_at : null,
+        daily: Object.entries(perDay).map(([day, total]) => ({ day, total })),
+        by_platform: withCtr([...byPlatform.values()]).sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions),
+        by_coupon: withCtr([...byCoupon.values()]),
+        by_product: withCtr([...byProduct.values()]).sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions).slice(0, 15),
+        by_post: withCtr([...byPost.values()].map(p => ({ ...p, title: titles[p.slug] || p.slug })))
+          .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions).slice(0, 15),
+        ranking: [...ranking.values()].map(r => ({ ...r, title: titles[r.post_slug] || r.post_slug || '—' }))
+          .sort((a, b) => b.clicks - a.clicks),
       }
     } finally {
       setLoading(false)
@@ -93,4 +116,12 @@ export function useBlogBanners() {
   }, [])
 
   return { loading, fetchSettings, fetchCategories, updateSettings, fetchStats }
+}
+
+// O site pode mandar "Shopee", "shopee", "Mercado Livre", "ml"...
+function normPlatform(p) {
+  const v = String(p || '').toLowerCase()
+  if (v.includes('shopee')) return 'Shopee'
+  if (v === 'ml' || v.includes('mercado') || v.includes('meli')) return 'Mercado Livre'
+  return 'Outro'
 }

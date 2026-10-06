@@ -6702,3 +6702,20 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
   Jaime tinha 391 acumulados; Daniel e "Administrador", 811 cada.
 - Agora: carrega os 30 mais recentes, o "+N" conta o total real, e
   "Limpar"/"Ver tudo" marca como lido TUDO do tipo até o aviso mais recente.
+
+### 06/10 — Banners do Blog: rastreio de exibição e clique (fase96)
+- Achado: `blog_banner_events` parou em 21/09 (11 exibições, 0 cliques) —
+  desde o banner por post (fase90) o `coisapet-site` monta o banner sozinho
+  e não chama mais a function `blog-banner`, então nada era gravado.
+- fase96 (aplicada): `blog_banner_events` ganhou `coupon_shown` e `href`,
+  índice por post e **RLS ligado** (antes estava sem RLS + GRANT ALL pro
+  anon); anon agora só insere (impression/click) e lê. Testado: insert com
+  a chave anon via REST → 201.
+- Tela Banners do Blog → Estatística refeita: exibições, cliques, CTR,
+  cliques por dia, Shopee × ML, com × sem cupom, posts que mais levam
+  clique, ranking post → produto → plataforma, produtos.
+- **Pendente**: Copilot colar o snippet no `coisapet-site` (data-attributes
+  no link do banner + script no footer.php). Prompt entregue ao Raphael.
+- Sobrou (DELETE travou esperando confirmação no MCP): 1 clique de teste
+  `post_slug='teste-claude'` em blog_banner_events e a tabela vazia
+  `blog_banner_clicks` (criada e abandonada no mesmo dia). Apagar quando der.
