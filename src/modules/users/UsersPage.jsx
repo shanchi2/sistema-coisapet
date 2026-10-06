@@ -623,12 +623,20 @@ export function UsersPage() {
       (!filterType||(u.employee_type||'clt')===filterType)
     ),[users,search,filterRole,filterType])
 
+  // Contagem por vínculo (06/10, pedido do Gabriel: a tela separa por
+  // CLT/Horista/Prestador/Escritório em vez de por hierarquia — a hierarquia
+  // continua valendo pros acessos, só saiu do destaque).
   const counts = useMemo(()=>{
     const map={}
-    ROLES.forEach(r=>{map[r.value]=0})
-    users.forEach(u=>{map[u.role]=(map[u.role]??0)+1})
+    EMPLOYEE_TYPES.forEach(t=>{map[t.v]=0})
+    users.forEach(u=>{const v=u.employee_type||'clt';map[v]=(map[v]??0)+1})
     return map
   },[users])
+
+  // Lista separada em blocos por vínculo (só os que têm alguém)
+  const groups = useMemo(()=>EMPLOYEE_TYPES
+    .map(t=>({type:t,users:filtered.filter(u=>(u.employee_type||'clt')===t.v)}))
+    .filter(g=>g.users.length>0),[filtered])
 
   const upcomingBdays = useMemo(()=>users.filter(u=>isUpcomingBirthday(u.birthday)),[users])
 
@@ -705,34 +713,16 @@ export function UsersPage() {
         </div>
       )}
 
-      {/* Cards por hierarquia */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        {ROLES.map(role=>(
-          <div key={role.value} onClick={()=>setFilterRole(filterRole===role.value?'':role.value)}
-            className={`card cursor-pointer transition-all hover:shadow-md py-4 ${filterRole===role.value?'ring-2 ring-rose-400':''}`}>
-            <div className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold mb-2 ${role.color}`}>{role.label}</div>
-            <p className="font-black text-2xl text-slate-800" style={{fontFamily:'Nunito,sans-serif'}}>{counts[role.value]??0}</p>
-            <p className="text-xs text-slate-400">{(counts[role.value]??0)===1?'colaborador':'colaboradores'}</p>
+      {/* Cards por vínculo — clicar filtra */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {EMPLOYEE_TYPES.map(t=>(
+          <div key={t.v} onClick={()=>setFilterType(filterType===t.v?'':t.v)}
+            className={`card cursor-pointer transition-all hover:shadow-md py-4 ${filterType===t.v?'ring-2 ring-rose-400':''}`}>
+            <div className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold mb-2 ${t.cls}`}>{t.icon} {t.long}</div>
+            <p className="font-black text-2xl text-slate-800" style={{fontFamily:'Nunito,sans-serif'}}>{counts[t.v]??0}</p>
+            <p className="text-xs text-slate-400">{t.desc}</p>
           </div>
         ))}
-      </div>
-
-      {/* Tipo de vínculo — filtro rápido */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-semibold text-slate-400 mr-1">Vínculo:</span>
-        <button onClick={()=>setFilterType('')}
-          className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all ${!filterType?'bg-slate-800 border-slate-800 text-white':'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>
-          Todos <span className="opacity-60">{users.length}</span>
-        </button>
-        {EMPLOYEE_TYPES.map(t=>{
-          const n = users.filter(u=>(u.employee_type||'clt')===t.v).length
-          return (
-            <button key={t.v} onClick={()=>setFilterType(filterType===t.v?'':t.v)}
-              className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all ${filterType===t.v?'bg-slate-800 border-slate-800 text-white':'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>
-              {t.icon} {t.label} <span className="opacity-60">{n}</span>
-            </button>
-          )
-        })}
       </div>
 
       {/* Filtros + toggle de view */}
@@ -766,13 +756,24 @@ export function UsersPage() {
             action={users.length===0&&<button onClick={()=>setFormOpen(true)} className="btn-primary"><Plus size={16}/> Cadastrar primeiro colaborador</button>}/>
         </div>
       ):viewMode==='cards'?(
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filtered.map(u=>(
-            <EmployeeListCard key={u.id} u={u}
-              onView={setViewTarget}
-              onEdit={u=>{setEditing(u);setFormOpen(true)}}
-              onDelete={setDeleteTarget}
-              onReset={setResetTarget}/>
+        <div className="flex flex-col gap-6">
+          {groups.map(g=>(
+            <section key={g.type.v} className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold text-slate-700 text-sm">{g.type.icon} {g.type.long}</h2>
+                <span className="text-xs text-slate-400">{g.users.length}</span>
+                <div className="flex-1 h-px bg-slate-200"/>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {g.users.map(u=>(
+                  <EmployeeListCard key={u.id} u={u}
+                    onView={setViewTarget}
+                    onEdit={u=>{setEditing(u);setFormOpen(true)}}
+                    onDelete={setDeleteTarget}
+                    onReset={setResetTarget}/>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       ):(
@@ -791,7 +792,11 @@ export function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(u=>{
+              {groups.map(g=>[
+                <tr key={`grp-${g.type.v}`} className="bg-slate-50">
+                  <td colSpan={7} className="text-xs font-bold text-slate-600 py-2">{g.type.icon} {g.type.long} <span className="font-normal text-slate-400 ml-1">{g.users.length}</span></td>
+                </tr>,
+                ...g.users.map(u=>{
                 const ri=getRoleInfo(u.role)
                 const service=getYearsOfService(u.hire_date)
                 const isBday=isUpcomingBirthday(u.birthday)
@@ -827,7 +832,7 @@ export function UsersPage() {
                     </td>
                   </tr>
                 )
-              })}
+              })])}
             </tbody>
           </table>
         </div>

@@ -6666,3 +6666,11 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
   flag do registro de origem; digitado/novo → manual. Nova RPC
   `admin_set_manual(id, bool)` (fase95, aplicada) — a antiga só ligava a flag.
 - Registros que já ficaram marcados errado antes disso continuam marcados.
+
+### 06/10 — Usuários: separação por vínculo (pedido do Gabriel)
+- Topo da tela de Usuários: os cards por hierarquia (Diretor/Adm/Produção…)
+  viraram 4 cards por vínculo (CLT / Horista / Prestador PJ / Escritório),
+  clicáveis como filtro. A fileira de botões "Vínculo:" saiu (redundante).
+- Lista (cards e tabela) separada em blocos por vínculo. Hierarquia continua
+  no select ao lado da busca e na etiqueta de cada pessoa. Só visualização —
+  nada mudou no banco nem nos acessos.
