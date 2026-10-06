@@ -6695,3 +6695,10 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
 - Gerente (administrativo) não tem Pedidos/Orçamentos/Produção liberados no
   Controle de Acesso, então o dashboard dele fica enxuto (antes via pedidos
   sem ter o módulo). Atalhos do topo também respeitam o acesso.
+
+### 06/10 — Avisos de venda: "Limpar" agora limpa tudo (bug da "fila")
+- Painéis ML/Shopee/Cancelamentos carregavam os 30 avisos não vistos MAIS
+  ANTIGOS e o "Limpar" marcava só esses 30 → no F5 vinham os 30 seguintes.
+  Jaime tinha 391 acumulados; Daniel e "Administrador", 811 cada.
+- Agora: carrega os 30 mais recentes, o "+N" conta o total real, e
+  "Limpar"/"Ver tudo" marca como lido TUDO do tipo até o aviso mais recente.

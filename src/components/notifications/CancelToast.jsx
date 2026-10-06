@@ -21,13 +21,16 @@ const MAX_VISIBLE = 5
 export function CancelToast() {
   const navigate = useNavigate()
   const pendingRef = useRef(new Map())
+  // Não vistos além dos 30 carregados no painel (06/10) — entram no "+N"
+  // e são marcados como lidos junto no "Limpar"/"Ver tudo".
+  const olderRef = useRef(0)
 
   useEffect(() => {
     const me = getSession()
     if (!me?.id || !ALLOWED_ROLES.includes(me.role)) return
 
     function renderPanel() {
-      const total = pendingRef.current.size
+      const total = pendingRef.current.size + olderRef.current
       if (total === 0) { toast.dismiss(PANEL_ID); return }
       const items = [...pendingRef.current.values()].slice(-MAX_VISIBLE).reverse()
       toast.custom(t => (
@@ -47,10 +50,17 @@ export function CancelToast() {
 
     async function clearAll(goToPedidos) {
       const ids = [...pendingRef.current.keys()].filter(id => !String(id).startsWith('teste-'))
+      const cutoff = [...pendingRef.current.values()].map(n => n.created_at).filter(Boolean).sort().pop() || new Date().toISOString()
+      const hadOlder = olderRef.current > 0
+      olderRef.current = 0
       pendingRef.current.clear()
       toast.dismiss(PANEL_ID)
       if (goToPedidos) navigate('/pedidos')
-      if (ids.length) await supabase.from('notifications').update({ read: true }).in('id', ids)
+      // Limpa TUDO que estava pendente até o aviso mais recente do painel —
+      // não só os que estavam carregados (antes ficava uma "fila": cada
+      // Limpar tirava 30 e no F5 apareciam os 30 seguintes. Achado 06/10).
+      if (ids.length || hadOlder) await supabase.from('notifications').update({ read: true })
+        .eq('user_id', me.id).eq('type', 'order_cancelled').eq('read', false).lte('created_at', cutoff)
     }
 
     function showCancel(n, { playSound = true } = {}) {
@@ -63,10 +73,18 @@ export function CancelToast() {
     }
 
     // Ao abrir a tela: mostra os cancelamentos ainda não vistos, sem som
-    supabase.from('notifications')
-      .select('*').eq('user_id', me.id).eq('type', 'order_cancelled').eq('read', false)
-      .order('created_at', { ascending: true }).limit(30)
-      .then(({ data }) => (data || []).forEach(n => showCancel(n, { playSound: false })))
+    // (os 30 mais recentes + contagem total pro "+N" — 06/10)
+    Promise.all([
+      supabase.from('notifications')
+        .select('*').eq('user_id', me.id).eq('type', 'order_cancelled').eq('read', false)
+        .order('created_at', { ascending: false }).limit(30),
+      supabase.from('notifications')
+        .select('id', { count: 'exact', head: true }).eq('user_id', me.id).eq('type', 'order_cancelled').eq('read', false),
+    ]).then(([{ data }, { count }]) => {
+      const rows = (data || []).slice().reverse()
+      olderRef.current = Math.max(0, (count || 0) - rows.length)
+      rows.forEach(n => showCancel(n, { playSound: false }))
+    })
 
     const channel = supabase
       .channel(`order-cancel-toast:${me.id}`)

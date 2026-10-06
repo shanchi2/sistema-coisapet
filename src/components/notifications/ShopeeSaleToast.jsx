@@ -78,13 +78,16 @@ const MAX_VISIBLE = 5
 export function ShopeeSaleToast() {
   const navigate = useNavigate()
   const pendingRef = useRef(new Map())
+  // Não vistos além dos 30 carregados no painel (06/10) — entram no "+N"
+  // e são marcados como lidos junto no "Limpar"/"Ver tudo".
+  const olderRef = useRef(0)
 
   useEffect(() => {
     const me = getSession()
     if (!me?.id || !ALLOWED_ROLES.includes(me.role)) return
 
     function renderPanel() {
-      const total = pendingRef.current.size
+      const total = pendingRef.current.size + olderRef.current
       if (total === 0) { toast.dismiss(PANEL_ID); return }
       const items = [...pendingRef.current.values()].slice(-MAX_VISIBLE).reverse()
       const hiddenCount = total - items.length
@@ -109,10 +112,17 @@ export function ShopeeSaleToast() {
 
     async function clearAll(goToPedidos) {
       const ids = [...pendingRef.current.keys()]
+      const cutoff = [...pendingRef.current.values()].map(n => n.created_at).filter(Boolean).sort().pop() || new Date().toISOString()
+      const hadOlder = olderRef.current > 0
+      olderRef.current = 0
       pendingRef.current.clear()
       toast.dismiss(PANEL_ID)
       if (goToPedidos) navigate('/pedidos')
-      if (ids.length) await supabase.from('notifications').update({ read: true }).in('id', ids)
+      // Limpa TUDO que estava pendente até o aviso mais recente do painel —
+      // não só os que estavam carregados (antes ficava uma "fila": cada
+      // Limpar tirava 30 e no F5 apareciam os 30 seguintes. Achado 06/10).
+      if (ids.length || hadOlder) await supabase.from('notifications').update({ read: true })
+        .eq('user_id', me.id).eq('type', 'shopee_order_synced').eq('read', false).lte('created_at', cutoff)
     }
 
     function showSaleToast(n, { playSound = true } = {}) {
@@ -130,10 +140,18 @@ export function ShopeeSaleToast() {
     // Ao abrir a tela: mostra tudo que ainda não foi visto, sem som
     // (só a chegada em tempo real toca o "cha-ching").
     async function loadUnseen() {
-      const { data } = await supabase.from('notifications')
-        .select('*').eq('user_id', me.id).eq('type', 'shopee_order_synced').eq('read', false)
-        .order('created_at', { ascending: true }).limit(30)
-      ;(data || []).forEach(n => showSaleToast(n, { playSound: false }))
+      // Os 30 MAIS RECENTES (antes eram os 30 mais antigos) + quantos
+      // não vistos existem no total, pro "+N".
+      const [{ data }, { count }] = await Promise.all([
+        supabase.from('notifications')
+          .select('*').eq('user_id', me.id).eq('type', 'shopee_order_synced').eq('read', false)
+          .order('created_at', { ascending: false }).limit(30),
+        supabase.from('notifications')
+          .select('id', { count: 'exact', head: true }).eq('user_id', me.id).eq('type', 'shopee_order_synced').eq('read', false),
+      ])
+      const rows = (data || []).slice().reverse()
+      olderRef.current = Math.max(0, (count || 0) - rows.length)
+      rows.forEach(n => showSaleToast(n, { playSound: false }))
     }
     loadUnseen()
 
