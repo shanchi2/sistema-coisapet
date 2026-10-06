@@ -5,6 +5,42 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useBlogBanners } from './hooks/useBlogBanners'
+import { DailyBars } from '../dashboard/widgets'
+
+const fmtN = v => (Number(v) || 0).toLocaleString('pt-BR')
+const PLAT_DOT = { Shopee: '#EE4D2D', 'Mercado Livre': '#F5A300' }
+
+// Tabela pequena: nome · exibições · cliques · CTR
+function StatTable({ title, rows, first }) {
+  if (!rows?.length) return null
+  return (
+    <div>
+      <p className="text-xs font-bold text-slate-500 mb-2">{title}</p>
+      <div className="overflow-x-auto rounded-xl border border-slate-100">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr>
+              <th className="text-left font-semibold px-3 py-2"></th>
+              <th className="text-right font-semibold px-3 py-2">Exibições</th>
+              <th className="text-right font-semibold px-3 py-2">Cliques</th>
+              <th className="text-right font-semibold px-3 py-2">CTR</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td className="px-3 py-2 text-slate-700 max-w-[280px]">{first(r)}</td>
+                <td className="px-3 py-2 text-right text-slate-500 tabular-nums">{fmtN(r.impressions)}</td>
+                <td className="px-3 py-2 text-right font-bold text-slate-800 tabular-nums">{fmtN(r.clicks)}</td>
+                <td className="px-3 py-2 text-right text-slate-500 tabular-nums">{r.ctr == null ? '—' : `${r.ctr.toFixed(1)}%`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
 
 const BANNER_FN_URL = 'https://lcybmdiqxmbqeuyeuhdj.supabase.co/functions/v1/blog-banner'
 const PERIODS = [7, 30, 90]
@@ -205,37 +241,75 @@ export function BlogBannersPage() {
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-xl bg-slate-50 p-3 text-center">
                 <Eye size={16} className="mx-auto text-slate-400 mb-1" />
-                <p className="text-lg font-bold text-slate-800">{stats.total_impressions}</p>
+                <p className="text-lg font-bold text-slate-800">{fmtN(stats.total_impressions)}</p>
                 <p className="text-[11px] text-slate-400">Banners mostrados</p>
               </div>
               <div className="rounded-xl bg-slate-50 p-3 text-center">
                 <MousePointerClick size={16} className="mx-auto text-slate-400 mb-1" />
-                <p className="text-lg font-bold text-slate-800">{stats.total_clicks}</p>
+                <p className="text-lg font-bold text-slate-800">{fmtN(stats.total_clicks)}</p>
                 <p className="text-[11px] text-slate-400">Cliques</p>
               </div>
               <div className="rounded-xl bg-slate-50 p-3 text-center">
                 <TrendingUp size={16} className="mx-auto text-slate-400 mb-1" />
-                <p className="text-lg font-bold text-slate-800">{stats.ctr.toFixed(1)}%</p>
-                <p className="text-[11px] text-slate-400">CTR</p>
+                <p className="text-lg font-bold text-slate-800">{stats.total_impressions ? `${stats.ctr.toFixed(1)}%` : '—'}</p>
+                <p className="text-[11px] text-slate-400">CTR (cliques ÷ exibições)</p>
               </div>
             </div>
 
-            {stats.total_clicks === 0 && (
-              <p className="text-xs text-slate-400 italic">Nenhum clique registrado ainda — isso só funciona quando o site público avisar a gente no clique do banner (ver instruções no fim do arquivo da function blog-banner). Enquanto isso não estiver pronto do lado do site, aqui sempre vai mostrar 0.</p>
-            )}
-
-            {stats.by_product.length > 0 && (
-              <div>
-                <p className="text-xs font-bold text-slate-500 mb-2">Produtos mais sorteados</p>
-                <div className="space-y-1">
-                  {stats.by_product.map((p, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs px-3 py-2 rounded-lg bg-slate-50">
-                      <span className="text-slate-600 truncate mr-2">{p.name}</span>
-                      <span className="text-slate-400 shrink-0">{p.impressions} exibições{p.clicks ? ` · ${p.clicks} cliques` : ''}</span>
-                    </div>
-                  ))}
-                </div>
+            {stats.total_impressions === 0 && stats.total_clicks === 0 ? (
+              <div className="flex items-start gap-2 bg-sky-50 border border-sky-100 rounded-xl px-3 py-2.5">
+                <AlertTriangle size={15} className="text-sky-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-sky-700">Nada registrado neste período. Exibições e cliques são gravados pelo site (coisapet-site) — se o snippet de rastreio dos banners ainda não foi colado no <b>footer.php</b>, aqui fica zerado.</p>
               </div>
+            ) : (
+              <>
+                {stats.total_clicks > 0 && (
+                  <div>
+                    <p className="text-xs font-bold text-slate-500 mb-1">Cliques por dia</p>
+                    <DailyBars data={stats.daily} dataKey="total" unit="cliques" format={v => `${fmtN(v)} cliques`} height={140} />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <StatTable title="Por plataforma" rows={stats.by_platform} first={r => (
+                    <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full shrink-0" style={{ background: PLAT_DOT[r.label] || '#94A3B8' }} />{r.label}</span>
+                  )} />
+                  {stats.by_coupon.length > 0 && (
+                    <StatTable title="Com cupom × sem cupom" rows={stats.by_coupon} first={r => r.label} />
+                  )}
+                </div>
+
+                <StatTable title="Posts que mais levam clique" rows={stats.by_post} first={r => <span className="truncate block" title={r.slug}>{r.title}</span>} />
+
+                {stats.ranking.length > 0 && (
+                  <div>
+                    <p className="text-xs font-bold text-slate-500 mb-2">Post → produto → plataforma</p>
+                    <div className="overflow-x-auto rounded-xl border border-slate-100">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 text-slate-500">
+                          <tr><th className="text-left font-semibold px-3 py-2">Post</th><th className="text-left font-semibold px-3 py-2">Produto</th><th className="text-left font-semibold px-3 py-2">Foi pra</th><th className="text-right font-semibold px-3 py-2">Cliques</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {stats.ranking.slice(0, 30).map((r, i) => (
+                            <tr key={i}>
+                              <td className="px-3 py-2 text-slate-700 max-w-[260px] truncate" title={r.post_slug}>{r.title}</td>
+                              <td className="px-3 py-2 text-slate-600 max-w-[220px] truncate">{r.product}</td>
+                              <td className="px-3 py-2 text-slate-600 whitespace-nowrap"><span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: PLAT_DOT[r.platform] || '#94A3B8' }} />{r.platform}</td>
+                              <td className="px-3 py-2 text-right font-bold text-slate-800 tabular-nums">{fmtN(r.clicks)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <StatTable title="Produtos" rows={stats.by_product} first={r => <span className="truncate block">{r.name}</span>} />
+
+                {stats.last_event && (
+                  <p className="text-[11px] text-slate-400">Último registro: {new Date(stats.last_event).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}. Clique = foi pra Shopee/ML; a venda em si a gente não consegue ligar ao banner.</p>
+                )}
+              </>
             )}
           </>
         )}
