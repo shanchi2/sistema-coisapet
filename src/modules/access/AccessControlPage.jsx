@@ -46,6 +46,7 @@ const MODULES = [
   { key: 'auditoria',    label: 'Auditoria',       section: 'Admin',         icon: '🔍', adminOnly: true },
   { key: 'historico',    label: 'Histórico',       section: 'Admin',         icon: '📜', adminOnly: true },
   { key: 'financeiro-dir', label: 'Financeiro Diretoria', section: 'Admin', icon: '🏦', adminOnly: true },
+  { key: 'tv-producao',  label: 'TV da Produção',  section: 'Admin',         icon: '📺', adminOnly: true },
   { key: 'comparativo-marketplaces', label: 'ML × Shopee (comparativo)', section: 'Admin', icon: '📊', adminOnly: true },
   { key: 'directors',    label: 'Fin./Compras Diretoria', section: 'Admin', icon: '👔', adminOnly: true },
   { key: 'cofre',        label: 'Cofre de Senhas', section: 'Admin',         icon: '🔐', adminOnly: true },
