@@ -6764,3 +6764,14 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
   `controle-midia` no Controle de Acesso e no menu — antes não via.
 - `product_media_status.observations` não tinha nenhum texto salvo (nada
   a migrar); campo antigo fica no banco sem uso.
+
+### 07/10 — Banners do Blog: tela refeita em 2 abas
+- Raphael achou a tela confusa. Agora: aba **Banners e cupom** (cartões de
+  resumo, blocos Sorteio/Cupom/Produtos/Plataformas à esquerda, Salvar com
+  aviso de alteração pendente + Prévia fixos à direita) e aba **Relatórios**
+  (período 7/30/90, 4 indicadores, cliques e exibições por dia, rankings em
+  barra de posts/produtos/plataforma, com × sem cupom, detalhe
+  post → produto → plataforma). Aba lembrada no navegador.
+- Relatório só conta eventos com post (`post_slug` não nulo): o "Sortear"
+  da prévia chama a function antiga, que grava exibição sem post e inflava
+  o número. Também ignora o clique de teste `teste-claude`.
