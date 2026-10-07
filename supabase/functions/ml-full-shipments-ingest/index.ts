@@ -49,6 +49,11 @@ function resultText(processResults: any): string | null {
   return texts.length ? texts.join('; ') : JSON.stringify(processResults)
 }
 
+async function sha256Hex(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
@@ -56,15 +61,29 @@ serve(async (req) => {
   let body: any = {}
   try { body = await req.json() } catch { return json({ error: 'JSON inválido' }, 400) }
 
+  const db = adminClient()
+
+  // Dois jeitos de autorizar:
+  // - `secret`: segredo fixo do favorito antigo (FULL_SYNC_SECRET);
+  // - `token`: código por computador da extensão do Chrome (fase99, 07/10),
+  //   gerado no sistema e revogável — aqui só existe o hash dele.
+  let syncedBy = 'favorito'
+  let tokenRow: { id: string, label: string } | null = null
   const expectedSecret = Deno.env.get('FULL_SYNC_SECRET')
-  if (!expectedSecret || body.secret !== expectedSecret) {
+  if (typeof body.token === 'string' && body.token) {
+    const hash = await sha256Hex(body.token.trim())
+    const { data } = await db.from('ml_full_sync_tokens').select('id, label')
+      .eq('token_hash', hash).is('revoked_at', null).maybeSingle()
+    if (!data) return json({ error: 'Código inválido ou revogado' }, 401)
+    tokenRow = data
+    syncedBy = `extensão · ${data.label}`
+  } else if (!expectedSecret || body.secret !== expectedSecret) {
     return json({ error: 'Não autorizado' }, 401)
   }
 
   const shipments = Array.isArray(body.shipments) ? body.shipments : []
   const items = Array.isArray(body.items) ? body.items : []
   const now = new Date().toISOString()
-  const db = adminClient()
 
   try {
     const shipmentRows = shipments.map((s: any) => ({
@@ -90,6 +109,7 @@ serve(async (req) => {
       last_updated_ml:              s.last_updated ?? null,
       raw:                          s,
       synced_at:                    now,
+      synced_by:                    syncedBy,
     }))
 
     if (shipmentRows.length) {
@@ -127,6 +147,12 @@ serve(async (req) => {
     if (itemRows.length) {
       const { error } = await db.from('ml_full_inbound_items').insert(itemRows)
       if (error) throw error
+    }
+
+    if (tokenRow) {
+      await db.from('ml_full_sync_tokens').update({
+        last_used_at: now, last_result: `${shipmentRows.length} envios, ${itemRows.length} itens`,
+      }).eq('id', tokenRow.id)
     }
 
     return json({ ok: true, shipments_synced: shipmentRows.length, items_synced: itemRows.length })

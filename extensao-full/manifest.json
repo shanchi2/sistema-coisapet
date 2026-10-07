@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "CoisaPet — Sincronizar Envios Full",
+  "short_name": "CoisaPet Full",
+  "version": "1.0.0",
+  "description": "Mantém a Gestão de Envios Full do sistema CoisaPet atualizada: sincroniza sozinha quando você abre a Central de Vendedores do Mercado Livre.",
+  "icons": { "48": "icon48.png", "128": "icon128.png" },
+  "action": { "default_title": "CoisaPet: sincronizar Envios Full agora", "default_icon": { "48": "icon48.png", "128": "icon128.png" } },
+  "options_page": "options.html",
+  "background": { "service_worker": "background.js" },
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": ["https://vendedores.mercadolivre.com.br/*"],
+      "js": ["sync.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
