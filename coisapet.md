@@ -6775,3 +6775,17 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
 - Relatório só conta eventos com post (`post_slug` não nulo): o "Sortear"
   da prévia chama a function antiga, que grava exibição sem post e inflava
   o número. Também ignora o clique de teste `teste-claude`.
+
+### 2026-10-07 — Gestão de Envios Full: tela honesta sobre a data dos dados + todas as datas do envio
+
+**Pedido do Raphael**: "fazer a tela dos envios do Full do ML refletir a realidade, puxar atualizado quando ficaram as datas".
+
+**Achado**: a tela estava parada em **13/09** (todos os `synced_at` iguais) — o favorito "Sincronizar Full CoisaPet" não foi clicado desde então (zero chamadas no `ml-full-shipments-ingest`). Re-testado hoje via `pg_net` com o token real: o ML continua **sem API pública** de envios Full (`/inbound/shipments/{id}`, `/fbm/inbounds/{id}`, `/inbound-shipments/search` → 404; `/inbounds/{id}` → 403). O endpoint oficial de operações de estoque (`/stock/fulfillment/operations/search`) existe, mas devolveu 429 `over_quota` em todas as tentativas — não dá pra contar com ele.
+
+**Feito** (`MlFullShipmentsPage.jsx`):
+- Aviso no topo mostra de quando são os dados ("Estes dados são de 13/09 (há 24 dias)"), em amarelo quando passa de 1 dia, com passo a passo e botão "Abrir no ML".
+- Envio em aberto com leitura velha ganha a tag "status de há X dias — pode ter mudado".
+- Card aberto mostra todas as datas: limite pra cancelar, coleta/entrega agendada, recebido no centro, finalizado (ou última mudança no ML), lido do ML em, e tempo de conferência.
+- Envios em aberto aparecem primeiro.
+
+**Pendente / proposta**: deixar a sincronização automática com uma extensão do Chrome (roda sozinha ao abrir a Central de Vendedores, no máx. a cada X horas). Aguardando o Raphael.

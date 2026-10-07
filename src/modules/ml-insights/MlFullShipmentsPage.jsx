@@ -12,6 +12,21 @@ function fmtDateTime(iso) {
   if (!iso) return null
   return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
+// "há 3 dias", "há 5 h" — pra deixar claro de quando é cada informação
+function fmtAgo(iso) {
+  if (!iso) return null
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  if (min < 60) return `há ${Math.max(1, min)} min`
+  const h = Math.round(min / 60)
+  if (h < 24) return `há ${h} h`
+  const d = Math.round(h / 24)
+  return `há ${d} dia${d > 1 ? 's' : ''}`
+}
+const daysSince = iso => (iso ? (Date.now() - new Date(iso).getTime()) / 86400000 : Infinity)
+const ML_INBOUNDS_URL = 'https://vendedores.mercadolivre.com.br/shipping/inbounds'
+// Envio que ainda pode mudar de status no ML (o resto é histórico fixo)
+const isOpenStatus = st => !['closed_ok', 'closed_with_changes', 'cancelled', 'expired'].includes(st)
+
 function fmtMoney(v) {
   if (v == null) return null
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -65,10 +80,43 @@ function ItemRow({ item }) {
   )
 }
 
+// Todas as datas que o ML devolve pro envio, em ordem cronológica
+function ShipmentDates({ shipment: s }) {
+  const closed = ['closed_ok', 'closed_with_changes'].includes(s.status)
+  const rows = [
+    s.appointment_cancel_limit && { label: 'Limite pra cancelar', value: fmtDateTime(s.appointment_cancel_limit) },
+    s.appointment_date && { label: s.raw?.shipment_type === 'pickup' ? 'Coleta agendada' : 'Entrega agendada', value: fmtDateTime(s.appointment_date) },
+    s.reception_date && { label: 'Recebido no centro', value: fmtDateTime(s.reception_date) },
+    closed && s.last_updated_ml && { label: 'Finalizado (conferência)', value: fmtDateTime(s.last_updated_ml) },
+    !closed && s.last_updated_ml && { label: 'Última mudança no ML', value: fmtDateTime(s.last_updated_ml) },
+    { label: 'Lido do ML em', value: `${fmtDateTime(s.synced_at)} (${fmtAgo(s.synced_at)})` },
+  ].filter(Boolean)
+  const processing = s.reception_date && closed && s.last_updated_ml
+    ? Math.max(0, Math.round((new Date(s.last_updated_ml) - new Date(s.reception_date)) / 86400000)) : null
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-2">
+      {rows.map(r => (
+        <div key={r.label} className="rounded-lg border border-slate-100 px-3 py-2">
+          <p className="text-[10px] text-slate-400 uppercase">{r.label}</p>
+          <p className="text-xs font-semibold text-slate-700">{r.value}</p>
+        </div>
+      ))}
+      {processing != null && (
+        <div className="rounded-lg border border-slate-100 px-3 py-2">
+          <p className="text-[10px] text-slate-400 uppercase">Tempo de conferência</p>
+          <p className="text-xs font-semibold text-slate-700">{processing === 0 ? 'mesmo dia' : `${processing} dia${processing > 1 ? 's' : ''}`}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ShipmentCard({ shipment, highlighted }) {
   const [open, setOpen] = useState(!!highlighted)
   const cardRef = useRef(null)
   const cfg = statusCfg(shipment.status)
+  // Envio em aberto com leitura velha: o status mostrado pode não ser mais o real
+  const stale = isOpenStatus(shipment.status) && daysSince(shipment.synced_at) > 1
   const items = shipment.items || []
   const diffItems = items.filter(i => i.diff_qty)
   const problems = [
@@ -104,6 +152,11 @@ function ShipmentCard({ shipment, highlighted }) {
               {shipment.logistic_center_id && <span className="inline-flex items-center gap-1"><MapPin size={11} />{shipment.logistic_center_id}</span>}
               {shipment.appointment_date && <span className="inline-flex items-center gap-1"><Calendar size={11} />{fmtDate(shipment.appointment_date)}</span>}
               {shipment.reception_date && <span>Recebido em {fmtDate(shipment.reception_date)}</span>}
+              {stale && (
+                <span className="inline-flex items-center gap-1 text-amber-600 font-semibold" title={`Informação do ML lida em ${fmtDateTime(shipment.synced_at)}`}>
+                  <Clock size={11} /> status de {fmtAgo(shipment.synced_at)} — pode ter mudado
+                </span>
+              )}
               {shipment.total_charged > 0 && <span>Custo: {fmtMoney(shipment.total_charged)}</span>}
             </div>
           </div>
@@ -122,6 +175,7 @@ function ShipmentCard({ shipment, highlighted }) {
       </button>
       {open && (
         <div className="border-t border-slate-100 p-4 flex flex-col gap-2">
+          <ShipmentDates shipment={shipment} />
           {items.length === 0 ? (
             <p className="text-xs text-slate-400 text-center py-2">Nenhum item registrado pra este envio.</p>
           ) : (
@@ -160,7 +214,9 @@ export function MlFullShipmentsPage() {
       .select('*, items:ml_full_inbound_items(*)')
       .order('id', { ascending: false })
     if (error) { setError(error.message); setLoading(false); return }
-    setShipments(data ?? [])
+    // Em aberto primeiro (são os que mudam), depois o histórico do mais novo pro mais velho
+    const rows = (data ?? []).sort((a, b) => (isOpenStatus(b.status) - isOpenStatus(a.status)) || b.id - a.id)
+    setShipments(rows)
     setLoading(false)
   }
 
@@ -230,13 +286,30 @@ export function MlFullShipmentsPage() {
           </div>
         </div>
 
-        {/* Aviso: não é automático */}
-        <div className="flex items-start gap-3 bg-sky-50 border border-sky-200 rounded-2xl px-4 py-3.5">
-          <Info size={16} className="text-sky-500 mt-0.5 shrink-0" />
-          <p className="text-sm text-sky-800 leading-relaxed">
-            Assim como o Estoque Full, isso aqui é uma <strong>fotografia</strong> do painel do Mercado Livre, não uma conexão ao vivo — o ML não libera a Gestão de Envios Full por nenhuma API pública, só pelo painel logado no navegador. Pra atualizar, clique no favorito <strong>"Sincronizar Full CoisaPet"</strong> na barra do navegador enquanto estiver logado na Central de Vendedores do ML (não precisa mais pedir pro Claude). Envios já cancelados/finalizados há muito tempo às vezes precisam de um segundo clique pra atualizar os itens — é seguro clicar quantas vezes quiser.
-          </p>
-        </div>
+        {/* Quão atual é isso aqui — o ML não tem API pra Envios Full */}
+        {shipments && (() => {
+          const age = daysSince(lastSync)
+          const old = age > 1
+          return (
+            <div className={`flex items-start gap-3 rounded-2xl px-4 py-3.5 border ${old ? 'bg-amber-50 border-amber-300' : 'bg-sky-50 border-sky-200'}`}>
+              {old ? <AlertTriangle size={18} className="text-amber-500 mt-0.5 shrink-0" /> : <Info size={16} className="text-sky-500 mt-0.5 shrink-0" />}
+              <div className={`text-sm leading-relaxed flex-1 ${old ? 'text-amber-900' : 'text-sky-800'}`}>
+                {old ? (
+                  <p><strong>Estes dados são de {lastSync ? `${fmtDate(lastSync)} (${fmtAgo(lastSync)})` : 'nunca'}</strong> — status e datas dos envios em aberto podem já ter mudado no Mercado Livre. Atualize antes de confiar neles.</p>
+                ) : (
+                  <p>Dados lidos do Mercado Livre {fmtAgo(lastSync)}.</p>
+                )}
+                <p className="mt-1 text-xs opacity-90">
+                  Como atualizar: abra a <strong>Gestão de envios Full</strong> no ML (logado como CoisaPet) e clique no favorito <strong>"Sincronizar Full CoisaPet"</strong> da barra do navegador. Depois volte aqui e clique em <strong>Recarregar</strong>. O ML não libera essa tela por API — só pelo painel logado — por isso precisa desse clique.
+                </p>
+              </div>
+              <a href={ML_INBOUNDS_URL} target="_blank" rel="noreferrer"
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white ${old ? 'bg-amber-500 hover:bg-amber-600' : 'bg-sky-500 hover:bg-sky-600'}`}>
+                Abrir no ML <ExternalLink size={12} />
+              </a>
+            </div>
+          )
+        })()}
 
         {error && (
           <div className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
