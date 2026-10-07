@@ -52,6 +52,10 @@ export function useBlogBanners() {
         .from('blog_banner_events')
         .select('id, event_type, product_id, product_name, platform, post_slug, coupon_shown, created_at')
         .gte('created_at', since)
+        // Só eventos do site (sempre têm post). O "Sortear exemplo" da tela
+        // chama a function antiga, que grava exibição sem post — não conta.
+        .not('post_slug', 'is', null)
+        .neq('post_slug', 'teste-claude') // clique de teste de 06/10 (DELETE travou no MCP)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
         .range(from, to))
@@ -89,10 +93,14 @@ export function useBlogBanners() {
         ;(posts || []).forEach(p => { titles[p.slug] = p.title })
       }
 
-      // Cliques por dia (pro gráfico)
-      const perDay = {}
-      for (let d = days - 1; d >= 0; d--) perDay[toISODateBR(new Date(Date.now() - d * 86400000))] = 0
+      // Cliques e exibições por dia (gráficos da aba Relatórios)
+      const perDay = {}, viewsDay = {}
+      for (let d = days - 1; d >= 0; d--) {
+        const k = toISODateBR(new Date(Date.now() - d * 86400000))
+        perDay[k] = 0; viewsDay[k] = 0
+      }
       clicks.forEach(e => { const k = toISODateBR(new Date(e.created_at)); if (perDay[k] !== undefined) perDay[k]++ })
+      impressions.forEach(e => { const k = toISODateBR(new Date(e.created_at)); if (viewsDay[k] !== undefined) viewsDay[k]++ })
 
       const ctr = x => (x.impressions ? (x.clicks / x.impressions) * 100 : null)
       const withCtr = arr => arr.map(x => ({ ...x, ctr: ctr(x) }))
@@ -101,7 +109,7 @@ export function useBlogBanners() {
         total_clicks: clicks.length,
         ctr: impressions.length ? (clicks.length / impressions.length) * 100 : 0,
         last_event: events.length ? events[events.length - 1].created_at : null,
-        daily: Object.entries(perDay).map(([day, total]) => ({ day, total })),
+        daily: Object.entries(perDay).map(([day, total]) => ({ day, total, views: viewsDay[day] })),
         by_platform: withCtr([...byPlatform.values()]).sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions),
         by_coupon: withCtr([...byCoupon.values()]),
         by_product: withCtr([...byProduct.values()]).sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions).slice(0, 15),
