@@ -44,8 +44,15 @@ export function useShopeeAds() {
   const fetchDashboard = useCallback((start, end) =>
     callShopeeAds({ action: 'ads_dashboard', start_date: start, end_date: end }), [])
 
-  const fetchShopDaily = useCallback(async (start, end) =>
-    (await callShopeeAds({ action: 'ads_shop_daily', start_date: start, end_date: end })).results || [], [])
+  // A Shopee só devolve desempenho de até 6 meses atrás (erro
+  // ads.performance.error_date_too_old, visto em 07/10 na conciliação de
+  // créditos) — corta o início em ~180 dias pra não perder a série inteira.
+  const fetchShopDaily = useCallback(async (start, end) => {
+    const d = new Date(); d.setDate(d.getDate() - 178)
+    const minStart = toISODateBR(d)
+    const from = start < minStart ? minStart : start
+    return (await callShopeeAds({ action: 'ads_shop_daily', start_date: from, end_date: end })).results || []
+  }, [])
 
   const fetchShopHourly = useCallback(async (date) =>
     (await callShopeeAds({ action: 'ads_shop_hourly', date })).results || [], [])
