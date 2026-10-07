@@ -8,7 +8,7 @@ import {
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
   PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
   HeartPulse, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film, Zap,
-  Briefcase, Crown, Bookmark, Component, RotateCcw, Headset, HandCoins,
+  Briefcase, Crown, Bookmark, Component, RotateCcw, Headset, HandCoins, Tv,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
@@ -129,6 +129,7 @@ const NAV_SECTIONS = [
       { to: '/diretoria/ml-x-shopee', moduleKey: 'comparativo-marketplaces', icon: BarChart2, label: 'ML × Shopee', roles: ['admin'] },
       { to: '/financeiro-diretoria', moduleKey: 'financeiro-dir', icon: DollarSign, label: 'Fin. Diretoria',     roles: ['admin'] },
       { to: '/honorarios',           moduleKey: 'honorarios',      icon: HandCoins,  label: 'Pagamento de Honorários', roles: ['admin'] },
+      { to: '/tv-producao',          moduleKey: 'tv-producao',     icon: Tv,         label: 'TV da Produção',          roles: ['admin'] },
       { to: '/directors',            moduleKey: 'directors',       icon: Star,       label: 'Compras Diretoria', roles: ['admin'] },
       { to: '/cofre',                moduleKey: 'cofre',           icon: Lock,       label: 'Cofre de Senhas',   roles: ['admin'] },
       { to: '/grupos-chat',          moduleKey: 'grupos-chat',     icon: MessagesSquare, label: 'Grupos de Chat', roles: ['admin'] },

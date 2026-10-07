@@ -63,6 +63,8 @@ import { MarketplaceComparePage } from './modules/directors/MarketplaceComparePa
 import { BioLinksPage } from './modules/links/BioLinksPage'
 import { BlogBannersPage } from './modules/blog/BlogBannersPage'
 import { HonorariosPage } from './modules/financial/honorarios/HonorariosPage'
+import { TvPage } from './modules/tv/TvPage'
+import { TvConfigPage } from './modules/tv/TvConfigPage'
 import { ChecklistPage } from './modules/checklist/ChecklistPage'
 import { ReviewsPage } from './modules/reviews/ReviewsPage'
 import { MlAccountDashboardPage } from './modules/ml-insights/MlAccountDashboardPage'
@@ -132,6 +134,8 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/cotacao/:token" element={<PublicQuotePage />} />
+            {/* TV da Produção: sem login, liberada pelo código do aparelho (fase100) */}
+            <Route path="/tv" element={<TvPage />} />
 
             <Route element={<ChangePasswordRoute />}>
               <Route path="/trocar-senha" element={<ChangePasswordPage />} />
@@ -245,6 +249,7 @@ export default function App() {
                 <Route path="/producao-horistas" element={<GuardedRoute moduleKey="producao-horistas"><ProductionEntriesPage /></GuardedRoute>} />
                 <Route path="/bio-links" element={<GuardedRoute moduleKey="bio-links"><BioLinksPage /></GuardedRoute>} />
                 <Route path="/honorarios" element={<GuardedRoute moduleKey="honorarios"><HonorariosPage /></GuardedRoute>} />
+                <Route path="/tv-producao" element={<GuardedRoute moduleKey="tv-producao"><TvConfigPage /></GuardedRoute>} />
                 <Route path="/blog-banners" element={<GuardedRoute moduleKey="blog-banners"><BlogBannersPage /></GuardedRoute>} />
 
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />
