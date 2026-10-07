@@ -6816,3 +6816,9 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
   - Shopee: `payment.get_escrow_list` (liberados, com `payout_amount` e data) + `payment.get_escrow_detail_batch` (POST, 50 por vez; `order_income.escrow_amount` + tarifas detalhadas).
 - Tabelas `marketplace_finance` + `marketplace_finance_sync` (`fase101`, aplicada, só leitura pelo app). Edge Function `marketplace-finance` (`sync`/`probe`), cron `marketplace-finance-sync` de hora em hora (minuto 17, últimos 45 dias). Carga inicial: 60 dias (1.296 pagamentos ML, 1.992 pedidos Shopee).
 - Últimos 30 dias (real): fica ~71% no ML e ~72% na Shopee. Devolvido/cancelado/recusado conta 0.
+
+### 2026-10-07 (4ª parte) — Shopee Ads: conciliação de crédito zerada (gasto/saldo real R$ 0)
+
+Raphael lançou um crédito e viu `UNAUTHORIZED_NO_AUTH_HEADER` no console. Esse 401 era um GET aberto direto na URL da `shopee-ads` (inofensivo). O erro real, achado no log: `ads.performance.error_date_too_old` — **a Shopee só devolve desempenho de Ads de até 6 meses atrás**, e a aba Créditos pedia desde o dia 1º do mês de 185 dias atrás (01/04). A chamada inteira falhava → gasto real e saldo real apareciam R$ 0 na conciliação. Corrigido em `useShopeeAds.fetchShopDaily`: início cortado em ~178 dias (vale também pros Relatórios, que tinham opção de 12 meses).
+
+Achado de passagem: `send-notification-email` estourando a **cota diária do Resend** (429 `daily_quota_exceeded`) desde ~15h28 — e-mails de notificação não estão saindo hoje.
