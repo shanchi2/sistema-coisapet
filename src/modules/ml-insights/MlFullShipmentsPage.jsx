@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Truck, Loader2, AlertTriangle, ExternalLink, ChevronDown, Info, PackageCheck, PackageX, Clock, Calendar, MapPin, Ban, Hourglass, RefreshCw, Search } from 'lucide-react'
+import { Truck, Loader2, AlertTriangle, ExternalLink, ChevronDown, Info, PackageCheck, PackageX, Clock, Calendar, MapPin, Ban, Hourglass, RefreshCw, Search, Puzzle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { InfoTooltip } from './InfoTooltip'
+import { FullSyncExtensionModal } from './FullSyncExtensionModal'
 
 function fmtDate(iso) {
   if (!iso) return null
@@ -89,7 +90,7 @@ function ShipmentDates({ shipment: s }) {
     s.reception_date && { label: 'Recebido no centro', value: fmtDateTime(s.reception_date) },
     closed && s.last_updated_ml && { label: 'Finalizado (conferência)', value: fmtDateTime(s.last_updated_ml) },
     !closed && s.last_updated_ml && { label: 'Última mudança no ML', value: fmtDateTime(s.last_updated_ml) },
-    { label: 'Lido do ML em', value: `${fmtDateTime(s.synced_at)} (${fmtAgo(s.synced_at)})` },
+    { label: 'Lido do ML em', value: `${fmtDateTime(s.synced_at)} (${fmtAgo(s.synced_at)})${s.synced_by ? ` · ${s.synced_by}` : ''}` },
   ].filter(Boolean)
   const processing = s.reception_date && closed && s.last_updated_ml
     ? Math.max(0, Math.round((new Date(s.last_updated_ml) - new Date(s.reception_date)) / 86400000)) : null
@@ -204,6 +205,7 @@ export function MlFullShipmentsPage() {
   const [tab, setTab] = useState('all')
   const [search, setSearch] = useState('')
   const [centerFilter, setCenterFilter] = useState('all')
+  const [extOpen, setExtOpen] = useState(false)
 
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   async function load() {
@@ -224,6 +226,8 @@ export function MlFullShipmentsPage() {
     if (!shipments?.length) return null
     return shipments.reduce((max, s) => (!max || s.synced_at > max) ? s.synced_at : max, null)
   }, [shipments])
+
+  const lastSyncBy = useMemo(() => shipments?.find(s => s.synced_at === lastSync)?.synced_by || null, [shipments, lastSync])
 
   const stats = useMemo(() => {
     if (!shipments) return null
@@ -277,8 +281,12 @@ export function MlFullShipmentsPage() {
             <div className="flex items-center gap-2 text-xs text-slate-400">
               <Clock size={13} />
               {lastSync ? `Última sincronização: ${fmtDateTime(lastSync)}` : 'Ainda não sincronizado'}
-              <InfoTooltip source="nosso" text="Os dados aqui vêm de um favorito do navegador ('Sincronizar Full CoisaPet') que você clica enquanto está logado na Central de Vendedores do ML — ele lê a Gestão de Envios Full de lá e manda pra cá. O Mercado Livre não libera isso por API, só pelo painel logado. Esse botão 'Recarregar' só busca o que já está salvo no nosso banco (não refaz a sincronização com o ML)." />
+              <InfoTooltip source="nosso" text="Os dados aqui vêm da extensão do Chrome da CoisaPet (ou do favorito antigo 'Sincronizar Full CoisaPet'), que lê a Gestão de Envios Full do painel do ML logado e manda pra cá. O Mercado Livre não libera isso por API. O botão 'Recarregar' só busca o que já está salvo no nosso banco." />
             </div>
+            <button onClick={() => setExtOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-xs font-semibold text-emerald-700 transition-colors">
+              <Puzzle size={13} /> Extensão do Chrome
+            </button>
             <button onClick={load} disabled={loading}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-600 transition-colors disabled:opacity-50">
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Recarregar
@@ -297,10 +305,10 @@ export function MlFullShipmentsPage() {
                 {old ? (
                   <p><strong>Estes dados são de {lastSync ? `${fmtDate(lastSync)} (${fmtAgo(lastSync)})` : 'nunca'}</strong> — status e datas dos envios em aberto podem já ter mudado no Mercado Livre. Atualize antes de confiar neles.</p>
                 ) : (
-                  <p>Dados lidos do Mercado Livre {fmtAgo(lastSync)}.</p>
+                  <p>Dados lidos do Mercado Livre {fmtAgo(lastSync)}{lastSyncBy ? ` (${lastSyncBy})` : ''}.</p>
                 )}
                 <p className="mt-1 text-xs opacity-90">
-                  Como atualizar: abra a <strong>Gestão de envios Full</strong> no ML (logado como CoisaPet) e clique no favorito <strong>"Sincronizar Full CoisaPet"</strong> da barra do navegador. Depois volte aqui e clique em <strong>Recarregar</strong>. O ML não libera essa tela por API — só pelo painel logado — por isso precisa desse clique.
+                  Pra ficar sempre atualizado sozinho, instale a <button onClick={() => setExtOpen(true)} className="font-bold underline">extensão do Chrome</button> — ela sincroniza toda vez que alguém abre a Central de Vendedores do ML. Sem ela: abra a Gestão de envios Full no ML e clique no favorito <strong>"Sincronizar Full CoisaPet"</strong>, depois em <strong>Recarregar</strong> aqui. O ML não libera essa tela por API, só pelo painel logado.
                 </p>
               </div>
               <a href={ML_INBOUNDS_URL} target="_blank" rel="noreferrer"
@@ -394,6 +402,7 @@ export function MlFullShipmentsPage() {
           </div>
         )}
       </div>
+      <FullSyncExtensionModal open={extOpen} onClose={() => setExtOpen(false)} />
     </div>
   )
 }

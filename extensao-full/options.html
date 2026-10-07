@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>CoisaPet — Envios Full</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; background: #f8fafc; color: #1e293b; margin: 0; padding: 32px 16px; }
+  .card { max-width: 520px; margin: 0 auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p { color: #64748b; margin: 0 0 16px; }
+  label { font-weight: 600; font-size: 12px; color: #475569; }
+  input { width: 100%; box-sizing: border-box; font: 15px ui-monospace, monospace; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; margin: 6px 0 12px; }
+  button { background: #059669; color: #fff; border: 0; border-radius: 10px; padding: 10px 16px; font-weight: 700; cursor: pointer; }
+  .status { margin-top: 16px; font-size: 13px; padding: 10px 12px; border-radius: 10px; background: #f1f5f9; color: #475569; }
+  .ok { background: #ecfdf5; color: #047857; } .err { background: #fff1f2; color: #be123c; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>CoisaPet — Sincronizar Envios Full</h1>
+    <p>Cole aqui o <b>código deste computador</b>. Ele é gerado no sistema CoisaPet, em <b>Gestão de Envios Full → Extensão do Chrome → Gerar código</b>.</p>
+    <label for="token">Código do computador</label>
+    <input id="token" placeholder="cpf-xxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
+    <button id="save">Salvar</button>
+    <div id="status" class="status">Carregando…</div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>
