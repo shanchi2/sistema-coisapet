@@ -6,6 +6,8 @@ import {
 import { supabase } from '../../lib/supabase'
 import { todayISO } from '../../lib/dateBR'
 import { toUF } from '../../lib/uf'
+import { TodaySoFar } from './TodaySoFar'
+import { WalletSection } from './WalletSection'
 
 // Comparativo ML × Shopee (Diretoria, 30/09). Tudo calculado a partir dos
 // pedidos do nosso banco (orders + order_items):
@@ -420,6 +422,9 @@ export function MarketplaceComparePage() {
               </div>
             )}
 
+            {/* Hoje até agora × ontem / semana passada no mesmo horário */}
+            <TodaySoFar />
+
             {/* Cards comparativos */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
               <CompareCard icon={Receipt} label="Faturamento" fmt={brl} cur={S} prev={SP} field="revenue" />
@@ -428,6 +433,9 @@ export function MarketplaceComparePage() {
               <CompareCard icon={Package} label="Unidades vendidas" fmt={v => num(v)} cur={S} prev={SP} field="units" />
               <CompareCard icon={XCircle} label="Cancelados" fmt={v => num(v)} cur={S} prev={SP} field="cancelled" invert />
             </div>
+
+            {/* Vendido × o que entra na carteira (líquido real das plataformas) */}
+            <WalletSection range={range} soldBy={S} />
 
             {/* Por dia */}
             <div className="bg-white border border-slate-200 rounded-2xl p-5">

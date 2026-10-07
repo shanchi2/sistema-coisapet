@@ -6804,3 +6804,15 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
 - **`/tv-producao`** (Diretoria, só admin, moduleKey `tv-producao`): layout, tempo de troca, antecedência da coleta, liga/desliga + ordem dos módulos (`tv_settings.modules`), avisos pra TV, chave "TV" nos avisos do RH, coleta manual, códigos das TVs.
 - Migration `supabase/fase100-tv-producao.sql` (aplicada).
 - Aviso dado ao Raphael: kanban de produção tem tarefas atrasadas desde agosto que vão aparecer como ATRASADA.
+
+### 2026-10-07 (3ª parte) — ML × Shopee: "Hoje até agora" + Vendido × o que entra na carteira
+
+**Pedido do Raphael**: comparativo diário até o momento, e "os valores reais que entraram na carteira de cada plataforma … versus o que realmente foi vendido".
+
+- **Hoje até agora** (`TodaySoFar.jsx`): faturamento/pedidos de hoje até a hora atual × ontem e × mesmo dia da semana passada **até o mesmo horário**, por plataforma, + linha de faturamento acumulado por hora (hoje × ontem × semana passada). Atualiza sozinho a cada 5 min.
+- **Vendido × carteira** (`WalletSection.jsx`, segue o período lá de cima): por plataforma, Vendido (bruto da página) × "Fica pra CoisaPet" (líquido real), % que fica, tarifas+frete+cupons, "Caiu na carteira" (liberado no período) e "A liberar" (+ próxima data). Gráfico por dia: caiu na carteira × líquido por dia da venda. Botão "Atualizar agora".
+- **Fonte dos líquidos** — testado ao vivo:
+  - ML: **Mercado Pago `/v1/payments/search` funciona com o token do ML**. `transaction_details.net_received_amount` = líquido (ex. real: venda R$ 37,90 → R$ 24,15), `money_release_date/status` = quando libera (~28 dias).
+  - Shopee: `payment.get_escrow_list` (liberados, com `payout_amount` e data) + `payment.get_escrow_detail_batch` (POST, 50 por vez; `order_income.escrow_amount` + tarifas detalhadas).
+- Tabelas `marketplace_finance` + `marketplace_finance_sync` (`fase101`, aplicada, só leitura pelo app). Edge Function `marketplace-finance` (`sync`/`probe`), cron `marketplace-finance-sync` de hora em hora (minuto 17, últimos 45 dias). Carga inicial: 60 dias (1.296 pagamentos ML, 1.992 pedidos Shopee).
+- Últimos 30 dias (real): fica ~71% no ML e ~72% na Shopee. Devolvido/cancelado/recusado conta 0.
