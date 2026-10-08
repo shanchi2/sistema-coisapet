@@ -1,652 +1,491 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import {
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  AreaChart, Area, Legend,
-} from 'recharts'
-import {
-  MousePointerClick, TrendingUp, RefreshCw, Search, X,
-  ShoppingBag, Calendar, Clock, BarChart2, Activity, Newspaper,
+  MousePointerClick, RefreshCw, Search, X, Activity, TrendingUp, Newspaper, Radio,
+  ShoppingBag, MessageCircle, Smartphone, Monitor, Tablet, Compass, LayoutGrid, Sparkles, Loader2, ChevronDown,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { todayISO } from '../../lib/dateBR'
+import { Panel, StatTile, Delta, fmtInt } from '../dashboard/widgets'
 import { BlogAnalyticsTab } from './BlogAnalyticsTab'
 
-// ── Config ────────────────────────────────────────────────────
-const PLATFORM_CFG = {
-  shopee:   { label: 'Shopee',          color: '#EE4D2D', emoji: '🛍️' },
-  ml:       { label: 'Mercado Livre',   color: '#f59e0b', emoji: '🛒' },
-  whatsapp: { label: 'WhatsApp',        color: '#25d366', emoji: '💬' },
-  clo:      { label: 'Clô (Flutuante)', color: '#a855f7', emoji: '🐾' },
-}
+// Cliques no Site (refeita 08/10 no padrão do novo Dashboard).
+// Fonte: product_clicks — cada clique de visitante do coisapet.com.br num
+// botão que leva pra Shopee / Mercado Livre / WhatsApp, ou no "Clô"
+// (botão flutuante de WhatsApp). Guarda produto, página do site, referrer
+// (de onde o visitante veio) e navegador (celular × computador).
+// Não temos visitas/pageviews — só cliques —, então não dá pra calcular
+// taxa de conversão.
 
-const PAGE_CFG = {
-  home: { label: 'Home',      color: '#6366f1' },
-  plp:  { label: 'Listagem',  color: '#0ea5e9' },
-  pdp:  { label: 'Produto',   color: '#f59e0b' },
-  clo:  { label: 'Clô',       color: '#a855f7' },
+const TZ = 'America/Sao_Paulo'
+const CHANNELS = {
+  shopee:   { label: 'Shopee',              short: 'Shopee',   color: '#EE4D2D', icon: ShoppingBag },
+  ml:       { label: 'Mercado Livre',       short: 'ML',       color: '#2D3277', icon: ShoppingBag },
+  whatsapp: { label: 'WhatsApp (produto)',  short: 'WhatsApp', color: '#16a34a', icon: MessageCircle },
+  clo:      { label: 'Clô (botão flutuante)', short: 'Clô',    color: '#a855f7', icon: MessageCircle },
 }
-
+const CH_KEYS = Object.keys(CHANNELS)
+const PAGES = {
+  home: { label: 'Página inicial', hint: 'vitrine da home' },
+  plp:  { label: 'Listagem',       hint: 'categorias e busca' },
+  pdp:  { label: 'Página do produto', hint: 'dentro do produto' },
+  clo:  { label: 'Clô',            hint: 'botão flutuante, qualquer página' },
+}
 const PERIODS = [
-  { label: 'Hoje',              days: 0   },
-  { label: 'Ontem',             days: -1  },
-  { label: '7 dias',            days: 7   },
-  { label: '30 dias',           days: 30  },
-  { label: '90 dias',           days: 90  },
-  { label: 'Personalizado',     days: -99 },
+  { key: 'hoje', label: 'Hoje' }, { key: 'ontem', label: 'Ontem' }, { key: '7', label: '7 dias' },
+  { key: '30', label: '30 dias' }, { key: '90', label: '90 dias' }, { key: 'custom', label: 'Período' },
 ]
+const DOW = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+const DOW_LONG = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado']
 
-function fmtDate(d) {
-  return new Date(d).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' })
+const toD = s => new Date(`${s}T12:00:00Z`)
+const addDays = (s, n) => { const d = toD(s); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+const daysBetween = (a, b) => Math.round((toD(b) - toD(a)) / 86400000) + 1
+const brDate = ts => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(ts))
+const brHour = ts => Number(new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).format(new Date(ts)))
+const fmtShort = s => `${s.slice(8, 10)}/${s.slice(5, 7)}`
+const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0)
+
+const channelOf = c => (c.page === 'clo' ? 'clo' : CHANNELS[c.platform] ? c.platform : 'whatsapp')
+
+// De onde o visitante veio (referrer da página onde ele clicou)
+const ORIGINS = {
+  instagram: { label: 'Instagram', color: '#E1306C' },
+  google:    { label: 'Google', color: '#4285F4' },
+  interno:   { label: 'Navegando no site', color: '#94a3b8', hint: 'veio de outra página da própria loja' },
+  direto:    { label: 'Direto', color: '#64748b', hint: 'digitou o endereço, favorito ou app' },
+  whatsapp:  { label: 'WhatsApp', color: '#16a34a' },
+  facebook:  { label: 'Facebook', color: '#1877F2' },
+  ia:        { label: 'ChatGPT / IA', color: '#10a37f' },
+  outros:    { label: 'Outros sites', color: '#cbd5e1' },
 }
-function fmtHour(h) { return `${String(h).padStart(2,'0')}h` }
+function originOf(ref) {
+  const r = (ref || '').toLowerCase()
+  if (!r) return 'direto'
+  if (r.includes('instagram')) return 'instagram'
+  if (r.includes('google')) return 'google'
+  if (r.includes('coisapet.com.br')) return 'interno'
+  if (r.includes('whatsapp') || r.includes('wa.me') || r.includes('l.wl.co')) return 'whatsapp'
+  if (r.includes('facebook') || r.includes('fb.')) return 'facebook'
+  if (r.includes('chatgpt') || r.includes('openai') || r.includes('perplexity') || r.includes('gemini') || r.includes('bing')) return 'ia'
+  return 'outros'
+}
+function deviceOf(ua) {
+  const u = ua || ''
+  if (/iPad|Tablet/i.test(u)) return 'tablet'
+  if (/Mobi|iPhone|Android/i.test(u)) return 'celular'
+  return 'computador'
+}
+const DEVICES = {
+  celular:    { label: 'Celular', icon: Smartphone },
+  computador: { label: 'Computador', icon: Monitor },
+  tablet:     { label: 'Tablet', icon: Tablet },
+}
 
-// ── Tooltip customizado ────────────────────────────────────────
-function CustomTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null
+function rangeOf(key, custom) {
+  const today = todayISO()
+  if (key === 'hoje') return { from: today, to: today }
+  if (key === 'ontem') { const y = addDays(today, -1); return { from: y, to: y } }
+  if (key === 'custom') return custom
+  return { from: addDays(today, -(Number(key) - 1)), to: today }
+}
+const prevOf = ({ from, to }) => { const n = daysBetween(from, to); return { from: addDays(from, -n), to: addDays(from, -1) } }
+
+async function fetchClicks(from, to) {
+  const all = []
+  for (let page = 0; page < 60; page++) {
+    const { data, error } = await supabase.from('product_clicks')
+      .select('id, product_id, product_name, platform, page, clicked_at, referrer, user_agent')
+      .gte('clicked_at', `${from}T00:00:00-03:00`).lt('clicked_at', `${addDays(to, 1)}T00:00:00-03:00`)
+      .order('clicked_at').range(page * 1000, page * 1000 + 999)
+    if (error) throw error
+    all.push(...(data || []))
+    if (!data || data.length < 1000) break
+  }
+  return all
+}
+
+// ── Peças visuais ─────────────────────────────────────────────────
+function SplitBar({ parts, total, height = 'h-2.5' }) {
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 shadow-xl">
-      <p className="text-xs text-slate-400 mb-1">{label}</p>
-      {payload.map((p, i) => (
-        <p key={i} className="text-xs font-bold" style={{ color: p.color }}>
-          {p.name}: {p.value}
-        </p>
+    <div className={`${height} rounded-full overflow-hidden flex bg-slate-100`} style={{ gap: 2 }}>
+      {parts.filter(p => p.value > 0).map(p => (
+        <div key={p.key} style={{ width: `${(p.value / Math.max(1, total)) * 100}%`, background: p.color }} title={`${p.label}: ${fmtInt(p.value)}`} />
       ))}
     </div>
   )
 }
+function HBarList({ rows, total }) {
+  const max = Math.max(1, ...rows.map(r => r.value))
+  return (
+    <div className="flex flex-col gap-2.5">
+      {rows.map(r => (
+        <div key={r.key}>
+          <div className="flex items-baseline justify-between gap-2 mb-1">
+            <span className="text-[13px] text-slate-700 font-medium truncate">{r.label}{r.hint && <span className="text-[11px] text-slate-400 font-normal"> · {r.hint}</span>}</span>
+            <span className="text-[13px] font-bold text-slate-800 tabular-nums shrink-0">{fmtInt(r.value)} <span className="text-[11px] font-normal text-slate-400">{pct(r.value, total)}%</span></span>
+          </div>
+          <div className="h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${(r.value / max) * 100}%`, background: r.color || '#8b5cf6' }} /></div>
+        </div>
+      ))}
+    </div>
+  )
+}
+function Legend() {
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+      {CH_KEYS.map(k => <span key={k} className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: CHANNELS[k].color }} />{CHANNELS[k].short}</span>)}
+    </div>
+  )
+}
+function StackTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  const total = payload.reduce((t, p) => t + (p.value || 0), 0)
+  return (
+    <div className="bg-slate-900 text-white text-[11px] rounded-lg px-3 py-2 shadow-xl">
+      <p className="font-bold mb-1">{DOW[toD(label).getUTCDay()]}, {fmtShort(label)} · {fmtInt(total)} cliques</p>
+      {[...payload].reverse().map(p => <p key={p.dataKey}><span className="inline-block w-2 h-2 rounded-sm mr-1.5" style={{ background: p.color }} />{CHANNELS[p.dataKey].short}: {fmtInt(p.value)}</p>)}
+    </div>
+  )
+}
 
-// ── Página principal ───────────────────────────────────────────
+// Mapa de calor dia da semana × hora
+function Heatmap({ grid }) {
+  const max = Math.max(1, ...grid.flat())
+  return (
+    <div className="overflow-x-auto">
+      <div className="min-w-[560px]">
+        <div className="grid gap-[3px]" style={{ gridTemplateColumns: '34px repeat(24, minmax(0, 1fr))' }}>
+          <span />
+          {Array.from({ length: 24 }, (_, h) => <span key={h} className="text-[9px] text-slate-400 text-center">{h % 3 === 0 ? `${h}h` : ''}</span>)}
+          {grid.map((row, d) => [
+            <span key={`l${d}`} className="text-[10px] text-slate-500 font-semibold self-center">{DOW[d]}</span>,
+            ...row.map((v, h) => (
+              <div key={`${d}-${h}`} className="h-5 rounded-[3px]" title={`${DOW_LONG[d]} ${h}h: ${v} clique${v === 1 ? '' : 's'}`}
+                style={{ background: v ? `rgba(139, 92, 246, ${0.12 + 0.88 * (v / max)})` : '#f1f5f9' }} />
+            )),
+          ])}
+        </div>
+        <div className="flex items-center gap-1.5 justify-end mt-2 text-[10px] text-slate-400">
+          menos {[0.15, 0.4, 0.65, 1].map(a => <span key={a} className="w-3 h-3 rounded-[3px]" style={{ background: `rgba(139, 92, 246, ${a})` }} />)} mais
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Página ─────────────────────────────────────────────────────────
 export function ProductClicksPage() {
-  const [clicks,   setClicks]   = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [period,   setPeriod]   = useState(7)
-  const [platform,   setPlatform]   = useState('')
-  const [page,       setPage]       = useState('')
-  const [customFrom, setCustomFrom] = useState('')
-  const [customTo,   setCustomTo]   = useState('')
-  const [searchProd,setSearchProd] = useState('')
-  const [searchFeed,setSearchFeed] = useState('')
-  const [activeTab, setActiveTab] = useState('overview') // overview | produtos | feed
+  const today = todayISO()
+  const [periodKey, setPeriodKey] = useState('30')
+  const [custom, setCustom] = useState({ from: addDays(today, -29), to: today })
+  const [tab, setTab] = useState('overview')
+  const [rows, setRows] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [channel, setChannel] = useState('')
+  const [search, setSearch] = useState('')
+  const [openProd, setOpenProd] = useState(null)
 
+  const range = rangeOf(periodKey, custom)
+  const prev = prevOf(range)
+
+  const load = useCallback(async () => {
+    setLoading(true); setError(null)
+    try { setRows(await fetchClicks(prev.from, range.to)) } catch (e) { setError(e.message) } finally { setLoading(false) }
+  }, [prev.from, range.to])
+  useEffect(() => { load() }, [load, refreshKey])
+  // Aba "Ao vivo": atualiza sozinha a cada 30 s
   useEffect(() => {
-    if (period === -99 && !customFrom && !customTo) return // espera datas
-    loadClicks()
-  }, [period, customFrom, customTo]) // eslint-disable-line
+    if (tab !== 'live') return
+    const t = setInterval(() => setRefreshKey(k => k + 1), 30000)
+    return () => clearInterval(t)
+  }, [tab])
 
-  function refreshAll() {
-    loadClicks()
-    setRefreshKey(k => k + 1)
-  }
+  const inR = (c, r) => { const d = brDate(c.clicked_at); return d >= r.from && d <= r.to }
+  const cur = useMemo(() => (rows || []).filter(c => inR(c, range) && (!channel || channelOf(c) === channel)), [rows, range.from, range.to, channel]) // eslint-disable-line react-hooks/exhaustive-deps
+  const old = useMemo(() => (rows || []).filter(c => inR(c, prev) && (!channel || channelOf(c) === channel)), [rows, prev.from, prev.to, channel]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function loadClicks() {
-    setLoading(true)
-
-    // Monta filtros de data
-    let dateFrom = null
-    let dateTo   = null
-
-    if (period === -99) {
-      if (customFrom) dateFrom = customFrom + 'T00:00:00'
-      if (customTo)   dateTo   = customTo   + 'T23:59:59'
-    } else if (period === 0) {
-      const from = new Date(); from.setHours(0,0,0,0)
-      dateFrom = from.toISOString()
-    } else if (period === -1) {
-      const from = new Date(); from.setDate(from.getDate() - 1); from.setHours(0,0,0,0)
-      const to   = new Date(); to.setHours(0,0,0,0)
-      dateFrom = from.toISOString()
-      dateTo   = to.toISOString()
-    } else {
-      const from = new Date(); from.setDate(from.getDate() - period)
-      dateFrom = from.toISOString()
-    }
-
-    // Busca em lotes de 1000 (paginação) para contornar o limite do Supabase
-    let allData = []
-    let from    = 0
-    const batchSize = 1000
-
-    while (true) {
-      let q = supabase
-        .from('product_clicks')
-        .select('*')
-        .order('clicked_at', { ascending: true })
-        .range(from, from + batchSize - 1)
-
-      if (dateFrom) q = q.gte('clicked_at', dateFrom)
-      if (dateTo)   q = q.lte('clicked_at', dateTo)
-
-      const { data, error } = await q
-      if (error || !data || data.length === 0) break
-
-      allData = [...allData, ...data]
-
-      // Se retornou menos que o batch, chegamos ao fim
-      if (data.length < batchSize) break
-      from += batchSize
-    }
-
-    setClicks(allData)
-    setLoading(false)
-  }
-
-  // Filtro local
-  const filtered = useMemo(() => clicks.filter(c =>
-    (!platform || c.platform === platform) &&
-    (!page || c.page === page)
-  ), [clicks, platform, page])
-
-  // ── Métricas ────────────────────────────────────────────────
-  const total = filtered.length
-  const byPlat = {
-    shopee:   filtered.filter(c => c.platform==='shopee').length,
-    ml:       filtered.filter(c => c.platform==='ml').length,
-    whatsapp: filtered.filter(c => c.platform==='whatsapp' && c.page!=='clo').length,
-    clo:      filtered.filter(c => c.page==='clo').length,
-  }
-
-  // Cliques por dia
-  const byDay = useMemo(() => {
-    const map = {}
-    filtered.forEach(c => {
-      const d = fmtDate(c.clicked_at)
-      if (!map[d]) map[d] = { date: d, total: 0, shopee: 0, ml: 0, whatsapp: 0, clo: 0 }
-      map[d].total++
-      const plat = c.page === 'clo' ? 'clo' : c.platform
-      if (map[d][plat] !== undefined) map[d][plat]++
+  const A = useMemo(() => {
+    const count = (list, fn) => list.reduce((m, c) => { const k = fn(c); m[k] = (m[k] || 0) + 1; return m }, {})
+    const byCh = count(cur, channelOf), byChPrev = count(old, channelOf)
+    const byOrigin = count(cur, c => originOf(c.referrer))
+    const byDevice = count(cur, c => deviceOf(c.user_agent))
+    const byPage = count(cur, c => (PAGES[c.page] ? c.page : 'home'))
+    const days = []; for (let d = range.from; d <= range.to; d = addDays(d, 1)) days.push(d)
+    const daily = Object.fromEntries(days.map(d => [d, { day: d, ...Object.fromEntries(CH_KEYS.map(k => [k, 0])) }]))
+    cur.forEach(c => { const d = daily[brDate(c.clicked_at)]; if (d) d[channelOf(c)]++ })
+    const heat = Array.from({ length: 7 }, () => Array(24).fill(0))
+    cur.forEach(c => { heat[toD(brDate(c.clicked_at)).getUTCDay()][brHour(c.clicked_at)]++ })
+    const prods = {}
+    const prevProds = count(old.filter(c => c.page !== 'clo'), c => c.product_name || '—')
+    cur.forEach(c => {
+      if (c.page === 'clo') return
+      const k = c.product_name || '—'
+      const p = (prods[k] ||= { name: k, total: 0, ch: {}, pages: {}, origins: {}, days: {} })
+      p.total++; p.ch[channelOf(c)] = (p.ch[channelOf(c)] || 0) + 1
+      p.pages[c.page] = (p.pages[c.page] || 0) + 1
+      const o = originOf(c.referrer); p.origins[o] = (p.origins[o] || 0) + 1
+      const d = brDate(c.clicked_at); p.days[d] = (p.days[d] || 0) + 1
     })
-    return Object.values(map)
-  }, [filtered])
+    const products = Object.values(prods).map(p => ({ ...p, prev: prevProds[p.name] || 0 })).sort((a, b) => b.total - a.total)
+    // Destaques em frase
+    const hourTot = Array(24).fill(0); heat.forEach(r => r.forEach((v, h) => { hourTot[h] += v }))
+    const peakH = hourTot.indexOf(Math.max(...hourTot))
+    const dowTot = heat.map(r => r.reduce((a, b) => a + b, 0))
+    const peakD = dowTot.indexOf(Math.max(...dowTot))
+    return { byCh, byChPrev, byOrigin, byDevice, byPage, daily: Object.values(daily), heat, products, peakH, peakD, days }
+  }, [cur, old, range.from, range.to])
 
-  // Cliques por hora
-  const byHour = useMemo(() => {
-    const map = {}
-    for (let h = 0; h < 24; h++) map[h] = { hour: fmtHour(h), total: 0 }
-    filtered.forEach(c => {
-      const h = new Date(c.clicked_at).getHours()
-      map[h].total++
-    })
-    return Object.values(map)
-  }, [filtered])
-
-  // Cliques por plataforma (pizza)
-  const platPie = Object.entries(PLATFORM_CFG).map(([k, v]) => ({
-    name: v.label, value: byPlat[k] || 0, color: v.color, emoji: v.emoji,
-  })).filter(p => p.value > 0)
-
-  // Cliques por página
-  const byPageData = Object.entries(PAGE_CFG).map(([k, v]) => ({
-    name: v.label,
-    value: filtered.filter(c => c.page === k).length,
-    color: v.color,
-  })).filter(p => p.value > 0)
-
-  // Top produtos
-  const byProduct = useMemo(() => {
-    const map = {}
-    filtered.forEach(c => {
-      if (!map[c.product_name]) map[c.product_name] = { name: c.product_name, total: 0, shopee:0, ml:0, whatsapp:0, clo:0 }
-      map[c.product_name].total++
-      const plat = c.page === 'clo' ? 'clo' : c.platform
-      if (map[c.product_name][plat] !== undefined) map[c.product_name][plat]++
-    })
-    return Object.values(map).sort((a,b) => b.total - a.total)
-  }, [filtered])
-
-  // Hora de pico
-  const peakHour = byHour.reduce((a,b) => b.total > a.total ? b : a, byHour[0] || {})
-
-  // Taxa de conversão por página (cliques / total)
-  const maxDay = Math.max(...byDay.map(d => d.total), 1)
+  const total = cur.length, totalPrev = old.length
+  const topCh = CH_KEYS.slice().sort((a, b) => (A.byCh[b] || 0) - (A.byCh[a] || 0))[0]
+  const ext = Object.entries(A.byOrigin).filter(([k]) => !['interno', 'direto'].includes(k)).sort((a, b) => b[1] - a[1])[0]
+  const mobile = pct(A.byDevice.celular || 0, total)
+  const rising = A.products.filter(p => p.total >= 3).map(p => ({ ...p, gain: p.total - p.prev })).sort((a, b) => b.gain - a.gain)[0]
 
   const tabs = [
-    { id:'overview',  label:'Visão Geral', icon: Activity },
-    { id:'produtos',  label:'Produtos',    icon: TrendingUp },
-    { id:'blog',      label:'Blog',        icon: Newspaper },
-    { id:'feed',      label:'Feed ao vivo',icon: ShoppingBag },
+    { id: 'overview', label: 'Visão geral', icon: Activity },
+    { id: 'products', label: 'Produtos', icon: TrendingUp },
+    { id: 'blog', label: 'Blog', icon: Newspaper },
+    { id: 'live', label: 'Ao vivo', icon: Radio },
   ]
+  const filteredProducts = A.products.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()))
+  const maxProd = Math.max(1, ...A.products.slice(0, 1).map(p => p.total))
 
   return (
-    <div className="flex flex-col gap-6 animate-fade-in">
-
-      {/* ── Header ─────────────────────────────────────────── */}
-      <div className="page-header">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
-            <BarChart2 size={20} className="text-violet-500"/>
+    <div className="flex flex-col gap-5 animate-fade-in">
+      {/* Cabeçalho */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shrink-0 shadow-sm shadow-violet-200">
+            <MousePointerClick size={20} className="text-white" />
           </div>
           <div>
-            <h2 className="page-title">Analytics do Site</h2>
-            <p className="page-subtitle">{total.toLocaleString('pt-BR')} cliques registrados</p>
+            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Cliques no Site</h1>
+            <p className="text-sm text-slate-500">Quem clicou no coisapet.com.br pra comprar na Shopee, no ML ou falar no WhatsApp</p>
           </div>
         </div>
-        <button onClick={refreshAll} disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/> Atualizar
+        <button onClick={() => setRefreshKey(k => k + 1)} disabled={loading} className="btn-secondary py-1.5 text-sm disabled:opacity-50">
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Atualizar
         </button>
       </div>
 
-      {/* ── Filtros ─────────────────────────────────────────── */}
-      <div className="card p-4 flex flex-wrap gap-3 items-center">
-        {/* Período */}
-        <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
-          {PERIODS.map(p => (
-            <button key={p.days} onClick={() => setPeriod(p.days)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all
-                ${period===p.days ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              {p.label}
-            </button>
-          ))}
-        </div>
-        {period === -99 && (
-          <div className="flex items-center gap-2">
-            <input type="date" className="select text-xs py-1.5" value={customFrom}
-              onChange={e => setCustomFrom(e.target.value)} placeholder="De"/>
-            <span className="text-slate-400 text-xs">até</span>
-            <input type="date" className="select text-xs py-1.5" value={customTo}
-              onChange={e => setCustomTo(e.target.value)} placeholder="Até"/>
-          </div>
+      {/* Período + filtro de canal */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {PERIODS.map(p => (
+          <button key={p.key} onClick={() => setPeriodKey(p.key)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${periodKey === p.key ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>{p.label}</button>
+        ))}
+        {periodKey === 'custom' && (
+          <span className="flex items-center gap-1.5 text-sm">
+            <input type="date" value={custom.from} max={custom.to} onChange={e => setCustom(c => ({ ...c, from: e.target.value }))} className="input py-1 text-sm w-auto" />
+            <span className="text-slate-400">até</span>
+            <input type="date" value={custom.to} min={custom.from} max={today} onChange={e => setCustom(c => ({ ...c, to: e.target.value }))} className="input py-1 text-sm w-auto" />
+          </span>
         )}
-        {activeTab !== 'blog' && (
-          <>
-            <select className="select text-sm w-auto" value={platform} onChange={e => setPlatform(e.target.value)}>
-              <option value="">Todas as plataformas</option>
-              {Object.entries(PLATFORM_CFG).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
-            </select>
-            <select className="select text-sm w-auto" value={page} onChange={e => setPage(e.target.value)}>
-              <option value="">Todas as páginas</option>
-              {Object.entries(PAGE_CFG).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
-            {(platform || page) && (
-              <button onClick={() => { setPlatform(''); setPage('') }}
-                className="text-xs text-rose-500 font-semibold flex items-center gap-1">
-                <X size={11}/> Limpar
-              </button>
-            )}
-          </>
+        <span className="text-xs text-slate-400">{fmtShort(range.from)}{range.to !== range.from ? ` a ${fmtShort(range.to)}` : ''} · comparando com {fmtShort(prev.from)}{prev.to !== prev.from ? ` a ${fmtShort(prev.to)}` : ''}</span>
+        {tab !== 'blog' && (
+          <select value={channel} onChange={e => setChannel(e.target.value)} className="ml-auto text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-600">
+            <option value="">Todos os canais</option>
+            {CH_KEYS.map(k => <option key={k} value={k}>{CHANNELS[k].label}</option>)}
+          </select>
         )}
       </div>
 
-      {/* ── KPIs ────────────────────────────────────────────── */}
-      {activeTab !== 'blog' && (
-        <div className="grid grid-cols-5 gap-4">
-          <div className="card p-5 flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-violet-50 flex items-center justify-center text-2xl">👆</div>
-            <div>
-              <p className="text-xs text-slate-400 font-semibold">Total</p>
-              <p className="text-3xl font-black text-slate-800">{total.toLocaleString('pt-BR')}</p>
-            </div>
-          </div>
-          {Object.entries(PLATFORM_CFG).map(([k, v]) => (
-            <div key={k} className="card p-5 flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
-                style={{ background: v.color + '18' }}>{v.emoji}</div>
-              <div>
-                <p className="text-xs text-slate-400 font-semibold">{v.label}</p>
-                <p className="text-3xl font-black text-slate-800">{byPlat[k]||0}</p>
-                {total > 0 && <p className="text-[10px] text-slate-400">{Math.round((byPlat[k]||0)/total*100)}%</p>}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── Abas ────────────────────────────────────────────── */}
+      {/* Abas */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-        {tabs.map(t => {
-          const Icon = t.icon
-          return (
-            <button key={t.id} onClick={() => setActiveTab(t.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all
-                ${activeTab===t.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              <Icon size={13}/> {t.label}
-            </button>
-          )
-        })}
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${tab === t.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            <t.icon size={13} /> {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* ══ ABA: VISÃO GERAL ══════════════════════════════════ */}
-      {activeTab === 'overview' && (
-        <div className="flex flex-col gap-6">
+      {error && <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5">{error}</div>}
 
-          {/* Linha de evolução + Pizza */}
-          <div className="grid grid-cols-[1fr_320px] gap-6">
-
-            {/* Gráfico de área — evolução diária */}
-            <div className="card p-5">
-              <div className="flex items-center justify-between mb-5">
-                <div>
-                  <p className="font-bold text-slate-700 text-sm">Evolução de cliques</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Cliques por dia por plataforma</p>
-                </div>
-                {peakHour.total > 0 && (
-                  <div className="text-right">
-                    <p className="text-xs text-slate-400">Pico do período</p>
-                    <p className="text-sm font-black text-violet-600">{byDay.reduce((a,b)=>b.total>a.total?b:a,byDay[0]||{date:'-'}).date}</p>
-                  </div>
-                )}
-              </div>
-              {byDay.length === 0 ? (
-                <div className="flex items-center justify-center h-48 text-slate-300">
-                  <p className="text-sm">Sem dados no período</p>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={byDay} margin={{ top:5, right:5, bottom:5, left:-20 }}>
-                    <defs>
-                      {Object.entries(PLATFORM_CFG).map(([k,v]) => (
-                        <linearGradient key={k} id={`grad-${k}`} x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%"  stopColor={v.color} stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor={v.color} stopOpacity={0}/>
-                        </linearGradient>
-                      ))}
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/>
-                    <XAxis dataKey="date" tick={{ fontSize:10, fill:'#94a3b8' }} tickLine={false} axisLine={false}/>
-                    <YAxis tick={{ fontSize:10, fill:'#94a3b8' }} tickLine={false} axisLine={false}/>
-                    <Tooltip content={<CustomTooltip/>}/>
-                    {Object.entries(PLATFORM_CFG).map(([k, v]) => (
-                      <Area key={k} type="monotone" dataKey={k} name={v.label}
-                        stroke={v.color} strokeWidth={2}
-                        fill={`url(#grad-${k})`} stackId="1"/>
-                    ))}
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-
-            {/* Pizza por plataforma */}
-            <div className="card p-5">
-              <p className="font-bold text-slate-700 text-sm mb-1">Por plataforma</p>
-              <p className="text-xs text-slate-400 mb-4">Distribuição no período</p>
-              {platPie.length === 0 ? (
-                <div className="flex items-center justify-center h-40 text-slate-300">
-                  <p className="text-sm">Sem dados</p>
-                </div>
-              ) : (
-                <>
-                  <ResponsiveContainer width="100%" height={160}>
-                    <PieChart>
-                      <Pie data={platPie} cx="50%" cy="50%" innerRadius={45} outerRadius={75}
-                        paddingAngle={3} dataKey="value">
-                        {platPie.map((entry, i) => (
-                          <Cell key={i} fill={entry.color} stroke="none"/>
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(v, n) => [v, n]}
-                        contentStyle={{ background:'#1e293b', border:'1px solid #334155', borderRadius:12, fontSize:12 }}
-                        labelStyle={{ color:'#94a3b8' }} itemStyle={{ color:'#fff' }}/>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="flex flex-col gap-2 mt-3">
-                    {platPie.map(p => (
-                      <div key={p.name} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full" style={{ background: p.color }}/>
-                          <span className="text-xs font-semibold text-slate-600">{p.emoji} {p.name}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-slate-800">{p.value}</span>
-                          <span className="text-[10px] text-slate-400">{Math.round(p.value/total*100)}%</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+      {tab === 'blog' ? (
+        <BlogAnalyticsTab period={periodKey === 'hoje' ? 0 : periodKey === 'ontem' ? -1 : periodKey === 'custom' ? -99 : Number(periodKey)} customFrom={custom.from} customTo={custom.to} refreshKey={refreshKey} />
+      ) : rows === null ? (
+        <div className="card py-24 text-center"><Loader2 size={24} className="mx-auto animate-spin text-slate-300" /></div>
+      ) : tab === 'overview' ? (
+        <>
+          {/* Números do período */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <StatTile icon={MousePointerClick} tone="violet" label="Cliques no período" value={fmtInt(total)}
+              detail={<Delta current={total} previous={totalPrev} suffix="vs período anterior" />} />
+            {CH_KEYS.map(k => (
+              <StatTile key={k} icon={CHANNELS[k].icon} label={CHANNELS[k].label} value={fmtInt(A.byCh[k] || 0)}
+                detail={<span className="flex items-center gap-2"><span className="font-semibold text-slate-500">{pct(A.byCh[k] || 0, total)}% dos cliques</span><Delta current={A.byCh[k] || 0} previous={A.byChPrev[k] || 0} suffix="" /></span>}>
+                <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct(A.byCh[k] || 0, total)}%`, background: CHANNELS[k].color }} /></div>
+              </StatTile>
+            ))}
           </div>
 
-          {/* Mapa de calor por hora + Barras por página */}
-          <div className="grid grid-cols-[1fr_280px] gap-6">
-
-            {/* Cliques por hora do dia */}
-            <div className="card p-5">
-              <div className="flex items-center gap-2 mb-5">
-                <Clock size={15} className="text-violet-500"/>
-                <div>
-                  <p className="font-bold text-slate-700 text-sm">Distribuição por hora</p>
-                  <p className="text-xs text-slate-400">Quando os visitantes clicam mais</p>
-                </div>
-                {peakHour.total > 0 && (
-                  <div className="ml-auto text-right">
-                    <p className="text-[10px] text-slate-400">Hora de pico</p>
-                    <p className="text-base font-black text-violet-600">{peakHour.hour}</p>
-                  </div>
-                )}
-              </div>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={byHour} margin={{ top:0, right:0, bottom:0, left:-25 }} barSize={10}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false}/>
-                  <XAxis dataKey="hour" tick={{ fontSize:9, fill:'#94a3b8' }} tickLine={false} axisLine={false}
-                    interval={2}/>
-                  <YAxis tick={{ fontSize:9, fill:'#94a3b8' }} tickLine={false} axisLine={false}/>
-                  <Tooltip content={<CustomTooltip/>}/>
-                  <Bar dataKey="total" name="Cliques" radius={[4,4,0,0]}
-                    fill="#6366f1" fillOpacity={0.85}/>
-                </BarChart>
-              </ResponsiveContainer>
+          {/* Resumo em frases */}
+          {total > 0 && (
+            <div className="card !p-4 flex items-start gap-3">
+              <span className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0"><Sparkles size={16} /></span>
+              <ul className="text-sm text-slate-600 leading-relaxed grid md:grid-cols-2 gap-x-6 gap-y-1">
+                <li><b style={{ color: CHANNELS[topCh].color }}>{CHANNELS[topCh].short}</b> leva <b>{pct(A.byCh[topCh] || 0, total)}%</b> dos cliques.</li>
+                {ext && <li><b>{ORIGINS[ext[0]].label}</b> é quem mais traz visitante de fora: <b>{pct(ext[1], total)}%</b> dos cliques.</li>}
+                <li><b>{mobile}%</b> dos cliques vêm do <b>celular</b>.</li>
+                {A.peakH >= 0 && total >= 10 && <li>Horário mais forte: <b>{A.peakH}h–{A.peakH + 1}h</b>; dia mais forte: <b>{DOW_LONG[A.peakD]}</b>.</li>}
+                {rising && rising.gain > 0 && <li className="md:col-span-2">Produto que mais cresceu: <b>{rising.name}</b> ({rising.prev} → {rising.total} cliques).</li>}
+              </ul>
             </div>
+          )}
 
-            {/* Por página */}
-            <div className="card p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Calendar size={15} className="text-violet-500"/>
-                <p className="font-bold text-slate-700 text-sm">Por página</p>
-              </div>
-              {byPageData.length === 0 ? (
-                <p className="text-sm text-slate-300 text-center py-8">Sem dados</p>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {byPageData.map(p => (
-                    <div key={p.name}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-semibold text-slate-600">{p.name}</span>
-                        <span className="text-xs font-black text-slate-800">{p.value}</span>
-                      </div>
-                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all"
-                          style={{ width:`${Math.round(p.value/total*100)}%`, background: p.color }}/>
-                      </div>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{Math.round(p.value/total*100)}% do total</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Gráfico de barras empilhadas + total por dia últimos 7 */}
-          {byDay.length > 0 && (
-            <div className="grid grid-cols-[1fr_280px] gap-6">
-              {/* Barras empilhadas */}
-              <div className="card p-5">
-                <div className="flex items-center gap-2 mb-5">
-                  <BarChart2 size={15} className="text-violet-500"/>
-                  <div>
-                    <p className="font-bold text-slate-700 text-sm">Cliques por plataforma ao longo do tempo</p>
-                    <p className="text-xs text-slate-400">Barras empilhadas por canal</p>
-                  </div>
-                </div>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={byDay} margin={{ top:0, right:5, bottom:0, left:-20 }} barSize={14}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false}/>
-                    <XAxis dataKey="date" tick={{ fontSize:10, fill:'#94a3b8' }} tickLine={false} axisLine={false}/>
-                    <YAxis tick={{ fontSize:10, fill:'#94a3b8' }} tickLine={false} axisLine={false}/>
-                    <Tooltip content={<CustomTooltip/>}/>
-                    <Legend wrapperStyle={{ fontSize:11, paddingTop:12 }}/>
-                    {Object.entries(PLATFORM_CFG).map(([k,v]) => (
-                      <Bar key={k} dataKey={k} name={v.label} stackId="a"
-                        fill={v.color} radius={k==='clo'?[4,4,0,0]:[0,0,0,0]}/>
-                    ))}
+          {/* Por dia */}
+          <Panel title="Cliques por dia" subtitle="Separado pelo destino do clique" right={<Legend />}>
+            {total === 0 ? <p className="text-sm text-slate-400 text-center py-10">Nenhum clique nesse período.</p> : (
+              <div style={{ height: 230 }} className="-ml-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={A.daily} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="22%">
+                    <CartesianGrid vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="day" tickFormatter={fmtShort} tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={{ stroke: '#f1f5f9' }} interval="preserveStartEnd" minTickGap={18} />
+                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} width={36} allowDecimals={false} />
+                    <Tooltip content={<StackTooltip />} cursor={{ fill: '#f8fafc' }} />
+                    {CH_KEYS.map((k, i) => <Bar key={k} dataKey={k} stackId="a" fill={CHANNELS[k].color} maxBarSize={28} radius={i === CH_KEYS.length - 1 ? [4, 4, 0, 0] : 0} isAnimationActive={false} />)}
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+            )}
+          </Panel>
 
-              {/* Total por dia — últimos 7 dias */}
-              {(() => {
-                const last7 = []
-                for (let i = 6; i >= 0; i--) {
-                  const d = new Date(); d.setDate(d.getDate() - i); d.setHours(0,0,0,0)
-                  const dateStr = fmtDate(d)
-                  const found = byDay.find(x => x.date === dateStr)
-                  last7.push({ date: dateStr, total: found?.total || 0 })
-                }
-                const maxT = Math.max(...last7.map(d => d.total), 1)
-                return (
-                  <div className="card p-5">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Calendar size={15} className="text-violet-500"/>
-                      <div>
-                        <p className="font-bold text-slate-700 text-sm">Total por dia</p>
-                        <p className="text-xs text-slate-400">Últimos 7 dias</p>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <Panel title="De onde vieram" subtitle="Site de origem de quem clicou">
+              <HBarList total={total} rows={Object.entries(A.byOrigin).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ key: k, label: ORIGINS[k].label, hint: ORIGINS[k].hint, value: v, color: ORIGINS[k].color }))} />
+            </Panel>
+            <Panel title="Onde no site clicaram" subtitle="Em qual página estava o botão">
+              <HBarList total={total} rows={Object.entries(A.byPage).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ key: k, label: PAGES[k].label, hint: PAGES[k].hint, value: v, color: '#8b5cf6' }))} />
+            </Panel>
+            <Panel title="Aparelho" subtitle="Pelo navegador de quem clicou">
+              <div className="flex flex-col gap-4">
+                {Object.entries(DEVICES).map(([k, d]) => {
+                  const v = A.byDevice[k] || 0
+                  return (
+                    <div key={k} className="flex items-center gap-3">
+                      <span className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center shrink-0"><d.icon size={17} className="text-slate-500" /></span>
+                      <div className="flex-1">
+                        <div className="flex items-baseline justify-between mb-1"><span className="text-[13px] font-medium text-slate-700">{d.label}</span><span className="text-lg font-black text-slate-800 tabular-nums">{pct(v, total)}%</span></div>
+                        <div className="h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full bg-sky-500" style={{ width: `${pct(v, total)}%` }} /></div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">{fmtInt(v)} cliques</p>
                       </div>
                     </div>
-                    <div className="flex flex-col gap-2.5">
-                      {last7.map(d => (
-                        <div key={d.date} className="flex items-center gap-2">
-                          <span className="text-[10px] font-semibold text-slate-500 w-10 shrink-0">{d.date}</span>
-                          <div className="flex-1 h-5 bg-slate-100 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full bg-violet-400 transition-all flex items-center justify-end pr-1.5"
-                              style={{ width: `${Math.round(d.total/maxT*100)}%`, minWidth: d.total > 0 ? '28px' : '0' }}>
-                              {d.total > 0 && <span className="text-[9px] font-black text-white">{d.total}</span>}
-                            </div>
-                          </div>
-                          {d.total === 0 && <span className="text-[10px] text-slate-300">0</span>}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <span className="text-[10px] text-slate-400">Total 7 dias</span>
-                      <span className="text-sm font-black text-violet-600">{last7.reduce((a,d)=>a+d.total,0)}</span>
-                    </div>
-                  </div>
-                )
-              })()}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ══ ABA: BLOG ══════════════════════════════════════════ */}
-      {activeTab === 'blog' && (
-        <BlogAnalyticsTab period={period} customFrom={customFrom} customTo={customTo} refreshKey={refreshKey} />
-      )}
-
-      {/* ══ ABA: PRODUTOS ═════════════════════════════════════ */}
-      {activeTab === 'produtos' && (
-        <div className="card overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3 flex-wrap">
-            <TrendingUp size={15} className="text-violet-500"/>
-            <span className="font-bold text-slate-700 text-sm">Top produtos por interesse</span>
-            <span className="text-xs text-slate-400">{byProduct.length} produtos</span>
-            <div className="ml-auto flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
-              <Search size={12} className="text-slate-400 shrink-0"/>
-              <input className="bg-transparent outline-none text-xs text-slate-700 w-40 placeholder:text-slate-400"
-                placeholder="Buscar produto..." value={searchProd} onChange={e => setSearchProd(e.target.value)}/>
-              {searchProd && <button onClick={() => setSearchProd('')} className="text-slate-400 hover:text-slate-600"><X size={11}/></button>}
-            </div>
+                  )
+                })}
+              </div>
+            </Panel>
           </div>
 
-          {/* Gráfico de barras horizontais top 10 */}
-          {byProduct.length > 0 && (
-            <div className="p-5 border-b border-slate-50">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Top 10 produtos</p>
-              <ResponsiveContainer width="100%" height={Math.min(byProduct.slice(0,10).length * 40, 400)}>
-                <BarChart data={byProduct.slice(0,10)} layout="vertical"
-                  margin={{ top:0, right:40, bottom:0, left:0 }} barSize={12}>
-                  <XAxis type="number" tick={{ fontSize:10, fill:'#94a3b8' }} tickLine={false} axisLine={false}/>
-                  <YAxis type="category" dataKey="name" width={180}
-                    tick={{ fontSize:10, fill:'#64748b', fontWeight:600 }} tickLine={false} axisLine={false}
-                    tickFormatter={v => v.length > 24 ? v.slice(0,24)+'…' : v}/>
-                  <Tooltip content={<CustomTooltip/>}/>
-                  <Bar dataKey="total" name="Total" radius={[0,6,6,0]}
-                    fill="#6366f1" fillOpacity={0.85}/>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+          <Panel title="Quando clicam" subtitle="Dia da semana × hora · quanto mais forte a cor, mais cliques">
+            <Heatmap grid={A.heat} />
+          </Panel>
 
-          {/* Tabela detalhada */}
-          <div className="max-h-96 overflow-y-auto divide-y divide-slate-50">
-            {byProduct
-              .filter(p => !searchProd || p.name.toLowerCase().includes(searchProd.toLowerCase()))
-              .map((prod, i) => (
-                <div key={prod.name} className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50/50">
-                  <span className="text-sm font-black text-slate-300 w-6 text-center shrink-0">{i+1}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-700 truncate">{prod.name}</p>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      {Object.entries(PLATFORM_CFG).map(([k,v]) => prod[k] > 0 && (
-                        <span key={k} className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                          style={{ background: v.color+'18', color: v.color }}>
-                          {v.emoji} {prod[k]}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-lg font-black text-slate-800">{prod.total}</p>
-                    <p className="text-[10px] text-slate-400">cliques</p>
-                  </div>
-                </div>
-              ))
-            }
-          </div>
-        </div>
-      )}
-
-      {/* ══ ABA: FEED AO VIVO ════════════════════════════════ */}
-      {activeTab === 'feed' && (
-        <div className="card overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3 flex-wrap">
-            <ShoppingBag size={15} className="text-violet-500"/>
-            <span className="font-bold text-slate-700 text-sm">Cliques recentes</span>
-            <span className="text-xs text-slate-400">{filtered.length} registros</span>
-            <div className="ml-auto flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
-              <Search size={12} className="text-slate-400 shrink-0"/>
-              <input className="bg-transparent outline-none text-xs text-slate-700 w-40 placeholder:text-slate-400"
-                placeholder="Buscar produto..." value={searchFeed} onChange={e => setSearchFeed(e.target.value)}/>
-              {searchFeed && <button onClick={() => setSearchFeed('')} className="text-slate-400 hover:text-slate-600"><X size={11}/></button>}
-            </div>
-          </div>
-          <div className="max-h-[600px] overflow-y-auto divide-y divide-slate-50">
-            {[...filtered]
-              .reverse()
-              .filter(c => !searchFeed || c.product_name.toLowerCase().includes(searchFeed.toLowerCase()))
-              .map(c => {
-                const plat = PLATFORM_CFG[c.page==='clo'?'clo':c.platform] || PLATFORM_CFG.whatsapp
-                const pageLabel = { home:'Home', plp:'Listagem', pdp:'Produto', clo:'Clô' }[c.page] || c.page
-                const dt = new Date(c.clicked_at)
-                return (
-                  <div key={c.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50/50">
-                    <div className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0"
-                      style={{ background: plat.color + '18' }}>
-                      {plat.emoji}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-700 truncate">{c.product_name}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        <span style={{ color: plat.color, fontWeight:700 }}>{plat.label}</span>
-                        {' · '}{pageLabel}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-xs font-semibold text-slate-600">
-                        {dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
-                      </p>
-                      <p className="text-[10px] text-slate-400">
-                        {dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}
-                      </p>
-                    </div>
-                  </div>
-                )
-              })
-            }
-          </div>
-        </div>
+          <Panel title="Produtos mais clicados" subtitle="Top 8 · veja todos na aba Produtos" right={<Legend />}>
+            <ProductRows products={A.products.slice(0, 8)} max={maxProd} onOpen={p => { setTab('products'); setOpenProd(p.name) }} />
+          </Panel>
+        </>
+      ) : tab === 'products' ? (
+        <Panel title={`${fmtInt(A.products.length)} produtos clicados`} subtitle="Clique num produto pra ver de onde vieram e em que página" right={
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+            <Search size={12} className="text-slate-400" />
+            <input className="bg-transparent outline-none text-xs text-slate-700 w-44 placeholder:text-slate-400" placeholder="Buscar produto..." value={search} onChange={e => setSearch(e.target.value)} />
+            {search && <button onClick={() => setSearch('')} className="text-slate-400"><X size={11} /></button>}
+          </div>}>
+          <ProductRows products={filteredProducts} max={maxProd} expandable openName={openProd} onOpen={p => setOpenProd(o => o === p.name ? null : p.name)} days={A.days} />
+          {!filteredProducts.length && <p className="text-sm text-slate-400 text-center py-8">Nenhum produto.</p>}
+        </Panel>
+      ) : (
+        <LiveFeed clicks={cur} />
       )}
     </div>
+  )
+}
+
+function ProductRows({ products, max, onOpen, expandable, openName, days }) {
+  return (
+    <div className="divide-y divide-slate-50 -mx-1">
+      {products.map((p, i) => {
+        const parts = CH_KEYS.map(k => ({ key: k, label: CHANNELS[k].short, value: p.ch[k] || 0, color: CHANNELS[k].color }))
+        const open = expandable && openName === p.name
+        return (
+          <div key={p.name}>
+            <button onClick={() => onOpen?.(p)} className="w-full text-left px-1 py-2.5 hover:bg-slate-50/70 rounded-lg grid grid-cols-[22px_minmax(0,1.5fr)_minmax(0,1.6fr)_84px_14px] gap-3 items-center">
+              <span className="text-xs font-bold text-slate-300">{i + 1}</span>
+              <span className="text-[13px] text-slate-700 font-medium truncate" title={p.name}>{p.name}</span>
+              <div style={{ width: `${Math.max(8, (p.total / max) * 100)}%` }}><SplitBar parts={parts} total={p.total} /></div>
+              <span className="text-right">
+                <span className="text-sm font-black text-slate-800 tabular-nums">{fmtInt(p.total)}</span>
+                <span className="block text-[10px] leading-tight"><Delta current={p.total} previous={p.prev} suffix="" /></span>
+              </span>
+              {expandable ? <ChevronDown size={14} className={`text-slate-300 transition-transform ${open ? 'rotate-180' : ''}`} /> : <span />}
+            </button>
+            {open && (
+              <div className="px-8 pb-4 pt-1 grid md:grid-cols-3 gap-5 bg-slate-50/50 rounded-xl mb-2">
+                <div>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase mb-2">Destino</p>
+                  <HBarList total={p.total} rows={parts.filter(x => x.value).map(x => ({ ...x, label: CHANNELS[x.key].label }))} />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase mb-2">De onde vieram</p>
+                  <HBarList total={p.total} rows={Object.entries(p.origins).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ key: k, label: ORIGINS[k].label, value: v, color: ORIGINS[k].color }))} />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase mb-2">Por dia</p>
+                  <div className="flex items-end h-20" style={{ gap: 2 }}>
+                    {(days || []).map(d => { const v = p.days[d] || 0; const m = Math.max(1, ...Object.values(p.days)); return <div key={d} className="flex-1 rounded-t-[2px] bg-violet-400" style={{ height: `${(v / m) * 100}%`, minHeight: v ? 2 : 0 }} title={`${fmtShort(d)}: ${v}`} /> })}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">Página: {Object.entries(p.pages).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${PAGES[k]?.label || k} ${v}`).join(' · ')}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function LiveFeed({ clicks }) {
+  const [q, setQ] = useState('')
+  const list = [...clicks].reverse().filter(c => !q || (c.product_name || '').toLowerCase().includes(q.toLowerCase())).slice(0, 300)
+  const ago = ts => {
+    const m = Math.round((Date.now() - new Date(ts).getTime()) / 60000)
+    if (m < 1) return 'agora'
+    if (m < 60) return `há ${m} min`
+    if (m < 1440) return `há ${Math.round(m / 60)} h`
+    return new Date(ts).toLocaleString('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  }
+  return (
+    <Panel title="Últimos cliques" subtitle="Atualiza sozinho a cada 30 segundos" right={
+      <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+        <Search size={12} className="text-slate-400" />
+        <input className="bg-transparent outline-none text-xs text-slate-700 w-44 placeholder:text-slate-400" placeholder="Buscar produto..." value={q} onChange={e => setQ(e.target.value)} />
+      </div>}>
+      <div className="divide-y divide-slate-50 -mx-1 max-h-[640px] overflow-y-auto">
+        {list.map(c => {
+          const ch = CHANNELS[channelOf(c)], o = ORIGINS[originOf(c.referrer)], dv = DEVICES[deviceOf(c.user_agent)]
+          return (
+            <div key={c.id} className="flex items-center gap-3 px-1 py-2.5">
+              <span className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: ch.color + '18' }}><ch.icon size={16} style={{ color: ch.color }} /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-slate-700 truncate">{c.page === 'clo' ? 'Falou com a Clô no WhatsApp' : c.product_name}</p>
+                <p className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold" style={{ color: ch.color }}>{ch.short}</span>·
+                  <span className="flex items-center gap-1"><LayoutGrid size={10} />{PAGES[c.page]?.label || c.page}</span>·
+                  <span className="flex items-center gap-1"><Compass size={10} />{o.label}</span>·
+                  <span className="flex items-center gap-1"><dv.icon size={10} />{dv.label}</span>
+                </p>
+              </div>
+              <span className="text-[11px] text-slate-500 shrink-0">{ago(c.clicked_at)}</span>
+            </div>
+          )
+        })}
+        {!list.length && <p className="text-sm text-slate-400 text-center py-10">Nenhum clique nesse período.</p>}
+      </div>
+    </Panel>
   )
 }
