@@ -6822,3 +6822,11 @@ pelo Raphael (`npm run dev`) — comportamento confirmado ok antes do commit.
 Raphael lançou um crédito e viu `UNAUTHORIZED_NO_AUTH_HEADER` no console. Esse 401 era um GET aberto direto na URL da `shopee-ads` (inofensivo). O erro real, achado no log: `ads.performance.error_date_too_old` — **a Shopee só devolve desempenho de Ads de até 6 meses atrás**, e a aba Créditos pedia desde o dia 1º do mês de 185 dias atrás (01/04). A chamada inteira falhava → gasto real e saldo real apareciam R$ 0 na conciliação. Corrigido em `useShopeeAds.fetchShopDaily`: início cortado em ~178 dias (vale também pros Relatórios, que tinham opção de 12 meses).
 
 Achado de passagem: `send-notification-email` estourando a **cota diária do Resend** (429 `daily_quota_exceeded`) desde ~15h28 — e-mails de notificação não estão saindo hoje.
+
+### 2026-10-08 — Cliques no Site (`/cliques`) refeita no padrão novo
+
+Pedido do Raphael: "cara nova, mais informações e mais claras". `ProductClicksPage.jsx` reescrita com os widgets do Dashboard (Panel, StatTile, Delta). Abas: Visão geral | Produtos | Blog (BlogAnalyticsTab, sem mudança) | Ao vivo (auto-atualiza a cada 30 s).
+- Comparação com o período anterior em todos os números; filtro por canal; períodos Hoje/Ontem/7/30/90/Período.
+- Novidades a partir de colunas que já existiam em `product_clicks` e não eram usadas: **origem** (referrer → Instagram, Google, ChatGPT/IA, direto, navegando no site…) e **aparelho** (user_agent → celular/computador/tablet).
+- Mapa de calor dia da semana × hora, resumo em frases (canal líder, origem externa principal, % celular, horário/dia mais forte, produto que mais cresceu), produtos com detalhe expansível.
+- Real (60 dias): ~30% dos cliques vêm do Instagram, ~10% do Google. Limite: só há cliques, não visitas — sem taxa de conversão (dá pra pedir ao Copilot gravar pageviews no site).
