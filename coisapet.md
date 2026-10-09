@@ -6830,3 +6830,12 @@ Pedido do Raphael: "cara nova, mais informações e mais claras". `ProductClicks
 - Novidades a partir de colunas que já existiam em `product_clicks` e não eram usadas: **origem** (referrer → Instagram, Google, ChatGPT/IA, direto, navegando no site…) e **aparelho** (user_agent → celular/computador/tablet).
 - Mapa de calor dia da semana × hora, resumo em frases (canal líder, origem externa principal, % celular, horário/dia mais forte, produto que mais cresceu), produtos com detalhe expansível.
 - Real (60 dias): ~30% dos cliques vêm do Instagram, ~10% do Google. Limite: só há cliques, não visitas — sem taxa de conversão (dá pra pedir ao Copilot gravar pageviews no site).
+
+### 2026-10-09 — Pedidos → aba "📦 Produtos"
+
+Pedido do Raphael: controle por produto — quantidades por dia (últimos 7), 30 dias e mês a mês, somado e por plataforma. `OrdersProductsTab.jsx` (aba nova em `OrdersPage`, visível pra todos com acesso a Pedidos — **só quantidade, sem R$**):
+- Tabela por produto: 7 colunas diárias (com tom de calor), 7 dias, variação × 7 dias antes, 30 dias, barra por plataforma (ML envio próprio / ML Full / Shopee / manual), 6 meses, média/dia, previsão 7d (média 14d × 7). Ordena clicando na coluna; busca; Excel (CSV).
+- Variações somam no produto-pai (`parent_product_id`; 393 de 589 produtos são variações) ou "Cada variação". 96% dos itens de pedido têm `product_id`; sem vínculo agrupa por SKU/título.
+- Destaques: em alta, em queda (7d × 7d antes), parados (vendiam e nada há 14+ dias). Detalhe do produto (gaveta): 30 dias, plataforma, dia da semana, mês a mês, variações.
+- Cancelados fora. ML só completo desde 17/08 (aviso na tela).
+- `products.stock_qty` está 0 em todos — se passarem a manter estoque, dá pra mostrar "acaba em X dias".
