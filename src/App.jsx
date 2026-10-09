@@ -70,6 +70,8 @@ import { ChecklistPage } from './modules/checklist/ChecklistPage'
 import { ReviewsPage } from './modules/reviews/ReviewsPage'
 import { MlAccountDashboardPage } from './modules/ml-insights/MlAccountDashboardPage'
 import { MlClaimsPage } from './modules/ml-insights/MlClaimsPage'
+import { MarketplaceOverviewPage } from './modules/marketplaces/MarketplaceOverviewPage'
+import { MarketplaceListingsPage } from './modules/marketplaces/MarketplaceListingsPage'
 import { ShopeeOverviewPage } from './modules/shopee-insights/ShopeeOverviewPage'
 import { ShopeeActiveListingsPage } from './modules/shopee-insights/ShopeeActiveListingsPage'
 import { ShopeeHealthPage } from './modules/shopee-insights/ShopeeHealthPage'
@@ -172,6 +174,8 @@ export default function App() {
                 <Route path="/avaliacoes"     element={<GuardedRoute moduleKey="avaliacoes"><ReviewsPage /></GuardedRoute>} />
 
                 {/* Otimização ML */}
+                <Route path="/marketplaces"          element={<GuardedRoute moduleKey="marketplaces"><MarketplaceOverviewPage /></GuardedRoute>} />
+                <Route path="/marketplaces/anuncios" element={<GuardedRoute moduleKey="marketplaces"><MarketplaceListingsPage /></GuardedRoute>} />
                 <Route path="/ml"                element={<GuardedRoute moduleKey="ml-insights"><MlAccountDashboardPage /></GuardedRoute>} />
                 <Route path="/shopee"            element={<GuardedRoute moduleKey="shopee-insights"><ShopeeOverviewPage /></GuardedRoute>} />
                 <Route path="/shopee/anuncios"    element={<GuardedRoute moduleKey="shopee-insights"><ShopeeActiveListingsPage /></GuardedRoute>} />
