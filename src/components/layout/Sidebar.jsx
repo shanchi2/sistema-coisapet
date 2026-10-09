@@ -8,7 +8,7 @@ import {
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
   PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
   HeartPulse, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film, Zap,
-  Briefcase, Crown, Bookmark, Component, RotateCcw, Headset, HandCoins, Tv,
+  Briefcase, Crown, Bookmark, Component, RotateCcw, Headset, HandCoins, Tv, ShieldAlert,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
@@ -29,6 +29,7 @@ const NAV_SECTIONS = [
       { to: '/ml/trafego',    moduleKey: 'ml-insights', icon: TrendingUp,            label: 'Tráfego & Conversão',   roles: ['admin','marketplace'] },
       { to: '/ml/saude',      moduleKey: 'ml-insights', icon: HeartPulse,            label: 'Saúde dos Anúncios',    roles: ['admin','marketplace'] },
       { to: '/ml/historico',  moduleKey: 'ml-historico', icon: History,              label: 'Histórico de Atualizações', roles: ['admin','marketplace','atendimento'] },
+      { to: '/ml/reclamacoes', moduleKey: 'ml-reclamacoes', icon: ShieldAlert,         label: 'Reclamações',           roles: ['admin','marketplace','atendimento'] },
       { to: '/ml/perguntas',  moduleKey: 'ml-insights', icon: MessageCircleQuestion, label: 'Perguntas & Reputação', roles: ['admin','marketplace'] },
       { to: '/ml/promocoes',  moduleKey: 'ml-insights', icon: Tag,                   label: 'Promoções',             roles: ['admin','marketplace'] },
       { to: '/ml/cupons',     moduleKey: 'ml-insights', icon: Ticket,                label: 'Cupons',                roles: ['admin','marketplace'] },

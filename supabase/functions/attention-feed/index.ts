@@ -96,23 +96,23 @@ async function build(sb: any) {
         items.push({ key: 'devolucoes-shopee', level: 'atencao', text: `${pl(open.length, 'devolução', 'devoluções')} da Shopee em aberto${due ? ` · próximo prazo ${ddmm(due)}` : ''}`, to: '/shopee/retornos', module: 'shopee-retornos' })
       }
     }),
-    // ── ML: reclamações e perguntas ────────────────────────────────
-    safe('ml', async () => {
+    // ── ML: reclamações (tabela ml_claims, só CONTRA a CoisaPet) ────
+    safe('ml-reclamacoes', async () => {
+      const { data } = await sb.from('ml_claims').select('stage, action_responsible, our_actions, due_date, return_info').eq('status', 'opened')
+      const open = data || []
+      if (!open.length) return
+      const mine = open.filter((c: any) => c.action_responsible === 'respondent' || (c.our_actions || []).some((a: any) => a.mandatory)).length
+      const dispute = open.filter((c: any) => c.stage === 'dispute').length
+      const back = open.filter((c: any) => c.return_info?.status === 'delivered').length
+      const parts = [dispute ? `${dispute} em mediação` : null, mine ? `${mine} aguardando a CoisaPet` : null, back ? `${back} devolução entregue pra conferir` : null].filter(Boolean)
+      items.push({ key: 'ml-reclamacoes', level: mine || back ? 'critico' : 'atencao', text: `${pl(open.length, 'reclamação aberta', 'reclamações abertas')} no ML${parts.length ? ` (${parts.join(' · ')})` : ''}`, to: '/ml/reclamacoes', module: 'ml-reclamacoes' })
+    }),
+    // ── ML: perguntas sem resposta ─────────────────────────────────
+    safe('ml-perguntas', async () => {
       const integ = await getMl(sb)
-      const [claims, questions] = await Promise.allSettled([
-        mlGet(`/post-purchase/v1/claims/search?status=opened&limit=50`, integ.access_token),
-        mlGet(`/questions/search?seller_id=${integ.ml_user_id}&status=UNANSWERED&limit=1&api_version=4`, integ.access_token),
-      ])
-      if (claims.status === 'fulfilled') {
-        const list = claims.value?.data ?? claims.value?.results ?? []
-        const total = claims.value?.paging?.total ?? list.length
-        const dispute = list.filter((c: any) => c.stage === 'dispute').length
-        if (total) items.push({ key: 'ml-reclamacoes', level: 'critico', text: `${pl(total, 'reclamação aberta', 'reclamações abertas')} no ML${dispute ? ` (${dispute} em mediação)` : ''}`, to: '/ml', module: 'ml-insights' })
-      } else errors.push(`ml-claims: ${claims.reason}`)
-      if (questions.status === 'fulfilled') {
-        const total = questions.value?.total ?? questions.value?.paging?.total ?? 0
-        if (total) items.push({ key: 'ml-perguntas', level: 'atencao', text: `${pl(total, 'pergunta sem resposta', 'perguntas sem resposta')} no ML`, to: '/ml/perguntas', module: 'ml-insights' })
-      } else errors.push(`ml-questions: ${questions.reason}`)
+      const q = await mlGet(`/questions/search?seller_id=${integ.ml_user_id}&status=UNANSWERED&limit=1&api_version=4`, integ.access_token)
+      const total = q?.total ?? q?.paging?.total ?? 0
+      if (total) items.push({ key: 'ml-perguntas', level: 'atencao', text: `${pl(total, 'pergunta sem resposta', 'perguntas sem resposta')} no ML`, to: '/ml/perguntas', module: 'ml-insights' })
     }),
     // ── Kanban operacional atrasado ────────────────────────────────
     safe('kanban', async () => {
