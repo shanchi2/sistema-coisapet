@@ -13,6 +13,7 @@ const MODULES = [
   { key: 'orcamentos',   label: 'Orçamentos',      section: 'Mkt & Atendimento',     icon: '🧾' },
   { key: 'reunioes',     label: 'Reuniões',        section: 'Principal',     icon: '🗓️' },
   { key: 'ml-insights',  label: 'Otimização ML',   section: 'Otimização ML', icon: '🩺' },
+  { key: 'ml-reclamacoes', label: 'Reclamações ML (sem valores)', section: 'Otimização ML', icon: '🛡️' },
   { key: 'ml-historico', label: 'Histórico de Atualizações (ML)', section: 'Otimização ML', icon: '📜' },
   { key: 'shopee-insights', label: 'Shopee',        section: 'Shopee',        icon: '🛍️' },
   { key: 'shopee-retornos', label: 'Retornos Shopee (sem valores)', section: 'Shopee', icon: '↩️' },

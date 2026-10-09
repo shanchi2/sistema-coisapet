@@ -69,6 +69,7 @@ import { TvConfigPage } from './modules/tv/TvConfigPage'
 import { ChecklistPage } from './modules/checklist/ChecklistPage'
 import { ReviewsPage } from './modules/reviews/ReviewsPage'
 import { MlAccountDashboardPage } from './modules/ml-insights/MlAccountDashboardPage'
+import { MlClaimsPage } from './modules/ml-insights/MlClaimsPage'
 import { ShopeeOverviewPage } from './modules/shopee-insights/ShopeeOverviewPage'
 import { ShopeeActiveListingsPage } from './modules/shopee-insights/ShopeeActiveListingsPage'
 import { ShopeeHealthPage } from './modules/shopee-insights/ShopeeHealthPage'
@@ -185,6 +186,7 @@ export default function App() {
                 <Route path="/ml/saude"          element={<GuardedRoute moduleKey="ml-insights"><MlHealthPage /></GuardedRoute>} />
                 <Route path="/ml/saude/:itemId"  element={<GuardedRoute moduleKey="ml-insights"><MlItemDetailPage /></GuardedRoute>} />
                 <Route path="/ml/historico"      element={<GuardedRoute moduleKey="ml-historico"><MlUpdatesHistoryPage /></GuardedRoute>} />
+                <Route path="/ml/reclamacoes"   element={<GuardedRoute moduleKey="ml-reclamacoes"><MlClaimsPage /></GuardedRoute>} />
                 <Route path="/ml/perguntas"      element={<GuardedRoute moduleKey="ml-insights"><MlQuestionsReputationPage /></GuardedRoute>} />
                 <Route path="/ml/promocoes"      element={<GuardedRoute moduleKey="ml-insights"><MlPromotionsPage /></GuardedRoute>} />
                 <Route path="/ml/publicidade"    element={<GuardedRoute moduleKey="ml-insights"><MlAdsPage /></GuardedRoute>} />
