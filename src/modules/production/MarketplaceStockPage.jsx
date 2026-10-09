@@ -410,7 +410,7 @@ export function MarketplaceStockPage() {
               <table className="w-full text-[13px] min-w-[980px]">
                 <thead>
                   <tr className="text-[10px] uppercase tracking-wide text-slate-400 text-left border-b border-slate-100">
-                    <th className="pl-5 pr-2 py-2 font-semibold">Anúncio</th>
+                    <th className="pl-5 pr-2 py-2 font-semibold w-[55%]">Anúncio</th>
                     <th className="px-2 font-semibold">Variação</th>
                     <th className="px-2 font-semibold text-right">Estoque</th>
                     <th className="px-2 font-semibold text-right">Vendeu 30d</th>
@@ -426,10 +426,10 @@ export function MarketplaceStockPage() {
                     return (
                       <tr key={r.id} className="border-b border-slate-100 group" style={{ background: alert ? P.soft : undefined }}>
                         <td className="pl-0 pr-2 py-2" style={{ boxShadow: `inset 5px 0 0 ${P.color}` }}>
-                          <div className="flex items-center gap-2.5 max-w-[440px] pl-5">
+                          <div className="flex items-center gap-2.5 pl-5">
                             {r.thumbnail ? <img src={r.thumbnail} alt="" className="w-10 h-10 rounded-lg object-cover bg-slate-100 shrink-0 ring-2" style={{ '--tw-ring-color': P.color }} loading="lazy" /> : <span className="w-10 h-10 rounded-lg bg-slate-100 shrink-0" />}
                             <div className="min-w-0">
-                              <p className="text-slate-700 font-medium truncate" title={r.title}>{r.title}</p>
+                              <p className="text-slate-700 font-medium leading-snug">{r.title}</p>
                               <p className="text-[10px] text-slate-400 flex items-center gap-1.5 flex-wrap mt-0.5">
                                 <PlatBadge p={r.platform} />
                                 {r.is_full && <span className="inline-flex items-center gap-0.5 font-bold text-[#2D3277]"><Warehouse size={9} />Full</span>}
