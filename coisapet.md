@@ -6857,3 +6857,8 @@ Pedido do Raphael: um lugar só com produtos sem estoque / estoque baixo nas dua
   - Linha 2: busca + botão **Filtros** (com contador) + **ordenar**. O painel Filtros tem chaves liga/desliga (ML Full, pausados, só o que vendeu), a lista de produtos ocultos e "Restaurar padrão".
   - Filtros ligados que mudam a lista aparecem como etiquetas com × abaixo da busca. Acabaram os links "só texto".
 - **v4 (09/10)** — nome do anúncio aparece inteiro (sem "..."), coluna Anúncio mais larga; quebra linha só se não couber.
+- **v5 (09/10) — alterar estoque pelas plataformas a partir da tela.** Raphael: "é possível controlar o estoque nas plataformas por este módulo?"
+  - Clica no número do estoque → digita → fica pendente (roxo, "antes → depois"). Barra no rodapé "N alterações pendentes · Descartar · Revisar e enviar" → modal de revisão → envia. Resultado por linha (✓ / erro com a mensagem da plataforma).
+  - Edge Function `marketplace-stock` ação `set_stock` (v2 publicada): ML `PUT /items/{id}` ou `/items/{id}/variations/{var}`; Shopee `product.update_stock` (location `BRZ`, model_id 0 sem variação). Pausado POR FALTA DE ESTOQUE no ML é reativado; pausado à mão não mexe. Full bloqueado (cadeado) — estoque é o do armazém.
+  - Log em `ml_item_updates` / `shopee_item_updates` (action `update_stock`, com `before`, `by` = nome do usuário, `source: estoque-marketplaces`). A foto `marketplace_stock` é atualizada na hora.
+  - Pendência/ideia: hoje qualquer um com acesso ao módulo Produção pode alterar (fica registrado quem). Se quiser travar pra diretoria, é rápido.
