@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Boxes, RefreshCw, Loader2, Search, X, ExternalLink, Warehouse, Download, Info, EyeOff, Eye, ChevronLeft, ChevronRight, Plus, PauseCircle, TrendingUp } from 'lucide-react'
+import { Boxes, RefreshCw, Loader2, Search, X, ExternalLink, Warehouse, Download, Info, EyeOff, Eye, ChevronLeft, ChevronRight, Plus, PauseCircle, TrendingUp, SlidersHorizontal, ArrowUpDown, RotateCcw } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Panel, fmtInt } from '../dashboard/widgets'
 
@@ -61,13 +61,29 @@ function PlatBadge({ p }) {
   return <span className={`inline-flex items-center px-1.5 py-px rounded text-[10px] font-black ${PLAT[p].chip}`}>{PLAT[p].short}</span>
 }
 
+// Chave liga/desliga com rótulo (painel de filtros)
+function Switch({ on, onChange, icon: Icon, label, hint }) {
+  return (
+    <button type="button" onClick={() => onChange(!on)} className="flex items-center gap-3 rounded-xl px-2 py-2 -mx-2 text-left hover:bg-slate-50">
+      <Icon size={15} className="text-slate-400 shrink-0" />
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-medium text-slate-700">{label}</span>
+        {hint && <span className="block text-[11px] text-slate-400">{hint}</span>}
+      </span>
+      <span className={`relative w-9 h-5 rounded-full shrink-0 transition ${on ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
+      </span>
+    </button>
+  )
+}
+
 // Resumo por plataforma: barra empilhada + números clicáveis
-function PlatformSummary({ p, counts, active, onPick, levels }) {
+function PlatformSummary({ p, counts, active, selected, onPick }) {
   const P = PLAT[p]
   const total = LV_KEYS.reduce((t, k) => t + counts[k], 0) || 1
   const alert = counts.zero + counts.crit + counts.low
   return (
-    <div className={`rounded-2xl border-2 p-4 transition ${active ? 'shadow-md' : 'opacity-90'}`} style={{ borderColor: P.color, background: P.soft }}>
+    <div className={`rounded-2xl border-2 p-4 transition ${active ? 'shadow-sm' : 'opacity-50 hover:opacity-80'}`} style={{ borderColor: P.color, background: P.soft }}>
       <div className="flex items-center justify-between gap-2 mb-3">
         <button onClick={() => onPick(p)} className="flex items-center gap-2 text-left">
           <span className="w-3 h-3 rounded" style={{ background: P.color }} />
@@ -81,7 +97,7 @@ function PlatformSummary({ p, counts, active, onPick, levels }) {
       <div className="grid grid-cols-4 gap-2">
         {LV_KEYS.map(k => (
           <button key={k} onClick={() => onPick(p, k)}
-            className={`rounded-xl bg-white px-2 py-2 text-left border transition hover:shadow-sm ${active && levels.length === 1 && levels[0] === k ? 'border-slate-800' : 'border-transparent'}`}>
+            className={`rounded-xl bg-white px-2 py-2 text-left border transition hover:shadow-sm ${selected === k ? 'border-slate-800' : 'border-transparent'}`}>
             <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 flex items-center gap-1"><span className={`w-1.5 h-1.5 rounded-full ${LEVELS[k].dot}`} />{LEVELS[k].label}</p>
             <p className={`text-xl font-black tabular-nums ${k === 'zero' ? 'text-rose-600' : k === 'crit' ? 'text-orange-600' : k === 'low' ? 'text-amber-600' : 'text-emerald-600'}`}>{fmtInt(counts[k])}</p>
           </button>
@@ -97,15 +113,16 @@ export function MarketplaceStockPage() {
   const [sync, setSync] = useState([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const [plats, setPlats] = useState(['ml', 'shopee'])
-  const [levels, setLevels] = useState(ALERT)
+  const [plat, setPlat] = useState('') // '' = as duas
+  const [level, setLevel] = useState('alert') // alert | zero | crit | low | ok | all
   const [search, setSearch] = useState('')
   const [showFull, setShowFull] = useState(true)
   const [showPaused, setShowPaused] = useState(true)
   const [onlySelling, setOnlySelling] = useState(false)
   const [sortBy, setSortBy] = useState('urgency')
   const [hidden, setHidden] = useState(readHidden)
-  const [hiddenOpen, setHiddenOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const filtersRef = useRef(null)
   const [newHidden, setNewHidden] = useState('')
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(25)
@@ -201,13 +218,13 @@ export function MarketplaceStockPage() {
       days: (a, b) => (a.level === 'zero' ? -1 : a.days ?? 9e9) - (b.level === 'zero' ? -1 : b.days ?? 9e9) || b.sold30 - a.sold30,
     }
     return base
-      .filter(r => plats.includes(r.platform))
-      .filter(r => levels.includes(r.level))
+      .filter(r => !plat || r.platform === plat)
+      .filter(r => level === 'all' || (level === 'alert' ? ALERT.includes(r.level) : r.level === level))
       .sort(sorters[sortBy])
-  }, [base, plats, levels, sortBy])
+  }, [base, plat, level, sortBy])
 
   // Volta pra página 1 quando muda filtro
-  useEffect(() => { setPage(0) }, [plats, levels, search, showFull, showPaused, onlySelling, sortBy, hidden, pageSize])
+  useEffect(() => { setPage(0) }, [plat, level, search, showFull, showPaused, onlySelling, sortBy, hidden, pageSize])
   const pages = Math.max(1, Math.ceil(visible.length / pageSize))
   const cur = Math.min(page, pages - 1)
   const pageRows = visible.slice(cur * pageSize, cur * pageSize + pageSize)
@@ -217,15 +234,32 @@ export function MarketplaceStockPage() {
     base.forEach(r => { c[r.platform][r.level]++ })
     return c
   }, [base])
-  const lvCount = k => plats.reduce((t, p) => t + counts[p][k], 0)
+  const lvCount = k => (plat ? [plat] : ['ml', 'shopee']).reduce((t, p) => t + counts[p][k], 0)
   const lastSync = sync.reduce((m, s) => (!m || (s.synced_at && s.synced_at < m) ? s.synced_at : m), null)
   const syncErr = sync.filter(s => s.error)
 
-  const toggle = (setter, k) => setter(arr => arr.includes(k) ? (arr.length > 1 ? arr.filter(x => x !== k) : arr) : [...arr, k])
   function pickPlatform(p, lv) {
-    setPlats([p])
-    setLevels(lv ? [lv] : ALERT)
+    setPlat(p)
+    setLevel(lv || 'alert')
   }
+  function resetFilters() {
+    setShowFull(true); setShowPaused(true); setOnlySelling(false)
+    setHidden({ list: DEFAULT_HIDDEN, on: true })
+  }
+  // Fecha o painel de filtros clicando fora
+  useEffect(() => {
+    if (!filtersOpen) return
+    const close = e => { if (filtersRef.current && !filtersRef.current.contains(e.target)) setFiltersOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [filtersOpen])
+  // Filtros "escondidos" no painel que estão mudando a lista — viram etiquetas visíveis
+  const activeFilters = [
+    hidden.on && hidden.list.length > 0 && { key: 'hidden', icon: EyeOff, label: `${hidden.list.length} produto${hidden.list.length === 1 ? '' : 's'} oculto${hidden.list.length === 1 ? '' : 's'} (${fmtInt(hiddenCount)} variações)`, clear: () => setHidden(h => ({ ...h, on: false })) },
+    !showFull && { key: 'full', icon: Warehouse, label: 'Sem ML Full', clear: () => setShowFull(true) },
+    !showPaused && { key: 'paused', icon: PauseCircle, label: 'Sem pausados', clear: () => setShowPaused(true) },
+    onlySelling && { key: 'selling', icon: TrendingUp, label: 'Só o que vendeu em 30d', clear: () => setOnlySelling(false) },
+  ].filter(Boolean)
   function hideProduct(title) {
     const t = (title || '').trim()
     if (!t || hidden.list.some(h => norm(h) === norm(t))) return
@@ -243,7 +277,6 @@ export function MarketplaceStockPage() {
     a.download = `estoque-marketplaces.csv`; a.click()
   }
 
-  const chip = (on, extra = '') => `inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition ${on ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'} ${extra}`
 
   return (
     <div className="flex flex-col gap-5 animate-fade-in">
@@ -272,80 +305,104 @@ export function MarketplaceStockPage() {
         <>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {['ml', 'shopee'].map(p => (
-              <PlatformSummary key={p} p={p} counts={counts[p]} active={plats.includes(p)} levels={levels} onPick={pickPlatform} />
+              <PlatformSummary key={p} p={p} counts={counts[p]} active={!plat || plat === p} selected={plat === p ? level : null} onPick={pickPlatform} />
             ))}
           </div>
 
-          <div className="card !p-4 flex flex-col gap-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 w-20">Plataforma</span>
-              {['ml', 'shopee'].map(p => {
-                const on = plats.includes(p)
-                return (
-                  <button key={p} onClick={() => toggle(setPlats, p)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border-2 transition"
-                    style={on ? { background: PLAT[p].color, borderColor: PLAT[p].color, color: p === 'ml' ? '#2D3277' : '#fff' } : { background: '#fff', borderColor: PLAT[p].color, color: PLAT[p].ink }}>
-                    {PLAT[p].label}
-                  </button>
-                )
-              })}
-              {plats.length < 2 && <button onClick={() => setPlats(['ml', 'shopee'])} className="text-xs text-slate-400 hover:text-slate-600 underline">as duas</button>}
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 w-20">Situação</span>
-              {LV_KEYS.map(k => (
-                <button key={k} onClick={() => toggle(setLevels, k)} className={chip(levels.includes(k))} title={LEVELS[k].hint}>
-                  <span className={`w-2 h-2 rounded-full ${LEVELS[k].dot}`} />{LEVELS[k].label}
-                  <span className={`tabular-nums ${levels.includes(k) ? 'text-white/70' : 'text-slate-400'}`}>{fmtInt(lvCount(k))}</span>
-                </button>
-              ))}
-              <button onClick={() => setLevels(ALERT)} className="text-xs text-slate-400 hover:text-slate-600 underline">só alertas</button>
-              <button onClick={() => setLevels(LV_KEYS)} className="text-xs text-slate-400 hover:text-slate-600 underline">todos</button>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 w-20">Mostrar</span>
-              <button onClick={() => setShowFull(v => !v)} className={chip(showFull)}><Warehouse size={12} />ML Full</button>
-              <button onClick={() => setShowPaused(v => !v)} className={chip(showPaused)}><PauseCircle size={12} />Pausados</button>
-              <button onClick={() => setOnlySelling(v => !v)} className={chip(onlySelling)}><TrendingUp size={12} />Só o que vendeu em 30d</button>
-              <button onClick={() => setHidden(h => ({ ...h, on: !h.on }))} className={chip(hidden.on, hidden.on ? '!bg-violet-600 !border-violet-600' : '')}
-                title={hidden.list.join('\n')}>
-                {hidden.on ? <EyeOff size={12} /> : <Eye size={12} />}{hidden.on ? `Ocultando ${hidden.list.length} produto${hidden.list.length === 1 ? '' : 's'}` : 'Ocultos aparecendo'}
-                <span className={hidden.on ? 'text-white/70' : 'text-slate-400'}>({fmtInt(hiddenCount)} variações)</span>
-              </button>
-              <button onClick={() => setHiddenOpen(o => !o)} className="text-xs text-slate-400 hover:text-slate-600 underline">{hiddenOpen ? 'fechar lista' : 'editar lista'}</button>
-            </div>
-            {hiddenOpen && (
-              <div className="rounded-xl bg-violet-50/60 border border-violet-100 p-3 flex flex-col gap-2">
-                <p className="text-xs text-violet-800">Produtos ocultos (some todo anúncio cujo título contém o texto, nas duas plataformas). Fica salvo neste computador. Também dá pra ocultar direto na linha da tabela pelo ícone <EyeOff size={11} className="inline" />.</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {hidden.list.map(t => (
-                    <span key={t} className="inline-flex items-center gap-1 bg-white border border-violet-200 rounded-full pl-2.5 pr-1 py-0.5 text-xs text-slate-700">
-                      {t}<button onClick={() => unhide(t)} className="p-0.5 rounded-full hover:bg-violet-100 text-violet-500" title="Mostrar de novo"><X size={11} /></button>
-                    </span>
+          <div className="card !p-0 overflow-visible">
+            <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-b border-slate-100">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Situação</span>
+                <div className="flex bg-slate-100 rounded-xl p-1 gap-0.5">
+                  {[['alert', 'Precisam de atenção', null, lvCount('zero') + lvCount('crit') + lvCount('low')], ...LV_KEYS.map(k => [k, LEVELS[k].label, LEVELS[k].dot, lvCount(k)]), ['all', 'Todos', null, LV_KEYS.reduce((t, k) => t + lvCount(k), 0)]].map(([k, l, dot, n]) => (
+                    <button key={k} onClick={() => setLevel(k)} title={LEVELS[k]?.hint}
+                      className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${level === k ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                      {dot && <span className={`w-2 h-2 rounded-full ${dot}`} />}{l}
+                      <span className={`tabular-nums text-[11px] ${level === k ? 'text-slate-400' : 'text-slate-400/80'}`}>{fmtInt(n)}</span>
+                    </button>
                   ))}
-                  {!hidden.list.length && <span className="text-xs text-slate-400">Nenhum produto oculto.</span>}
                 </div>
-                <form onSubmit={e => { e.preventDefault(); hideProduct(newHidden); setNewHidden('') }} className="flex items-center gap-2">
-                  <input value={newHidden} onChange={e => setNewHidden(e.target.value)} placeholder="Parte do título, ex.: Toca De Gato" className="input text-sm py-1.5 flex-1 max-w-sm" />
-                  <button className="btn-secondary py-1.5 text-xs" disabled={!newHidden.trim()}><Plus size={12} /> Ocultar</button>
-                </form>
               </div>
-            )}
-            <div className="flex items-center gap-2 flex-wrap border-t border-slate-100 pt-3">
-              <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 flex-1 min-w-[220px] max-w-md">
-                <Search size={13} className="text-slate-400" />
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Plataforma</span>
+                <div className="flex bg-slate-100 rounded-xl p-1 gap-0.5">
+                  {[['', 'Todas'], ['ml', 'Mercado Livre'], ['shopee', 'Shopee']].map(([k, l]) => (
+                    <button key={k} onClick={() => setPlat(k)}
+                      className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${plat === k ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                      {k && <span className="w-2.5 h-2.5 rounded-sm" style={{ background: PLAT[k].color }} />}{l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap px-4 py-3">
+              <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 h-9 flex-1 min-w-[240px] focus-within:border-slate-400 bg-white">
+                <Search size={14} className="text-slate-400" />
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar anúncio, cor, SKU ou MLB..." className="bg-transparent outline-none text-sm w-full placeholder:text-slate-400" />
-                {search && <button onClick={() => setSearch('')} className="text-slate-400"><X size={12} /></button>}
+                {search && <button onClick={() => setSearch('')} className="text-slate-400 hover:text-slate-600" title="Limpar busca"><X size={13} /></button>}
               </div>
-              <label className="ml-auto flex items-center gap-2 text-xs text-slate-500">Ordenar por
-                <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="input py-1 text-xs w-auto">
-                  <option value="urgency">Urgência (zerado primeiro)</option>
+
+              <div className="relative" ref={filtersRef}>
+                <button onClick={() => setFiltersOpen(o => !o)}
+                  className={`h-9 px-3.5 rounded-xl border text-sm font-semibold flex items-center gap-2 transition ${filtersOpen ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}>
+                  <SlidersHorizontal size={14} /> Filtros
+                  {activeFilters.length > 0 && <span className={`min-w-[20px] h-5 px-1 rounded-full text-[11px] font-bold flex items-center justify-center ${filtersOpen ? 'bg-white text-slate-800' : 'bg-slate-800 text-white'}`}>{activeFilters.length}</span>}
+                </button>
+                {filtersOpen && (
+                  <div className="absolute right-0 top-11 z-30 w-[380px] max-w-[calc(100vw-2rem)] bg-white rounded-2xl border border-slate-200 shadow-xl">
+                    <div className="p-4 flex flex-col gap-1">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">Mostrar na lista</p>
+                      <Switch on={showFull} onChange={setShowFull} icon={Warehouse} label="Anúncios ML Full" hint="estoque que está no armazém do ML" />
+                      <Switch on={showPaused} onChange={setShowPaused} icon={PauseCircle} label="Anúncios pausados" hint="inclusive pausados por falta de estoque" />
+                      <Switch on={onlySelling} onChange={setOnlySelling} icon={TrendingUp} label="Só o que vendeu nos últimos 30 dias" hint="esconde o que está parado" />
+                    </div>
+                    <div className="p-4 border-t border-slate-100 flex flex-col gap-2">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Produtos ocultos</p>
+                      <Switch on={hidden.on} onChange={v => setHidden(h => ({ ...h, on: v }))} icon={EyeOff} label="Esconder os produtos desta lista" hint={`${fmtInt(hiddenCount)} variações · fica salvo neste computador`} />
+                      <div className="flex flex-col gap-1.5">
+                        {hidden.list.map(t => (
+                          <div key={t} className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-lg pl-3 pr-1 py-1">
+                            <span className="text-xs text-slate-700 flex-1 truncate" title={t}>{t}</span>
+                            <button onClick={() => unhide(t)} className="p-1 rounded-md text-slate-400 hover:bg-white hover:text-rose-500" title="Tirar da lista"><X size={13} /></button>
+                          </div>
+                        ))}
+                        {!hidden.list.length && <p className="text-xs text-slate-400">Nenhum produto oculto.</p>}
+                      </div>
+                      <form onSubmit={e => { e.preventDefault(); hideProduct(newHidden); setNewHidden('') }} className="flex items-center gap-2">
+                        <input value={newHidden} onChange={e => setNewHidden(e.target.value)} placeholder="Parte do título, ex.: Toca De Gato" className="input text-sm h-9 py-0 flex-1" />
+                        <button className="btn-secondary h-9 py-0 text-xs disabled:opacity-40" disabled={!newHidden.trim()}><Plus size={13} /> Adicionar</button>
+                      </form>
+                    </div>
+                    <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between gap-2 bg-slate-50/60 rounded-b-2xl">
+                      <button onClick={resetFilters} className="btn-secondary h-8 py-0 text-xs"><RotateCcw size={12} /> Restaurar padrão</button>
+                      <button onClick={() => setFiltersOpen(false)} className="btn-primary h-8 py-0 text-xs">Pronto</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 h-9 border border-slate-200 rounded-xl pl-3 pr-1 bg-white">
+                <ArrowUpDown size={14} className="text-slate-400" />
+                <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-transparent outline-none text-sm font-semibold text-slate-700 h-full pr-1 cursor-pointer">
+                  <option value="urgency">Mais urgente primeiro</option>
                   <option value="days">Acaba antes</option>
                   <option value="sold">Mais vendidos</option>
                   <option value="stock">Menor estoque</option>
                 </select>
-              </label>
+              </div>
             </div>
+
+            {activeFilters.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap px-4 pb-3 -mt-1">
+                {activeFilters.map(f => (
+                  <span key={f.key} className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-1 rounded-full bg-violet-50 border border-violet-200 text-xs font-medium text-violet-800">
+                    <f.icon size={12} />{f.label}
+                    <button onClick={f.clear} className="p-0.5 rounded-full hover:bg-violet-100" title="Desligar este filtro"><X size={12} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           <Panel title={`${fmtInt(visible.length)} variações`} subtitle="Faixa amarela = Mercado Livre · faixa laranja = Shopee">
