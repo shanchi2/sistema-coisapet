@@ -6839,3 +6839,11 @@ Pedido do Raphael: controle por produto — quantidades por dia (últimos 7), 30
 - Destaques: em alta, em queda (7d × 7d antes), parados (vendiam e nada há 14+ dias). Detalhe do produto (gaveta): 30 dias, plataforma, dia da semana, mês a mês, variações.
 - Cancelados fora. ML só completo desde 17/08 (aviso na tela).
 - `products.stock_qty` está 0 em todos — se passarem a manter estoque, dá pra mostrar "acaba em X dias".
+
+### 2026-10-09 (2ª parte) — Estoque nos Marketplaces (`/estoque-marketplaces`)
+
+Pedido do Raphael: um lugar só com produtos sem estoque / estoque baixo nas duas plataformas. Não existia (as telas de Estoque Full só mostram o armazém de cada plataforma).
+- Edge Function `marketplace-stock` (cron `marketplace-stock-sync`, de hora em hora no minuto 37, + botão): lê **cada variação** de todos os anúncios ativos/pausados — ML (`/items` com `variations`, Full por `shipping.logistic_type`) e Shopee (`get_item_base_info` + `get_model_list`). Foto em `marketplace_stock` / `marketplace_stock_sync` (`fase102`, aplicada).
+- 1ª leitura real: ML 236 anúncios/599 variações (92 zeradas, 87 delas ainda "ativas"), Shopee 141/553 (33 zeradas, 34 com 1–5 un.).
+- Tela (Produção, moduleKey `producao`, só quantidade): cards Sem estoque / Crítico (<7 dias ou ≤2) / Baixo (<15 dias ou ≤5) / OK, "acaba em X dias" = estoque ÷ média 30d. Vendas casadas por SKU; sem SKU (comum no ML) por título + variação normalizada; "?" quando não acha.
+- Raphael (09/10): "não precisa me perguntar se pode subir, SEMPRE PODE" — registrado no CLAUDE.md.

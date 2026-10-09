@@ -53,6 +53,11 @@ merge na `main` (que dispara o deploy do Hostinger via GitHub Actions),
 aplica migrations no Supabase e publica as Edge Functions. Não parar pra
 pedir confirmação de deploy — só avisar o que subiu.
 
+**Reforçado em 09/10: "NÃO PRECISA ME PERGUNTAR SE PODE SUBIR, SEMPRE PODE!"**
+— vale também pra telas novas e mudanças visuais: não mandar print pedindo
+aprovação antes de subir. Subir direto e, se for útil, mandar o print junto
+com o aviso do que subiu.
+
 ## Notas de sessão
 
 - **2026-08-24** — Repositório git inicializado localmente e criado este
