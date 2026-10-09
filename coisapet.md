@@ -6856,3 +6856,4 @@ Pedido do Raphael: um lugar só com produtos sem estoque / estoque baixo nas dua
   - Linha 1: **Situação** (seletor único: Precisam de atenção / Sem estoque / Crítico / Baixo / OK / Todos, com contagem) e **Plataforma** (Todas / ML / Shopee com a cor).
   - Linha 2: busca + botão **Filtros** (com contador) + **ordenar**. O painel Filtros tem chaves liga/desliga (ML Full, pausados, só o que vendeu), a lista de produtos ocultos e "Restaurar padrão".
   - Filtros ligados que mudam a lista aparecem como etiquetas com × abaixo da busca. Acabaram os links "só texto".
+- **v4 (09/10)** — nome do anúncio aparece inteiro (sem "..."), coluna Anúncio mais larga; quebra linha só se não couber.
