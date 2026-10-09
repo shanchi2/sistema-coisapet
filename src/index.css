@@ -295,3 +295,20 @@
     to   { opacity: 1; transform: translateY(0);   }
   }
 }
+
+/* Barra de atenção do rodapé (09/10) — texto passando devagar; para no hover */
+@keyframes attention-ticker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.attention-ticker-track {
+  animation: attention-ticker var(--ticker-duration, 60s) linear infinite;
+}
+.attention-ticker:hover .attention-ticker-track,
+.attention-ticker:focus-within .attention-ticker-track {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .attention-ticker-track { animation: none; }
+  .attention-ticker-viewport { overflow-x: auto; }
+}
