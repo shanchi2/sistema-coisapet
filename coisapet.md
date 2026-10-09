@@ -6852,3 +6852,7 @@ Pedido do Raphael: um lugar só com produtos sem estoque / estoque baixo nas dua
   - Filtros em chips: plataforma (combináveis), situação (multi-seleção com contagem; padrão = só alertas), ML Full / Pausados / "Só o que vendeu em 30d", ordenação (urgência, acaba antes, mais vendidos, menor estoque).
   - **Produtos ocultos**: lista salva no navegador (`localStorage` `coisapet_estoque_mkt_ocultos`), já vem com "Casa Cama Toca De Gato Nicho Mdf Com Almofada E Pés Luxo" (40 variações no ML) e o filtro ativo. Bate por "título contém". Dá pra ocultar direto na linha (ícone de olho) e editar a lista.
   - Paginação 25/50/100 por página.
+- **v3 (09/10)** — Raphael: "a parte dos botões e filtros ficou bem bagunçada, botão que é só escrito". Reorganizado:
+  - Linha 1: **Situação** (seletor único: Precisam de atenção / Sem estoque / Crítico / Baixo / OK / Todos, com contagem) e **Plataforma** (Todas / ML / Shopee com a cor).
+  - Linha 2: busca + botão **Filtros** (com contador) + **ordenar**. O painel Filtros tem chaves liga/desliga (ML Full, pausados, só o que vendeu), a lista de produtos ocultos e "Restaurar padrão".
+  - Filtros ligados que mudam a lista aparecem como etiquetas com × abaixo da busca. Acabaram os links "só texto".
