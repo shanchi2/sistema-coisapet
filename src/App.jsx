@@ -64,6 +64,7 @@ import { BioLinksPage } from './modules/links/BioLinksPage'
 import { BlogBannersPage } from './modules/blog/BlogBannersPage'
 import { HonorariosPage } from './modules/financial/honorarios/HonorariosPage'
 import { TvPage } from './modules/tv/TvPage'
+import { MarketplaceStockPage } from './modules/production/MarketplaceStockPage'
 import { TvConfigPage } from './modules/tv/TvConfigPage'
 import { ChecklistPage } from './modules/checklist/ChecklistPage'
 import { ReviewsPage } from './modules/reviews/ReviewsPage'
@@ -249,6 +250,7 @@ export default function App() {
                 <Route path="/producao-horistas" element={<GuardedRoute moduleKey="producao-horistas"><ProductionEntriesPage /></GuardedRoute>} />
                 <Route path="/bio-links" element={<GuardedRoute moduleKey="bio-links"><BioLinksPage /></GuardedRoute>} />
                 <Route path="/honorarios" element={<GuardedRoute moduleKey="honorarios"><HonorariosPage /></GuardedRoute>} />
+                <Route path="/estoque-marketplaces" element={<GuardedRoute moduleKey="producao"><MarketplaceStockPage /></GuardedRoute>} />
                 <Route path="/tv-producao" element={<GuardedRoute moduleKey="tv-producao"><TvConfigPage /></GuardedRoute>} />
                 <Route path="/blog-banners" element={<GuardedRoute moduleKey="blog-banners"><BlogBannersPage /></GuardedRoute>} />
 
