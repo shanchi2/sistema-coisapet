@@ -8,9 +8,16 @@
 //     variations; Full = shipping.logistic_type 'fulfillment'.
 //   - Shopee: product.get_item_list (NORMAL + UNLIST) → get_item_base_info;
 //     quem tem variação → product.get_model_list (estoque por modelo).
+//
+// Ação `set_stock` (09/10): grava estoque NOVO nas plataformas a partir da
+// tela (o usuário edita, revisa e confirma — nunca automático). ML:
+// PUT /items/{id} ou /items/{id}/variations/{var}; Shopee:
+// product.update_stock (model_id 0 quando não tem variação). Full não é
+// editável (estoque é o do armazém do ML). Log em ml_item_updates /
+// shopee_item_updates com quem alterou e o valor anterior.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { adminClient, getValidIntegration as getMl } from '../_shared/mercadolivre.ts'
-import { getValidIntegration as getShopee, shopeeFetch } from '../_shared/shopee.ts'
+import { getValidIntegration as getShopee, shopeeFetch, shopeeWrite } from '../_shared/shopee.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +31,58 @@ async function mlGet(path: string, token: string) {
   const res = await fetch(`${ML}${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } })
   if (!res.ok) throw new Error(`ML ${res.status} ${path}: ${(await res.text()).slice(0, 200)}`)
   return res.json()
+}
+
+async function mlPut(path: string, token: string, body: unknown) {
+  const res = await fetch(`${ML}${path}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  if (!res.ok) {
+    const t = await res.text()
+    let msg = t.slice(0, 300)
+    try { const j = JSON.parse(t); msg = [j.message, ...(j.cause || []).map((c: any) => c.message)].filter(Boolean).join(' · ') || msg } catch { /* texto puro */ }
+    throw new Error(`ML ${res.status}: ${msg}`)
+  }
+  return res.json()
+}
+
+// ── Gravar estoque (ação confirmada pelo usuário na tela) ────────────
+async function setStock(db: any, changes: any[], by: string | null) {
+  const out: any[] = []
+  let ml: any = null, sh: any = null
+  for (const c of (changes || []).slice(0, 100)) {
+    const key = { platform: c.platform, item_id: String(c.item_id), variation_id: String(c.variation_id ?? '') }
+    try {
+      const qty = Math.floor(Number(c.stock))
+      if (!Number.isFinite(qty) || qty < 0 || qty > 99999) throw new Error('Quantidade inválida')
+      const { data: row } = await db.from('marketplace_stock').select('*').match(key).maybeSingle()
+      if (!row) throw new Error('Variação não encontrada — clique em "Atualizar agora" e tente de novo')
+      if (row.is_full) throw new Error('Anúncio no Full: o estoque é o do armazém do ML (mande pelo envio Full)')
+      let reactivated = false
+      if (row.platform === 'ml') {
+        ml ??= await getMl(db)
+        if (row.variation_id) await mlPut(`/items/${row.item_id}/variations/${row.variation_id}`, ml.access_token, { available_quantity: qty })
+        else await mlPut(`/items/${row.item_id}`, ml.access_token, { available_quantity: qty })
+        // Pausado POR FALTA DE ESTOQUE volta a ficar ativo (pausado à mão não mexe)
+        if (qty > 0 && row.status === 'paused' && String(row.sub_status || '').includes('out_of_stock')) {
+          try { await mlPut(`/items/${row.item_id}`, ml.access_token, { status: 'active' }); reactivated = true } catch { /* o ML costuma reativar sozinho */ }
+        }
+        try { await db.from('ml_item_updates').insert({ item_id: row.item_id, action: 'update_stock', detail: { variation_id: row.variation_id || null, variation: row.variation, before: row.stock, available_quantity: qty, by, source: 'estoque-marketplaces' } }) } catch { /* só log */ }
+      } else if (row.platform === 'shopee') {
+        if (row.variation === '(variações não lidas)') throw new Error('Variações desse anúncio não foram lidas — atualize antes')
+        sh ??= await getShopee(db)
+        const r = await shopeeWrite('/api/v2/product/update_stock', sh, {
+          item_id: Number(row.item_id), stock_list: [{ model_id: Number(row.variation_id || 0), seller_stock: [{ location_id: 'BRZ', stock: qty }] }],
+        })
+        const fail = r?.response?.failure_list?.[0]
+        if (fail) throw new Error(`Shopee: ${fail.failed_reason || JSON.stringify(fail)}`)
+        try { await db.from('shopee_item_updates').insert({ item_id: row.item_id, action: 'update_stock', detail: { model_id: row.variation_id || null, variation: row.variation, before: row.stock, stock: qty, by, source: 'estoque-marketplaces' } }) } catch { /* só log */ }
+      } else throw new Error('Plataforma desconhecida')
+      await db.from('marketplace_stock').update({ stock: qty, ...(reactivated ? { status: 'active', sub_status: null } : {}) }).eq('id', row.id)
+      out.push({ ...key, ok: true, stock: qty, before: row.stock, reactivated })
+    } catch (e) {
+      out.push({ ...key, ok: false, error: String((e as Error)?.message ?? e).slice(0, 400) })
+    }
+  }
+  return out
 }
 
 // ── Mercado Livre ────────────────────────────────────────────────────
@@ -122,6 +181,10 @@ serve(async (req) => {
   let body: any = {}
   try { body = await req.json() } catch { /* cron */ }
   const db = adminClient()
+  if (body.action === 'set_stock') {
+    const results = await setStock(db, body.changes, body.by ?? null)
+    return json({ ok: true, results })
+  }
   const out: any = {}
   for (const [platform, fn, get] of [['ml', mlRows, getMl], ['shopee', shopeeRows, getShopee]] as const) {
     if (body.platform && body.platform !== platform) continue

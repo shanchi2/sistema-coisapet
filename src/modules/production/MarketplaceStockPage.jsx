@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Boxes, RefreshCw, Loader2, Search, X, ExternalLink, Warehouse, Download, Info, EyeOff, Eye, ChevronLeft, ChevronRight, Plus, PauseCircle, TrendingUp, SlidersHorizontal, ArrowUpDown, RotateCcw } from 'lucide-react'
+import { Boxes, RefreshCw, Loader2, Search, X, ExternalLink, Warehouse, Download, Info, EyeOff, Eye, ChevronLeft, ChevronRight, Plus, PauseCircle, TrendingUp, SlidersHorizontal, ArrowUpDown, RotateCcw, Pencil, Lock, CheckCircle2, XCircle, Send, ArrowRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Panel, fmtInt } from '../dashboard/widgets'
+import { Modal } from '../../components/ui/Modal'
+import { useAuth } from '../../contexts/AuthContext'
 
 // Estoque nos Marketplaces (09/10, fase102) — sem estoque / estoque baixo
 // do ML e da Shopee num lugar só, por VARIAÇÃO. Dados da foto
@@ -32,6 +34,9 @@ const ALERT = ['zero', 'crit', 'low']
 const DEFAULT_HIDDEN = ['Casa Cama Toca De Gato Nicho Mdf Com Almofada E Pés Luxo']
 const HIDDEN_KEY = 'coisapet_estoque_mkt_ocultos'
 const PAGE_SIZES = [25, 50, 100]
+// Chave estável da variação (o id da linha muda a cada leitura da foto)
+const rkey = r => `${r.platform}|${r.item_id}|${r.variation_id || ''}`
+const canEdit = r => !r.is_full && r.variation !== '(variações não lidas)'
 
 const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
 // "COR: AMADEIRADO - SALA DUPLA" / "Amadeirado / Sala dupla" / "Completo,25g" → "amadeirado|sala dupla"
@@ -126,6 +131,14 @@ export function MarketplaceStockPage() {
   const [newHidden, setNewHidden] = useState('')
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(25)
+  // Edição de estoque (09/10): { [rkey]: nova quantidade } — só vai pras
+  // plataformas depois de revisar e confirmar no modal
+  const { user } = useAuth()
+  const [edits, setEdits] = useState({})
+  const [editing, setEditing] = useState(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(null) // { list, results } depois de enviar
 
   useEffect(() => { try { localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden)) } catch { /* sem storage */ } }, [hidden])
 
@@ -235,6 +248,70 @@ export function MarketplaceStockPage() {
     return c
   }, [base])
   const lvCount = k => (plat ? [plat] : ['ml', 'shopee']).reduce((t, p) => t + counts[p][k], 0)
+  const pending = useMemo(() => rows.filter(r => edits[rkey(r)] != null), [rows, edits])
+  function commitEdit(r, raw) {
+    setEditing(null)
+    const k = rkey(r)
+    const v = String(raw).trim() === '' ? null : Math.max(0, Math.floor(Number(raw)))
+    setEdits(e => {
+      const n = { ...e }
+      if (v == null || !Number.isFinite(v) || v === (r.stock ?? 0)) delete n[k]
+      else n[k] = v
+      return n
+    })
+  }
+  async function sendStock() {
+    const list = pending.map(r => ({ ...r, newStock: edits[rkey(r)] }))
+    setSending(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('marketplace-stock', {
+        body: { action: 'set_stock', by: user?.name || user?.email || null, changes: list.map(r => ({ platform: r.platform, item_id: r.item_id, variation_id: r.variation_id || '', stock: r.newStock })) },
+      })
+      if (error) throw error
+      const results = {}
+      for (const x of data?.results || []) results[`${x.platform}|${x.item_id}|${x.variation_id || ''}`] = x
+      const ok = Object.values(results).filter(x => x.ok).length
+      const bad = list.length - ok
+      setSent({ list, results })
+      setEdits(e => { const n = { ...e }; Object.entries(results).forEach(([k, x]) => { if (x.ok) delete n[k] }); return n })
+      if (bad) toast.error(`${ok} enviada${ok === 1 ? '' : 's'}, ${bad} com erro — veja no detalhe`)
+      else toast.success(`Estoque atualizado em ${ok} variação${ok === 1 ? '' : 'ões'}!`)
+      await load()
+    } catch (e) { toast.error('Erro ao enviar: ' + e.message) } finally { setSending(false) }
+  }
+  function closeReview() { if (sending) return; setReviewOpen(false); setSent(null) }
+
+  function stockCell(r) {
+    const k = rkey(r), tone = r.level === 'zero' ? 'text-rose-600' : r.level === 'crit' ? 'text-orange-600' : r.level === 'low' ? 'text-amber-600' : 'text-slate-800'
+    if (editing === k) {
+      return (
+        <input type="number" min="0" autoFocus defaultValue={edits[k] ?? r.stock ?? 0}
+          onFocus={e => e.target.select()}
+          onBlur={e => commitEdit(r, e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditing(null) }}
+          className="w-20 h-9 rounded-lg border-2 border-violet-500 bg-white text-right font-black text-base tabular-nums px-2 outline-none" />
+      )
+    }
+    if (!canEdit(r)) {
+      return <span className={`inline-flex items-center gap-1.5 font-black text-base tabular-nums ${tone}`} title={r.is_full ? 'Full: o estoque é o do armazém do ML — não dá pra mudar por aqui' : 'Atualize a leitura antes de editar'}>
+        <Lock size={11} className="text-slate-300" />{r.stock ?? '—'}
+      </span>
+    }
+    if (edits[k] != null) {
+      return (
+        <button onClick={() => setEditing(k)} className="inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg bg-violet-100 border border-violet-300 tabular-nums" title="Alteração pendente — clique pra mudar">
+          <s className="text-slate-400 text-xs">{r.stock ?? 0}</s><ArrowRight size={11} className="text-violet-400" /><span className="font-black text-base text-violet-700">{edits[k]}</span>
+        </button>
+      )
+    }
+    return (
+      <button onClick={() => setEditing(k)} title="Clique pra alterar o estoque na plataforma"
+        className={`inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border border-transparent hover:border-slate-300 hover:bg-white font-black text-base tabular-nums ${tone}`}>
+        <Pencil size={11} className="text-slate-300 opacity-0 group-hover:opacity-100 transition" />{r.stock ?? '—'}
+      </button>
+    )
+  }
+
   const lastSync = sync.reduce((m, s) => (!m || (s.synced_at && s.synced_at < m) ? s.synced_at : m), null)
   const syncErr = sync.filter(s => s.error)
 
@@ -440,7 +517,7 @@ export function MarketplaceStockPage() {
                           </div>
                         </td>
                         <td className="px-2 text-slate-600">{r.variation || <span className="text-slate-300">—</span>}</td>
-                        <td className={`px-2 text-right font-black tabular-nums text-base ${r.level === 'zero' ? 'text-rose-600' : r.level === 'crit' ? 'text-orange-600' : r.level === 'low' ? 'text-amber-600' : 'text-slate-800'}`}>{r.stock ?? '—'}</td>
+                        <td className="px-2 text-right">{stockCell(r)}</td>
                         <td className="px-2 text-right tabular-nums text-slate-600">{r.matched ? r.sold30 : <span className="text-slate-300" title="Não achei vendas desse anúncio pelo SKU nem pelo título">?</span>}</td>
                         <td className="px-2 text-right tabular-nums text-slate-700">{r.level === 'zero' ? <span className="text-rose-600 font-semibold">acabou</span> : r.days != null ? (r.days < 1 ? '< 1 dia' : `${Math.floor(r.days)} dias`) : <span className="text-slate-300">—</span>}</td>
                         <td className="px-2"><span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-full border ${LEVELS[r.level].tone}`}><span className={`w-1.5 h-1.5 rounded-full ${LEVELS[r.level].dot}`} />{LEVELS[r.level].label}</span></td>
@@ -473,10 +550,56 @@ export function MarketplaceStockPage() {
                 </div>
               </div>
             )}
-            <p className="text-[11px] text-slate-400 mt-3 flex items-start gap-1.5"><Info size={12} className="shrink-0 mt-px" />"Acaba em" = estoque ÷ média de vendas dos últimos 30 dias daquela variação. "?" = não achei as vendas do anúncio (sem SKU e título diferente do pedido) — nesse caso a situação usa só a quantidade. ML Full: o estoque é o que está no armazém do ML.</p>
+            <p className="text-[11px] text-slate-400 mt-3 flex items-start gap-1.5"><Info size={12} className="shrink-0 mt-px" /><span>"Acaba em" = estoque ÷ média de vendas dos últimos 30 dias daquela variação. "?" = não achei as vendas do anúncio (sem SKU e título diferente do pedido) — nesse caso a situação usa só a quantidade. ML Full: o estoque é o que está no armazém do ML (não dá pra editar). <strong className="font-semibold">Pra mudar o estoque, clique no número</strong>, digite a quantidade nova e depois "Revisar e enviar".</span></p>
           </Panel>
         </>
       )}
+
+      {pending.length > 0 && !reviewOpen && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-slate-900 text-white rounded-2xl shadow-2xl pl-5 pr-2 py-2 max-w-[calc(100vw-2rem)]">
+          <Pencil size={15} className="text-violet-300 shrink-0" />
+          <span className="text-sm font-semibold whitespace-nowrap">{pending.length} alteraç{pending.length === 1 ? 'ão' : 'ões'} de estoque pendente{pending.length === 1 ? '' : 's'}</span>
+          <button onClick={() => setEdits({})} className="h-9 px-3.5 rounded-xl text-sm font-semibold text-slate-300 hover:bg-white/10">Descartar</button>
+          <button onClick={() => { setSent(null); setReviewOpen(true) }} className="h-9 px-4 rounded-xl text-sm font-bold bg-violet-500 hover:bg-violet-400 flex items-center gap-2"><Send size={14} /> Revisar e enviar</button>
+        </div>
+      )}
+
+      <Modal open={reviewOpen} onClose={closeReview} size="xl"
+        title={sent ? 'Resultado do envio' : 'Enviar estoque pras plataformas'}
+        subtitle={sent ? 'O que deu certo já está valendo no anúncio.' : 'Confira antes: isso muda o estoque REAL dos anúncios no Mercado Livre e na Shopee.'}
+        footer={sent ? (
+          <div className="flex justify-end"><button onClick={closeReview} className="btn-primary">Fechar</button></div>
+        ) : (
+          <div className="flex justify-end gap-2">
+            <button onClick={closeReview} disabled={sending} className="btn-secondary">Voltar e ajustar</button>
+            <button onClick={sendStock} disabled={sending || !pending.length} className="btn-primary disabled:opacity-60">
+              {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {sending ? 'Enviando…' : `Enviar ${pending.length} alteraç${pending.length === 1 ? 'ão' : 'ões'}`}
+            </button>
+          </div>
+        )}>
+        <div className="flex flex-col gap-2">
+          {(sent ? sent.list : pending.map(r => ({ ...r, newStock: edits[rkey(r)] }))).map(r => {
+            const res = sent?.results[rkey(r)]
+            return (
+              <div key={rkey(r)} className="flex items-center gap-3 rounded-xl border px-3 py-2.5" style={{ borderColor: PLAT[r.platform].color, background: PLAT[r.platform].soft }}>
+                {r.thumbnail ? <img src={r.thumbnail} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" /> : <span className="w-10 h-10 rounded-lg bg-white shrink-0" />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-700 leading-snug">{r.title}</p>
+                  <p className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5"><PlatBadge p={r.platform} />{r.variation || 'sem variação'}{r.status !== 'active' && r.sub_status === 'out_of_stock' && (r.newStock > 0) && <span className="text-emerald-700 font-semibold">· volta a ficar ativo</span>}</p>
+                  {res && !res.ok && <p className="text-xs text-rose-600 mt-1">{res.error}</p>}
+                </div>
+                <div className="flex items-center gap-2 tabular-nums shrink-0">
+                  <span className="text-slate-400 font-semibold">{r.stock ?? 0}</span>
+                  <ArrowRight size={14} className="text-slate-400" />
+                  <span className="text-lg font-black text-slate-800">{r.newStock}</span>
+                </div>
+                {res && (res.ok ? <CheckCircle2 size={20} className="text-emerald-500 shrink-0" /> : <XCircle size={20} className="text-rose-500 shrink-0" />)}
+              </div>
+            )
+          })}
+          {!sent && <p className="text-xs text-slate-500 mt-1 flex items-start gap-1.5"><Info size={12} className="shrink-0 mt-px" />Fica registrado quem alterou ({user?.name || 'você'}) e o valor anterior. Anúncio pausado por falta de estoque volta a ficar ativo quando recebe estoque.</p>}
+        </div>
+      </Modal>
     </div>
   )
 }
