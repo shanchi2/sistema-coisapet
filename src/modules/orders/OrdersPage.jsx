@@ -15,6 +15,7 @@ import { CutoffSettingsModal } from './CutoffSettingsModal'
 import { MarketplaceRefreshBar } from './MarketplaceRefreshBar'
 import toast from 'react-hot-toast'
 import { OrdersReportsTab } from './OrdersReportsTab'
+import { OrdersProductsTab } from './OrdersProductsTab'
 import { useProducts }  from '../products/hooks/useProducts'
 import { EmptyState }   from '../../components/ui/EmptyState'
 import { useAuth }      from '../../contexts/AuthContext'
@@ -679,6 +680,7 @@ export function OrdersPage() {
         <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl w-fit">
           {[
             ['orders','📋 Pedidos'],
+            ['products','📦 Produtos'],
             ...(canSeeValues ? [['reports','📊 Relatórios']] : []),
             ['history','🕐 Histórico de importações'],
           ].map(([v, label]) => (
@@ -698,7 +700,9 @@ export function OrdersPage() {
       </div>
       <CutoffSettingsModal open={cutoffOpen} onClose={() => setCutoffOpen(false)} />
 
-      {view === 'reports' && canSeeValues ? (
+      {view === 'products' ? (
+        <OrdersProductsTab />
+      ) : view === 'reports' && canSeeValues ? (
         <OrdersReportsTab />
       ) : view === 'orders' ? (
         <>
