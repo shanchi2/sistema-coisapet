@@ -7,6 +7,7 @@ import { ChatWidget } from '../chat/ChatWidget'
 import { MLSaleToast } from '../notifications/MLSaleToast'
 import { ShopeeSaleToast } from '../notifications/ShopeeSaleToast'
 import { CancelToast } from '../notifications/CancelToast'
+import { AttentionTicker } from './AttentionTicker'
 import { ChatLayoutProvider, useChatLayout, DOCKED_WIDTH } from '../../contexts/ChatLayoutContext'
 
 const PAGE_TITLES = {
@@ -56,7 +57,7 @@ function LayoutInner() {
       <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen(o => !o)} />
 
       <div
-        className="flex-1 flex flex-col min-w-0 overflow-hidden"
+        className="relative flex-1 flex flex-col min-w-0 overflow-hidden"
         style={{
           marginRight: mode === 'docked' ? DOCKED_WIDTH : 0,
           transition: 'margin-right .2s ease',
@@ -69,6 +70,7 @@ function LayoutInner() {
         >
           <Outlet />
         </main>
+        <AttentionTicker />
       </div>
 
       {/* Botão hamburguer flutuante — só aparece no mobile quando sidebar fechada */}
