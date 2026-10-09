@@ -12,6 +12,7 @@ const MODULES = [
   { key: 'pedidos',      label: 'Pedidos',         section: 'Principal',     icon: '🛒' },
   { key: 'orcamentos',   label: 'Orçamentos',      section: 'Mkt & Atendimento',     icon: '🧾' },
   { key: 'reunioes',     label: 'Reuniões',        section: 'Principal',     icon: '🗓️' },
+  { key: 'marketplaces', label: 'Marketplaces (ML + Shopee unificado)', section: 'Marketplaces', icon: '🛒' },
   { key: 'ml-insights',  label: 'Otimização ML',   section: 'Otimização ML', icon: '🩺' },
   { key: 'ml-reclamacoes', label: 'Reclamações ML (sem valores)', section: 'Otimização ML', icon: '🛡️' },
   { key: 'ml-historico', label: 'Histórico de Atualizações (ML)', section: 'Otimização ML', icon: '📜' },

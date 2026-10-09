@@ -22,6 +22,15 @@ const DASHBOARD_ITEM = { to: '/dashboard', moduleKey: 'dashboard', icon: LayoutD
 
 const NAV_SECTIONS = [
   {
+    // 09/10 — Fase 1 da unificação ML + Shopee (filtro de plataforma em cada
+    // tela). As seções de cada plataforma continuam abaixo até validarmos.
+    label: 'Marketplaces',
+    items: [
+      { to: '/marketplaces',          moduleKey: 'marketplaces', icon: LayoutDashboard, label: 'Visão Geral', roles: ['admin','marketplace'] },
+      { to: '/marketplaces/anuncios', moduleKey: 'marketplaces', icon: Store,           label: 'Anúncios',    roles: ['admin','marketplace'] },
+    ],
+  },
+  {
     label: 'Otimização ML',
     items: [
       { to: '/ml',            moduleKey: 'ml-insights', icon: LayoutDashboard,       label: 'Visão Geral',           roles: ['admin','marketplace'] },
