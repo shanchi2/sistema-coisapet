@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   ShieldAlert, RefreshCw, Loader2, ExternalLink, Clock, User, MessageSquare, ChevronDown, ChevronUp,
@@ -33,19 +34,19 @@ function dueLabel(iso) {
   return { text: `vence em ${d} dia${d > 1 ? 's' : ''} (${fmtDate(iso)})`, tone: d <= 2 ? 'text-orange-600' : 'text-slate-600' }
 }
 
-const TYPE = {
+export const TYPE = {
   mediations:      { label: 'Reclamação', icon: ShieldAlert },
   returns:         { label: 'Devolução', icon: Undo2 },
   cancel_purchase: { label: 'Cancelamento antes da entrega', icon: XCircle },
   fulfillment:     { label: 'Full', icon: Package },
 }
-const STAGE = { claim: 'Aberta com a CoisaPet', dispute: 'Em mediação — o ML decide', none: '' }
-const WHO = {
+export const STAGE = { claim: 'Aberta com a CoisaPet', dispute: 'Em mediação — o ML decide', none: '' }
+export const WHO = {
   complainant: { label: 'Aguardando o comprador', tone: 'bg-slate-100 text-slate-600' },
   respondent:  { label: 'Aguardando VOCÊ', tone: 'bg-rose-100 text-rose-700' },
   mediator:    { label: 'Aguardando o ML', tone: 'bg-sky-100 text-sky-700' },
 }
-const REASON = {
+export const REASON = {
   repentant_buyer: 'Se arrependeu da compra',
   broken_item: 'Chegou quebrado / com defeito',
   broken_or_in_bad_condition: 'Chegou danificado',
@@ -60,8 +61,8 @@ const REASON = {
   estimated_delivery_out_of_time: 'Entrega fora do prazo',
   change_receiver_address: 'Quis mudar o endereço',
 }
-const reasonLabel = c => REASON[c.reason_name] || c.reason_text || c.reason_name || c.reason_id || 'Motivo não informado'
-const RETURN = {
+export const reasonLabel = c => REASON[c.reason_name] || c.reason_text || c.reason_name || c.reason_id || 'Motivo não informado'
+export const RETURN = {
   pending: 'Devolução aberta — aguardando etiqueta',
   label_generated: 'Etiqueta gerada — comprador ainda não postou',
   ready_to_ship: 'Pronta pra postar',
@@ -74,11 +75,11 @@ const RETURN = {
   failed: 'Falha na devolução',
 }
 const ROLE = { mediator: 'Mercado Livre', complainant: 'Comprador', respondent: 'CoisaPet' }
-const isCancel = c => c.type === 'cancel_purchase'
-const wonByUs = c => { const b = c.resolution?.benefited || []; return b.includes('respondent') && !b.includes('complainant') }
-const covered = c => !!c.resolution?.applied_coverage
+export const isCancel = c => c.type === 'cancel_purchase'
+export const wonByUs = c => { const b = c.resolution?.benefited || []; return b.includes('respondent') && !b.includes('complainant') }
+export const covered = c => !!c.resolution?.applied_coverage
 const canMessage = c => (c.our_actions || []).some(a => a.action === 'send_message_to_complainant')
-const mustAct = c => c.action_responsible === 'respondent' || (c.our_actions || []).some(a => a.mandatory)
+export const mustAct = c => c.action_responsible === 'respondent' || (c.our_actions || []).some(a => a.mandatory)
 // Mensagens do ML vêm com **negrito** e às vezes HTML (<strong>, <a>): limpa
 // as tags, mostra o negrito e — pra quem não é diretor — esconde valores R$
 function MessageText({ text, showValues }) {
@@ -109,8 +110,8 @@ function ProductLine({ c, big }) {
   )
 }
 
-function OpenClaimCard({ c, onNote, onMessage, showValues }) {
-  const [open, setOpen] = useState(mustAct(c))
+function OpenClaimCard({ c, onNote, onMessage, showValues, focus }) {
+  const [open, setOpen] = useState(mustAct(c) || focus)
   const [note, setNote] = useState(c.internal_note || '')
   const T = TYPE[c.type] || { label: c.type, icon: ShieldAlert }
   const who = WHO[c.action_responsible]
@@ -118,7 +119,7 @@ function OpenClaimCard({ c, onNote, onMessage, showValues }) {
   const msgs = c.messages || []
   const urgent = mustAct(c)
   return (
-    <div className={`rounded-2xl border bg-white overflow-hidden ${urgent ? 'border-rose-300 ring-2 ring-rose-100' : 'border-slate-200'}`}>
+    <div id={`claim-${c.id}`} className={`rounded-2xl border bg-white overflow-hidden scroll-mt-24 ${focus ? 'ring-4 ring-amber-200 border-amber-300' : urgent ? 'border-rose-300 ring-2 ring-rose-100' : 'border-slate-200'}`}>
       <div className="p-4 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4">
         <div className="min-w-0 flex flex-col gap-3">
           <div className="flex items-center gap-2 flex-wrap">
@@ -194,6 +195,8 @@ function OpenClaimCard({ c, onNote, onMessage, showValues }) {
 
 export function MlClaimsPage() {
   const { user } = useAuth()
+  const [params] = useSearchParams()
+  const focusId = params.get('id')
   const [claims, setClaims] = useState(null)
   const [sync, setSync] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -213,6 +216,7 @@ export function MlClaimsPage() {
     setSync(s.data || null)
   }, [])
   useEffect(() => { load() }, [load])
+  useEffect(() => { if (focusId && claims) setTimeout(() => document.getElementById(`claim-${focusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200) }, [focusId, claims])
 
   async function refresh() {
     setBusy(true)
@@ -308,7 +312,7 @@ export function MlClaimsPage() {
           {tab === 'open' && (
             <div className="flex flex-col gap-3">
               {!open.length && <div className="card py-16 text-center text-slate-400"><CheckCircle2 size={28} className="mx-auto mb-2 text-emerald-400" />Nenhuma reclamação aberta. 🎉</div>}
-              {open.map(c => <OpenClaimCard key={c.id} c={c} showValues={user?.role === 'admin'} onNote={saveNote} onMessage={x => { setMsgFor(x); setMsgText('') }} />)}
+              {open.map(c => <OpenClaimCard key={c.id} c={c} focus={String(c.id) === focusId} showValues={user?.role === 'admin'} onNote={saveNote} onMessage={x => { setMsgFor(x); setMsgText('') }} />)}
             </div>
           )}
 

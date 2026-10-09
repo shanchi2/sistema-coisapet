@@ -72,6 +72,7 @@ import { MlAccountDashboardPage } from './modules/ml-insights/MlAccountDashboard
 import { MlClaimsPage } from './modules/ml-insights/MlClaimsPage'
 import { MarketplaceOverviewPage } from './modules/marketplaces/MarketplaceOverviewPage'
 import { MarketplaceListingsPage } from './modules/marketplaces/MarketplaceListingsPage'
+import { MarketplacePostSalePage } from './modules/marketplaces/MarketplacePostSalePage'
 import { ShopeeOverviewPage } from './modules/shopee-insights/ShopeeOverviewPage'
 import { ShopeeActiveListingsPage } from './modules/shopee-insights/ShopeeActiveListingsPage'
 import { ShopeeHealthPage } from './modules/shopee-insights/ShopeeHealthPage'
@@ -175,6 +176,7 @@ export default function App() {
 
                 {/* Otimização ML */}
                 <Route path="/marketplaces"          element={<GuardedRoute moduleKey="marketplaces"><MarketplaceOverviewPage /></GuardedRoute>} />
+                <Route path="/marketplaces/pos-venda" element={<GuardedRoute moduleKey="marketplaces-posvenda"><MarketplacePostSalePage /></GuardedRoute>} />
                 <Route path="/marketplaces/anuncios" element={<GuardedRoute moduleKey="marketplaces"><MarketplaceListingsPage /></GuardedRoute>} />
                 <Route path="/ml"                element={<GuardedRoute moduleKey="ml-insights"><MlAccountDashboardPage /></GuardedRoute>} />
                 <Route path="/shopee"            element={<GuardedRoute moduleKey="shopee-insights"><ShopeeOverviewPage /></GuardedRoute>} />

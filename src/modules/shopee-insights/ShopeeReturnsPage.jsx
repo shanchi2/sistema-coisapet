@@ -13,19 +13,19 @@ import { useAuth } from '../../contexts/AuthContext'
 const SHOPEE_ORANGE = '#EE4D2D'
 
 // ── Tradução dos códigos da Shopee ──────────────────────────────────────
-const STATUS_LABELS = {
+export const STATUS_LABELS = {
   REQUESTED: 'Solicitada — aguardando sua resposta', PROCESSING: 'Em andamento (devolução)', JUDGING: 'Em análise pela Shopee',
   SELLER_DISPUTE: 'Em disputa', ACCEPTED: 'Reembolso aceito', REFUND_PAID: 'Reembolso pago', CLOSED: 'Encerrada',
   CANCELLED: 'Cancelada pelo comprador',
 }
-const REASON_LABELS = {
+export const REASON_LABELS = {
   CHANGE_MIND: 'Mudei de ideia', NOT_RECEIPT: 'Não recebi o produto', WRONG_ITEM: 'Produto errado',
   ITEM_MISSING: 'Faltou item', DAMAGED_OTHERS: 'Produto danificado', BROKEN_PRODUCTS: 'Chegou quebrado',
   PHYSICAL_DMG: 'Dano físico', FUNCTIONAL_DMG: 'Defeito de funcionamento', ITEM_NOT_FIT: 'Não serviu / não compatível',
   EXPECTATION_FAILED: 'Diferente do esperado', EXPIRED_PRODUCT: 'Produto vencido', DIFFERENT_DESCRIPTION: 'Diferente do anúncio',
   WRONG_DAMAGED_PRODUCT: 'Errado/danificado', MISSING_PARTS: 'Faltando peças',
 }
-const LOGISTICS_LABELS = {
+export const LOGISTICS_LABELS = {
   LOGISTICS_NOT_STARTED: 'Não iniciada', LOGISTICS_PENDING_ARRANGE: 'Aguardando agendamento', LOGISTICS_READY: 'Pronta pra coleta',
   LOGISTICS_REQUEST_CREATED: 'Etiqueta gerada — aguardando comprador postar', LOGISTICS_PICKUP_DONE: 'Comprador postou — a caminho',
   LOGISTICS_PICKUP_RETRY: 'Nova tentativa de coleta', LOGISTICS_DELIVERY_DONE: 'Entregue pra você', LOGISTICS_DELIVERY_FAILED: 'Falha na entrega',
@@ -91,14 +91,14 @@ function ago(iso) {
 }
 
 // ── Regras de negócio ───────────────────────────────────────────────────
-const itemBack = r => r.reverse_logistics_status === 'LOGISTICS_DELIVERY_DONE'
+export const itemBack = r => r.reverse_logistics_status === 'LOGISTICS_DELIVERY_DONE'
 // Devolução em que o produto volta fisicamente pra cá (dá pra conferir):
 // "devolução e reembolso" (return_solution 0), ou já tem rastreio/chegou.
 const expectsPhysical = r => itemBack(r) || ((r.return_solution === 0 || !!r.tracking_number) && !['CANCELLED', 'REJECTED'].includes(r.status))
 const receiptPending = (r, rec) => expectsPhysical(r) && (!rec || rec.status === 'aguardando')
 
 // Qual prazo importa agora e se ele é NOSSO (precisa agir) ou só informativo
-function deadlineOf(r) {
+export function deadlineOf(r) {
   if (r.status === 'REQUESTED') return { at: r.due_date, label: 'Responder a solicitação (aceitar ou disputar)', ours: true }
   if (r.status === 'PROCESSING' && itemBack(r)) return { at: r.return_seller_due_date, label: 'Conferir o produto devolvido e decidir (aceitar ou disputar)', ours: true }
   if (r.status === 'PROCESSING') return { at: r.return_ship_due_date, label: 'Comprador devolver o produto', ours: false }
@@ -106,7 +106,7 @@ function deadlineOf(r) {
 }
 
 // Resultado financeiro de cada caso
-function outcomeOf(r) {
+export function outcomeOf(r) {
   if (['REQUESTED', 'PROCESSING', 'JUDGING', 'SELLER_DISPUTE'].includes(r.status)) return 'open'
   if (r.status === 'CANCELLED') return 'kept'
   if (['ACCEPTED', 'REFUND_PAID'].includes(r.status)) return Number(r.compensation_amount) > 0 ? 'compensated' : 'refunded'
@@ -866,7 +866,8 @@ export function ShopeeReturnsPage() {
   const [period, setPeriod] = useState(90)
   const [filter, setFilter] = useState('todas')
   const [q, setQ]           = useState('')
-  const [openSn, setOpenSn] = useState(null)
+  // ?sn=… abre direto a devolução (link vindo do Pós-venda unificado)
+  const [openSn, setOpenSn] = useState(() => new URLSearchParams(window.location.search).get('sn'))
 
   const inPeriod = useMemo(() => {
     if (!period) return rows
