@@ -6847,3 +6847,8 @@ Pedido do Raphael: um lugar só com produtos sem estoque / estoque baixo nas dua
 - 1ª leitura real: ML 236 anúncios/599 variações (92 zeradas, 87 delas ainda "ativas"), Shopee 141/553 (33 zeradas, 34 com 1–5 un.).
 - Tela (Produção, moduleKey `producao`, só quantidade): cards Sem estoque / Crítico (<7 dias ou ≤2) / Baixo (<15 dias ou ≤5) / OK, "acaba em X dias" = estoque ÷ média 30d. Vendas casadas por SKU; sem SKU (comum no ML) por título + variação normalizada; "?" quando não acha.
 - Raphael (09/10): "não precisa me perguntar se pode subir, SEMPRE PODE" — registrado no CLAUDE.md.
+- **v2 (09/10, mesmo dia)** — pedido do Raphael: visual melhor, filtros melhores, ocultar a Casa Cama Toca de Gato, paginação.
+  - **ML em amarelo, Shopee em laranja** em toda a tela: resumo por plataforma (barra empilhada + números clicáveis), faixa colorida e fundo suave na linha, selo da plataforma.
+  - Filtros em chips: plataforma (combináveis), situação (multi-seleção com contagem; padrão = só alertas), ML Full / Pausados / "Só o que vendeu em 30d", ordenação (urgência, acaba antes, mais vendidos, menor estoque).
+  - **Produtos ocultos**: lista salva no navegador (`localStorage` `coisapet_estoque_mkt_ocultos`), já vem com "Casa Cama Toca De Gato Nicho Mdf Com Almofada E Pés Luxo" (40 variações no ML) e o filtro ativo. Bate por "título contém". Dá pra ocultar direto na linha (ícone de olho) e editar a lista.
+  - Paginação 25/50/100 por página.

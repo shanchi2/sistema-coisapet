@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Boxes, RefreshCw, Loader2, Search, X, ExternalLink, AlertOctagon, AlertTriangle, PackageCheck, Warehouse, Download, Info } from 'lucide-react'
+import { Boxes, RefreshCw, Loader2, Search, X, ExternalLink, Warehouse, Download, Info, EyeOff, Eye, ChevronLeft, ChevronRight, Plus, PauseCircle, TrendingUp } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { StatTile, Panel, fmtInt } from '../dashboard/widgets'
+import { Panel, fmtInt } from '../dashboard/widgets'
 
 // Estoque nos Marketplaces (09/10, fase102) — sem estoque / estoque baixo
 // do ML e da Shopee num lugar só, por VARIAÇÃO. Dados da foto
@@ -11,17 +11,28 @@ import { StatTile, Panel, fmtInt } from '../dashboard/widgets'
 // pra estimar "acaba em X dias". Cruzamento: SKU quando existe; senão
 // título + variação normalizada (muito anúncio do ML não tem SKU).
 // Só quantidade — sem R$.
+//
+// 09/10 (v2, pedido do Raphael): ML em AMARELO e Shopee em LARANJA em toda a
+// tela (faixa da linha, selo, resumo por plataforma); filtros em chips
+// combináveis; lista "Produtos ocultos" (salva no navegador) que já vem
+// escondendo a Casa Cama Toca de Gato; paginação.
 
 const PLAT = {
-  ml:     { label: 'Mercado Livre', short: 'ML', color: '#2D3277' },
-  shopee: { label: 'Shopee', short: 'Shopee', color: '#EE4D2D' },
+  ml:     { label: 'Mercado Livre', short: 'ML', color: '#F5C400', soft: '#FFF9D6', ink: '#7A5F00', chip: 'bg-[#FFE600] text-[#2D3277]' },
+  shopee: { label: 'Shopee', short: 'Shopee', color: '#EE4D2D', soft: '#FFEDE8', ink: '#B5321A', chip: 'bg-[#EE4D2D] text-white' },
 }
 const LEVELS = {
-  zero:  { label: 'Sem estoque', tone: 'bg-rose-50 text-rose-700 border-rose-200', dot: 'bg-rose-500' },
-  crit:  { label: 'Crítico', tone: 'bg-orange-50 text-orange-700 border-orange-200', dot: 'bg-orange-500' },
-  low:   { label: 'Baixo', tone: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-400' },
-  ok:    { label: 'OK', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  zero:  { label: 'Sem estoque', hint: 'zerado agora', tone: 'bg-rose-50 text-rose-700 border-rose-200', dot: 'bg-rose-500', bar: '#f43f5e' },
+  crit:  { label: 'Crítico', hint: '< 7 dias ou ≤ 2 un.', tone: 'bg-orange-50 text-orange-700 border-orange-200', dot: 'bg-orange-500', bar: '#f97316' },
+  low:   { label: 'Baixo', hint: '7–15 dias ou ≤ 5 un.', tone: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-400', bar: '#fbbf24' },
+  ok:    { label: 'OK', hint: 'confortável', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500', bar: '#10b981' },
 }
+const LV_KEYS = ['zero', 'crit', 'low', 'ok']
+const ALERT = ['zero', 'crit', 'low']
+const DEFAULT_HIDDEN = ['Casa Cama Toca De Gato Nicho Mdf Com Almofada E Pés Luxo']
+const HIDDEN_KEY = 'coisapet_estoque_mkt_ocultos'
+const PAGE_SIZES = [25, 50, 100]
+
 const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
 // "COR: AMADEIRADO - SALA DUPLA" / "Amadeirado / Sala dupla" / "Completo,25g" → "amadeirado|sala dupla"
 const normVar = v => norm(v).split(/[,/;|]|\s-\s/).map(p => p.replace(/^[^:]*:\s*/, '').trim()).filter(Boolean).sort().join('|')
@@ -29,6 +40,10 @@ function fmtAgo(iso) {
   if (!iso) return 'nunca'
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
   return m < 60 ? `há ${Math.max(1, m)} min` : m < 1440 ? `há ${Math.round(m / 60)} h` : `há ${Math.round(m / 1440)} dias`
+}
+function readHidden() {
+  try { const v = JSON.parse(localStorage.getItem(HIDDEN_KEY)); if (v && Array.isArray(v.list)) return v } catch { /* sem storage */ }
+  return { list: DEFAULT_HIDDEN, on: true }
 }
 
 async function fetchAll(build) {
@@ -42,17 +57,60 @@ async function fetchAll(build) {
   return all
 }
 
+function PlatBadge({ p }) {
+  return <span className={`inline-flex items-center px-1.5 py-px rounded text-[10px] font-black ${PLAT[p].chip}`}>{PLAT[p].short}</span>
+}
+
+// Resumo por plataforma: barra empilhada + números clicáveis
+function PlatformSummary({ p, counts, active, onPick, levels }) {
+  const P = PLAT[p]
+  const total = LV_KEYS.reduce((t, k) => t + counts[k], 0) || 1
+  const alert = counts.zero + counts.crit + counts.low
+  return (
+    <div className={`rounded-2xl border-2 p-4 transition ${active ? 'shadow-md' : 'opacity-90'}`} style={{ borderColor: P.color, background: P.soft }}>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <button onClick={() => onPick(p)} className="flex items-center gap-2 text-left">
+          <span className="w-3 h-3 rounded" style={{ background: P.color }} />
+          <span className="font-black text-slate-800">{P.label}</span>
+        </button>
+        <span className="text-xs font-semibold" style={{ color: P.ink }}>{fmtInt(alert)} precisam de atenção</span>
+      </div>
+      <div className="flex h-2.5 rounded-full overflow-hidden bg-white/70 mb-3">
+        {LV_KEYS.map(k => counts[k] > 0 && <div key={k} style={{ width: `${(counts[k] / total) * 100}%`, background: LEVELS[k].bar }} title={`${LEVELS[k].label}: ${counts[k]}`} />)}
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {LV_KEYS.map(k => (
+          <button key={k} onClick={() => onPick(p, k)}
+            className={`rounded-xl bg-white px-2 py-2 text-left border transition hover:shadow-sm ${active && levels.length === 1 && levels[0] === k ? 'border-slate-800' : 'border-transparent'}`}>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 flex items-center gap-1"><span className={`w-1.5 h-1.5 rounded-full ${LEVELS[k].dot}`} />{LEVELS[k].label}</p>
+            <p className={`text-xl font-black tabular-nums ${k === 'zero' ? 'text-rose-600' : k === 'crit' ? 'text-orange-600' : k === 'low' ? 'text-amber-600' : 'text-emerald-600'}`}>{fmtInt(counts[k])}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function MarketplaceStockPage() {
   const [stock, setStock] = useState(null)
   const [sales, setSales] = useState([])
   const [sync, setSync] = useState([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const [plat, setPlat] = useState('')
-  const [level, setLevel] = useState('alert') // alert | zero | crit | low | ok | all
+  const [plats, setPlats] = useState(['ml', 'shopee'])
+  const [levels, setLevels] = useState(ALERT)
   const [search, setSearch] = useState('')
   const [showFull, setShowFull] = useState(true)
   const [showPaused, setShowPaused] = useState(true)
+  const [onlySelling, setOnlySelling] = useState(false)
+  const [sortBy, setSortBy] = useState('urgency')
+  const [hidden, setHidden] = useState(readHidden)
+  const [hiddenOpen, setHiddenOpen] = useState(false)
+  const [newHidden, setNewHidden] = useState('')
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(25)
+
+  useEffect(() => { try { localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden)) } catch { /* sem storage */ } }, [hidden])
 
   const load = useCallback(async () => {
     setError(null)
@@ -113,25 +171,68 @@ export function MarketplaceStockPage() {
       const days = perDay ? r.stock / perDay : null
       const st = r.stock ?? 0
       const lvl = st <= 0 ? 'zero' : (days != null && days < 7) || st <= 2 ? 'crit' : (days != null && days < 15) || st <= 5 ? 'low' : 'ok'
-      return { ...r, sold30: sold30 ?? 0, matched: sold30 != null, perDay, days, level: lvl }
+      return { ...r, sold30: sold30 ?? 0, matched: sold30 != null, perDay, days, level: lvl, ntitle: norm(r.title) }
     })
   }, [stock, vel])
 
-  const visible = useMemo(() => {
+  // Produtos ocultos: bate pelo título normalizado (contém o texto)
+  const hiddenNorm = useMemo(() => hidden.list.map(norm).filter(Boolean), [hidden.list])
+  const isHidden = useCallback(r => hiddenNorm.some(h => r.ntitle.includes(h)), [hiddenNorm])
+  const hiddenCount = useMemo(() => rows.filter(isHidden).length, [rows, isHidden])
+
+  // Base = tudo que passa pelos filtros "de fundo" (ocultos, Full, pausados,
+  // vendendo, busca) — os números dos resumos e chips saem daqui
+  const base = useMemo(() => {
     const q = norm(search)
-    const order = { zero: 0, crit: 1, low: 2, ok: 3 }
     return rows
-      .filter(r => !plat || r.platform === plat)
+      .filter(r => !hidden.on || !isHidden(r))
       .filter(r => showFull || !r.is_full)
       .filter(r => showPaused || r.status === 'active')
-      .filter(r => level === 'all' ? true : level === 'alert' ? r.level !== 'ok' : r.level === level)
-      .filter(r => !q || norm(r.title).includes(q) || norm(r.variation).includes(q) || norm(r.sku).includes(q) || norm(r.item_id).includes(q))
-      .sort((a, b) => order[a.level] - order[b.level] || b.sold30 - a.sold30 || (a.days ?? 9e9) - (b.days ?? 9e9))
-  }, [rows, plat, level, search, showFull, showPaused])
+      .filter(r => !onlySelling || r.sold30 > 0)
+      .filter(r => !q || r.ntitle.includes(q) || norm(r.variation).includes(q) || norm(r.sku).includes(q) || norm(r.item_id).includes(q))
+  }, [rows, hidden.on, isHidden, showFull, showPaused, onlySelling, search])
 
-  const count = (lv, p) => rows.filter(r => r.level === lv && (!p || r.platform === p)).length
+  const visible = useMemo(() => {
+    const order = { zero: 0, crit: 1, low: 2, ok: 3 }
+    const sorters = {
+      urgency: (a, b) => order[a.level] - order[b.level] || b.sold30 - a.sold30 || (a.days ?? 9e9) - (b.days ?? 9e9),
+      sold: (a, b) => b.sold30 - a.sold30 || order[a.level] - order[b.level],
+      stock: (a, b) => (a.stock ?? 0) - (b.stock ?? 0) || b.sold30 - a.sold30,
+      days: (a, b) => (a.level === 'zero' ? -1 : a.days ?? 9e9) - (b.level === 'zero' ? -1 : b.days ?? 9e9) || b.sold30 - a.sold30,
+    }
+    return base
+      .filter(r => plats.includes(r.platform))
+      .filter(r => levels.includes(r.level))
+      .sort(sorters[sortBy])
+  }, [base, plats, levels, sortBy])
+
+  // Volta pra página 1 quando muda filtro
+  useEffect(() => { setPage(0) }, [plats, levels, search, showFull, showPaused, onlySelling, sortBy, hidden, pageSize])
+  const pages = Math.max(1, Math.ceil(visible.length / pageSize))
+  const cur = Math.min(page, pages - 1)
+  const pageRows = visible.slice(cur * pageSize, cur * pageSize + pageSize)
+
+  const counts = useMemo(() => {
+    const c = { ml: { zero: 0, crit: 0, low: 0, ok: 0 }, shopee: { zero: 0, crit: 0, low: 0, ok: 0 } }
+    base.forEach(r => { c[r.platform][r.level]++ })
+    return c
+  }, [base])
+  const lvCount = k => plats.reduce((t, p) => t + counts[p][k], 0)
   const lastSync = sync.reduce((m, s) => (!m || (s.synced_at && s.synced_at < m) ? s.synced_at : m), null)
   const syncErr = sync.filter(s => s.error)
+
+  const toggle = (setter, k) => setter(arr => arr.includes(k) ? (arr.length > 1 ? arr.filter(x => x !== k) : arr) : [...arr, k])
+  function pickPlatform(p, lv) {
+    setPlats([p])
+    setLevels(lv ? [lv] : ALERT)
+  }
+  function hideProduct(title) {
+    const t = (title || '').trim()
+    if (!t || hidden.list.some(h => norm(h) === norm(t))) return
+    setHidden(h => ({ list: [...h.list, t], on: true }))
+    toast.success('Produto ocultado — dá pra mostrar de novo em "Produtos ocultos".')
+  }
+  const unhide = t => setHidden(h => ({ ...h, list: h.list.filter(x => x !== t) }))
 
   function exportCsv() {
     const head = ['Plataforma', 'Anúncio', 'Variação', 'SKU', 'Estoque', 'Vendas 30d', 'Média/dia', 'Acaba em (dias)', 'Situação', 'Status', 'Full', 'Link']
@@ -142,11 +243,13 @@ export function MarketplaceStockPage() {
     a.download = `estoque-marketplaces.csv`; a.click()
   }
 
+  const chip = (on, extra = '') => `inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition ${on ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'} ${extra}`
+
   return (
     <div className="flex flex-col gap-5 animate-fade-in">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-rose-500 flex items-center justify-center shrink-0 shadow-sm"><Boxes size={20} className="text-white" /></div>
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#FFE600] to-[#EE4D2D] flex items-center justify-center shrink-0 shadow-sm"><Boxes size={20} className="text-white" /></div>
           <div>
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Estoque nos Marketplaces</h1>
             <p className="text-sm text-slate-500">Anúncios sem estoque ou com estoque baixo no Mercado Livre e na Shopee, por variação · atualizado {fmtAgo(lastSync)}</p>
@@ -167,41 +270,85 @@ export function MarketplaceStockPage() {
         <div className="card py-24 text-center"><Loader2 size={24} className="mx-auto animate-spin text-slate-300" /></div>
       ) : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {[
-              ['zero', AlertOctagon, 'critical', 'Sem estoque', 'zerado agora — comprador não consegue comprar'],
-              ['crit', AlertTriangle, 'warning', 'Crítico', 'acaba em menos de 7 dias (ou ≤ 2 un.)'],
-              ['low', AlertTriangle, 'warning', 'Baixo', 'acaba em 7–15 dias (ou ≤ 5 un.)'],
-              ['ok', PackageCheck, 'good', 'OK', 'estoque confortável'],
-            ].map(([lv, Icon, tone, label, hint]) => (
-              <button key={lv} onClick={() => setLevel(l => l === lv ? 'alert' : lv)} className={`text-left rounded-2xl ring-2 transition ${level === lv ? 'ring-slate-800' : 'ring-transparent'}`}>
-                <StatTile icon={Icon} tone={tone} label={label} value={fmtInt(count(lv))}
-                  detail={<span>{hint}<br /><span className="font-semibold" style={{ color: PLAT.ml.color }}>ML {count(lv, 'ml')}</span> · <span className="font-semibold" style={{ color: PLAT.shopee.color }}>Shopee {count(lv, 'shopee')}</span></span>} />
-              </button>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {['ml', 'shopee'].map(p => (
+              <PlatformSummary key={p} p={p} counts={counts[p]} active={plats.includes(p)} levels={levels} onPick={pickPlatform} />
             ))}
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex bg-slate-100 rounded-xl p-1">
-              {[['alert', 'Precisam de atenção'], ['all', 'Todos']].map(([k, l]) => (
-                <button key={k} onClick={() => setLevel(k)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${level === k ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>{l}</button>
-              ))}
+          <div className="card !p-4 flex flex-col gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 w-20">Plataforma</span>
+              {['ml', 'shopee'].map(p => {
+                const on = plats.includes(p)
+                return (
+                  <button key={p} onClick={() => toggle(setPlats, p)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border-2 transition"
+                    style={on ? { background: PLAT[p].color, borderColor: PLAT[p].color, color: p === 'ml' ? '#2D3277' : '#fff' } : { background: '#fff', borderColor: PLAT[p].color, color: PLAT[p].ink }}>
+                    {PLAT[p].label}
+                  </button>
+                )
+              })}
+              {plats.length < 2 && <button onClick={() => setPlats(['ml', 'shopee'])} className="text-xs text-slate-400 hover:text-slate-600 underline">as duas</button>}
             </div>
-            <div className="flex bg-slate-100 rounded-xl p-1">
-              {[['', 'ML + Shopee'], ['ml', 'Mercado Livre'], ['shopee', 'Shopee']].map(([k, l]) => (
-                <button key={k} onClick={() => setPlat(k)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${plat === k ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>{l}</button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 w-20">Situação</span>
+              {LV_KEYS.map(k => (
+                <button key={k} onClick={() => toggle(setLevels, k)} className={chip(levels.includes(k))} title={LEVELS[k].hint}>
+                  <span className={`w-2 h-2 rounded-full ${LEVELS[k].dot}`} />{LEVELS[k].label}
+                  <span className={`tabular-nums ${levels.includes(k) ? 'text-white/70' : 'text-slate-400'}`}>{fmtInt(lvCount(k))}</span>
+                </button>
               ))}
+              <button onClick={() => setLevels(ALERT)} className="text-xs text-slate-400 hover:text-slate-600 underline">só alertas</button>
+              <button onClick={() => setLevels(LV_KEYS)} className="text-xs text-slate-400 hover:text-slate-600 underline">todos</button>
             </div>
-            <label className="flex items-center gap-1.5 text-xs text-slate-600"><input type="checkbox" checked={showFull} onChange={e => setShowFull(e.target.checked)} /> Mostrar ML Full</label>
-            <label className="flex items-center gap-1.5 text-xs text-slate-600"><input type="checkbox" checked={showPaused} onChange={e => setShowPaused(e.target.checked)} /> Mostrar pausados</label>
-            <div className="ml-auto flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5">
-              <Search size={13} className="text-slate-400" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar anúncio, cor, SKU ou MLB..." className="bg-transparent outline-none text-sm w-60 placeholder:text-slate-400" />
-              {search && <button onClick={() => setSearch('')} className="text-slate-400"><X size={12} /></button>}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 w-20">Mostrar</span>
+              <button onClick={() => setShowFull(v => !v)} className={chip(showFull)}><Warehouse size={12} />ML Full</button>
+              <button onClick={() => setShowPaused(v => !v)} className={chip(showPaused)}><PauseCircle size={12} />Pausados</button>
+              <button onClick={() => setOnlySelling(v => !v)} className={chip(onlySelling)}><TrendingUp size={12} />Só o que vendeu em 30d</button>
+              <button onClick={() => setHidden(h => ({ ...h, on: !h.on }))} className={chip(hidden.on, hidden.on ? '!bg-violet-600 !border-violet-600' : '')}
+                title={hidden.list.join('\n')}>
+                {hidden.on ? <EyeOff size={12} /> : <Eye size={12} />}{hidden.on ? `Ocultando ${hidden.list.length} produto${hidden.list.length === 1 ? '' : 's'}` : 'Ocultos aparecendo'}
+                <span className={hidden.on ? 'text-white/70' : 'text-slate-400'}>({fmtInt(hiddenCount)} variações)</span>
+              </button>
+              <button onClick={() => setHiddenOpen(o => !o)} className="text-xs text-slate-400 hover:text-slate-600 underline">{hiddenOpen ? 'fechar lista' : 'editar lista'}</button>
+            </div>
+            {hiddenOpen && (
+              <div className="rounded-xl bg-violet-50/60 border border-violet-100 p-3 flex flex-col gap-2">
+                <p className="text-xs text-violet-800">Produtos ocultos (some todo anúncio cujo título contém o texto, nas duas plataformas). Fica salvo neste computador. Também dá pra ocultar direto na linha da tabela pelo ícone <EyeOff size={11} className="inline" />.</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {hidden.list.map(t => (
+                    <span key={t} className="inline-flex items-center gap-1 bg-white border border-violet-200 rounded-full pl-2.5 pr-1 py-0.5 text-xs text-slate-700">
+                      {t}<button onClick={() => unhide(t)} className="p-0.5 rounded-full hover:bg-violet-100 text-violet-500" title="Mostrar de novo"><X size={11} /></button>
+                    </span>
+                  ))}
+                  {!hidden.list.length && <span className="text-xs text-slate-400">Nenhum produto oculto.</span>}
+                </div>
+                <form onSubmit={e => { e.preventDefault(); hideProduct(newHidden); setNewHidden('') }} className="flex items-center gap-2">
+                  <input value={newHidden} onChange={e => setNewHidden(e.target.value)} placeholder="Parte do título, ex.: Toca De Gato" className="input text-sm py-1.5 flex-1 max-w-sm" />
+                  <button className="btn-secondary py-1.5 text-xs" disabled={!newHidden.trim()}><Plus size={12} /> Ocultar</button>
+                </form>
+              </div>
+            )}
+            <div className="flex items-center gap-2 flex-wrap border-t border-slate-100 pt-3">
+              <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 flex-1 min-w-[220px] max-w-md">
+                <Search size={13} className="text-slate-400" />
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar anúncio, cor, SKU ou MLB..." className="bg-transparent outline-none text-sm w-full placeholder:text-slate-400" />
+                {search && <button onClick={() => setSearch('')} className="text-slate-400"><X size={12} /></button>}
+              </div>
+              <label className="ml-auto flex items-center gap-2 text-xs text-slate-500">Ordenar por
+                <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="input py-1 text-xs w-auto">
+                  <option value="urgency">Urgência (zerado primeiro)</option>
+                  <option value="days">Acaba antes</option>
+                  <option value="sold">Mais vendidos</option>
+                  <option value="stock">Menor estoque</option>
+                </select>
+              </label>
             </div>
           </div>
 
-          <Panel title={`${fmtInt(visible.length)} variações`} subtitle="Primeiro o que está zerado, depois o que acaba antes · mais vendidos no topo de cada grupo">
+          <Panel title={`${fmtInt(visible.length)} variações`} subtitle="Faixa amarela = Mercado Livre · faixa laranja = Shopee">
             <div className="overflow-x-auto -mx-5">
               <table className="w-full text-[13px] min-w-[980px]">
                 <thead>
@@ -216,38 +363,75 @@ export function MarketplaceStockPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visible.slice(0, 500).map(r => (
-                    <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/60">
-                      <td className="pl-5 pr-2 py-2">
-                        <div className="flex items-center gap-2.5 max-w-[420px]">
-                          {r.thumbnail ? <img src={r.thumbnail} alt="" className="w-9 h-9 rounded-lg object-cover bg-slate-100 shrink-0" loading="lazy" /> : <span className="w-9 h-9 rounded-lg bg-slate-100 shrink-0" />}
-                          <div className="min-w-0">
-                            <p className="text-slate-700 font-medium truncate" title={r.title}>{r.title}</p>
-                            <p className="text-[10px] text-slate-400 flex items-center gap-1.5 flex-wrap">
-                              <span className="font-bold" style={{ color: PLAT[r.platform].color }}>{PLAT[r.platform].short}</span>
-                              {r.is_full && <span className="inline-flex items-center gap-0.5 font-bold text-[#7c83d6]"><Warehouse size={9} />Full</span>}
-                              {r.status !== 'active' && <span className="font-bold text-slate-500">{r.sub_status === 'out_of_stock' ? 'pausado por falta de estoque' : 'pausado'}</span>}
-                              {r.sku && <span className="font-mono">{r.sku}</span>}
-                            </p>
+                  {pageRows.map(r => {
+                    const P = PLAT[r.platform]
+                    const alert = r.level !== 'ok'
+                    return (
+                      <tr key={r.id} className="border-b border-slate-100 group" style={{ background: alert ? P.soft : undefined }}>
+                        <td className="pl-0 pr-2 py-2" style={{ boxShadow: `inset 5px 0 0 ${P.color}` }}>
+                          <div className="flex items-center gap-2.5 max-w-[440px] pl-5">
+                            {r.thumbnail ? <img src={r.thumbnail} alt="" className="w-10 h-10 rounded-lg object-cover bg-slate-100 shrink-0 ring-2" style={{ '--tw-ring-color': P.color }} loading="lazy" /> : <span className="w-10 h-10 rounded-lg bg-slate-100 shrink-0" />}
+                            <div className="min-w-0">
+                              <p className="text-slate-700 font-medium truncate" title={r.title}>{r.title}</p>
+                              <p className="text-[10px] text-slate-400 flex items-center gap-1.5 flex-wrap mt-0.5">
+                                <PlatBadge p={r.platform} />
+                                {r.is_full && <span className="inline-flex items-center gap-0.5 font-bold text-[#2D3277]"><Warehouse size={9} />Full</span>}
+                                {r.status !== 'active' && <span className="font-bold text-slate-500">{r.sub_status === 'out_of_stock' ? 'pausado por falta de estoque' : 'pausado'}</span>}
+                                {r.sku && <span className="font-mono">{r.sku}</span>}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-2 text-slate-600">{r.variation || <span className="text-slate-300">—</span>}</td>
-                      <td className={`px-2 text-right font-black tabular-nums ${r.level === 'zero' ? 'text-rose-600' : r.level === 'crit' ? 'text-orange-600' : r.level === 'low' ? 'text-amber-600' : 'text-slate-800'}`}>{r.stock ?? '—'}</td>
-                      <td className="px-2 text-right tabular-nums text-slate-600">{r.matched ? r.sold30 : <span className="text-slate-300" title="Não achei vendas desse anúncio pelo SKU nem pelo título">?</span>}</td>
-                      <td className="px-2 text-right tabular-nums text-slate-700">{r.level === 'zero' ? <span className="text-rose-600 font-semibold">acabou</span> : r.days != null ? (r.days < 1 ? '< 1 dia' : `${Math.floor(r.days)} dias`) : <span className="text-slate-300">—</span>}</td>
-                      <td className="px-2"><span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-full border ${LEVELS[r.level].tone}`}><span className={`w-1.5 h-1.5 rounded-full ${LEVELS[r.level].dot}`} />{LEVELS[r.level].label}</span></td>
-                      <td className="px-2 pr-5 text-right">{r.permalink && <a href={r.permalink} target="_blank" rel="noreferrer" className="text-slate-300 hover:text-sky-500" title="Abrir anúncio"><ExternalLink size={14} /></a>}</td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-2 text-slate-600">{r.variation || <span className="text-slate-300">—</span>}</td>
+                        <td className={`px-2 text-right font-black tabular-nums text-base ${r.level === 'zero' ? 'text-rose-600' : r.level === 'crit' ? 'text-orange-600' : r.level === 'low' ? 'text-amber-600' : 'text-slate-800'}`}>{r.stock ?? '—'}</td>
+                        <td className="px-2 text-right tabular-nums text-slate-600">{r.matched ? r.sold30 : <span className="text-slate-300" title="Não achei vendas desse anúncio pelo SKU nem pelo título">?</span>}</td>
+                        <td className="px-2 text-right tabular-nums text-slate-700">{r.level === 'zero' ? <span className="text-rose-600 font-semibold">acabou</span> : r.days != null ? (r.days < 1 ? '< 1 dia' : `${Math.floor(r.days)} dias`) : <span className="text-slate-300">—</span>}</td>
+                        <td className="px-2"><span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-full border ${LEVELS[r.level].tone}`}><span className={`w-1.5 h-1.5 rounded-full ${LEVELS[r.level].dot}`} />{LEVELS[r.level].label}</span></td>
+                        <td className="px-2 pr-5 text-right whitespace-nowrap">
+                          <button onClick={() => hideProduct(r.title)} className="text-slate-300 hover:text-violet-600 opacity-0 group-hover:opacity-100 transition mr-2" title="Ocultar este produto"><EyeOff size={14} /></button>
+                          {r.permalink && <a href={r.permalink} target="_blank" rel="noreferrer" className="text-slate-300 hover:text-sky-500 inline-block" title="Abrir anúncio"><ExternalLink size={14} /></a>}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
-              {!visible.length && <p className="text-sm text-slate-400 text-center py-10">Nada aqui — tudo com estoque confortável.</p>}
+              {!visible.length && <p className="text-sm text-slate-400 text-center py-10">Nada aqui com esses filtros.</p>}
             </div>
+
+            {visible.length > 0 && (
+              <div className="flex items-center justify-between gap-3 flex-wrap mt-3 text-xs text-slate-500">
+                <div className="flex items-center gap-2">
+                  <span>{fmtInt(cur * pageSize + 1)}–{fmtInt(Math.min(visible.length, (cur + 1) * pageSize))} de {fmtInt(visible.length)}</span>
+                  <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="input py-1 text-xs w-auto">
+                    {PAGE_SIZES.map(n => <option key={n} value={n}>{n} por página</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setPage(cur - 1)} disabled={cur === 0} className="p-1.5 rounded-lg border border-slate-200 bg-white disabled:opacity-30 hover:border-slate-400"><ChevronLeft size={14} /></button>
+                  {pageList(cur, pages).map((n, i) => n === '…'
+                    ? <span key={`e${i}`} className="px-1.5 text-slate-300">…</span>
+                    : <button key={n} onClick={() => setPage(n)} className={`min-w-[30px] h-[30px] rounded-lg text-xs font-semibold border ${n === cur ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-200 hover:border-slate-400'}`}>{n + 1}</button>)}
+                  <button onClick={() => setPage(cur + 1)} disabled={cur >= pages - 1} className="p-1.5 rounded-lg border border-slate-200 bg-white disabled:opacity-30 hover:border-slate-400"><ChevronRight size={14} /></button>
+                </div>
+              </div>
+            )}
             <p className="text-[11px] text-slate-400 mt-3 flex items-start gap-1.5"><Info size={12} className="shrink-0 mt-px" />"Acaba em" = estoque ÷ média de vendas dos últimos 30 dias daquela variação. "?" = não achei as vendas do anúncio (sem SKU e título diferente do pedido) — nesse caso a situação usa só a quantidade. ML Full: o estoque é o que está no armazém do ML.</p>
           </Panel>
         </>
       )}
     </div>
   )
+}
+
+// 1 … 4 5 [6] 7 8 … 20
+function pageList(cur, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i)
+  const out = [0]
+  const from = Math.max(1, cur - 2), to = Math.min(total - 2, cur + 2)
+  if (from > 1) out.push('…')
+  for (let i = from; i <= to; i++) out.push(i)
+  if (to < total - 2) out.push('…')
+  out.push(total - 1)
+  return out
 }
