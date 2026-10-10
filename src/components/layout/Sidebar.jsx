@@ -28,6 +28,8 @@ const NAV_SECTIONS = [
     items: [
       { to: '/marketplaces',          moduleKey: 'marketplaces', icon: LayoutDashboard, label: 'Visão Geral', roles: ['admin','marketplace'] },
       { to: '/marketplaces/anuncios', moduleKey: 'marketplaces', icon: Store,           label: 'Anúncios',    roles: ['admin','marketplace'] },
+      { to: '/marketplaces/promocoes', moduleKey: 'marketplaces', icon: Tag,       label: 'Promoções e cupons', roles: ['admin','marketplace'] },
+      { to: '/marketplaces/ads',       moduleKey: 'marketplaces', icon: Megaphone, label: 'Ads',         roles: ['admin','marketplace'] },
       { to: '/marketplaces/pos-venda', moduleKey: 'marketplaces-posvenda', icon: LifeBuoy,  label: 'Pós-venda',   roles: ['admin','marketplace','atendimento','producao'] },
     ],
   },
