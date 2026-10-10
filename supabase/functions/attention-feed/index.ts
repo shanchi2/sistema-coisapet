@@ -29,6 +29,19 @@ async function mlGet(path: string, token: string) {
   return res.json()
 }
 
+// Chama outra edge function do projeto (Shopee fica na shopee-extra, que já
+// tem as assinaturas da API) com a service role
+async function callFn(name: string, body: unknown) {
+  const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/${name}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+    body: JSON.stringify(body),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok || !data?.ok) throw new Error(data?.error || `${name} ${res.status}`)
+  return data
+}
+
 async function build(sb: any) {
   const now = new Date()
   const today = isoDay(now)
@@ -113,6 +126,23 @@ async function build(sb: any) {
       const q = await mlGet(`/questions/search?seller_id=${integ.ml_user_id}&status=UNANSWERED&limit=1&api_version=4`, integ.access_token)
       const total = q?.total ?? q?.paging?.total ?? 0
       if (total) items.push({ key: 'ml-perguntas', level: 'atencao', text: `${pl(total, 'pergunta sem resposta', 'perguntas sem resposta')} no ML`, to: '/ml/perguntas', module: 'ml-insights' })
+    }),
+    // ── Shopee: chat não lido ──────────────────────────────────────
+    safe('shopee-chat', async () => {
+      const r = await callFn('shopee-extra', { action: 'chat_unread' })
+      if (r.messages) items.push({ key: 'shopee-chat', level: 'atencao', text: `${pl(r.messages, 'mensagem não lida', 'mensagens não lidas')} no chat da Shopee${r.conversations > 1 ? ` (${r.conversations} conversas)` : ''}`, to: '/marketplaces/chat', module: 'marketplaces-posvenda' })
+    }),
+    // ── Shopee: avaliações sem resposta (7 dias) ───────────────────
+    safe('shopee-avaliacoes', async () => {
+      const r = await callFn('shopee-extra', { action: 'comments', since: new Date(now.getTime() - 7 * 86400e3).toISOString(), max: 400 })
+      const pend = (r.results || []).filter((c: any) => !c.reply)
+      const low = pend.filter((c: any) => c.rating <= 3).length
+      if (pend.length) items.push({ key: 'shopee-avaliacoes', level: low ? 'atencao' : 'info', text: `${pl(pend.length, 'avaliação sem resposta', 'avaliações sem resposta')} na Shopee${low ? ` · ${low} com nota baixa` : ''}`, to: '/marketplaces/avaliacoes?p=shopee', module: 'marketplaces-posvenda' })
+    }),
+    // ── ML: avaliação com nota baixa nos últimos 3 dias ────────────
+    safe('ml-avaliacoes', async () => {
+      const { count } = await sb.from('ml_reviews').select('id', { count: 'exact', head: true }).lte('rate', 3).gte('created_at_ml', new Date(now.getTime() - 3 * 86400e3).toISOString())
+      if (count) items.push({ key: 'ml-avaliacoes', level: 'atencao', text: `${pl(count, 'avaliação com nota baixa', 'avaliações com nota baixa')} no ML nos últimos 3 dias`, to: '/marketplaces/avaliacoes?p=ml', module: 'marketplaces-posvenda' })
     }),
     // ── Kanban operacional atrasado ────────────────────────────────
     safe('kanban', async () => {

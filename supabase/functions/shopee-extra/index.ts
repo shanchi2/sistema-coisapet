@@ -7,6 +7,8 @@
 //                     depois de confirmação na tela, nunca automático)
 //   chat_unread     → sellerchat.get_conversation_list (conversas não lidas)
 //   history         → histórico unificado ML + Shopee (tabelas de log)
+//   chat_list / chat_messages / chat_send → chat com o comprador
+//                     (sellerchat; enviar é sempre clique de alguém na tela)
 // (shop.get_shop_performance devolve 404 pro nosso app.)
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { adminClient, getValidIntegration, shopeeFetch, shopeeWrite } from '../_shared/shopee.ts'
@@ -100,6 +102,45 @@ serve(async (req) => {
         if (!r?.response?.page_result?.more || !list.length) break
       }
       return json({ ok: true, conversations: convs, messages: unread })
+    }
+
+    if (body.action === 'chat_list') {
+      const params: Record<string, string> = { direction: 'older', type: body.type === 'unread' ? 'unread' : 'all', page_size: String(Math.min(Number(body.page_size) || 30, 60)) }
+      if (body.cursor) params.next_message_time_nano = String(body.cursor)
+      const r = await shopeeFetch('/api/v2/sellerchat/get_conversation_list', integ, params)
+      const me = Number(integ.shop_id)
+      const conversations = (r?.response?.conversations ?? []).map((c: any) => ({
+        conversation_id: String(c.conversation_id), buyer_id: c.to_id, buyer: c.to_name, avatar: c.to_avatar, unread: c.unread_count || 0, pinned: !!c.pinned,
+        last: { type: c.latest_message_type, text: c.latest_message_content?.text ?? null, from_me: c.latest_message_from_id !== c.to_id, at: c.last_message_timestamp ? new Date(Math.floor(Number(c.last_message_timestamp) / 1e6)).toISOString() : null },
+        shop_id: me,
+      }))
+      const pr = r?.response?.page_result
+      return json({ ok: true, conversations, more: !!pr?.more, cursor: pr?.next_cursor?.next_message_time_nano ?? null })
+    }
+
+    if (body.action === 'chat_messages') {
+      if (!body.conversation_id) return json({ error: 'conversation_id obrigatório' }, 400)
+      const params: Record<string, string> = { conversation_id: String(body.conversation_id), page_size: String(Math.min(Number(body.page_size) || 40, 60)) }
+      if (body.offset) params.offset = String(body.offset)
+      const r = await shopeeFetch('/api/v2/sellerchat/get_message', integ, params)
+      const me = Number(integ.shop_id)
+      const messages = (r?.response?.messages ?? []).map((m: any) => ({
+        id: String(m.message_id), from_me: m.from_shop_id === me, type: m.message_type, status: m.status,
+        text: m.content?.text ?? null, image: m.content?.url || m.content?.thumb_url || null,
+        order_sn: m.content?.order_sn || m.source_content?.order_sn || null, item_id: m.content?.item_id ? String(m.content.item_id) : null,
+        quoted: m.quoted_msg?.content?.text ?? null,
+        at: m.created_timestamp ? new Date(m.created_timestamp * 1000).toISOString() : null,
+      })).reverse()
+      return json({ ok: true, messages, next_offset: r?.response?.page_result?.next_offset ?? null })
+    }
+
+    if (body.action === 'chat_send') {
+      const text = String(body.text || '').trim()
+      if (!text || text.length > 1000) return json({ error: 'Mensagem vazia ou longa demais (máx. 1000)' }, 400)
+      if (!body.to_id) return json({ error: 'to_id obrigatório' }, 400)
+      const r = await shopeeWrite('/api/v2/sellerchat/send_message', integ, { to_id: Number(body.to_id), message_type: 'text', content: { text } })
+      try { await db.from('shopee_item_updates').insert({ item_id: '', action: 'chat_message', detail: { conversation_id: String(body.conversation_id || ''), buyer: body.buyer ?? null, by: body.by ?? null, text } }) } catch { /* só log */ }
+      return json({ ok: true, message_id: r?.response?.message_id ? String(r.response.message_id) : null })
     }
 
     if (body.action === 'probe') {

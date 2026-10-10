@@ -30,7 +30,7 @@ const ACTION = {
   picture_added: ['fotos', 'Foto adicionada'], picture_removed: ['fotos', 'Foto removida'], picture_reordered: ['fotos', 'Fotos reordenadas'], picture_unlinked: ['fotos', 'Foto desvinculada'], picture_moved: ['fotos', 'Foto movida'], pictures_replaced: ['fotos', 'Fotos substituídas'],
   promotion_join: ['campanhas', 'Entrou em campanha'], promotion_leave: ['campanhas', 'Saiu de campanha'], seller_campaign_create: ['campanhas', 'Campanha criada'], seller_campaign_delete: ['campanhas', 'Campanha excluída'],
   voucher_created: ['campanhas', 'Cupom criado'], voucher_updated: ['campanhas', 'Cupom editado'], voucher_deleted: ['campanhas', 'Cupom excluído'], voucher_ended: ['campanhas', 'Cupom encerrado'], flash_sale_created: ['campanhas', 'Flash Sale criada'],
-  question_answer: ['atendimento', 'Pergunta respondida'], comment_reply: ['atendimento', 'Avaliação respondida'], claim_message: ['atendimento', 'Mensagem em reclamação'],
+  question_answer: ['atendimento', 'Pergunta respondida'], comment_reply: ['atendimento', 'Avaliação respondida'], claim_message: ['atendimento', 'Mensagem em reclamação'], chat_message: ['atendimento', 'Mensagem no chat'],
 }
 const actionOf = a => ACTION[a] || ['outros', a || '—']
 const SYNCABLE = new Set(['conteudo', 'fotos'])
@@ -49,7 +49,7 @@ function summary(r, showValues) {
     case 'promotion_leave': return d.promotion_type || null
     case 'content': return [d.title && 'título', d.description && 'descrição'].filter(Boolean).join(' e ') || null
     case 'attributes': return d.count ? `${d.count} campo(s)` : null
-    case 'comment_reply': case 'question_answer': return d.text ? `"${String(d.text).slice(0, 120)}${String(d.text).length > 120 ? '…' : ''}"` : null
+    case 'comment_reply': case 'question_answer': case 'chat_message': return d.text ? `"${String(d.text).slice(0, 120)}${String(d.text).length > 120 ? '…' : ''}"` : null
     case 'create': return d.title || null
     case 'pictures_replaced': return Array.isArray(d.new) ? `${d.new.length} foto(s) nova(s)` : null
     case 'update_technical': return [d.weight != null && `peso ${d.weight} kg`, d.dimension && 'medidas'].filter(Boolean).join(' · ') || null
@@ -145,7 +145,7 @@ export function MarketplaceHistoryPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <PlatBadge p={r.platform} />
                     <span className={`text-[10px] font-bold px-1.5 py-px rounded border ${CAT[r.cat].tone}`}>{r.label}</span>
-                    <span className="text-[13px] text-slate-700 truncate" title={r.name?.title}>{r.name?.title || (r.action === 'claim_message' ? `Reclamação ${r.item_id}` : r.item_id || '—')}</span>
+                    <span className="text-[13px] text-slate-700 truncate" title={r.name?.title}>{r.name?.title || (r.action === 'claim_message' ? `Reclamação ${r.item_id}` : r.action === 'chat_message' ? `Chat com ${r.detail?.buyer || 'comprador'}` : r.item_id || '—')}</span>
                   </div>
                   {s && <p className="text-[12px] text-slate-500 mt-0.5 truncate">{s}</p>}
                 </div>
