@@ -31,6 +31,8 @@ const NAV_SECTIONS = [
       { to: '/marketplaces/promocoes', moduleKey: 'marketplaces', icon: Tag,       label: 'Promoções e cupons', roles: ['admin','marketplace'] },
       { to: '/marketplaces/ads',       moduleKey: 'marketplaces', icon: Megaphone, label: 'Ads',         roles: ['admin','marketplace'] },
       { to: '/marketplaces/pos-venda', moduleKey: 'marketplaces-posvenda', icon: LifeBuoy,  label: 'Pós-venda',   roles: ['admin','marketplace','atendimento','producao'] },
+      { to: '/marketplaces/avaliacoes', moduleKey: 'marketplaces-posvenda', icon: Star,     label: 'Avaliações',  roles: ['admin','marketplace','atendimento','producao'] },
+      { to: '/marketplaces/historico', moduleKey: 'marketplaces', icon: History,   label: 'Histórico de alterações', roles: ['admin','marketplace'] },
     ],
   },
   {
