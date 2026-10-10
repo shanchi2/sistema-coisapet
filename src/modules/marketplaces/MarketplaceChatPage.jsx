@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { MessageCircle, Loader2, RefreshCw, Send, Search, X, Info, Package, ShoppingBag, Image as ImageIcon, ChevronDown } from 'lucide-react'
+import { MessageCircle, Loader2, RefreshCw, Send, Search, X, Info, Package, ShoppingBag, Image as ImageIcon, ChevronDown, CheckCheck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { PLAT, PlatBadge, Segmented, norm } from './shared'
@@ -10,7 +10,8 @@ import { PLAT, PlatBadge, Segmented, norm } from './shared'
 // alguém da equipe, registrado com quem mandou (`shopee_item_updates`,
 // action chat_message → aparece no Histórico). Mandar foto/anúncio/pedido
 // continua no app da Shopee; aqui é só texto. Abrir a conversa aqui NÃO
-// marca como lida na Shopee (pra ninguém perder o aviso no app).
+// marca como lida na Shopee (pra ninguém perder o aviso no app) — tem o
+// botão "Marcar como lida" pra quando a conversa já foi resolvida.
 // O ML não tem chat de pré-venda — as perguntas ficam em /ml/perguntas.
 
 const TZ = 'America/Sao_Paulo'
@@ -49,6 +50,7 @@ export function MarketplaceChatPage() {
   const [older, setOlder] = useState(null)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  const [marking, setMarking] = useState(false)
   const endRef = useRef(null)
 
   const loadList = useCallback(async (quiet = false) => {
@@ -93,6 +95,19 @@ export function MarketplaceChatPage() {
       setConvs(cs => cs.map(c => c.conversation_id === sel.conversation_id ? { ...c, unread: 0, last: { type: 'text', text: t, from_me: true, at: now } } : c))
       setText('')
     } catch (e) { toast.error('Não enviou: ' + e.message) } finally { setSending(false) }
+  }
+
+  async function markRead() {
+    // Última mensagem conhecida da conversa (as enviadas agora têm id local)
+    const lastId = [...(msgs || [])].reverse().find(m => !String(m.id).startsWith('local-'))?.id || sel.last?.id
+    if (!lastId) return toast.error('Abra a conversa de novo e tente outra vez')
+    setMarking(true)
+    try {
+      await call({ action: 'chat_read', conversation_id: sel.conversation_id, last_read_message_id: lastId })
+      setConvs(cs => cs.map(c => c.conversation_id === sel.conversation_id ? { ...c, unread: 0 } : c))
+      setSel(s => ({ ...s, unread: 0 }))
+      toast.success('Conversa marcada como lida na Shopee')
+    } catch (e) { toast.error('Não marcou: ' + e.message) } finally { setMarking(false) }
   }
 
   const list = useMemo(() => {
@@ -170,6 +185,11 @@ export function MarketplaceChatPage() {
                   <p className="text-sm font-bold text-slate-800 truncate">{sel.buyer}</p>
                   <p className="text-[11px] text-slate-400 flex items-center gap-1"><PlatBadge p="shopee" /> comprador</p>
                 </div>
+                {sel.unread > 0 && (
+                  <button onClick={markRead} disabled={marking} className="btn-secondary py-1.5 text-xs disabled:opacity-50" title="Zera o contador de não lidas aqui e no app da Shopee">
+                    {marking ? <Loader2 size={13} className="animate-spin" /> : <CheckCheck size={13} />} Marcar como lida
+                  </button>
+                )}
               </div>
               <div className="flex-1 overflow-y-auto bg-slate-50/60 px-4 py-3 flex flex-col gap-2">
                 {msgs === null ? <div className="py-16 text-center"><Loader2 size={20} className="mx-auto animate-spin text-slate-300" /></div> : (
@@ -210,7 +230,7 @@ export function MarketplaceChatPage() {
       </div>
 
       <p className="text-[11px] text-slate-400 flex items-start gap-1.5"><Info size={12} className="shrink-0 mt-px" />
-        <span>A mensagem vai direto pro comprador na Shopee, em nome da loja — fica registrado quem enviou (Histórico de alterações). Abrir a conversa aqui não marca como lida no app. Foto, anúncio e pedido aparecem aqui, mas pra mandar esses tipos use o app da Shopee.</span>
+        <span>A mensagem vai direto pro comprador na Shopee, em nome da loja — fica registrado quem enviou (Histórico de alterações). Abrir a conversa aqui não marca como lida no app — use "Marcar como lida" quando já tiver resolvido (vale também no app). Foto, anúncio e pedido aparecem aqui, mas pra mandar esses tipos use o app da Shopee.</span>
       </p>
     </div>
   )
