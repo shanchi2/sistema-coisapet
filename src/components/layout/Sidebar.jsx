@@ -7,7 +7,7 @@ import {
   TrendingUp, Calendar, FileSpreadsheet, MessageSquare, MessagesSquare,
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
   PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
-  HeartPulse, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film, Zap,
+  HeartPulse, MessageCircle, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film, Zap,
   Briefcase, Crown, Bookmark, Component, RotateCcw, Headset, HandCoins, Tv, ShieldAlert, LifeBuoy,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
@@ -28,9 +28,12 @@ const NAV_SECTIONS = [
     items: [
       { to: '/marketplaces',          moduleKey: 'marketplaces', icon: LayoutDashboard, label: 'Visão Geral', roles: ['admin','marketplace'] },
       { to: '/marketplaces/anuncios', moduleKey: 'marketplaces', icon: Store,           label: 'Anúncios',    roles: ['admin','marketplace'] },
+      { to: '/marketplaces/saude',    moduleKey: 'marketplaces', icon: HeartPulse,  label: 'Saúde dos anúncios', roles: ['admin','marketplace'] },
+      { to: '/marketplaces/full',     moduleKey: 'marketplaces', icon: Warehouse,   label: 'Estoque Full', roles: ['admin','marketplace'] },
       { to: '/marketplaces/promocoes', moduleKey: 'marketplaces', icon: Tag,       label: 'Promoções e cupons', roles: ['admin','marketplace'] },
       { to: '/marketplaces/ads',       moduleKey: 'marketplaces', icon: Megaphone, label: 'Ads',         roles: ['admin','marketplace'] },
       { to: '/marketplaces/pos-venda', moduleKey: 'marketplaces-posvenda', icon: LifeBuoy,  label: 'Pós-venda',   roles: ['admin','marketplace','atendimento','producao'] },
+      { to: '/marketplaces/chat', moduleKey: 'marketplaces-posvenda', icon: MessageCircle, label: 'Chat Shopee', roles: ['admin','marketplace','atendimento','producao'] },
       { to: '/marketplaces/avaliacoes', moduleKey: 'marketplaces-posvenda', icon: Star,     label: 'Avaliações',  roles: ['admin','marketplace','atendimento','producao'] },
       { to: '/marketplaces/historico', moduleKey: 'marketplaces', icon: History,   label: 'Histórico de alterações', roles: ['admin','marketplace'] },
     ],
