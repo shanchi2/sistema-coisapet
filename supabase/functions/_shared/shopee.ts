@@ -145,6 +145,8 @@ export async function shopeeFetch(path: string, integration: { shop_id: string; 
 // (ex: pausar/reativar anúncio). Sempre chamado a partir de uma ação que
 // o próprio usuário confirmou explicitamente na tela (mesma regra do
 // mlWrite) — nunca em lote nem automático.
+// `body` pode vir já como texto JSON — necessário quando um id passa de
+// 2^53 (ex: conversation_id do chat), que o JSON.stringify arredondaria.
 export async function shopeeWrite(path: string, integration: { shop_id: string; access_token: string }, body: unknown) {
   const timestamp = Math.floor(Date.now() / 1000)
   const partnerId = Deno.env.get('SHOPEE_PARTNER_ID')!
@@ -157,7 +159,7 @@ export async function shopeeWrite(path: string, integration: { shop_id: string; 
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: typeof body === 'string' ? body : JSON.stringify(body),
   })
   const data = await res.json()
   if (!res.ok || data.error) throw new Error(`Erro na API da Shopee (${path}): ${res.status} ${JSON.stringify(data)}`)

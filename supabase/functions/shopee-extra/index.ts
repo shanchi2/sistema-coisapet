@@ -7,7 +7,7 @@
 //                     depois de confirmação na tela, nunca automático)
 //   chat_unread     → sellerchat.get_conversation_list (conversas não lidas)
 //   history         → histórico unificado ML + Shopee (tabelas de log)
-//   chat_list / chat_messages / chat_send → chat com o comprador
+//   chat_list / chat_messages / chat_send / chat_read → chat com o comprador
 //                     (sellerchat; enviar é sempre clique de alguém na tela)
 // (shop.get_shop_performance devolve 404 pro nosso app.)
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
@@ -111,7 +111,7 @@ serve(async (req) => {
       const me = Number(integ.shop_id)
       const conversations = (r?.response?.conversations ?? []).map((c: any) => ({
         conversation_id: String(c.conversation_id), buyer_id: c.to_id, buyer: c.to_name, avatar: c.to_avatar, unread: c.unread_count || 0, pinned: !!c.pinned,
-        last: { type: c.latest_message_type, text: c.latest_message_content?.text ?? null, from_me: c.latest_message_from_id !== c.to_id, at: c.last_message_timestamp ? new Date(Math.floor(Number(c.last_message_timestamp) / 1e6)).toISOString() : null },
+        last: { id: c.latest_message_id ? String(c.latest_message_id) : null, type: c.latest_message_type, text: c.latest_message_content?.text ?? null, from_me: c.latest_message_from_id !== c.to_id, at: c.last_message_timestamp ? new Date(Math.floor(Number(c.last_message_timestamp) / 1e6)).toISOString() : null },
         shop_id: me,
       }))
       const pr = r?.response?.page_result
@@ -141,6 +141,15 @@ serve(async (req) => {
       const r = await shopeeWrite('/api/v2/sellerchat/send_message', integ, { to_id: Number(body.to_id), message_type: 'text', content: { text } })
       try { await db.from('shopee_item_updates').insert({ item_id: '', action: 'chat_message', detail: { conversation_id: String(body.conversation_id || ''), buyer: body.buyer ?? null, by: body.by ?? null, text } }) } catch { /* só log */ }
       return json({ ok: true, message_id: r?.response?.message_id ? String(r.response.message_id) : null })
+    }
+
+    if (body.action === 'chat_read') {
+      // Marca a conversa como lida na Shopee (botão na tela, clique de alguém).
+      // Ids vão crus no texto do JSON: passam de 2^53 e o stringify arredondaria.
+      const cid = String(body.conversation_id || ''), mid = String(body.last_read_message_id || '')
+      if (!/^\d{1,20}$/.test(cid) || !/^\d{1,20}$/.test(mid)) return json({ error: 'conversation_id e last_read_message_id numéricos obrigatórios' }, 400)
+      await shopeeWrite('/api/v2/sellerchat/read_conversation', integ, `{"conversation_id":${cid},"last_read_message_id":"${mid}"}`)
+      return json({ ok: true })
     }
 
     if (body.action === 'probe') {
