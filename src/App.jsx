@@ -75,6 +75,8 @@ import { MarketplaceListingsPage } from './modules/marketplaces/MarketplaceListi
 import { MarketplacePostSalePage } from './modules/marketplaces/MarketplacePostSalePage'
 import { MarketplaceAdsPage } from './modules/marketplaces/MarketplaceAdsPage'
 import { MarketplacePromotionsPage } from './modules/marketplaces/MarketplacePromotionsPage'
+import { MarketplaceReviewsPage } from './modules/marketplaces/MarketplaceReviewsPage'
+import { MarketplaceHistoryPage } from './modules/marketplaces/MarketplaceHistoryPage'
 import { ShopeeOverviewPage } from './modules/shopee-insights/ShopeeOverviewPage'
 import { ShopeeActiveListingsPage } from './modules/shopee-insights/ShopeeActiveListingsPage'
 import { ShopeeHealthPage } from './modules/shopee-insights/ShopeeHealthPage'
@@ -181,6 +183,8 @@ export default function App() {
                 <Route path="/marketplaces/pos-venda" element={<GuardedRoute moduleKey="marketplaces-posvenda"><MarketplacePostSalePage /></GuardedRoute>} />
                 <Route path="/marketplaces/ads"       element={<GuardedRoute moduleKey="marketplaces"><MarketplaceAdsPage /></GuardedRoute>} />
                 <Route path="/marketplaces/promocoes" element={<GuardedRoute moduleKey="marketplaces"><MarketplacePromotionsPage /></GuardedRoute>} />
+                <Route path="/marketplaces/avaliacoes" element={<GuardedRoute moduleKey="marketplaces-posvenda"><MarketplaceReviewsPage /></GuardedRoute>} />
+                <Route path="/marketplaces/historico" element={<GuardedRoute moduleKey="marketplaces"><MarketplaceHistoryPage /></GuardedRoute>} />
                 <Route path="/marketplaces/anuncios" element={<GuardedRoute moduleKey="marketplaces"><MarketplaceListingsPage /></GuardedRoute>} />
                 <Route path="/ml"                element={<GuardedRoute moduleKey="ml-insights"><MlAccountDashboardPage /></GuardedRoute>} />
                 <Route path="/shopee"            element={<GuardedRoute moduleKey="shopee-insights"><ShopeeOverviewPage /></GuardedRoute>} />

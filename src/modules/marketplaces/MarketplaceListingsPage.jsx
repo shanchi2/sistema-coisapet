@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   Store, Loader2, Search, X, ExternalLink, Play, Pause, ChevronLeft, ChevronRight, ArrowUpDown, Info,
-  Warehouse, Link2, Sparkles, RefreshCw, AlertTriangle,
+  Warehouse, Link2, Sparkles, RefreshCw, AlertTriangle, Eye, Heart, Star,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useMlInsights } from '../ml-insights/hooks/useMlInsights'
@@ -39,6 +39,7 @@ export function MarketplaceListingsPage() {
   const [pageSize, setPageSize] = useState(25)
   const [pending, setPending] = useState(null)
   const [toggling, setToggling] = useState(false)
+  const [eng, setEng] = useState({})   // Shopee: visitas/curtidas/nota por item_id (Fase 3)
 
   function loadListings() {
     setLists({ ml: null, shopee: null }); setErrs({})
@@ -52,6 +53,16 @@ export function MarketplaceListingsPage() {
       .then(setSales).catch(() => setSales([]))
     fetchAll(() => supabase.from('marketplace_stock').select('platform, item_id, sku, is_full, stock')).then(setStock).catch(() => {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Engajamento Shopee (get_item_extra_info) — o ML não expõe visitas na
+  // listagem, então só a Shopee ganha esses números aqui
+  useEffect(() => {
+    const ids = (lists.shopee || []).map(l => l.item_id)
+    if (!ids.length) return
+    supabase.functions.invoke('shopee-extra', { body: { action: 'item_extra_info', item_ids: ids } })
+      .then(({ data }) => { if (data?.ok) setEng(Object.fromEntries(data.results.map(x => [String(x.item_id), x]))) })
+      .catch(() => {})
+  }, [lists.shopee])
 
   // Vendas 30d indexadas por título e por SKU (por plataforma)
   const idx = useMemo(() => {
@@ -117,13 +128,14 @@ export function MarketplaceListingsPage() {
       title: (a, b) => (a.title || '').localeCompare(b.title || ''),
       price: (a, b) => (b.price || 0) - (a.price || 0),
       stock: (a, b) => (a.available_quantity ?? 0) - (b.available_quantity ?? 0),
+      views: (a, b) => (eng[b.item_id]?.views ?? -1) - (eng[a.item_id]?.views ?? -1),
     }
     return base
       .filter(r => !plat || r.platform === plat)
       .filter(r => cross === 'all' || (cross === 'both' ? r.twins.length > 0 : r.pids.length > 0 && r.twins.length === 0))
       .filter(r => selling === 'all' || (selling === 'yes' ? r.sold30 > 0 : r.sold30 === 0))
       .sort(sorters[sortBy])
-  }, [base, plat, cross, selling, sortBy])
+  }, [base, plat, cross, selling, sortBy, eng])
 
   useEffect(() => { setPage(0) }, [plat, status, cross, selling, search, sortBy, pageSize])
   const pages = Math.max(1, Math.ceil(visible.length / pageSize))
@@ -181,6 +193,7 @@ export function MarketplaceListingsPage() {
               <option value="title">A–Z</option>
               <option value="price">Maior preço</option>
               <option value="stock">Menor estoque</option>
+              <option value="views">Mais visitas (Shopee)</option>
             </select>
           </div>
         </div>
@@ -216,6 +229,13 @@ export function MarketplaceListingsPage() {
                             {r.full && <span className="inline-flex items-center gap-0.5 font-bold text-[#2D3277]"><Warehouse size={9} />Full</span>}
                             {r.zeroVars > 0 && <span className="font-bold text-rose-600">{r.zeroVars === r.vars ? 'sem estoque' : `${r.zeroVars} de ${r.vars} variações zeradas`}</span>}
                             <span className="font-mono">{r.item_id}</span>
+                            {r.platform === 'shopee' && eng[r.item_id] && (() => { const e = eng[r.item_id]; return (
+                              <span className="inline-flex items-center gap-2 text-slate-500" title="Visitas, curtidas e nota na Shopee (total do anúncio)">
+                                <span className="inline-flex items-center gap-0.5"><Eye size={10} />{fmtN(e.views)}</span>
+                                <span className="inline-flex items-center gap-0.5"><Heart size={10} />{fmtN(e.likes)}</span>
+                                {e.comment_count > 0 && <span className="inline-flex items-center gap-0.5 text-amber-600 font-bold"><Star size={10} className="fill-amber-400 text-amber-400" />{Number(e.rating_star || 0).toFixed(1)} <span className="font-normal text-slate-400">({fmtN(e.comment_count)})</span></span>}
+                              </span>
+                            ) })()}
                           </p>
                         </div>
                       </Link>
