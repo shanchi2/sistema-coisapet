@@ -35,6 +35,7 @@ const NAV_SECTIONS = [
       { to: '/marketplaces/pos-venda', moduleKey: 'marketplaces-posvenda', icon: LifeBuoy,  label: 'Pós-venda',   roles: ['admin','marketplace','atendimento','producao'] },
       { to: '/marketplaces/chat', moduleKey: 'marketplaces-posvenda', icon: MessageCircle, label: 'Chat Shopee', roles: ['admin','marketplace','atendimento','producao'] },
       { to: '/marketplaces/avaliacoes', moduleKey: 'marketplaces-posvenda', icon: Star,     label: 'Avaliações',  roles: ['admin','marketplace','atendimento','producao'] },
+      { to: '/marketplaces/links', moduleKey: 'produtos', icon: Link2, label: 'Links dos anúncios', roles: ['admin','administrativo','producao','marketplace'] },
       { to: '/marketplaces/historico', moduleKey: 'marketplaces', icon: History,   label: 'Histórico de alterações', roles: ['admin','marketplace'] },
     ],
   },
