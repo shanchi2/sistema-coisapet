@@ -276,7 +276,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);height
         <span class="fl">E-mail</span>
         <input id="le" name="username" type="email" class="fi" placeholder="seu@email.com" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false"/>
         <span class="fl">Senha</span>
-        <input id="lp" name="password" type="password" class="fi" placeholder="••••••••" autocomplete="current-password" style="margin-bottom:0"/>
+        <div style="position:relative">
+          <input id="lp" name="password" type="password" class="fi" placeholder="••••••••" autocomplete="current-password" style="margin-bottom:0;padding-right:50px"/>
+          <button type="button" id="lp-eye" onclick="togglePass()" aria-label="Mostrar senha"
+            style="position:absolute;right:6px;top:50%;transform:translateY(-50%);width:40px;height:40px;border:0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(245,237,228,.55)">
+            <svg id="eye-on" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg id="eye-off" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0112 19c-6.5 0-10-7-10-7a18.5 18.5 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c6.5 0 10 7 10 7a18.5 18.5 0 01-2.16 3.19M14.12 14.12a3 3 0 11-4.24-4.24"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+          </button>
+        </div>
+        <label style="display:flex;align-items:center;gap:10px;margin-top:14px;font-size:13.5px;color:rgba(245,237,228,.8);cursor:pointer;user-select:none">
+          <input type="checkbox" id="lsave" checked style="width:20px;height:20px;accent-color:#C0722D;margin:0"/>
+          Salvar senha neste celular
+        </label>
         <div id="lerr" class="errm" style="display:none;margin-bottom:12px"></div>
         <button class="btn-login" id="lb" type="submit" style="margin-top:18px">Entrar</button>
       </form>
@@ -634,7 +645,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);height
 </div>
 <script>
 // ── Controle de versão e atualização ───────────────────────────
-const APP_VERSION = '2.5.0' // ← incrementa a cada deploy
+const APP_VERSION = '2.6.0' // ← incrementa a cada deploy
 
 async function forceUpdate() {
   const btn  = document.getElementById('refresh-btn')
@@ -726,8 +737,24 @@ const fmtH=h=>{if(!h&&h!==0)return'—';const f=parseFloat(h);const hrs=Math.flo
 const fmtDt=d=>new Date(d).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})+' às '+new Date(d).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})
 
 function toast(msg,ms=2800){const el=document.createElement('div');el.className='toast';el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),ms)}
+// Olhinho: mostra/esconde a senha digitada
+function togglePass(){
+  const i=document.getElementById('lp'),show=i.type==='password'
+  i.type=show?'text':'password'
+  document.getElementById('eye-on').style.display=show?'none':'block'
+  document.getElementById('eye-off').style.display=show?'block':'none'
+  document.getElementById('lp-eye').setAttribute('aria-label',show?'Esconder senha':'Mostrar senha')
+}
 function showLogin(){
   document.getElementById('lv').classList.add('on')
+  // Lembra o e-mail do último login (se "Salvar senha" estava marcado)
+  try{const em=localStorage.getItem('cp_last_email');if(em)document.getElementById('le').value=em}catch{}
+  // Android/Chrome: se a senha já foi salva no gerenciador do Google, preenche sozinho
+  try{
+    if(window.PasswordCredential&&navigator.credentials)navigator.credentials.get({password:true,mediation:'optional'}).then(c=>{
+      if(c&&c.type==='password'&&c.password){document.getElementById('le').value=c.id;document.getElementById('lp').value=c.password}
+    }).catch(()=>{})
+  }catch{}
   // iPhone/iPad pelo Safari (não instalado): o iOS apaga o login depois de
   // ~7 dias sem abrir — mostra como instalar na tela inicial
   const ios=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)
@@ -746,6 +773,15 @@ async function doLogin(){
   localStorage.setItem(SK,JSON.stringify(data));me=data
   // Pede pro navegador não apagar o login quando faltar espaço (Android/Chrome)
   try{navigator.storage?.persist?.()}catch{}
+  // "Salvar senha neste celular": a senha vai pro gerenciador de senhas do
+  // próprio celular (Google no Android; no iPhone o iCloud oferece sozinho
+  // por causa do <form>) — o app NUNCA guarda a senha no localStorage
+  const save=document.getElementById('lsave')?.checked
+  try{save?localStorage.setItem('cp_last_email',e.toLowerCase()):localStorage.removeItem('cp_last_email')}catch{}
+  if(save&&window.PasswordCredential&&navigator.credentials){
+    try{navigator.credentials.store(new PasswordCredential({id:e.toLowerCase(),password:p,name:data.name})).catch(()=>{})}catch{}
+  }
+  const lp=document.getElementById('lp');lp.value='';if(lp.type==='text')togglePass()
   document.getElementById('lv').classList.remove('on');startApp()
 }
 async function doLogout(){
