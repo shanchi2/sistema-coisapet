@@ -63,3 +63,10 @@ com o aviso do que subiu.
 - **2026-08-24** — Repositório git inicializado localmente e criado este
   `CLAUDE.md` para dar continuidade entre os PCs de casa/escritório/notebook.
   Ainda falta configurar um remoto (GitHub) para sync real entre máquinas.
+
+- **2026-10-13** — Segurança do login (fase106): `system_users` tem privilégio
+  POR COLUNA (o `password_hash` não é acessível pela API). Ao criar coluna
+  nova em `system_users`, rodar `GRANT SELECT (col), INSERT (col), UPDATE (col)
+  ON public.system_users TO anon, authenticated` — senão a tela quebra.
+  Funções sensíveis de usuário exigem `p_token` (token da sessão, ver
+  `src/lib/sessionToken.js`).

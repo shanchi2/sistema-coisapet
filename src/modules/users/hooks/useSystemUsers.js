@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { sessionToken } from '../../../lib/sessionToken'
 import { supabase } from '../../../lib/supabase'
 import { todayISO } from '../../../lib/dateBR'
 
@@ -52,6 +53,7 @@ export function useSystemUsers() {
         throw new Error('Email/senha vazios')
       }
       const { data, error } = await supabase.rpc('create_system_user', {
+      p_token:       sessionToken(),
         p_name:        payload.name,
         p_email:       payload.email,
         p_password:    payload.password,
@@ -99,7 +101,8 @@ export function useSystemUsers() {
         company_name:  payload.company_name || null,
         company_cnpj:  payload.company_cnpj || null,
         active:        true,
-        password_hash: 'NO_ACCESS', // sem acesso
+        // password_hash fica no default 'NO_ACCESS' (sem acesso) — a coluna
+        // não é mais gravável pela API (fase106)
       }).select('id').single()
       if (error) { toast.error('Erro ao cadastrar escritório: ' + error.message); throw error }
       // Salva contatos
@@ -119,6 +122,7 @@ export function useSystemUsers() {
       throw new Error('Email vazio')
     }
     const { data, error } = await supabase.rpc('create_system_user', {
+      p_token:       sessionToken(),
       p_name:        payload.name,
       p_email:       payload.email,
       p_password:    payload.password,
@@ -249,6 +253,7 @@ export function useSystemUsers() {
     // definindo a senha final de propósito, não uma senha temporária.
     if (payload.password?.trim()) {
       const { data: pwData, error: pwError } = await supabase.rpc('change_user_password', {
+        p_token:        sessionToken(),
         p_user_id:      id,
         p_old_password: null,
         p_new_password: payload.password.trim(),
@@ -363,8 +368,8 @@ export function useSystemUsers() {
 
   // Desativa usuário (soft delete)
   async function remove(id) {
-    const { data, error } = await supabase.rpc('deactivate_system_user', { p_id: id })
-    if (error || data?.error) { toast.error('Erro ao remover usuário.'); throw error }
+    const { data, error } = await supabase.rpc('deactivate_system_user', { p_id: id, p_token: sessionToken() })
+    if (error || data?.error) { toast.error(data?.error ?? 'Erro ao remover usuário.'); throw error || new Error(data.error) }
     toast.success('Usuário removido.')
     await fetch()
   }
@@ -372,11 +377,12 @@ export function useSystemUsers() {
   // Reset de senha pelo admin (sem verificar a senha antiga)
   async function resetPassword(id, newPassword) {
     const { data, error } = await supabase.rpc('change_user_password', {
+        p_token:        sessionToken(),
       p_user_id:      id,
       p_old_password: null,
       p_new_password: newPassword,
     })
-    if (error || data?.error) { toast.error(data?.error ?? 'Erro ao resetar senha.'); throw error }
+    if (error || data?.error) { toast.error(data?.error ?? 'Erro ao resetar senha.'); throw error || new Error(data.error) }
     toast.success('Senha resetada! O usuário deverá trocá-la no próximo login.')
 
     // Marca must_change_password = true novamente

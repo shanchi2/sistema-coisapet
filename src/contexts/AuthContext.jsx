@@ -99,6 +99,12 @@ export function AuthProvider({ children }) {
 
   // Logout
   async function signOut() {
+    // Revoga o token dessa sessão no banco (fase106) — quem pegar o
+    // localStorage depois não consegue mais usar
+    try {
+      const token = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null')?.token
+      if (token) await supabase.rpc('logout_session', { p_token: token })
+    } catch { /* sem rede: o token expira sozinho em 180 dias */ }
     // Remove sessão de auditoria do banco
     try {
       const auditKey = localStorage.getItem(AUDIT_SESSION_KEY)
