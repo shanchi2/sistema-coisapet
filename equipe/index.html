@@ -270,13 +270,19 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);height
       <div class="lv-sub">Área da Equipe</div>
     </div>
     <div class="lv-form">
-      <div class="lv-card">
+      <!-- <form> + name/autocomplete certos: o celular (Google/iCloud) oferece
+           "Salvar senha" e preenche sozinho no próximo login (13/10) -->
+      <form class="lv-card" id="login-form" autocomplete="on" onsubmit="event.preventDefault();doLogin()">
         <span class="fl">E-mail</span>
-        <input id="le" type="email" class="fi" placeholder="seu@email.com" autocomplete="email"/>
+        <input id="le" name="username" type="email" class="fi" placeholder="seu@email.com" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false"/>
         <span class="fl">Senha</span>
-        <input id="lp" type="password" class="fi" placeholder="••••••••" autocomplete="current-password" style="margin-bottom:0"/>
+        <input id="lp" name="password" type="password" class="fi" placeholder="••••••••" autocomplete="current-password" style="margin-bottom:0"/>
         <div id="lerr" class="errm" style="display:none;margin-bottom:12px"></div>
-        <button class="btn-login" id="lb" onclick="doLogin()" style="margin-top:18px">Entrar</button>
+        <button class="btn-login" id="lb" type="submit" style="margin-top:18px">Entrar</button>
+      </form>
+      <div id="ios-hint" style="display:none;margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.08);border:1px solid rgba(245,237,228,.18);color:rgba(245,237,228,.85);font-size:12.5px;line-height:1.45">
+        <strong style="display:block;margin-bottom:4px;color:#F5EDE4">📌 Para não ser desconectado</strong>
+        Instale o app no iPhone: toque em <strong>Compartilhar</strong> (o quadrado com a seta ↑) e depois em <strong>“Adicionar à Tela de Início”</strong>. Aberto pelo Safari, o iPhone apaga o login depois de alguns dias sem usar.
       </div>
       <div id="install-banner" onclick="doInstall()">
         <div class="ib-icon"><svg width="19" height="19" viewBox="0 0 24 24" stroke="#fff" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
@@ -628,7 +634,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);height
 </div>
 <script>
 // ── Controle de versão e atualização ───────────────────────────
-const APP_VERSION = '2.4.0' // ← incrementa a cada deploy
+const APP_VERSION = '2.5.0' // ← incrementa a cada deploy
 
 async function forceUpdate() {
   const btn  = document.getElementById('refresh-btn')
@@ -709,7 +715,7 @@ window.addEventListener('load',()=>{
   const saved=localStorage.getItem(SK)
   setTimeout(()=>{
     const pl=document.getElementById('preloader');pl.classList.add('out');setTimeout(()=>{pl.style.display='none'},500)
-    if(saved){try{me=JSON.parse(saved);startApp()}catch{showLogin()}}else showLogin()
+    if(saved){try{me=JSON.parse(saved);try{navigator.storage?.persist?.()}catch{};startApp()}catch{showLogin()}}else showLogin()
   },2800)
 })
 
@@ -720,7 +726,14 @@ const fmtH=h=>{if(!h&&h!==0)return'—';const f=parseFloat(h);const hrs=Math.flo
 const fmtDt=d=>new Date(d).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})+' às '+new Date(d).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})
 
 function toast(msg,ms=2800){const el=document.createElement('div');el.className='toast';el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),ms)}
-function showLogin(){document.getElementById('lv').classList.add('on')}
+function showLogin(){
+  document.getElementById('lv').classList.add('on')
+  // iPhone/iPad pelo Safari (não instalado): o iOS apaga o login depois de
+  // ~7 dias sem abrir — mostra como instalar na tela inicial
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)
+  const installed=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true
+  if(ios&&!installed)document.getElementById('ios-hint').style.display='block'
+}
 
 async function doLogin(){
   const e=document.getElementById('le').value.trim(),p=document.getElementById('lp').value
@@ -731,9 +744,14 @@ async function doLogin(){
   btn.textContent='Entrar';btn.disabled=false
   if(error||data?.error){err.textContent=data?.error||'E-mail ou senha incorretos.';err.style.display='block';return}
   localStorage.setItem(SK,JSON.stringify(data));me=data
+  // Pede pro navegador não apagar o login quando faltar espaço (Android/Chrome)
+  try{navigator.storage?.persist?.()}catch{}
   document.getElementById('lv').classList.remove('on');startApp()
 }
-function doLogout(){localStorage.removeItem(SK);location.reload()}
+async function doLogout(){
+  try{if(me?.token)await db.rpc('logout_session',{p_token:me.token})}catch{}
+  localStorage.removeItem(SK);location.reload()
+}
 
 function startApp(){
   document.getElementById('av').classList.add('on')

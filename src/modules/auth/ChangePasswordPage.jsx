@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { sessionToken } from '../../lib/sessionToken'
 import { useNavigate } from 'react-router-dom'
 import { KeyRound, Eye, EyeOff, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
@@ -23,6 +24,7 @@ export function ChangePasswordPage() {
     setLoading(true)
     try {
       const { data } = await supabase.rpc('change_user_password', {
+        p_token:        sessionToken(),
         p_user_id:      user.id,
         p_old_password: null,
         p_new_password: newPass,
