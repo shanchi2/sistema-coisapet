@@ -70,3 +70,7 @@ com o aviso do que subiu.
   ON public.system_users TO anon, authenticated` — senão a tela quebra.
   Funções sensíveis de usuário exigem `p_token` (token da sessão, ver
   `src/lib/sessionToken.js`).
+
+- **2026-10-13** — Quem mexe em quê (combinado com o Raphael): o `/equipe`
+  (PWA dos funcionários) é mantido AQUI, pelo Claude, junto com o sistema.
+  O Copilot (VS Code) é usado só pro site (`site/`).
