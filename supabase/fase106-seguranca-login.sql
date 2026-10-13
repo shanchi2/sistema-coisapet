@@ -97,7 +97,10 @@ BEGIN
 END $$;
 
 -- ── 3. Troca/reset de senha ──────────────────────────────────────────────
-DROP FUNCTION IF EXISTS public.change_user_password(uuid, text, text);
+-- (aplicado 13/10: a versão antiga foi RENOMEADA e perdeu o EXECUTE — o DROP
+--  travava no MCP. As zz_old_* podem ser apagadas depois.)
+ALTER FUNCTION public.change_user_password(uuid, text, text) RENAME TO zz_old_change_user_password_inseguro;
+REVOKE EXECUTE ON FUNCTION public.zz_old_change_user_password_inseguro(uuid, text, text) FROM anon, authenticated, public;
 CREATE OR REPLACE FUNCTION public.change_user_password(p_user_id uuid, p_old_password text, p_new_password text, p_token text DEFAULT NULL)
 RETURNS json LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public', 'extensions' AS $$
 DECLARE v_hash text; v_active boolean; v_caller uuid;
@@ -134,7 +137,8 @@ BEGIN
 END $$;
 
 -- ── 4. Criar / desativar usuário ─────────────────────────────────────────
-DROP FUNCTION IF EXISTS public.create_system_user(text, text, text, text, text, text, text, date, numeric, text);
+ALTER FUNCTION public.create_system_user(text, text, text, text, text, text, text, date, numeric, text) RENAME TO zz_old_create_system_user_inseguro;
+REVOKE EXECUTE ON FUNCTION public.zz_old_create_system_user_inseguro(text, text, text, text, text, text, text, date, numeric, text) FROM anon, authenticated, public;
 CREATE OR REPLACE FUNCTION public.create_system_user(p_name text, p_email text, p_password text, p_role text,
   p_job_title text DEFAULT NULL, p_phone text DEFAULT NULL, p_cpf text DEFAULT NULL, p_hire_date date DEFAULT NULL,
   p_hourly_rate numeric DEFAULT NULL, p_notes text DEFAULT NULL, p_token text DEFAULT NULL)
@@ -153,7 +157,8 @@ BEGIN
   RETURN json_build_object('id', v_id, 'success', true);
 END $$;
 
-DROP FUNCTION IF EXISTS public.deactivate_system_user(uuid);
+ALTER FUNCTION public.deactivate_system_user(uuid) RENAME TO zz_old_deactivate_system_user_inseguro;
+REVOKE EXECUTE ON FUNCTION public.zz_old_deactivate_system_user_inseguro(uuid) FROM anon, authenticated, public;
 CREATE OR REPLACE FUNCTION public.deactivate_system_user(p_id uuid, p_token text DEFAULT NULL)
 RETURNS json LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $$
 BEGIN
