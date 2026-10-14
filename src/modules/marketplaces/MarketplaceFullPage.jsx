@@ -5,6 +5,8 @@ import { supabase } from '../../lib/supabase'
 import { useMlInsights } from '../ml-insights/hooks/useMlInsights'
 import { useShopeeInsights } from '../shopee-insights/hooks/useShopeeInsights'
 import { StatTile } from '../dashboard/widgets'
+import { FullSalesPanel } from './FullSalesPanel'
+import { FullTabs } from './FullTabs'
 import { PLAT, PlatBadge, Segmented, norm, fmtN, isCancelled, fetchAll } from './shared'
 
 // Estoque nos armazéns dos marketplaces (Fase 1 da unificação, 10/10).
@@ -41,6 +43,7 @@ export function MarketplaceFullPage() {
   const [sortBy, setSortBy] = useState('days')
   const [open, setOpen] = useState({})
   const [at, setAt] = useState(null)
+  const [tab, setTab] = useState('estoque')   // estoque | vendas (14/10)
 
   function load() {
     setMlFull(null); setErr(null)
@@ -124,6 +127,9 @@ export function MarketplaceFullPage() {
         </div>
       </div>
 
+      <FullTabs value={tab} onChange={setTab} />
+
+      {tab === 'vendas' ? <FullSalesPanel fullItems={mlFull} /> : (<>
       <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatTile icon={Warehouse} label="No Full do ML" value={loading ? '…' : fmtN(rows.length)} detail={`${fmtN(units)} unidades lá dentro`} />
         <StatTile icon={PackageX} label="Zerados no Full" value={loading ? '…' : fmtN(c.zero)} detail="anúncio Full parado" tone={c.zero ? "rose" : "neutral"} />
@@ -231,6 +237,7 @@ export function MarketplaceFullPage() {
       <p className="text-[11px] text-slate-400 flex items-start gap-1.5"><Info size={12} className="shrink-0 mt-px" />
         <span>"Dura" = unidades no Full ÷ média de vendas Full por dia nos últimos 30 dias (pedidos cancelados não contam). Reposição do Full é sempre manual, pelo painel do ML — os envios abertos aparecem em "A caminho" e na Gestão de Envios Full. "Na Shopee" = estoque do mesmo SKU nos anúncios da Shopee.</span>
       </p>
+      </>)}
     </div>
   )
 }
