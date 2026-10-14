@@ -6923,3 +6923,21 @@ Raphael quer as telas de ML e Shopee unificadas com filtro de plataforma (e cruz
 - **Gravado direto (sem risco):** 91 links do ML — SKU igual (57), histórico de vendas (23) e variação irmã (11) — e 3 da Shopee por SKU. ML foi de 109 → 200; Shopee 544 → 547 (os 42 restantes não estão anunciados lá).
 - **Por nome (conferir):** 360 sugestões em `product_ml_link_suggestions` (fase107), 140 "fortes". Teste de precisão contra os casos certos: 86% nas fortes, 36% nas fracas — erra tamanho/espécie (Plataforma G → anúncio da M). Por isso a tela **`/marketplaces/links`** (permissão `produtos`): confirmar (um a um ou em lote), escolher outro anúncio (busca por palavras), "não está no ML"; aba "sem link da Shopee".
 - **Pra resolver na raiz:** preencher o SKU nas variações dos anúncios do ML (ajuda também estoque e pedidos). Dá pra fazer pela API usando os vínculos já confirmados — próximo passo se o Raphael quiser.
+
+## 2026-10-14 — Vendas do Full (aba na tela de Estoque Full)
+
+**Pedido do Raphael:** uma tela bem visual do que foi vendido pelo Full nos
+últimos tempos, "junto do estoque do full".
+
+**O que foi feito:** abas "Estoque no Full" / "Vendas do Full" no topo de
+`/ml/full` (MlFullStockPage) e de `/marketplaces/full` (MarketplaceFullPage).
+A aba nova é o componente `src/modules/marketplaces/FullSalesPanel.jsx`
+(abas em `FullTabs.jsx`):
+- Período 7 / 30 / 90 dias, sempre comparando com o período anterior.
+- KPIs: pedidos pelo Full, unidades, % dos pedidos do ML que saíram pelo
+  Full, faturamento Full (SÓ diretor; os outros veem "produtos diferentes").
+- Gráfico de pedidos por dia (Full x envio próprio, empilhado) e gráfico
+  de dia da semana no Full.
+- Ranking "Mais vendidos no Full" (top 15) com quanto ainda tem no Full e
+  "~X dias" de cobertura (casa por SKU ou título com o estoque do Full).
+- Fonte: `orders` (source='ml', `is_full`) + `order_items`; sem tabela nova.

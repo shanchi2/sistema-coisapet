@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Warehouse, RefreshCw, Loader2, AlertTriangle, ExternalLink, ImageOff, ChevronDown, Info, PackageCheck, PackageX, Truck, Search, Clock } from 'lucide-react'
 import { useMlInsights } from './hooks/useMlInsights'
+import { FullSalesPanel } from '../marketplaces/FullSalesPanel'
+import { FullTabs } from '../marketplaces/FullTabs'
 
 function fmtDateTime(d) {
   if (!d) return null
@@ -147,6 +149,7 @@ export function MlFullStockPage() {
   const [lastSync, setLastSync] = useState(null) // client-side — busca é sempre ao vivo na API do ML
   const [levelFilter, setLevelFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [tab, setTab] = useState('estoque')   // estoque | vendas (14/10)
 
   const load = () => fetchFulfillmentStock().then(data => { setItems(data); setLastSync(new Date()) }).catch(() => {})
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -197,6 +200,9 @@ export function MlFullStockPage() {
           </div>
         </div>
 
+        <FullTabs value={tab} onChange={setTab} />
+
+        {tab === 'vendas' ? <FullSalesPanel fullItems={items} /> : (<>
         {/* Aviso: reposição é manual */}
         <div className="flex items-start gap-3 bg-sky-50 border border-sky-200 rounded-2xl px-4 py-3.5">
           <Info size={16} className="text-sky-500 mt-0.5 shrink-0" />
@@ -281,6 +287,7 @@ export function MlFullStockPage() {
             {sorted.map(item => <FullProductCard key={item.item_id} item={item} />)}
           </div>
         )}
+        </>)}
       </div>
     </div>
   )
