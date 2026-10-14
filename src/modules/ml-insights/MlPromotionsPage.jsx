@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Tag, Loader2, AlertTriangle, ExternalLink, Zap, Gift, ArrowLeft, LogOut, Send, Percent, Search, Clock, Trash2, Plus, Flame, TrendingUp } from 'lucide-react'
+import { Tag, Loader2, AlertTriangle, ExternalLink, Zap, Gift, ArrowLeft, LogOut, Send, Percent, Search, Clock, Trash2, Plus, Flame, TrendingUp, ArrowDownUp, ArrowUp, ArrowDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useMlInsights } from './hooks/useMlInsights'
 import { ConfirmWriteModal } from './ConfirmWriteModal'
@@ -57,6 +57,29 @@ function DiscountBadge({ original, price, suggested }) {
       {edited && sugPct != null && <span className="block text-[10px] text-slate-400">sug. {sugPct}%</span>}
     </span>
   )
+}
+
+// Ordenação dos candidatos da campanha. O desconto usa o preço sugerido
+// pelo ML (não o digitado), pra lista não pular enquanto edita.
+const SORT_OPTIONS = [
+  { key: 'sales', label: 'Vendas' },
+  { key: 'discount', label: 'Desconto' },
+  { key: 'name', label: 'Nome' },
+  { key: 'price', label: 'Valor' },
+]
+function sortCandidates(rows, { key, dir }) {
+  const val = r => {
+    if (key === 'name') return (r.title || r.item_id || '').toLowerCase()
+    if (key === 'price') return Number(r.original_price) || 0
+    if (key === 'discount') return pctOff(r.original_price, r.suggested_discounted_price) ?? -1
+    return r.sales || 0
+  }
+  const mult = dir === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const va = val(a), vb = val(b)
+    const c = typeof va === 'string' ? va.localeCompare(vb, 'pt-BR') : va - vb
+    return c !== 0 ? c * mult : (b.sales || 0) - (a.sales || 0)
+  })
 }
 
 const ITEM_STATUS_LABEL = { candidate: 'Candidato', pending: 'Aguardando início', started: 'Participando', finished: 'Encerrado' }
@@ -511,7 +534,15 @@ export function MlPromotionsPage() {
     }
   }
 
-  const toJoinRows = candidates ? candidates.filter(c => c.status === 'candidate').sort((a, b) => b.sales - a.sales) : []
+  const [sortBy, setSortBy] = useState({ key: 'sales', dir: 'desc' })
+  // Clicar no mesmo critério inverte a ordem; num critério novo começa no
+  // sentido mais útil (nome A→Z, o resto do maior pro menor).
+  function changeSort(key) {
+    setSortBy(cur => cur.key === key
+      ? { key, dir: cur.dir === 'desc' ? 'asc' : 'desc' }
+      : { key, dir: key === 'name' ? 'asc' : 'desc' })
+  }
+  const toJoinRows = candidates ? sortCandidates(candidates.filter(c => c.status === 'candidate'), sortBy) : []
   const joinedRows = candidates ? candidates.filter(c => c.status === 'started' || c.status === 'pending') : []
 
   // ── Oferta relâmpago (LIGHTNING) ──────────────────────────────────
@@ -820,13 +851,29 @@ export function MlPromotionsPage() {
                           onChange={e => toggleSelectAll(toJoinRows, e.target.checked)}
                           title="Selecionar todos"/>
                       )}
-                      Candidatos, ordenados por venda ({toJoinRows.length})
+                      Candidatos ({toJoinRows.length})
                       {selectedCount > 0 && <span className="normal-case font-normal text-emerald-600">· {selectedCount} selecionado{selectedCount > 1 ? 's' : ''}</span>}
                     </label>
+                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1 text-xs">
+                      <span className="flex items-center gap-1 text-slate-400 mr-0.5"><ArrowDownUp size={12}/> Ordenar por</span>
+                      {SORT_OPTIONS.map(o => {
+                        const active = sortBy.key === o.key
+                        const Arrow = sortBy.dir === 'asc' ? ArrowUp : ArrowDown
+                        return (
+                          <button key={o.key} onClick={() => changeSort(o.key)}
+                            title={active ? 'Clique de novo pra inverter a ordem' : undefined}
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-colors ${active ? 'bg-emerald-50 border-emerald-300 text-emerald-700 font-medium' : 'bg-white border-slate-200 text-slate-500 hover:border-emerald-300'}`}>
+                            {o.label}{active && <Arrow size={11}/>}
+                          </button>
+                        )
+                      })}
+                    </div>
                     <button onClick={requestJoin} disabled={!selectedCount || submitting}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
                       <Send size={13}/> Indicar selecionados{selectedCount ? ` (${selectedCount})` : ''}
                     </button>
+                    </div>
                   </div>
                   {toJoinRows.length === 0 ? (
                     <p className="text-sm text-slate-400">Nenhum candidato pendente — ou não sobrou nenhum, ou já indicou todos.</p>

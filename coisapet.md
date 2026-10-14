@@ -6952,3 +6952,6 @@ Na tela `/ml/promocoes` → aba Campanhas → candidatos de um convite:
   (vermelho a partir de 30%). Se o preço for editado, aparece embaixo
   "sug. X%" (o que o ML sugeria). O % também aparece no modal de
   confirmação, que agora rola quando a lista é grande.
+- (mesmo dia) "Ordenar por" nos candidatos: Vendas (padrão), Desconto
+  (% sugerido pelo ML), Nome e Valor (preço original). Clicar de novo no
+  mesmo botão inverte a ordem (seta ↑/↓). Empate desempata por vendas.
