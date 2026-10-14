@@ -6941,3 +6941,14 @@ A aba nova é o componente `src/modules/marketplaces/FullSalesPanel.jsx`
 - Ranking "Mais vendidos no Full" (top 15) com quanto ainda tem no Full e
   "~X dias" de cobertura (casa por SKU ou título com o estoque do Full).
 - Fonte: `orders` (source='ml', `is_full`) + `order_items`; sem tabela nova.
+
+## 2026-10-14 — Campanhas do ML: "selecionar todos" + % de desconto
+
+Na tela `/ml/promocoes` → aba Campanhas → candidatos de um convite:
+- Checkbox no cabeçalho "Candidatos..." marca todos (cada um com o preço
+  sugerido pelo ML) — depois é só desmarcar quem não quer. Fica "meio
+  marcado" quando só parte está selecionada; mostra "· N selecionados".
+- Ao lado do preço, selo com o % de desconto sobre o preço original
+  (vermelho a partir de 30%). Se o preço for editado, aparece embaixo
+  "sug. X%" (o que o ML sugeria). O % também aparece no modal de
+  confirmação, que agora rola quando a lista é grande.

@@ -37,6 +37,28 @@ function itemLink(row) {
 const WRITABLE_TYPES = new Set(['DEAL'])
 
 const STATUS_LABEL = { pending: 'Pendente', started: 'Ativa', finished: 'Encerrada' }
+// % de desconto do preço (o sugerido pelo ML ou o que foi digitado) sobre
+// o preço original. Se o valor digitado sair do sugerido, mostra o % que o
+// ML sugeria embaixo, pra comparar.
+function pctOff(original, price) {
+  const o = Number(original), p = Number(price)
+  if (!o || !p || p >= o) return null
+  return Math.round((1 - p / o) * 100)
+}
+function DiscountBadge({ original, price, suggested }) {
+  const pct = pctOff(original, price)
+  const sugPct = pctOff(original, suggested)
+  const edited = suggested != null && price !== '' && Number(price) !== Number(suggested)
+  return (
+    <span className="w-14 shrink-0 text-right leading-tight" title={sugPct != null ? `Desconto sugerido pelo ML: ${sugPct}%` : undefined}>
+      <span className={`inline-block text-xs font-semibold rounded-md px-1.5 py-0.5 ${pct == null ? 'text-slate-300' : pct >= 30 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-700'}`}>
+        {pct == null ? '—' : `-${pct}%`}
+      </span>
+      {edited && sugPct != null && <span className="block text-[10px] text-slate-400">sug. {sugPct}%</span>}
+    </span>
+  )
+}
+
 const ITEM_STATUS_LABEL = { candidate: 'Candidato', pending: 'Aguardando início', started: 'Participando', finished: 'Encerrado' }
 
 function todayISODate() { return todayISO() }
@@ -431,6 +453,17 @@ export function MlPromotionsPage() {
 
   const selectedCount = Object.keys(selected).length
 
+  // Marca/desmarca todos os candidatos de uma vez (cada um com o preço
+  // sugerido pelo ML) — depois é só desmarcar quem não quer.
+  function toggleSelectAll(rows, checked) {
+    setSelected(() => {
+      if (!checked) return {}
+      const next = {}
+      rows.forEach(r => { next[r.item_id] = r.suggested_discounted_price ?? r.min_discounted_price ?? r.original_price })
+      return next
+    })
+  }
+
   function requestJoin() {
     if (!selectedCount) return
     setConfirmModal('join')
@@ -779,9 +812,17 @@ export function MlPromotionsPage() {
                   )}
 
                   <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
-                    <p className="text-xs font-semibold text-slate-500 uppercase">
+                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none">
+                      {toJoinRows.length > 0 && (
+                        <input type="checkbox"
+                          checked={selectedCount > 0 && selectedCount === toJoinRows.length}
+                          ref={el => { if (el) el.indeterminate = selectedCount > 0 && selectedCount < toJoinRows.length }}
+                          onChange={e => toggleSelectAll(toJoinRows, e.target.checked)}
+                          title="Selecionar todos"/>
+                      )}
                       Candidatos, ordenados por venda ({toJoinRows.length})
-                    </p>
+                      {selectedCount > 0 && <span className="normal-case font-normal text-emerald-600">· {selectedCount} selecionado{selectedCount > 1 ? 's' : ''}</span>}
+                    </label>
                     <button onClick={requestJoin} disabled={!selectedCount || submitting}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg disabled:opacity-50 transition-colors">
                       <Send size={13}/> Indicar selecionados{selectedCount ? ` (${selectedCount})` : ''}
@@ -800,6 +841,9 @@ export function MlPromotionsPage() {
                           </a>
                           <span className="text-xs text-slate-400 shrink-0">{r.sales} vendidos/30d</span>
                           <span className="text-xs text-slate-400 shrink-0 line-through">{fmtMoney(r.original_price)}</span>
+                          <DiscountBadge original={r.original_price}
+                            price={r.item_id in selected ? selected[r.item_id] : r.suggested_discounted_price}
+                            suggested={r.suggested_discounted_price}/>
                           <input type="number" step="0.01"
                             value={r.item_id in selected ? selected[r.item_id] : (r.suggested_discounted_price ?? '')}
                             onChange={e => setSelected(sel => ({ ...sel, [r.item_id]: e.target.value }))}
@@ -941,10 +985,11 @@ export function MlPromotionsPage() {
         onConfirm={confirmJoin}
         onCancel={() => setConfirmModal(null)}
         detail={
-          <ul className="text-sm text-slate-700 space-y-1">
+          <ul className="text-sm text-slate-700 space-y-1 max-h-72 overflow-y-auto pr-1">
             {Object.entries(selected).map(([itemId, price]) => {
               const row = candidates?.find(c => c.item_id === itemId)
-              return <li key={itemId}><strong>{row?.title || itemId}:</strong> {fmtMoney(price)}</li>
+              const pct = pctOff(row?.original_price, price)
+              return <li key={itemId}><strong>{row?.title || itemId}:</strong> {fmtMoney(price)}{pct != null && <span className="text-slate-400"> (-{pct}%)</span>}</li>
             })}
           </ul>
         }
