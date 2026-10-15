@@ -6988,3 +6988,11 @@ Em `MlFullShipmentsPage.jsx`:
 - Dados reais (15/10): 3 envios com multa por diferença (#77460386 R$141,
   #63272926 R$189,05, #21937367 R$121,98) e 5 cancelamentos fora do prazo
   (penalidade registrada, R$0 cobrado).
+
+## 2026-10-16 — Estoque nos Marketplaces: busca mostra todas as situações
+
+Raphael buscou "Aspen" e só vinha o ML: a situação padrão é "Precisam de
+atenção" e os 3 da Shopee estavam OK (54/41/26). Agora, ao digitar na busca,
+a situação vai sozinha pra "Todos" (e volta pra anterior ao limpar). Se ainda
+assim algo da busca ficar escondido (ex.: trocou a situação/plataforma na
+mão), aparece um aviso azul "N variações com 'x' não aparecem… Mostrar todas".

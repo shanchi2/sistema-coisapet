@@ -121,6 +121,19 @@ export function MarketplaceStockPage() {
   const [plat, setPlat] = useState('') // '' = as duas
   const [level, setLevel] = useState('alert') // alert | zero | crit | low | ok | all
   const [search, setSearch] = useState('')
+  // Buscou um produto → quer ver ele, esteja OK ou não: a busca passa a
+  // olhar "Todos" e volta pra situação anterior quando limpa (Raphael, 16/10:
+  // buscou "Aspen" e a Shopee não aparecia porque estava OK).
+  const levelBeforeSearch = useRef(null)
+  useEffect(() => {
+    if (search.trim() && levelBeforeSearch.current === null) {
+      levelBeforeSearch.current = level
+      if (level !== 'all') setLevel('all')
+    } else if (!search.trim() && levelBeforeSearch.current !== null) {
+      setLevel(levelBeforeSearch.current)
+      levelBeforeSearch.current = null
+    }
+  }, [search]) // eslint-disable-line react-hooks/exhaustive-deps
   const [showFull, setShowFull] = useState(true)
   const [showPaused, setShowPaused] = useState(true)
   const [onlySelling, setOnlySelling] = useState(false)
@@ -483,6 +496,14 @@ export function MarketplaceStockPage() {
           </div>
 
           <Panel title={`${fmtInt(visible.length)} variações`} subtitle="Faixa amarela = Mercado Livre · faixa laranja = Shopee">
+            {/* Resultado da busca escondido pela situação/plataforma — avisa em vez de sumir calado */}
+            {search.trim() && base.length > visible.length && (
+              <div className="flex items-center gap-2 flex-wrap text-xs bg-sky-50 border border-sky-200 text-sky-800 rounded-lg px-3 py-2 mb-3">
+                <Info size={13} className="shrink-0" />
+                <span><strong>{fmtInt(base.length - visible.length)}</strong> variaç{base.length - visible.length === 1 ? 'ão' : 'ões'} com "{search.trim()}" não aparece{base.length - visible.length === 1 ? '' : 'm'} por causa da situação/plataforma escolhida.</span>
+                <button onClick={() => { setLevel('all'); setPlat('') }} className="font-semibold underline hover:text-sky-900">Mostrar todas</button>
+              </div>
+            )}
             <div className="overflow-x-auto -mx-5">
               <table className="w-full text-[13px] min-w-[980px]">
                 <thead>
