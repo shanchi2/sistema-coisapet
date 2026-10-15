@@ -6967,3 +6967,24 @@ Faixa amarela acima dos candidatos: "Desconto máximo [15] %  Aplicar".
   do preço travado), o item sai da seleção com o selo "ML exige -X%".
 - Toast resume: N mantidos, N limitados, N fora. Nada é gravado no ML
   até clicar em "Indicar selecionados" e confirmar.
+
+## 2026-10-15 — Gestão de Envios Full: conferência legível + multa
+
+Pedido do Raphael: as mensagens em laranja eram o JSON cru do ML
+(`[{"type":"QUANTITY_UNDER_RECEIVED",...}]`) e não aparecia a multa.
+Em `MlFullShipmentsPage.jsx`:
+- `processResults` de cada produto viram frases com cor: faltaram (vermelho),
+  a mais (azul), recusadas por embalagem/validade/etiqueta (âmbar) + o
+  destino ("o ML vai descartar" / "vocês precisam retirar no centro").
+  Mapa em `PROBLEM_TYPES`; código desconhecido aparece "humanizado".
+- Card aberto ganha "resumo da conferência": declaradas, aceitas, faltaram,
+  recusadas, a mais.
+- Cobrança: `raw.inbound_charges` (total_charged, with_penalties,
+  last_penalty_type). O ML manda só o TOTAL (coleta + multa juntas) — não
+  dá pra separar o valor da multa; a tela explica isso e linka pro envio
+  no ML. Selo vermelho "multa" no cabeçalho; R$ só pra diretor.
+- Card "Com multa" nos totais do topo. Produtos com diferença primeiro
+  (maior diferença antes), os certinhos ficam recolhidos. Foto + SKU.
+- Dados reais (15/10): 3 envios com multa por diferença (#77460386 R$141,
+  #63272926 R$189,05, #21937367 R$121,98) e 5 cancelamentos fora do prazo
+  (penalidade registrada, R$0 cobrado).
