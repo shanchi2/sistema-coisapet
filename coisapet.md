@@ -6955,3 +6955,15 @@ Na tela `/ml/promocoes` → aba Campanhas → candidatos de um convite:
 - (mesmo dia) "Ordenar por" nos candidatos: Vendas (padrão), Desconto
   (% sugerido pelo ML), Nome e Valor (preço original). Clicar de novo no
   mesmo botão inverte a ordem (seta ↑/↓). Empate desempata por vendas.
+
+## 2026-10-15 — Campanhas do ML: regra de "desconto máximo"
+
+Faixa amarela acima dos candidatos: "Desconto máximo [15] %  Aplicar".
+- Vale pros selecionados; sem nenhum selecionado, vale pra lista toda.
+- Sugestão do ML com desconto ATÉ o limite → mantém o preço sugerido.
+- Sugestão ACIMA do limite → preço travado em original × (1 − limite),
+  arredondado pra cima (nunca passa do limite). Linha ganha selo "limitado".
+- Se o ML exige mais desconto que o limite (`max_discounted_price` abaixo
+  do preço travado), o item sai da seleção com o selo "ML exige -X%".
+- Toast resume: N mantidos, N limitados, N fora. Nada é gravado no ML
+  até clicar em "Indicar selecionados" e confirmar.

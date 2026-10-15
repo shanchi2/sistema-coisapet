@@ -441,6 +441,7 @@ export function MlPromotionsPage() {
     setCampaign(inv)
     setCandidates(null)
     setSelected({})
+    setCapInfo({})
     try {
       const [items, traffic] = await Promise.all([
         fetchPromotionCandidates(inv.id, inv.type),
@@ -466,6 +467,7 @@ export function MlPromotionsPage() {
   }
 
   function toggleSelect(row, checked) {
+    setCapInfo(ci => { if (!(row.item_id in ci)) return ci; const n = { ...ci }; delete n[row.item_id]; return n })
     setSelected(sel => {
       const next = { ...sel }
       if (checked) next[row.item_id] = row.suggested_discounted_price ?? row.min_discounted_price ?? row.original_price
@@ -479,12 +481,44 @@ export function MlPromotionsPage() {
   // Marca/desmarca todos os candidatos de uma vez (cada um com o preço
   // sugerido pelo ML) — depois é só desmarcar quem não quer.
   function toggleSelectAll(rows, checked) {
+    setCapInfo({})
     setSelected(() => {
       if (!checked) return {}
       const next = {}
       rows.forEach(r => { next[r.item_id] = r.suggested_discounted_price ?? r.min_discounted_price ?? r.original_price })
       return next
     })
+  }
+
+  // Regra de desconto máximo: quem o ML sugere com desconto até o limite
+  // mantém o sugerido; quem passa do limite tem o preço travado no limite.
+  // Se o ML exige MAIS desconto que o limite (max_discounted_price abaixo
+  // do preço travado), o item não cabe na regra e sai da seleção.
+  // Vale pros selecionados; sem nenhum selecionado, vale pra lista toda.
+  const [maxPct, setMaxPct] = useState('15')
+  const [capInfo, setCapInfo] = useState({}) // { item_id: 'kept' | 'capped' | 'out' }
+
+  function applyMaxDiscount(rows) {
+    const limit = Number(String(maxPct).replace(',', '.'))
+    if (!(limit > 0 && limit < 100)) { toast.error('Digite um desconto máximo entre 1 e 99%.'); return }
+    const targets = selectedCount ? rows.filter(r => r.item_id in selected) : rows
+    const next = {}, info = {}
+    let kept = 0, capped = 0, out = 0
+    targets.forEach(r => {
+      const orig = Number(r.original_price)
+      const sug = Number(r.suggested_discounted_price ?? r.min_discounted_price ?? orig)
+      if (!orig) return
+      // preço com exatamente o limite de desconto (arredonda pra cima → nunca passa do limite)
+      const floorPrice = Math.ceil(orig * (1 - limit / 100) * 100) / 100
+      if (sug >= floorPrice) { next[r.item_id] = sug; info[r.item_id] = 'kept'; kept++; return }
+      const maxAllowed = r.max_discounted_price != null ? Number(r.max_discounted_price) : null
+      if (maxAllowed != null && floorPrice > maxAllowed) { info[r.item_id] = 'out'; out++; return }
+      next[r.item_id] = floorPrice; info[r.item_id] = 'capped'; capped++
+    })
+    setSelected(next)
+    setCapInfo(info)
+    toast.success(`Regra de ${limit}% aplicada: ${kept} mantido${kept === 1 ? '' : 's'} no sugerido, ${capped} limitado${capped === 1 ? '' : 's'} a ${limit}%`
+      + (out ? ` · ${out} fora (o ML exige mais que ${limit}%)` : ''), { duration: 7000 })
   }
 
   function requestJoin() {
@@ -875,6 +909,20 @@ export function MlPromotionsPage() {
                     </button>
                     </div>
                   </div>
+                  {toJoinRows.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2 text-xs text-amber-900">
+                      <Percent size={13} className="text-amber-600"/>
+                      <span className="font-semibold">Desconto máximo</span>
+                      <input type="number" min="1" max="99" step="1" value={maxPct} onChange={e => setMaxPct(e.target.value)}
+                        className="w-14 text-xs border border-amber-300 bg-white rounded-md px-1.5 py-0.5 focus:outline-none focus:border-amber-500"/>
+                      <span>%</span>
+                      <button onClick={() => applyMaxDiscount(toJoinRows)}
+                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-md transition-colors">
+                        Aplicar {selectedCount ? `nos ${selectedCount} selecionados` : 'em todos'}
+                      </button>
+                      <span className="text-amber-700/80">até o limite mantém o sugerido do ML; acima, trava no limite.</span>
+                    </div>
+                  )}
                   {toJoinRows.length === 0 ? (
                     <p className="text-sm text-slate-400">Nenhum candidato pendente — ou não sobrou nenhum, ou já indicou todos.</p>
                   ) : (
@@ -888,6 +936,8 @@ export function MlPromotionsPage() {
                           </a>
                           <span className="text-xs text-slate-400 shrink-0">{r.sales} vendidos/30d</span>
                           <span className="text-xs text-slate-400 shrink-0 line-through">{fmtMoney(r.original_price)}</span>
+                          {capInfo[r.item_id] === 'capped' && <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5 shrink-0">limitado</span>}
+                          {capInfo[r.item_id] === 'out' && <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded-full px-1.5 py-0.5 shrink-0" title={`O ML só aceita esse item com preço até ${fmtMoney(r.max_discounted_price)} (-${pctOff(r.original_price, r.max_discounted_price)}%)`}>ML exige -{pctOff(r.original_price, r.max_discounted_price)}%</span>}
                           <DiscountBadge original={r.original_price}
                             price={r.item_id in selected ? selected[r.item_id] : r.suggested_discounted_price}
                             suggested={r.suggested_discounted_price}/>
