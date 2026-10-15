@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Truck, Loader2, AlertTriangle, ExternalLink, ChevronDown, Info, PackageCheck, PackageX, Clock, Calendar, MapPin, Ban, Hourglass, RefreshCw, Search, Puzzle, Receipt, ChevronRight } from 'lucide-react'
+import { Truck, Loader2, AlertTriangle, ExternalLink, ChevronDown, Info, PackageCheck, PackageX, Clock, Calendar, MapPin, Ban, Hourglass, RefreshCw, Search, Puzzle, Receipt, ChevronRight, Sparkles } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { InfoTooltip } from './InfoTooltip'
 import { FullSyncExtensionModal } from './FullSyncExtensionModal'
+import { FullReplenishmentPanel } from './FullReplenishmentPanel'
 
 function fmtDate(iso) {
   if (!iso) return null
@@ -347,8 +348,11 @@ function ShipmentCard({ shipment, highlighted, isAdmin }) {
 export function MlFullShipmentsPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const highlightId = searchParams.get('envio')
+  // Abas: envios (acompanhamento) | reposicao (central de inteligência, 16/10)
+  const view = searchParams.get('aba') === 'reposicao' ? 'reposicao' : 'envios'
+  const setView = v => setSearchParams(p => { const n = new URLSearchParams(p); if (v === 'reposicao') n.set('aba', 'reposicao'); else n.delete('aba'); return n }, { replace: true })
   const [shipments, setShipments] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -450,6 +454,20 @@ export function MlFullShipmentsPage() {
           </div>
         </div>
 
+        <div className="inline-flex items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl">
+          {[['envios', 'Envios', Truck], ['reposicao', 'Reposição inteligente', Sparkles]].map(([k, l, Icon]) => (
+            <button key={k} onClick={() => setView(k)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${view === k ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+              <Icon size={15} /> {l}
+            </button>
+          ))}
+        </div>
+
+        {view === 'reposicao' && (shipments
+          ? <FullReplenishmentPanel shipments={shipments} />
+          : <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-slate-400" /></div>)}
+
+        {view === 'envios' && <>
         {/* Quão atual é isso aqui — o ML não tem API pra Envios Full */}
         {shipments && (() => {
           const age = daysSince(lastSync)
@@ -564,6 +582,7 @@ export function MlFullShipmentsPage() {
             <p className="text-slate-500">Nenhum envio nessa categoria.</p>
           </div>
         )}
+        </>}
       </div>
       <FullSyncExtensionModal open={extOpen} onClose={() => setExtOpen(false)} />
     </div>

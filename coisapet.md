@@ -6996,3 +6996,30 @@ atenção" e os 3 da Shopee estavam OK (54/41/26). Agora, ao digitar na busca,
 a situação vai sozinha pra "Todos" (e volta pra anterior ao limpar). Se ainda
 assim algo da busca ficar escondido (ex.: trocou a situação/plataforma na
 mão), aparece um aviso azul "N variações com 'x' não aparecem… Mostrar todas".
+
+## 2026-10-16 — Reposição inteligente do Full (ML + Shopee)
+
+Pedido do Raphael: "central de inteligência de reposição do Full" pras duas
+plataformas (vão começar a mandar pro Full da Shopee também), dizendo quais
+produtos são ideais e a quantidade média por envio (ex.: a cada 15 dias).
+Ficou como aba **"Reposição inteligente"** na Gestão de Envios Full
+(`/ml/full/envios?aba=reposicao`) — a tela vai ser unificada no futuro.
+Componente: `src/modules/ml-insights/FullReplenishmentPanel.jsx`.
+- Base: vendas de 90 dias (orders/order_items, sem cancelados) de TODOS os
+  canais da plataforma × `marketplace_stock` (mesmo cruzamento da tela de
+  Estoque nos Marketplaces: SKU → título+variação → título). Conferido:
+  54 de 55 variações do Full do ML casam com vendas.
+- Média/dia ponderada (último mês 50%, anterior 30%, retrasado 20%),
+  tendência (último mês × média dos 2 anteriores), constância (semanas com
+  venda nas últimas 13: constante 10+, regular 6–9, esporádico <6) e
+  mini-gráfico de 13 semanas.
+- Ideal pro Full = vende N+ un./mês (padrão 8) e não é esporádico.
+- Por envio = média/dia × ciclo (7/15/21/30). Enviar agora = média/dia ×
+  (ciclo + prazo + margem) − no Full − a caminho (envios ML em aberto).
+- Prazo do ML = mediana (coleta agendada → fim da conferência) dos envios
+  finalizados; Shopee = campo ajustável (padrão 7) até ter histórico.
+- Abas: Plano (ideais + já no Full) / Já no Full / Candidatos novos / Todos;
+  lista "Fora do Full" (título contém, salva no navegador) pra tirar
+  produtos grandes/frágeis; "Baixar plano (Excel)". Só quantidades.
+- Anúncio de envio próprio com o MESMO SKU de um anúncio Full não aparece
+  como candidato (já está no Full).
