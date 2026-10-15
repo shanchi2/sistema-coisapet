@@ -7023,3 +7023,11 @@ Componente: `src/modules/ml-insights/FullReplenishmentPanel.jsx`.
   produtos grandes/frágeis; "Baixar plano (Excel)". Só quantidades.
 - Anúncio de envio próprio com o MESMO SKU de um anúncio Full não aparece
   como candidato (já está no Full).
+
+## 2026-10-16 — Nome + "Sair" saíram do rodapé do menu lateral
+
+Raphael: o rodapé do sidebar (nome, cargo e "Sair") ocupava espaço à toa.
+Removido do `Sidebar.jsx` (o menu agora vai até o fim da tela). No
+`Header.jsx` o nome/avatar virou um botão com menu suspenso: nome, e-mail,
+cargo e "Sair" (fecha clicando fora ou com Esc). Header subiu pra z-30 pra
+o menu ficar por cima do conteúdo.

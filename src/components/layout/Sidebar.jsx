@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, ClipboardList, Boxes, Package,
-  Factory, DollarSign, Users, BarChart2, LogOut,
+  Factory, DollarSign, Users, BarChart2,
   ChevronRight, ChevronDown, Truck, History,
   TrendingUp, Calendar, FileSpreadsheet, MessageSquare, MessagesSquare,
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
@@ -223,15 +223,6 @@ const SECTION_ICONS = {
   'Diretoria':        Crown,
 }
 
-const ROLE_INFO = {
-  admin:          { label: 'Diretor',        bg: 'rgba(244,63,94,0.25)',  color: '#FCA5B8' },
-  administrativo: { label: 'Administrativo', bg: 'rgba(139,92,246,0.25)', color: '#C4B5FD' },
-  atendimento:    { label: 'Atendimento',    bg: 'rgba(14,165,233,0.25)', color: '#7DD3FC' },
-  producao:       { label: 'Produção',       bg: 'rgba(245,158,11,0.25)', color: '#FCD34D' },
-  equipe:         { label: 'Equipe',         bg: 'rgba(34,197,94,0.25)',  color: '#86EFAC' },
-  escritorio:     { label: 'Escritório',     bg: 'rgba(139,92,246,0.25)', color: '#C4B5FD' },
-}
-
 // Verifica se o role do usuário pode ver o item (controle estático)
 function canSee(itemRoles, userRole) {
   if (!itemRoles || itemRoles.length === 0) return true
@@ -257,12 +248,10 @@ function NavTooltip({ label, children }) {
 const SIDEBAR_SECTIONS_KEY = 'coisapet_sidebar_sections'
 
 export function Sidebar({ open, onToggle }) {
-  const { user, signOut }   = useAuth()
+  const { user }            = useAuth()
   const { canAccess }       = usePermissions()
-  const navigate            = useNavigate()
   const location             = useLocation()
   const userRole            = user?.role ?? 'equipe'
-  const roleInfo            = ROLE_INFO[userRole] ?? ROLE_INFO.equipe
   const isEscritorioRole    = userRole === 'escritorio'
 
   // Preferência de grupos abertos/fechados no menu — só existe quando o
@@ -336,11 +325,6 @@ export function Sidebar({ open, onToggle }) {
     prevActiveSectionRef.current = activeSectionLabel
   }, [activeSectionLabel])
 
-  function handleLogout() { signOut(); navigate('/login') }
-
-  const initials = user?.name
-    ? user.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
-    : 'CP'
 
   return (
     <aside
@@ -498,54 +482,6 @@ export function Sidebar({ open, onToggle }) {
         })}
       </nav>
 
-      {/* Usuário + logout */}
-      <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '10px' }}>
-        {open ? (
-          <>
-            <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl mb-1">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-                style={{ backgroundColor: roleInfo.bg }}>
-                <span style={{ fontFamily: 'Nunito, sans-serif', fontWeight: 700, fontSize: '11px', color: roleInfo.color }}>{initials}</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="truncate" style={{ fontSize: '12px', fontWeight: 600, color: '#fff' }}>{user?.name ?? '...'}</p>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
-                  style={{ backgroundColor: roleInfo.bg, color: roleInfo.color }}>
-                  {roleInfo.label}
-                </span>
-              </div>
-            </div>
-            <button onClick={handleLogout}
-              className="flex items-center gap-2 w-full px-3 py-2 rounded-xl transition-all text-sm"
-              style={{ color: 'rgba(255,255,255,0.35)' }}
-              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'rgba(255,255,255,0.65)' }}
-              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.35)' }}
-            >
-              <LogOut size={14}/>
-              <span style={{ fontFamily: 'Nunito Sans, sans-serif' }}>Sair</span>
-            </button>
-          </>
-        ) : (
-          <div className="flex flex-col items-center gap-1">
-            <NavTooltip label={user?.name ?? '...'}>
-              <div className="w-8 h-8 rounded-full flex items-center justify-center cursor-default"
-                style={{ backgroundColor: roleInfo.bg }}>
-                <span style={{ fontFamily: 'Nunito, sans-serif', fontWeight: 700, fontSize: '10px', color: roleInfo.color }}>{initials}</span>
-              </div>
-            </NavTooltip>
-            <NavTooltip label="Sair">
-              <button onClick={handleLogout}
-                className="w-8 h-8 flex items-center justify-center rounded-xl transition-all"
-                style={{ color: 'rgba(255,255,255,0.35)' }}
-                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'rgba(255,255,255,0.65)' }}
-                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.35)' }}
-              >
-                <LogOut size={14}/>
-              </button>
-            </NavTooltip>
-          </div>
-        )}
-      </div>
     </aside>
   )
 }
