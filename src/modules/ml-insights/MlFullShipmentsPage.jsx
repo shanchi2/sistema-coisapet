@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Truck, Loader2, AlertTriangle, ExternalLink, ChevronDown, Info, PackageCheck, PackageX, Clock, Calendar, MapPin, Ban, Hourglass, RefreshCw, Search, Puzzle } from 'lucide-react'
+import { Truck, Loader2, AlertTriangle, ExternalLink, ChevronDown, Info, PackageCheck, PackageX, Clock, Calendar, MapPin, Ban, Hourglass, RefreshCw, Search, Puzzle, Receipt, ChevronRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import { InfoTooltip } from './InfoTooltip'
 import { FullSyncExtensionModal } from './FullSyncExtensionModal'
 
@@ -61,22 +62,152 @@ const TABS = [
   { key: 'cancelled', label: 'Cancelados / vencidos' },
 ]
 
+// ─── Resultado da conferência, em português ─────────────────────────────
+// O ML devolve `processResults` (lista de ocorrências por produto) em
+// códigos tipo QUANTITY_UNDER_RECEIVED. Antes a tela mostrava o JSON cru
+// em laranja; agora cada código vira uma frase + cor (pedido do Raphael, 15/10).
+const PROBLEM_TYPES = {
+  QUANTITY_UNDER_RECEIVED: { group: 'missing', tone: 'rose',  text: q => `Faltaram ${q} un. — o centro não recebeu essa quantidade` },
+  QUANTITY_OVER_RECEIVED:  { group: 'extra',   tone: 'sky',   text: q => `Chegaram ${q} un. a mais do que o declarado (foram aceitas)` },
+  INAPPROPRIATE_PACKAGING: { group: 'refused', tone: 'amber', text: q => `${q} un. recusadas por embalagem inadequada` },
+  EXPIRE_DATE:             { group: 'refused', tone: 'amber', text: q => `${q} un. recusadas por validade (vencida ou curta demais)` },
+  UNREGISTERED_CODE:       { group: 'refused', tone: 'amber', text: q => `${q} un. com etiqueta/código não reconhecido` },
+  DAMAGED:                 { group: 'refused', tone: 'amber', text: q => `${q} un. recusadas por avaria` },
+}
+const PROBLEM_STATUS = {
+  UNSOLVABLE_BY_DISPOSAL:   'o ML vai descartar',
+  UNSOLVABLE_BY_WITHDRAWAL: 'vocês precisam retirar no centro',
+}
+const TONE = {
+  rose:  'bg-rose-50 text-rose-700 border-rose-200',
+  sky:   'bg-sky-50 text-sky-700 border-sky-200',
+  amber: 'bg-amber-50 text-amber-800 border-amber-200',
+  slate: 'bg-slate-50 text-slate-600 border-slate-200',
+}
+const humanize = t => (t || 'ocorrência').toLowerCase().replace(/_/g, ' ')
+
+// Lista de ocorrências do item: do `raw.processResults` (sync novo) ou do
+// `result_text` (JSON em texto, ou frase solta dos syncs antigos)
+function itemProblems(item) {
+  let list = item.raw?.processResults
+  if (!Array.isArray(list) && item.result_text) {
+    try { const parsed = JSON.parse(item.result_text); if (Array.isArray(parsed)) list = parsed } catch { /* frase solta */ }
+    if (!Array.isArray(list)) return [{ group: 'other', tone: 'slate', text: item.result_text.split('\n')[0], qty: null }]
+  }
+  return (list || []).map(r => {
+    const cfg = PROBLEM_TYPES[r.type]
+    const qty = Number(r.quantity) || 0
+    const extra = PROBLEM_STATUS[r.status]
+    return {
+      group: cfg?.group || 'other', tone: cfg?.tone || 'slate', qty,
+      text: (cfg ? cfg.text(qty) : `${qty} un. · ${humanize(r.type)}`) + (extra ? ` · ${extra}` : ''),
+    }
+  })
+}
+
+// Multa/cobrança do envio. O ML só manda o TOTAL cobrado (coleta + multa
+// juntas) e o tipo da última penalidade — não separa os valores.
+const PENALTY_LABEL = {
+  UNITS_WITH_SKU_DIFFERENCES: 'unidades diferentes do declarado (faltando, sobrando ou trocadas)',
+  UNITS_WITH_DIFFERENCES:     'unidades diferentes do declarado',
+  LATE_CANCELLATION:          'cancelamento fora do prazo',
+  PICKUP_CHARGE:              'taxa de coleta',
+}
+function chargeInfo(s) {
+  const c = s.raw?.inbound_charges || {}
+  const type = c.last_penalty_type || null
+  const penalty = !!(s.with_penalties ?? c.with_penalties)
+  return {
+    total: Number(s.total_charged ?? c.total_charged) || 0,
+    penalty,
+    reason: penalty && type && type !== 'PICKUP_CHARGE' ? (PENALTY_LABEL[type] || humanize(type)) : null,
+  }
+}
+
 function ItemRow({ item }) {
-  const hasDiff = item.diff_qty != null && item.diff_qty !== 0
+  const problems = itemProblems(item)
+  const diff = item.diff_qty ?? (item.apt_qty != null && item.declared_qty != null ? item.apt_qty - item.declared_qty : 0)
+  const hasIssue = problems.length > 0 || (diff && diff !== 0)
+  const thumb = item.raw?.pictures?.[0]?.secureUrl
+  const sku = item.raw?.sku
   // Anúncios de catálogo repetem o título quase igual no campo de variação
   // (só sem o prefixo "Seleção de ") — esconde pra não poluir a linha.
   const showVariation = item.variation && item.title?.replace(/^Seleção de /, '').trim() !== item.variation.trim()
   return (
-    <div className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 ${hasDiff ? 'bg-orange-50/60' : 'bg-slate-50'}`}>
+    <div className={`flex items-start gap-3 rounded-lg px-3 py-2.5 border ${hasIssue ? 'bg-white border-orange-200' : 'bg-slate-50 border-transparent'}`}>
+      {thumb
+        ? <img src={thumb} alt="" className="w-10 h-10 rounded-md object-cover bg-slate-100 shrink-0" loading="lazy" />
+        : <div className="w-10 h-10 rounded-md bg-slate-100 shrink-0" />}
       <div className="min-w-0 flex-1">
-        <p className="text-sm text-slate-700 truncate">{item.title || '—'}{showVariation ? ` · ${item.variation}` : ''}</p>
-        <p className="text-[11px] font-mono text-slate-400">{item.ml_code || '—'}</p>
-        {item.result_text && <p className="text-xs text-orange-600 mt-0.5">{item.result_text}</p>}
+        <p className="text-sm text-slate-700 truncate">{item.title || '—'}{showVariation ? <span className="font-semibold"> · {item.variation}</span> : ''}</p>
+        <p className="text-[11px] font-mono text-slate-400">{item.ml_code || '—'}{sku ? ` · SKU ${sku}` : ''}</p>
+        {problems.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {problems.map((p, i) => (
+              <span key={i} className={`text-[11px] font-medium border rounded-md px-2 py-0.5 ${TONE[p.tone]}`}>{p.text}</span>
+            ))}
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-4 shrink-0 text-right">
         <div><p className="text-[10px] text-slate-400 uppercase">Declarado</p><p className="text-sm font-semibold text-slate-700">{item.declared_qty ?? '—'}</p></div>
-        <div><p className="text-[10px] text-slate-400 uppercase">Apto Full</p><p className={`text-sm font-bold ${hasDiff ? 'text-orange-600' : 'text-emerald-600'}`}>{item.apt_qty ?? '—'}</p></div>
+        <div><p className="text-[10px] text-slate-400 uppercase">Aceito</p><p className={`text-sm font-bold ${diff < 0 ? 'text-rose-600' : diff > 0 ? 'text-sky-600' : 'text-emerald-600'}`}>{item.apt_qty ?? '—'}</p></div>
+        <div className="w-10">
+          <p className="text-[10px] text-slate-400 uppercase">Dif.</p>
+          <p className={`text-sm font-bold ${diff < 0 ? 'text-rose-600' : diff > 0 ? 'text-sky-600' : 'text-slate-300'}`}>{diff > 0 ? `+${diff}` : diff < 0 ? `−${Math.abs(diff)}` : '0'}</p>
+        </div>
       </div>
+    </div>
+  )
+}
+
+// Resumo da conferência do envio inteiro + cobrança do ML
+function ReceptionSummary({ shipment: s, items, isAdmin }) {
+  const declared = items.reduce((t, i) => t + (Number(i.declared_qty) || 0), 0)
+  const accepted = items.reduce((t, i) => t + (Number(i.apt_qty) || 0), 0)
+  const groups = { missing: 0, extra: 0, refused: 0 }
+  items.forEach(i => itemProblems(i).forEach(p => { if (p.group in groups) groups[p.group] += p.qty || 0 }))
+  const charge = chargeInfo(s)
+  const received = items.some(i => i.apt_qty != null)
+  if (!received && !charge.total && !charge.penalty) return null
+  const tile = (label, value, cls, hint) => (
+    <div className="rounded-lg border border-slate-100 bg-white px-3 py-2" title={hint}>
+      <p className="text-[10px] text-slate-400 uppercase">{label}</p>
+      <p className={`text-lg font-bold leading-tight ${cls}`}>{value}</p>
+    </div>
+  )
+  return (
+    <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 mb-1 space-y-2">
+      {received && (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {tile('Declaradas', declared, 'text-slate-700')}
+          {tile('Aceitas pro Full', accepted, 'text-emerald-600', 'Unidades que entraram no estoque do Full e já podem ser vendidas')}
+          {tile('Faltaram', groups.missing, groups.missing ? 'text-rose-600' : 'text-slate-300', 'Declaradas no envio mas o centro não encontrou')}
+          {tile('Recusadas', groups.refused, groups.refused ? 'text-amber-600' : 'text-slate-300', 'Chegaram mas o ML não aceitou (embalagem, validade, etiqueta...)')}
+          {tile('A mais', groups.extra, groups.extra ? 'text-sky-600' : 'text-slate-300', 'Chegaram mais unidades do que o declarado — o ML aceitou, mas conta como diferença')}
+        </div>
+      )}
+      {(charge.total > 0 || charge.penalty) && (
+        <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${charge.penalty ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-100'}`}>
+          <Receipt size={16} className={`mt-0.5 shrink-0 ${charge.penalty ? 'text-rose-500' : 'text-slate-400'}`} />
+          <div className="text-xs leading-relaxed flex-1">
+            <p className={`font-semibold ${charge.penalty ? 'text-rose-800' : 'text-slate-700'}`}>
+              {!charge.total ? <>Penalidade do ML</>
+                : isAdmin ? <>Cobrado pelo ML neste envio: <span className="text-sm">{fmtMoney(charge.total)}</span></>
+                : <>Envio com cobrança do ML</>}
+              {charge.penalty && <span className="ml-2 text-[10px] font-bold uppercase bg-rose-600 text-white rounded px-1.5 py-0.5 align-middle">com multa</span>}
+            </p>
+            {charge.reason && <p className="text-rose-700">Motivo da multa: {charge.reason}.</p>}
+            {charge.penalty && charge.total > 0 && <p className="text-slate-500 mt-0.5">O ML informa só o <strong>total</strong> (taxa de coleta + multa juntas), sem separar quanto foi cada uma. Pra ver o detalhe ou contestar, abra o envio no ML.</p>}
+            {charge.penalty && !charge.total && <p className="text-slate-500 mt-0.5">O ML registrou a penalidade, mas não há valor cobrado neste envio.</p>}
+            {!charge.penalty && <p className="text-slate-500 mt-0.5">Taxa de coleta do envio — sem multa.</p>}
+          </div>
+          <a href={`https://vendedores.mercadolivre.com.br/shipping/inbounds/${s.id}/details`} target="_blank" rel="noreferrer"
+            className="shrink-0 flex items-center gap-1 text-xs font-semibold text-sky-600 hover:text-sky-700">
+            Ver no ML <ExternalLink size={11} />
+          </a>
+        </div>
+      )}
     </div>
   )
 }
@@ -112,14 +243,19 @@ function ShipmentDates({ shipment: s }) {
   )
 }
 
-function ShipmentCard({ shipment, highlighted }) {
+function ShipmentCard({ shipment, highlighted, isAdmin }) {
   const [open, setOpen] = useState(!!highlighted)
+  const [showOk, setShowOk] = useState(false)
+  const charge = chargeInfo(shipment)
   const cardRef = useRef(null)
   const cfg = statusCfg(shipment.status)
   // Envio em aberto com leitura velha: o status mostrado pode não ser mais o real
   const stale = isOpenStatus(shipment.status) && daysSince(shipment.synced_at) > 1
   const items = shipment.items || []
-  const diffItems = items.filter(i => i.diff_qty)
+  const isIssue = i => (i.diff_qty != null && i.diff_qty !== 0) || itemProblems(i).length > 0
+  // Com problema primeiro, do maior estrago pro menor
+  const diffItems = items.filter(isIssue).sort((a, b) => Math.abs(b.diff_qty || 0) - Math.abs(a.diff_qty || 0))
+  const okItems = items.filter(i => !isIssue(i))
   const problems = [
     shipment.has_identification_problems && 'problema de identificação',
     shipment.has_unsolvable_problems && 'problema sem solução automática',
@@ -143,6 +279,11 @@ function ShipmentCard({ shipment, highlighted }) {
               <p className="font-semibold text-slate-800">Envio #{shipment.id}</p>
               {shipment.name && <span className="text-xs text-slate-400 truncate">{shipment.name}</span>}
               <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${cfg.badge}`}>{cfg.label}</span>
+              {charge.penalty && (
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-600 text-white shrink-0 inline-flex items-center gap-1" title={charge.reason ? `Multa: ${charge.reason}` : 'O ML aplicou multa neste envio'}>
+                  <Receipt size={11} /> multa{isAdmin && charge.total > 0 ? ` · ${fmtMoney(charge.total)}` : ''}
+                </span>
+              )}
               {problems.length > 0 && (
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 shrink-0 inline-flex items-center gap-1">
                   <AlertTriangle size={11} /> {problems.join(', ')}
@@ -158,7 +299,7 @@ function ShipmentCard({ shipment, highlighted }) {
                   <Clock size={11} /> status de {fmtAgo(shipment.synced_at)} — pode ter mudado
                 </span>
               )}
-              {shipment.total_charged > 0 && <span>Custo: {fmtMoney(shipment.total_charged)}</span>}
+              {isAdmin && charge.total > 0 && !charge.penalty && <span>Coleta: {fmtMoney(charge.total)}</span>}
             </div>
           </div>
         </div>
@@ -177,14 +318,24 @@ function ShipmentCard({ shipment, highlighted }) {
       {open && (
         <div className="border-t border-slate-100 p-4 flex flex-col gap-2">
           <ShipmentDates shipment={shipment} />
+          <ReceptionSummary shipment={shipment} items={items} isAdmin={isAdmin} />
           {items.length === 0 ? (
             <p className="text-xs text-slate-400 text-center py-2">Nenhum item registrado pra este envio.</p>
           ) : (
             <>
               {diffItems.length > 0 && (
-                <p className="text-xs text-orange-600 font-semibold mb-1">{diffItems.length} de {items.length} produtos vieram com diferença entre o declarado e o que o centro logístico aceitou.</p>
+                <p className="text-xs text-slate-500 font-semibold uppercase mt-1">
+                  <span className="text-orange-600">{diffItems.length} de {items.length} produtos com diferença</span> · do maior pro menor
+                </p>
               )}
-              {items.map(i => <ItemRow key={i.id} item={i} />)}
+              {diffItems.map(i => <ItemRow key={i.id} item={i} />)}
+              {okItems.length > 0 && (diffItems.length === 0 || showOk) && okItems.map(i => <ItemRow key={i.id} item={i} />)}
+              {okItems.length > 0 && diffItems.length > 0 && (
+                <button onClick={() => setShowOk(v => !v)} className="self-start flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-emerald-600 mt-1">
+                  <ChevronRight size={13} className={`transition-transform ${showOk ? 'rotate-90' : ''}`} />
+                  {showOk ? 'Esconder' : 'Mostrar'} os {okItems.length} produtos que chegaram certinho
+                </button>
+              )}
             </>
           )}
         </div>
@@ -194,6 +345,8 @@ function ShipmentCard({ shipment, highlighted }) {
 }
 
 export function MlFullShipmentsPage() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [searchParams] = useSearchParams()
   const highlightId = searchParams.get('envio')
   const [shipments, setShipments] = useState(null)
@@ -238,6 +391,9 @@ export function MlFullShipmentsPage() {
       transit: byBucket('transit'),
       done: byBucket('done'),
       cancelled: byBucket('cancelled'),
+      penalties: shipments.filter(s => chargeInfo(s).penalty).length,
+      penaltyTotal: shipments.filter(s => chargeInfo(s).penalty).reduce((t, s) => t + chargeInfo(s).total, 0),
+      charged: shipments.reduce((t, s) => t + chargeInfo(s).total, 0),
     }
   }, [shipments])
 
@@ -330,7 +486,7 @@ export function MlFullShipmentsPage() {
         )}
 
         {stats && (
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
             <div className="bg-white border border-slate-200 rounded-2xl p-5">
               <div className="flex items-center gap-2 mb-1"><Truck size={14} className="text-slate-400" /><p className="text-xs font-semibold text-slate-500 uppercase">Total</p></div>
               <p className="text-2xl font-bold text-slate-800">{stats.total}</p>
@@ -350,6 +506,13 @@ export function MlFullShipmentsPage() {
             <div className="bg-white border border-slate-200 rounded-2xl p-5">
               <div className="flex items-center gap-2 mb-1"><Ban size={14} className="text-slate-400" /><p className="text-xs font-semibold text-slate-500 uppercase">Cancelados/vencidos</p></div>
               <p className="text-2xl font-bold text-slate-500">{stats.cancelled}</p>
+            </div>
+            <div className="bg-white border border-rose-200 rounded-2xl p-5" title="Envios em que o ML aplicou multa (diferença de unidades, cancelamento fora do prazo...)">
+              <div className="flex items-center gap-2 mb-1"><Receipt size={14} className="text-rose-500" /><p className="text-xs font-semibold text-slate-500 uppercase">Com multa</p></div>
+              <p className="text-2xl font-bold text-rose-600">{stats.penalties}</p>
+              {isAdmin && stats.charged > 0 && (
+                <p className="text-[11px] text-slate-400 mt-0.5">cobrado nesses envios: {fmtMoney(stats.penaltyTotal)} · total ML: {fmtMoney(stats.charged)}</p>
+              )}
             </div>
           </div>
         )}
@@ -393,7 +556,7 @@ export function MlFullShipmentsPage() {
 
         {filtered.length > 0 && (
           <div className="flex flex-col gap-3">
-            {filtered.map(s => <ShipmentCard key={s.id} shipment={s} highlighted={String(s.id) === highlightId} />)}
+            {filtered.map(s => <ShipmentCard key={s.id} shipment={s} highlighted={String(s.id) === highlightId} isAdmin={isAdmin} />)}
           </div>
         )}
         {shipments && shipments.length > 0 && filtered.length === 0 && (
