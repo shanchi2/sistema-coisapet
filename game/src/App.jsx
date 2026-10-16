@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   NEEDS, NEED_INFO, SPECIES, HABITATS, CATALOG, CATALOG_KEYS, TIPS, newPet, advance, status, poopCount, isDaytime,
-  feed, water, cleanOne, cleanAll, pet_, treat, migrate, habitatOf, isPlaced, togglePlace, redeem, mods,
+  feed, water, cleanOne, cleanAll, pet_, treat, wheelRun, migrate, habitatOf, isPlaced, togglePlace, redeem, mods,
 } from './sim'
 import { HAMSTER_FRAMES, paletteFor, spriteCanvas } from './art'
 import { createGame, bridge } from './scene'
@@ -109,8 +109,9 @@ function Game({ pet, setPet, onReset }) {
   useEffect(() => {
     const onPet = () => act(pet_)
     const onClean = () => act(cleanOne)
-    bridge.on('tap-pet', onPet); bridge.on('clean-one', onClean)
-    return () => { bridge.off('tap-pet', onPet); bridge.off('clean-one', onClean) }
+    const onWheel = secs => act(p => wheelRun(p, secs))
+    bridge.on('tap-pet', onPet); bridge.on('clean-one', onClean); bridge.on('wheel-run', onWheel)
+    return () => { bridge.off('tap-pet', onPet); bridge.off('clean-one', onClean); bridge.off('wheel-run', onWheel) }
   }, [act])
 
   const sceneState = useMemo(() => ({
@@ -122,7 +123,7 @@ function Game({ pet, setPet, onReset }) {
   // O que está montado no ambiente (muda o desenho da cena)
   const setup = useMemo(() => ({
     habitat: habitatOf(pet),
-    substrato: isPlaced(pet, 'substrato'), roda: isPlaced(pet, 'roda'), toca: isPlaced(pet, 'toca'),
+    substrato: isPlaced(pet, 'substrato'), roda: isPlaced(pet, 'roda'), toca: isPlaced(pet, 'toca'), bebedouro: isPlaced(pet, 'bebedouro'),
   }), [pet])
   const setupKey = JSON.stringify(setup)
   // eslint-disable-next-line react-hooks/exhaustive-deps

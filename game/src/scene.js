@@ -29,11 +29,13 @@ export class CageScene extends Phaser.Scene {
     this.floorY = ter && this.setup.substrato ? 84 : 93
     // Posições: toca no canto esquerdo, depois o potinho; roda à direita
     this.L = {
-      toca: this.setup.toca ? 26 : null,
+      toca: this.setup.toca ? 25 : null,
       bowl: this.setup.toca ? 50 : 28,
-      wheel: this.setup.roda ? (ter ? 96 : 92) : null,
-      bottle: ter ? 127 : 118,
+      wheel: this.setup.roda ? (this.setup.bebedouro ? (ter ? 92 : 88) : (ter ? 96 : 92)) : null,
+      bottle: this.setup.bebedouro ? (ter ? 124 : 121) : (ter ? 127 : 118),
     }
+    // Onde ele para pra beber (bico do bebedouro de suporte fica à esquerda)
+    this.drinkX = this.setup.bebedouro ? this.L.bottle - 15 : this.L.bottle - 6
   }
 
   create() {
@@ -46,9 +48,17 @@ export class CageScene extends Phaser.Scene {
 
     const fy = this.floorY
     this.bowl = this.add.image(this.L.bowl, fy - 1, 'bowl_full').setOrigin(0.5, 1).setDepth(3)
-    this.bottleY = fy - 29
-    this.bottle = this.add.image(this.L.bottle, this.bottleY, 'bottle').setOrigin(0.5, 0).setDepth(3)
-    this.water = this.add.rectangle(this.L.bottle, 0, 2, 0, 0x5dade2).setOrigin(0.5, 1).setDepth(3)
+    if (this.setup.bebedouro) {
+      // Bebedouro CoisaPet com suporte, em pé no chão
+      this.bottle = this.add.image(this.L.bottle, fy + 1, 'bebedouro').setOrigin(0.5, 1).setDepth(3)
+      const left = this.L.bottle - 9, top = fy + 1 - 36
+      this.waterBox = { x: left + 5, bottom: top + 22, w: 4, max: 20 } // miolo do tubo
+    } else {
+      this.bottleY = fy - 29
+      this.bottle = this.add.image(this.L.bottle, this.bottleY, 'bottle').setOrigin(0.5, 0).setDepth(3)
+      this.waterBox = { x: this.L.bottle, bottom: this.bottleY + 11, w: 2, max: 10 }
+    }
+    this.water = this.add.rectangle(this.waterBox.x, 0, 2, 0, 0x5dade2, this.setup.bebedouro ? 0.85 : 1).setOrigin(0.5, 1).setDepth(3)
 
     this.poops = []
     this.hamster = this.add.sprite(70, fy, 'h_idle').setOrigin(0.5, 1).setDepth(4).setInteractive({ useHandCursor: true })
@@ -121,6 +131,88 @@ export class CageScene extends Phaser.Scene {
       }
       this.textures.addCanvas(key, cv)
     }
+    this.makeTocaTexture()
+    this.makeBebedouroTexture()
+  }
+
+  // Desenho pixel a pixel num canvas novo
+  pixelCanvas(key, w, h, paint) {
+    if (this.textures.exists(key)) this.textures.remove(key)
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h
+    const ctx = cv.getContext('2d')
+    paint((x, y, c) => { if (c) { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1) } })
+    this.textures.addCanvas(key, cv)
+  }
+
+  makeTocaTexture() {
+    const W2 = 28, H2 = 26, cx = 13.5, roofH = 11, hx = 13.5, hy = 15, hr = 4.6
+    this.pixelCanvas('toca', W2, H2, px => {
+      for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+        const dHole = Math.hypot(x - hx, y - hy)
+        if (y >= 24) { px(x, y, y === 25 ? '#3b2314' : '#9a6436'); continue }      // base
+        if (y < roofH) {                                                           // telhado (frente do "A")
+          const half = (y / roofH) * (W2 / 2) + 0.5
+          const dx = Math.abs(x - cx)
+          if (dx > half + 0.5) continue
+          if (dx > half - 0.8) px(x, y, '#3b2314')
+          else if (dx > half - 2.6) px(x, y, '#b07a46')
+          else px(x, y, (x + y * 3) % 7 === 0 ? '#c99462' : '#d6a26f')
+          continue
+        }
+        if (x < 2 || x > 25) continue                                              // paredes
+        if (x === 2 || x === 25) { px(x, y, '#3b2314'); continue }
+        if (dHole < hr) continue                                                   // porta vazada
+        if (dHole < hr + 1) { px(x, y, '#7a4a24'); continue }                      // borda da porta
+        if (Math.abs(dHole - (hr + 2.2)) < 0.45) { px(x, y, '#b57d49'); continue } // anel gravado
+        px(x, y, (y % 4 === 1 && (x * 5 + y) % 9 > 2) ? '#c99462' : '#d6a26f')
+      }
+      px(21, 21, '#8a5a32'); px(22, 21, '#8a5a32'); px(21, 22, '#8a5a32')       // logo
+    })
+  }
+
+  makeBebedouroTexture() {
+    // 18 x 36: tubo transparente com topo redondo, tampa amarela, bico de metal,
+    // painel de madeira com fendas e base com recorte (como o produto real)
+    const T = { o: '#3b2314', w: '#a8683a', W: '#c07c46', g: '#9aa6b2', c: '#e8f3fa', y: '#f2c200', Y: '#c99a00', m: '#c8d0d8', M: '#8e98a3' }
+    const rows = [
+      '...gggg...........',
+      '..gccccg..........',
+      '..gccccg...ooooo..',
+      '..gccccg...owWWo..',
+      '.oowwwwwwwwwwWWo..',
+      '.ooooooooooowWWo..',
+      '..gccccg...owWWo..',
+      '..gccccg...owoWo..',
+      '..gccccg...owoWo..',
+      '..gccccg...owoWo..',
+      '..gccccg...owoWo..',
+      '..gccccg...owoWo..',
+      '..gccccg...owoWo..',
+      '..gccccg...owWWo..',
+      '..gccccg...owWWo..',
+      '..gccccg...owWWo..',
+      '..gccccg...owoWo..',
+      '..gccccg...owoWo..',
+      '..gccccg...owoWo..',
+      '..gccccg...owoWo..',
+      '..gccccg...owoWo..',
+      '..gccccg...owWWo..',
+      '.yyyyyyyy..owWWo..',
+      '.YyyyyyyY..owWWo..',
+      'oowwwwwwwwwwwWWo..',
+      'oooooooooooowWWo..',
+      '...mM......owWWo..',
+      '..mM......owWWWo..',
+      '.mM......owWWWWo..',
+      '........owWWWWWo..',
+      '.......owWWWWWWo..',
+      '......owWWWWWWWo..',
+      '.oooooowWWWWWWWoo.',
+      'owwwwwwwwwwwwwwwwo',
+      'owWWWWoooooooWWWWo',
+      'oooooooooooooooooo',
+    ]
+    this.pixelCanvas('bebedouro', 18, 36, px => rows.forEach((r, y) => [...r].forEach((ch, x) => px(x, y, T[ch]))))
   }
 
   drawRoom() {
@@ -231,23 +323,16 @@ export class CageScene extends Phaser.Scene {
     this.wheelRunY = cy + WHEEL_R - 2                      // chão de dentro da roda
   }
 
+  // Toca CoisaPet: casinha com telhado de duas águas e porta redonda VAZADA —
+  // dá pra ver o hamster lá dentro (dormindo ou espiando)
   drawToca() {
     const x = this.L.toca, fy = this.floorY
-    const g = this.add.graphics().setDepth(2)
-    g.fillStyle(WOOD_D).fillRect(x - 11, fy - 12, 22, 12)   // fundo da toca
+    // fundo escuro do interior, atrás do hamster
+    this.add.rectangle(x, fy - 11, 12, 12, 0x2a1a0e).setDepth(2)
   }
 
   drawTocaFront() {
-    const x = this.L.toca, fy = this.floorY
-    const g = this.add.graphics().setDepth(5)
-    // Paredes com porta em arco + telhado
-    g.fillStyle(WOOD).fillRect(x - 11, fy - 12, 22, 12)
-    g.fillStyle(WOOD_D).fillRect(x - 11, fy - 1, 22, 1)
-    g.fillStyle(0x4a2e18).fillRect(x - 4, fy - 8, 8, 8).fillRect(x - 3, fy - 9, 6, 1)
-    g.fillStyle(WOOD_L).fillTriangle(x - 14, fy - 12, x, fy - 22, x + 14, fy - 12)
-    g.fillStyle(WOOD_D).fillTriangle(x - 14, fy - 12, x, fy - 22, x, fy - 12)
-    g.fillStyle(INK).fillRect(x - 14, fy - 12, 28, 1)
-    return g
+    return this.add.image(this.L.toca, this.floorY + 1, 'toca').setOrigin(0.5, 1).setDepth(5)
   }
 
   applyState(s) {
@@ -258,8 +343,8 @@ export class CageScene extends Phaser.Scene {
     const fy = this.floorY
     this.bowl.setTexture(s.fome >= 45 ? 'bowl_full' : 'bowl_empty')
     // Nível da água dentro do bebedouro (miolo de 10px)
-    const lvl = Math.round((s.sede / 100) * 10)
-    this.water.setPosition(this.L.bottle, this.bottleY + 11).setSize(2, lvl)
+    const wb = this.waterBox
+    this.water.setPosition(wb.x, wb.bottom).setSize(wb.w, Math.round((s.sede / 100) * wb.max))
     this.night.setFillStyle(0x101a40, s.night ? 0.32 : 0)
     // Cocôs: ajusta a quantidade (mantém os que já estão; evita a toca)
     while (this.poops.length > s.poops) this.poops.pop().destroy()
@@ -286,23 +371,29 @@ export class CageScene extends Phaser.Scene {
     this.setMode('sleep')
     this.hamster.y = this.floorY
     if (this.L.toca) {
-      // Dorme escondido dentro da toca (só aparece o "Zzz")
-      this.hamster.setPosition(this.L.toca, this.floorY).setVisible(false)
+      // Dorme DENTRO da toca — aparece pela porta redonda, respirando
+      this.hamster.setPosition(this.L.toca, this.floorY - 5).setVisible(true)
+      this.facing = 1
+      this.breath?.stop()
+      this.breath = this.tweens.add({ targets: this.hamster, scaleY: 0.92, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' })
     } else {
       this.hamster.setPosition(Math.min(this.hamster.x, 40), this.floorY)
     }
   }
 
   wake() {
-    this.hamster.setVisible(true)
+    this.breath?.stop(); this.breath = null
+    this.hamster.setScale(1).setVisible(true)
+    this.hamster.y = this.floorY
     this.setMode('idle', 500)
   }
 
   playAnim(kind) {
     if (this.dead) return
     if (this.mode === 'wheel') this.leaveWheel()
+    if (this.mode === 'toca') this.hamster.y = this.floorY
     if (kind === 'eat') this.walkTo(this.L.bowl + 12, () => this.setMode('eat', 2200))
-    else if (kind === 'drink') this.walkTo(this.L.bottle - 6, () => this.setMode('eat', 2000))
+    else if (kind === 'drink') this.walkTo(this.drinkX, () => this.setMode('eat', 2000))
     else if (kind === 'happy') { this.hamster.setVisible(true); this.setMode('happy', 900); this.hearts() }
     else if (kind === 'scared') { this.hamster.setVisible(true); this.setMode('scared', 900) }
   }
@@ -316,7 +407,16 @@ export class CageScene extends Phaser.Scene {
 
   leaveWheel() {
     this.hamster.y = this.floorY
+    // Correr na roda diverte e cansa — avisa o React quanto tempo ele correu
+    const secs = (this.time.now - (this.wheelStart || this.time.now)) / 1000
+    this.wheelStart = null
+    if (secs >= 1) { bridge.emit('wheel-run', secs); this.sweat() }
     this.setMode('idle', 800)
+  }
+
+  sweat() {
+    const d = this.add.image(this.hamster.x + 6, this.hamster.y - 12, 'drop').setDepth(20)
+    this.tweens.add({ targets: d, y: d.y + 6, alpha: 0, duration: 900, onComplete: () => d.destroy() })
   }
 
   hearts() {
@@ -345,8 +445,8 @@ export class CageScene extends Phaser.Scene {
 
     if (this.mode === 'sleep') {
       frame = 'sleep'
-      const zx = this.L.toca ? this.L.toca + 6 : h.x + 4
-      const zy = this.L.toca ? fy - 22 : h.y - 10
+      const zx = this.L.toca ? this.L.toca + 8 : h.x + 4
+      const zy = this.L.toca ? fy - 26 : h.y - 10
       this.zzz.setVisible(true).setPosition(zx, zy - Math.round(Math.sin(time / 500) * 2))
     } else {
       this.zzz.setVisible(false)
@@ -370,6 +470,11 @@ export class CageScene extends Phaser.Scene {
         h.x = this.L.wheel
         h.y = this.wheelRunY
         if (time > this.modeUntil) this.leaveWheel()
+      } else if (this.mode === 'toca') {
+        h.x = this.L.toca
+        h.y = fy - 5
+        frame = Math.floor(time / 900) % 3 === 0 ? 'eat' : 'idle'   // mexe o focinho espiando
+        if (time > this.modeUntil) { h.y = fy; this.walkTo(this.L.toca + 24) }
       } else if (this.mode === 'eat') {
         frame = Math.floor(time / 220) % 2 ? 'eat' : 'idle'
         if (time > this.modeUntil) this.setMode('idle', 1500)
@@ -385,7 +490,10 @@ export class CageScene extends Phaser.Scene {
         // Decide o que fazer: roda (mais à noite), passear ou ficar parado
         const wheelChance = s.night ? 0.45 : 0.2
         if (this.L.wheel && !sad && Math.random() < wheelChance) {
-          this.walkTo(this.L.wheel, () => this.setMode('wheel', Phaser.Math.Between(4000, 9000)))
+          this.walkTo(this.L.wheel, () => { this.wheelStart = this.time.now; this.setMode('wheel', Phaser.Math.Between(4000, 9000)) })
+        } else if (this.L.toca && Math.random() < (sad ? 0.35 : 0.15)) {
+          // Entra na toca e fica espiando pela porta
+          this.walkTo(this.L.toca, () => { this.facing = 1; this.setMode('toca', Phaser.Math.Between(3500, 7000)) })
         } else if (!sad || Math.random() < 0.4) this.walkTo(Phaser.Math.Between(X_MIN + 6, X_MAX - 6))
         else this.setMode('idle', 3000)
       }
