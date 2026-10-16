@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import { useTheme } from '../../contexts/ThemeContext'
 
 // Peças visuais do Dashboard (06/10). Regras de gráfico seguidas aqui:
@@ -23,8 +23,8 @@ const weekday = iso => WEEKDAY[new Date(iso + 'T12:00:00').getDay()]
 function useChartColors() {
   const { isDark } = useTheme()
   return isDark
-    ? { bar: '#F43F5E', barSoft: '#5A2531', grid: '#2E2E2E', axis: '#7A7A7A', cursor: 'rgba(255,255,255,0.04)' }
-    : { bar: '#E11D48', barSoft: '#FBC4D1', grid: '#F1F5F9', axis: '#94A3B8', cursor: 'rgba(15,23,42,0.04)' }
+    ? { bar: '#F43F5E', barSoft: '#5A2531', barPrev: '#4B4B55', avg: '#FBBF24', grid: '#2E2E2E', axis: '#7A7A7A', cursor: 'rgba(255,255,255,0.04)' }
+    : { bar: '#E11D48', barSoft: '#FBC4D1', barPrev: '#CBD5E1', avg: '#D97706', grid: '#F1F5F9', axis: '#94A3B8', cursor: 'rgba(15,23,42,0.04)' }
 }
 
 // ─── Card base ──────────────────────────────────────────────────────
@@ -118,7 +118,9 @@ function DayTooltip({ active, payload, format, unit }) {
   )
 }
 
-export function DailyBars({ data, dataKey, format = fmtInt, axisFormat = fmtInt, height = 200, unit }) {
+// `splitFrom` (AAAA-MM-DD): dias antes dessa data (ex.: mês passado) em cinza.
+// `avg`: linha tracejada com a média (ex.: média/dia do mês atual).
+export function DailyBars({ data, dataKey, format = fmtInt, axisFormat = fmtInt, height = 200, unit, splitFrom, avg }) {
   const c = useChartColors()
   const lastIdx = data.length - 1
   return (
@@ -132,8 +134,9 @@ export function DailyBars({ data, dataKey, format = fmtInt, axisFormat = fmtInt,
           <Tooltip content={<DayTooltip format={format} unit={unit} />} cursor={{ fill: c.cursor }} />
           <Bar dataKey={dataKey} maxBarSize={24} radius={[4, 4, 0, 0]} isAnimationActive={false}>
             {/* Hoje (ainda em andamento) em tom suave; dias fechados na cor cheia */}
-            {data.map((d, i) => <Cell key={d.day} fill={i === lastIdx ? c.barSoft : c.bar} />)}
+            {data.map((d, i) => <Cell key={d.day} fill={i === lastIdx ? c.barSoft : splitFrom && d.day < splitFrom ? c.barPrev : c.bar} />)}
           </Bar>
+          {avg > 0 && <ReferenceLine y={avg} stroke={c.avg} strokeDasharray="5 4" strokeWidth={1.5} ifOverflow="extendDomain" />}
         </BarChart>
       </ResponsiveContainer>
     </div>

@@ -91,6 +91,10 @@ export function DashboardPage() {
   const { data, loading, updatedAt, reload } = useDashboardData(can, user?.id)
   const today = todayISO()
   const monthName = MONTHS[Number(today.slice(5, 7)) - 1]
+  const prevMonthName = MONTHS[(Number(today.slice(5, 7)) + 10) % 12]
+  const monthStartISO = today.slice(0, 8) + '01'
+  const dayOfMonth = Number(today.slice(8, 10))
+  const daysInMonth = new Date(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 0).getDate()
   const dateRaw = new Date(today + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
   const dateLabel = dateRaw.charAt(0).toUpperCase() + dateRaw.slice(1)
 
@@ -103,6 +107,10 @@ export function DashboardPage() {
   }
 
   const s = data.sales
+  // Média/dia do mês: só os dias já fechados (hoje ainda está vendendo)
+  const todayValue = s?.daily?.find(d => d.day === today)?.value || 0
+  const closedDays = dayOfMonth - 1
+  const avgDay = !s ? 0 : closedDays > 0 ? (s.mtd.value - todayValue) / closedDays : s.mtd.value
   const quickLinks = (QUICK_LINKS[role] || QUICK_LINKS.atendimento).filter(l => canAccess(l.mod))
 
   // ── Indicadores (até 4, na ordem de importância do perfil) ─────────
@@ -169,9 +177,24 @@ export function DashboardPage() {
             <Delta current={s.mtd.value} previous={s.prev.value} suffix={`vs 1–${Number(today.slice(8, 10))} do mês passado`} />
             <span className="text-xs text-slate-400">{fmtInt(s.mtd.orders)} pedidos · ticket médio {fmtBRL(s.mtd.orders ? s.mtd.value / s.mtd.orders : 0)}</span>
           </div>
+          {/* Média/dia do mês (só dias fechados — hoje ainda está acontecendo) + projeção */}
+          {avgDay > 0 && (
+            <div className="flex flex-col gap-1 pb-1 sm:pl-6 sm:border-l border-slate-100">
+              <span className="text-xs text-slate-400">Média por dia em {monthName}</span>
+              <span className="font-display font-extrabold text-2xl leading-none text-slate-800">{fmtBRL(avgDay)}</span>
+              <span className="text-[11px] text-slate-400" title={`Média dos dias fechados (1 a ${closedDays}) × ${daysInMonth} dias do mês`}>
+                {closedDays === 0 ? 'só hoje até agora' : `dias 1–${closedDays}`} · ritmo pra fechar o mês em ~{fmtBRLShort(avgDay * daysInMonth)}
+              </span>
+            </div>
+          )}
         </div>
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Por dia · últimos 30 dias</p>
-        <DailyBars data={s.daily} dataKey="value" format={fmtBRL} axisFormat={v => fmtBRLShort(v).replace('R$ ', '')} />
+        <div className="flex items-center gap-x-4 gap-y-1 flex-wrap mb-1">
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Por dia · últimos 30 dias</p>
+          <span className="flex items-center gap-1.5 text-[11px] text-slate-400"><span className="w-2.5 h-2.5 rounded-sm bg-rose-500" />{monthName}</span>
+          <span className="flex items-center gap-1.5 text-[11px] text-slate-400"><span className="w-2.5 h-2.5 rounded-sm bg-slate-300" />{prevMonthName}</span>
+          {avgDay > 0 && <span className="flex items-center gap-1.5 text-[11px] text-slate-400"><span className="w-4 border-t-2 border-dashed border-amber-500" />média de {monthName}</span>}
+        </div>
+        <DailyBars data={s.daily} dataKey="value" format={fmtBRL} axisFormat={v => fmtBRLShort(v).replace('R$ ', '')} splitFrom={monthStartISO} avg={avgDay} />
       </Panel>
     )
   } else if (s) {

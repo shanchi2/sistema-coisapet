@@ -7038,3 +7038,14 @@ A linha "Hoje" do gráfico era quase preta (#0f172a) e sumia no tema
 escuro. `TodaySoFar.jsx` agora usa `useTheme().isDark`: no escuro a linha
 (e o ponto/legenda) fica azul-claro (#38bdf8) e as linhas de grade ficam
 discretas (#334155) em vez de brancas. No claro continua igual.
+
+## 2026-10-16 — Dashboard: média por dia do mês + mês passado em cinza
+
+Confirmado com o Raphael: o "Faturamento de <mês>" soma só o mês vigente
+(dia 1 até hoje); o gráfico é que mostra os últimos 30 dias.
+- Novo bloco "Média por dia em <mês>": média dos dias JÁ FECHADOS (1 até
+  ontem — hoje ainda está vendendo) + "ritmo pra fechar o mês em ~R$ X"
+  (média × dias do mês). No dia 1 usa o próprio dia.
+- Gráfico: barras do mês passado em cinza, do mês atual na cor normal, hoje
+  em tom suave; linha tracejada âmbar com a média/dia do mês; legenda.
+- `DailyBars` (widgets.jsx) ganhou props opcionais `splitFrom` e `avg`.
