@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Timer, TrendingUp, TrendingDown, Minus, Loader2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { todayISO } from '../../lib/dateBR'
+import { useTheme } from '../../contexts/ThemeContext'
 
 // "Hoje até agora" (07/10): o dia de hoje até a hora atual comparado com
 // ontem e com o mesmo dia da semana passada ATÉ O MESMO HORÁRIO — pra
@@ -28,6 +29,11 @@ function Delta({ now, prev }) {
 }
 
 export function TodaySoFar() {
+  // Linha "Hoje" quase preta some no tema escuro (Raphael, 16/10) → azul no escuro
+  const { isDark } = useTheme()
+  const C = isDark
+    ? { today: '#38bdf8', yest: '#94a3b8', week: '#64748b', grid: '#334155' }
+    : { today: '#0f172a', yest: '#94a3b8', week: '#cbd5e1', grid: '#f1f5f9' }
   const [orders, setOrders] = useState(null)
   const [now, setNow] = useState(Date.now())
   const today = todayISO()
@@ -104,15 +110,15 @@ export function TodaySoFar() {
           </div>
           <div>
             <svg viewBox={`0 0 ${W} ${H + 18}`} className="w-full h-auto" role="img" aria-label="Faturamento acumulado por hora">
-              {[0.5, 1].map(f => <line key={f} x1="0" x2={W} y1={H - f * H} y2={H - f * H} stroke="#f1f5f9" />)}
-              <path d={path(S.curve.semana)} fill="none" stroke="#cbd5e1" strokeWidth="2" strokeDasharray="4 4" />
-              <path d={path(S.curve.ontem)} fill="none" stroke="#94a3b8" strokeWidth="2" />
-              <path d={path(S.curve.hoje, curH)} fill="none" stroke="#0f172a" strokeWidth="2.5" />
-              <circle cx={(curH / 23) * W} cy={H - (S.curve.hoje[curH] / max) * H} r="3.5" fill="#0f172a" />
+              {[0.5, 1].map(f => <line key={f} x1="0" x2={W} y1={H - f * H} y2={H - f * H} stroke={C.grid} />)}
+              <path d={path(S.curve.semana)} fill="none" stroke={C.week} strokeWidth="2" strokeDasharray="4 4" />
+              <path d={path(S.curve.ontem)} fill="none" stroke={C.yest} strokeWidth="2" />
+              <path d={path(S.curve.hoje, curH)} fill="none" stroke={C.today} strokeWidth="2.5" />
+              <circle cx={(curH / 23) * W} cy={H - (S.curve.hoje[curH] / max) * H} r="3.5" fill={C.today} />
               {[0, 6, 12, 18, 23].map(h => <text key={h} x={(h / 23) * W} y={H + 14} fontSize="10" fill="#94a3b8" textAnchor={h === 0 ? 'start' : h === 23 ? 'end' : 'middle'}>{h}h</text>)}
             </svg>
             <div className="flex items-center gap-4 text-[11px] text-slate-500 mt-1">
-              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-slate-900" />Hoje</span>
+              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5" style={{ background: C.today }} />Hoje</span>
               <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-slate-400" />Ontem ({brl(S.tot.ontemDia.rev)} no dia)</span>
               <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-dashed border-slate-300" />Semana passada</span>
             </div>

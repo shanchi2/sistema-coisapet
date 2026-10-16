@@ -7031,3 +7031,10 @@ Removido do `Sidebar.jsx` (o menu agora vai até o fim da tela). No
 `Header.jsx` o nome/avatar virou um botão com menu suspenso: nome, e-mail,
 cargo e "Sair" (fecha clicando fora ou com Esc). Header subiu pra z-30 pra
 o menu ficar por cima do conteúdo.
+
+## 2026-10-16 — "Hoje até agora" (ML × Shopee): linha azul no tema escuro
+
+A linha "Hoje" do gráfico era quase preta (#0f172a) e sumia no tema
+escuro. `TodaySoFar.jsx` agora usa `useTheme().isDark`: no escuro a linha
+(e o ponto/legenda) fica azul-claro (#38bdf8) e as linhas de grade ficam
+discretas (#334155) em vez de brancas. No claro continua igual.
