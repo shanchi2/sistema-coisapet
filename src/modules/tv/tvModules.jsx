@@ -1,4 +1,4 @@
-import { Truck, PackageCheck, Factory, Megaphone, ArrowLeftRight, KanbanSquare, Wrench, ListChecks, Camera, Cake, Siren, CheckCircle2, Clock, AlertTriangle } from 'lucide-react'
+import { Truck, PackageCheck, Factory, Megaphone, ArrowLeftRight, KanbanSquare, Wrench, ListChecks, Camera, Cake, Siren, CheckCircle2, Clock, AlertTriangle, Target } from 'lucide-react'
 
 // TV da Produção (07/10, fase100) — cada módulo tem uma versão GRANDE
 // (destaque / slide) e uma MINI (coluna lateral do modo consultório).
@@ -399,6 +399,50 @@ export const TV_MODULES = [
         <MiniTxt>{d.midia?.latest?.[0]?.product || 'Nada pendente'}</MiniTxt>
       </MiniFrame>
     ),
+  },
+  {
+    key: 'foco_dia', label: 'Foco do dia por funcionário', icon: Target,
+    desc: 'O que a diretoria marcou como prioridade pra cada funcionário hoje (aba "Foco do dia" em Serviços). Urgentes em vermelho.',
+    has: d => d.foco_dia?.some(p => p.tasks.some(t => !t.done)),
+    Big: ({ d }) => {
+      const people = d.foco_dia.filter(p => p.tasks.some(t => !t.done))
+      const cols = people.length === 1 ? 'grid-cols-1' : people.length <= 4 ? 'grid-cols-2' : 'grid-cols-3'
+      return (
+        <BigFrame icon={Target} title="Foco do dia" tone="sky">
+          <div className={`grid ${cols} gap-4 content-start`}>
+            {people.map((p, k) => {
+              const open = p.tasks.filter(t => !t.done)
+              const hot = open.some(t => t.urgent)
+              return (
+                <div key={k} className={`rounded-3xl px-6 py-5 border-2 ${hot ? 'bg-rose-950/50 border-rose-600' : 'bg-slate-900 border-slate-700'}`}>
+                  <p className="text-[2.6rem] leading-none font-black text-white mb-3">{p.name.split(' ')[0]}</p>
+                  <div className="flex flex-col gap-2.5">
+                    {open.slice(0, 4).map((t, j) => (
+                      <p key={j} className="text-[1.75rem] leading-snug text-slate-100">
+                        {t.urgent && <span className="text-lg font-black px-2.5 py-0.5 rounded-lg bg-rose-600 text-white mr-2 align-middle">URGENTE</span>}
+                        {t.task}
+                      </p>
+                    ))}
+                    {open.length > 4 && <p className="text-xl text-slate-400">+ {open.length - 4} tarefas</p>}
+                    {p.tasks.length > open.length && <p className="text-lg text-emerald-400 flex items-center gap-1.5"><CheckCircle2 className="w-5 h-5" />{p.tasks.length - open.length} feita{p.tasks.length - open.length > 1 ? 's' : ''}</p>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </BigFrame>
+      )
+    },
+    Mini: ({ d }) => {
+      const people = (d.foco_dia || []).filter(p => p.tasks.some(t => !t.done))
+      const urgent = people.reduce((t, p) => t + p.tasks.filter(x => x.urgent && !x.done).length, 0)
+      return (
+        <MiniFrame icon={Target} title="Foco do dia" tone="text-sky-300">
+          <MiniBig tone={urgent ? 'text-rose-300' : 'text-slate-100'}>{people.length}<span className="text-slate-500 text-[1.8rem]"> pessoa{people.length === 1 ? '' : 's'}</span></MiniBig>
+          <MiniTxt>{people.length ? people.map(p => p.name.split(' ')[0]).join(' · ') : 'Nada lançado hoje'}{urgent ? <span className="text-rose-300 font-bold"> · {urgent} urgente{urgent > 1 ? 's' : ''}</span> : ''}</MiniTxt>
+        </MiniFrame>
+      )
+    },
   },
   {
     key: 'aniversariantes', label: 'Aniversariantes', icon: Cake,

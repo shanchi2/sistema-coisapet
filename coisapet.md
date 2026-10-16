@@ -7077,6 +7077,29 @@ marcando "já adicionei".
 - Ideia pra depois: conferência planejado × enviado quando o envio do ML
   entrar pela extensão.
 
+## 2026-10-16 — Foco do dia por funcionário (Serviços + TV)
+
+Pedido do Raphael: a tela Serviços era 100% do João Vitor (manutenção,
+câmera, furo em parede). Agora tem uma aba nova pra mandar o "urgente do
+dia" pra QUALQUER funcionário ("Daniel, focar em embalar casinhas de
+halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
+
+- `/servicos` ganhou abas: **Serviços do barracão** (o kanban de sempre) e
+  **Foco do dia por funcionário** (`?aba=foco`, `DailyFocusTab.jsx`).
+- Escolhe o funcionário + escreve a tarefa (+ "Urgente"). Navega por dia
+  (dá pra deixar o de amanhã pronto), marca feito, liga/desliga urgência,
+  exclui. Botão "Trazer N tarefas que ficaram pendentes do dia anterior".
+- Lista de funcionários = `system_users` ativos, sem Diretor, sem escritórios
+  terceirizados (`employee_type = escritorio`) e sem contas genéricas
+  ("Produção - CoisaPet", "Atendimento Shopee").
+- Tabela `daily_focus` (fase109) com `employee_name` guardado junto.
+- **TV:** módulo novo `foco_dia` no `tv-feed` (redeployado) e em
+  `tvModules.jsx` — card por pessoa com o primeiro nome grande, urgentes em
+  vermelho, as feitas somem (vira "✓ N feitas"). Entra ligado sozinho na
+  config da TV (normalizeModules); só mostra o dia de hoje.
+- Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
+  pessoa ver no celular e marcar como feito.
+
 ## 2026-10-16 — MinhaCoisaPet (jogo do hamster) — protótipo 0.1
 
 Ideia do Raphael: jogo 2D pixel art em que o tutor cuida de um hamster (nunca

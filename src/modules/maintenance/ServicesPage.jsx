@@ -8,6 +8,9 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { todayISO } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
+import { useSearchParams } from 'react-router-dom'
+import { Target } from 'lucide-react'
+import { DailyFocusTab } from './DailyFocusTab'
 
 // ── Configurações ──────────────────────────────────────────────
 const CAT_CFG = {
@@ -427,6 +430,10 @@ function Column({ col, tasks, users, onEdit, onDelete, onMoveStatus, onNew, drag
 // ── Página principal ───────────────────────────────────────────
 export function ServicesPage() {
   const { user } = useAuth()
+  // Abas (16/10): serviços do barracão | foco do dia por funcionário (vai pra TV)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('aba') === 'foco' ? 'foco' : 'servicos'
+  const setTab = t => setSearchParams(p => { const n = new URLSearchParams(p); if (t === 'foco') n.set('aba', 'foco'); else n.delete('aba'); return n }, { replace: true })
   const [tasks,   setTasks]   = useState([])
   const [users,   setUsers]   = useState([])
   const [loading, setLoading] = useState(true)
@@ -573,12 +580,25 @@ export function ServicesPage() {
       <div className="page-header">
         <div>
           <h2 className="page-title">Serviços</h2>
-          <p className="page-subtitle">Tarefas e serviços pendentes do barracão</p>
+          <p className="page-subtitle">{tab === 'foco' ? 'O que é prioridade pra cada funcionário no dia — aparece na TV' : 'Tarefas e serviços pendentes do barracão'}</p>
         </div>
-        <button onClick={() => openNew('servico')} className="btn-primary">
-          <Plus size={16}/> Nova tarefa
-        </button>
+        {tab === 'servicos' && (
+          <button onClick={() => openNew('servico')} className="btn-primary">
+            <Plus size={16}/> Nova tarefa
+          </button>
+        )}
       </div>
+
+      <div className="inline-flex self-start items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl">
+        {[['servicos', 'Serviços do barracão', Wrench], ['foco', 'Foco do dia por funcionário', Target]].map(([k, l, Icon]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${tab === k ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+            <Icon size={15}/> {l}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'foco' ? <DailyFocusTab/> : <>
 
       {/* KPIs */}
       <div className="grid grid-cols-3 gap-3">
@@ -656,6 +676,8 @@ export function ServicesPage() {
           </div>
         </div>
       )}
+
+      </>}
 
       {/* Modal de conclusão de compra */}
       {completeModal && completingTask && (
