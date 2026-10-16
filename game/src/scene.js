@@ -2,9 +2,16 @@ import Phaser from 'phaser'
 import { HAMSTER_FRAMES, BOWL_FULL, BOWL_EMPTY, BOTTLE, POOP, paletteFor, spriteCanvas } from './art'
 
 // Mundo em "pixels de jogo" (o Phaser amplia mantendo o pixel nítido)
-export const W = 144
-export const H = 108
-const X_MIN = 16, X_MAX = 128
+// 16/10: mundo ampliado de 144x108 pra 200x150 (mesmo 4:3) — os itens mantêm
+// o tamanho em pixels, então ficam proporcionalmente menores e o terrário
+// ganha espaço livre pra receber mais produtos. Tudo abaixo deriva de W/H.
+export const W = 200
+export const H = 150
+const X_MIN = 16, X_MAX = W - 16
+const TABLE = H - 30                                   // tampo da mesa
+// Moldura frontal do terrário (e a janela/vão do acrílico dentro dela)
+const FX = 2, FY = 40, FW = W - 4, FH = H - 3 - FY
+const WIN = { L: FX + 7, R: FX + FW - 8, T: FY + 8, B: FY + FH - 9 }
 
 const HEART = ['.r.r.', 'rRrRr', 'rRRRr', '.rRr.', '..r..']
 const ZZZ = ['kkk', '..k', '.k.', 'kkk']
@@ -26,13 +33,15 @@ export class CageScene extends Phaser.Scene {
     this.setup = data.setup   // { habitat, substrato, roda, toca }
     const ter = this.setup.habitat === 'terrario'
     // Com substrato fundo o "chão" sobe (ele anda em cima da camada)
-    this.floorY = ter && this.setup.substrato ? 84 : 93
-    // Posições: toca no canto esquerdo, depois o potinho; roda à direita
+    this.floorY = ter && this.setup.substrato ? WIN.B - 12 : WIN.B - 3
+    // Posições: toca no canto esquerdo, depois o potinho; bebedouro no canto
+    // direito e a roda ao lado dele. O meio fica livre pra itens novos.
+    const bottle = this.setup.bebedouro ? WIN.R - 10 : WIN.R - 7
     this.L = {
-      toca: this.setup.toca ? 25 : null,
-      bowl: this.setup.toca ? 50 : 28,
-      wheel: this.setup.roda ? (this.setup.bebedouro ? (ter ? 92 : 88) : (ter ? 96 : 92)) : null,
-      bottle: this.setup.bebedouro ? (ter ? 124 : 121) : (ter ? 127 : 118),
+      toca: this.setup.toca ? 28 : null,
+      bowl: this.setup.toca ? 58 : 30,
+      wheel: this.setup.roda ? bottle - (this.setup.bebedouro ? 46 : 40) : null,
+      bottle,
     }
     // Ponta do bico (onde a gotinha sai) e onde ele para pra beber: virado pra
     // direita, com o focinho (7 px à frente do centro) encostado no bico
@@ -65,7 +74,7 @@ export class CageScene extends Phaser.Scene {
     this.water = this.add.rectangle(this.waterBox.x, 0, 2, 0, 0x5dade2, this.setup.bebedouro ? 0.85 : 1).setOrigin(0.5, 1).setDepth(3)
 
     this.poops = []
-    this.hamster = this.add.sprite(70, fy, 'h_idle').setOrigin(0.5, 1).setDepth(4).setInteractive({ useHandCursor: true })
+    this.hamster = this.add.sprite(Math.round(W / 2), fy, 'h_idle').setOrigin(0.5, 1).setDepth(4).setInteractive({ useHandCursor: true })
     this.hamster.on('pointerdown', () => bridge.emit('tap-pet'))
     this.facing = 1
     this.mode = 'idle'
@@ -223,63 +232,66 @@ export class CageScene extends Phaser.Scene {
   drawRoom() {
     const g = this.add.graphics()
     // Parede com papel listrado
-    g.fillStyle(0xf6e7cf).fillRect(0, 0, W, 78)
+    g.fillStyle(0xf6e7cf).fillRect(0, 0, W, TABLE)
     g.fillStyle(0xefd9b6)
-    for (let x = 0; x < W; x += 8) g.fillRect(x, 0, 4, 78)
+    for (let x = 0; x < W; x += 8) g.fillRect(x, 0, 4, TABLE)
     // Janela: céu de dia (azul com nuvem) e de noite (escuro, lua e estrelas)
-    g.fillStyle(0x8a5a32).fillRect(94, 0, 42, 15)
-    g.fillStyle(0xbfe3f5).fillRect(96, 1, 38, 12)
-    g.fillStyle(0xffffff).fillRect(99, 4, 7, 2).fillRect(101, 3, 3, 1).fillRect(121, 9, 6, 2).fillRect(122, 8, 3, 1)
+    const wx = W - 62, wy = 4, ww = 48, wh = 26, sx = wx + 2, sy = wy + 2, sw = ww - 4, sh = wh - 4
+    g.fillStyle(0x8a5a32).fillRect(wx, wy, ww, wh)
+    g.fillStyle(0xbfe3f5).fillRect(sx, sy, sw, sh)
+    g.fillStyle(0xffffff).fillRect(sx + 3, sy + 4, 8, 2).fillRect(sx + 5, sy + 3, 4, 1).fillRect(sx + 28, sy + 14, 7, 2).fillRect(sx + 29, sy + 13, 4, 1)
     const n = this.add.graphics()
-    n.fillStyle(0x1b2550).fillRect(96, 1, 38, 12)
-    n.fillStyle(0xf5f0c8).fillRect(126, 3, 4, 4).fillStyle(0x1b2550).fillRect(128, 3, 2, 2) // lua
+    n.fillStyle(0x1b2550).fillRect(sx, sy, sw, sh)
+    n.fillStyle(0xf5f0c8).fillRect(sx + sw - 9, sy + 3, 5, 5).fillStyle(0x1b2550).fillRect(sx + sw - 7, sy + 3, 3, 3) // lua
     n.fillStyle(0xffffff)
-    for (const [x, y] of [[99, 3], [104, 7], [109, 2], [100, 10], [119, 4], [122, 10], [131, 9], [111, 9]]) n.fillRect(x, y, 1, 1)
+    for (const [x, y] of [[3, 3], [8, 12], [14, 4], [4, 18], [27, 5], [30, 16], [40, 14], [18, 15], [35, 10]]) n.fillRect(sx + x, sy + y, 1, 1)
     this.nightSky = n.setVisible(false)
-    this.add.graphics().fillStyle(0x8a5a32).fillRect(114, 1, 2, 12).fillRect(96, 6, 38, 1) // caixilho por cima do céu
+    this.add.graphics().fillStyle(0x8a5a32).fillRect(wx + ww / 2 - 1, sy, 2, sh).fillRect(sx, wy + wh / 2, sw, 1) // caixilho por cima do céu
     // Mesa de madeira
-    g.fillStyle(0xa5683a).fillRect(0, 78, W, 30)
+    g.fillStyle(0xa5683a).fillRect(0, TABLE, W, H - TABLE)
     g.fillStyle(0x8c5530)
-    for (let y = 82; y < H; y += 6) g.fillRect(0, y, W, 1)
-    g.fillStyle(0x6e3f22).fillRect(0, 78, W, 2)
+    for (let y = TABLE + 4; y < H; y += 6) g.fillRect(0, y, W, 1)
+    g.fillStyle(0x6e3f22).fillRect(0, TABLE, W, 2)
   }
 
   // ─── Gaiola de ferro ───────────────────────────────────────────────
   drawCageBack() {
     const g = this.add.graphics()
     const fy = this.floorY
-    g.fillStyle(0x000000, 0.06).fillRect(8, 30, 128, 64)
+    const T = WIN.T
+    g.fillStyle(0x000000, 0.06).fillRect(8, T, W - 16, fy - T + 1)
     // Forro de jornal — substrato raso (o "jeito errado", de propósito)
-    g.fillStyle(0xe8d9b0).fillRect(10, fy - 3, 124, 4)
+    g.fillStyle(0xe8d9b0).fillRect(10, fy - 3, W - 20, 4)
     g.fillStyle(0xc9b88a)
-    for (let x = 12; x < 132; x += 7) g.fillRect(x, fy - 2, 4, 1)
+    for (let x = 12; x < W - 12; x += 7) g.fillRect(x, fy - 2, 4, 1)
     g.fillStyle(0x9aa3b1, 0.55)
-    for (let x = 10; x <= 134; x += 6) g.fillRect(x, 30, 1, fy - 32)
+    for (let x = 10; x <= W - 10; x += 6) g.fillRect(x, T, 1, fy - T - 2)
   }
 
   drawCageFront() {
     const g = this.add.graphics().setDepth(5)
     const fy = this.floorY
     // Grades da frente (por cima do hamster — ele fica "preso" atrás)
+    const T = WIN.T
     g.fillStyle(0x7d8694, 0.85)
-    for (let x = 13; x <= 131; x += 12) g.fillRect(x, 30, 1, fy - 30)
+    for (let x = 13; x <= W - 13; x += 12) g.fillRect(x, T, 1, fy - T)
     g.fillStyle(0x7d8694)
-    g.fillRect(8, 28, 128, 2).fillRect(8, 28, 2, fy - 26).fillRect(134, 28, 2, fy - 26)
-    g.fillStyle(0xb8c0cc).fillRect(8, 28, 128, 1)
-    g.fillStyle(0x2d6a9f).fillRect(6, fy + 1, 132, 8)
-    g.fillStyle(0x3f85c2).fillRect(6, fy + 1, 132, 2)
-    g.fillStyle(0x1e4b72).fillRect(6, fy + 8, 132, 1)
-    g.lineStyle(1, 0x7d8694).strokeEllipse(72, 24, 22, 8)
+    g.fillRect(8, T - 2, W - 16, 2).fillRect(8, T - 2, 2, fy - T + 4).fillRect(W - 10, T - 2, 2, fy - T + 4)
+    g.fillStyle(0xb8c0cc).fillRect(8, T - 2, W - 16, 1)
+    g.fillStyle(0x2d6a9f).fillRect(6, fy + 1, W - 12, 8)
+    g.fillStyle(0x3f85c2).fillRect(6, fy + 1, W - 12, 2)
+    g.fillStyle(0x1e4b72).fillRect(6, fy + 8, W - 12, 1)
+    g.lineStyle(1, 0x7d8694).strokeEllipse(W / 2, T - 6, 22, 8)
   }
 
   // ─── Terrário CoisaPet (MDF amadeirado + frente de acrílico) ───────
   // Terrário CoisaPet (fiel ao produto): moldura frontal grossa de MDF com
   // cantos arredondados, recortes de encaixe, logo no canto, tampa com fendas
   // de ventilação, fundo de madeira com veio vertical e frente de acrílico.
-  // Janela (vão do acrílico): x 9–134, y 30–96.
+  // Janela (vão do acrílico): WIN (x 9–190, y 48–138 no mundo 200x150).
   drawTerrariumBack() {
     const g = this.add.graphics()
-    const L = 9, R = 134, T = 30, B = 96
+    const { L, R, T, B } = WIN
     // Parede do fundo (veio vertical) + furinhos de fixação
     g.fillStyle(0xe8bd86).fillRect(L, T, R - L + 1, B - T)
     for (let x = L; x <= R; x++) {
@@ -288,17 +300,19 @@ export class CageScene extends Phaser.Scene {
       else if (v === 5) g.fillStyle(0xf0c995, 1).fillRect(x, T, 1, B - T)
     }
     g.fillStyle(0x6e4628)
-    for (const x of [44, 72, 100]) { g.fillRect(x, 42, 1, 3); g.fillRect(x, 49, 1, 3) }
+    for (const f of [0.3, 0.5, 0.7]) { const x = Math.round(W * f); g.fillRect(x, T + 12, 1, 3); g.fillRect(x, T + 19, 1, 3) }
     // Substrato fundo com um túnel visível pelo acrílico
     if (this.setup.substrato) {
       const top = this.floorY - 1
       g.fillStyle(0xe8c98a).fillRect(L, top, R - L + 1, B - top)
       g.fillStyle(0xd1a960)
-      for (let i = 0; i < 70; i++) g.fillRect(L + 1 + ((i * 37) % 124), top + 1 + ((i * 13) % (B - top - 2)), 2, 1)
+      const span = R - L - 1
+      for (let i = 0; i < 130; i++) g.fillRect(L + 1 + ((i * 37) % span), top + 1 + ((i * 13) % (B - top - 2)), 2, 1)
       g.fillStyle(0xf6dfaa)
-      for (let i = 0; i < 40; i++) g.fillRect(L + 1 + ((i * 53) % 124), top + ((i * 7) % (B - top - 1)), 1, 1)
-      g.fillStyle(0x8a6a3a).fillRect(60, top + 5, 26, 3).fillRect(84, top + 3, 3, 5).fillRect(58, top + 5, 3, 5)
-      g.fillStyle(0x6e5230).fillRect(61, top + 6, 24, 1)
+      for (let i = 0; i < 75; i++) g.fillRect(L + 1 + ((i * 53) % span), top + ((i * 7) % (B - top - 1)), 1, 1)
+      const tx = L + Math.round((R - L) * 0.4)                             // túnel
+      g.fillStyle(0x8a6a3a).fillRect(tx, top + 5, 26, 3).fillRect(tx + 24, top + 3, 3, 5).fillRect(tx - 2, top + 5, 3, 5)
+      g.fillStyle(0x6e5230).fillRect(tx + 1, top + 6, 24, 1)
     } else {
       g.fillStyle(0xcf9f68).fillRect(L, this.floorY - 1, R - L + 1, B - this.floorY + 1) // fundo de madeira
     }
@@ -307,29 +321,32 @@ export class CageScene extends Phaser.Scene {
   drawTerrariumFront() {
     // Tampa com fendas de ventilação (vista de cima, em perspectiva)
     const t = this.add.graphics().setDepth(6)
-    t.fillStyle(0x3b2314).fillRect(5, 16, 134, 7)
-    t.fillStyle(0xdcae78).fillRect(6, 17, 132, 5)
-    t.fillStyle(0xe9c08c).fillRect(6, 17, 132, 1)
+    t.fillStyle(0x3b2314).fillRect(FX + 3, FY - 6, FW - 6, 7)
+    t.fillStyle(0xdcae78).fillRect(FX + 4, FY - 5, FW - 8, 5)
+    t.fillStyle(0xe9c08c).fillRect(FX + 4, FY - 5, FW - 8, 1)
     t.fillStyle(0x5a3a22)
-    for (let x = 22; x <= 118; x += 4) t.fillRect(x, 19, 2, 1)
-    t.fillRect(7, 18, 3, 1).fillRect(134, 18, 3, 1)                   // encaixes da tampa
+    for (let x = FX + 20; x <= FX + FW - 22; x += 4) t.fillRect(x, FY - 3, 2, 1)
+    t.fillRect(FX + 5, FY - 4, 3, 1).fillRect(FX + FW - 8, FY - 4, 3, 1)  // encaixes da tampa
     // Abas de encaixe saindo pelas laterais
-    t.fillStyle(0xc89058).fillRect(0, 36, 3, 6).fillRect(0, 80, 3, 6).fillRect(141, 36, 3, 6).fillRect(141, 80, 3, 6)
-    t.fillStyle(0x3b2314).fillRect(0, 36, 1, 6).fillRect(0, 80, 1, 6).fillRect(143, 36, 1, 6).fillRect(143, 80, 1, 6)
+    const ty = [FY + Math.round(FH * 0.17), FY + Math.round(FH * 0.7)]
+    for (const y of ty) {
+      t.fillStyle(0xc89058).fillRect(0, y, 3, 6).fillRect(W - 3, y, 3, 6)
+      t.fillStyle(0x3b2314).fillRect(0, y, 1, 6).fillRect(W - 1, y, 1, 6)
+    }
     // Moldura frontal (pixel a pixel, com cantos arredondados e janela vazada)
-    this.add.image(2, 22, 'terr_frame').setOrigin(0).setDepth(6)
+    this.add.image(FX, FY, 'terr_frame').setOrigin(0).setDepth(6)
     // Acrílico: leve brilho
     const a = this.add.graphics().setDepth(6)
-    a.fillStyle(0xffffff, 0.05).fillRect(9, 30, 126, 66)
+    a.fillStyle(0xffffff, 0.05).fillRect(WIN.L, WIN.T, WIN.R - WIN.L + 1, WIN.B - WIN.T)
     a.fillStyle(0xffffff, 0.35)
-    for (let i = 0; i < 10; i++) a.fillRect(14 + i, 41 - i, 1, 1)
-    for (let i = 0; i < 16; i++) a.fillRect(20 + i, 47 - i, 1, 1)
+    for (let i = 0; i < 10; i++) a.fillRect(WIN.L + 5 + i, WIN.T + 11 - i, 1, 1)
+    for (let i = 0; i < 16; i++) a.fillRect(WIN.L + 11 + i, WIN.T + 17 - i, 1, 1)
   }
 
   makeTerrariumFrameTexture() {
-    // 140 x 83, posicionada em (2,22). Janela vazada: x 7–132, y 8–74 (local)
-    const W2 = 140, H2 = 83, r = 5, ir = 3
-    const wx0 = 7, wx1 = 132, wy0 = 8, wy1 = 74
+    // FW x FH, posicionada em (FX,FY). Janela vazada = WIN (em coordenadas locais)
+    const W2 = FW, H2 = FH, r = 5, ir = 3
+    const wx0 = WIN.L - FX, wx1 = WIN.R - FX, wy0 = WIN.T - FY, wy1 = WIN.B - FY
     const inRound = (x, y, x0, y0, x1, y1, rad) => {
       if (x < x0 || x > x1 || y < y0 || y > y1) return false
       const cx = x < x0 + rad ? x0 + rad : x > x1 - rad ? x1 - rad : x
@@ -337,9 +354,9 @@ export class CageScene extends Phaser.Scene {
       return Math.hypot(x - cx, y - cy) <= rad + 0.3
     }
     const slots = [
-      [66, 3, 8, 1], [16, 3, 7, 1], [W2 - 23, 3, 7, 1],                 // em cima
-      [66, H2 - 4, 8, 1], [16, H2 - 4, 7, 1], [W2 - 23, H2 - 4, 7, 1],   // embaixo
-      [2, 18, 1, 6], [2, 54, 1, 6], [W2 - 3, 18, 1, 6], [W2 - 3, 54, 1, 6], // laterais
+      [W2 / 2 - 4, 3, 8, 1], [16, 3, 7, 1], [W2 - 23, 3, 7, 1],                 // em cima
+      [W2 / 2 - 4, H2 - 4, 8, 1], [16, H2 - 4, 7, 1], [W2 - 23, H2 - 4, 7, 1],   // embaixo
+      ...[0.22, 0.65].flatMap(f => [[2, Math.round(H2 * f), 1, 6], [W2 - 3, Math.round(H2 * f), 1, 6]]), // laterais
     ]
     this.pixelCanvas('terr_frame', W2, H2, px => {
       for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {

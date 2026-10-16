@@ -7155,3 +7155,10 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
   do fundo com veio vertical + furinhos de fixação, frente de acrílico. Moldura
   desenhada pixel a pixel (`terr_frame`). Janela do quarto subiu pra continuar
   aparecendo acima da tampa (céu dia/noite).
+- **0.3.4 (16/10)** — Terrário "maior" (pedido do Raphael: itens pareciam
+  amontoados). O mundo do jogo passou de 144x108 pra **200x150** px (mesmo
+  4:3); os itens mantêm o tamanho em pixels, então ficam ~28% menores na tela
+  e sobra espaço no meio do terrário pra produtos novos. `scene.js` deixou de
+  ter coordenadas fixas: tudo deriva de `W`/`H` (`TABLE`, moldura `FX/FY/FW/FH`
+  e janela `WIN`). Layout: toca à esquerda, potinho, **meio livre**, roda e
+  bebedouro à direita. Gaiola também se adapta.
