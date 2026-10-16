@@ -7112,3 +7112,19 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
   fileira de recortes, pista de cortiça, miolo com o logo e base branca em "T".
   Desenhada pixel a pixel no canvas (nítida); 3 quadros — o giro aparece nos
   recortes do aro andando. Raio 18 px.
+- **0.3 (16/10)** — pedidos do Raphael (fotos dos produtos):
+  - **Bebedouro com suporte CoisaPet** virou item (`bebedouro`): painel de
+    madeira com fendas, tubo transparente de topo redondo, tampa amarela, bico
+    de metal, base com recorte; fica em pé no chão, o nível da água aparece no
+    tubo. Efeito: sede cai ×0.85. Sem ele: bebedouro simples pendurado.
+    Código TESTE-BEBEDOURO (e entrou no TESTE-TUDO).
+  - **Toca CoisaPet** redesenhada: casinha com telhado de duas águas e porta
+    redonda VAZADA com anel gravado → dá pra ver o hamster dentro: dormindo
+    (respirando, tween de escala) e, acordado, às vezes entra e espia pela
+    porta (mais quando triste).
+  - **Sujeirinhas mais frequentes:** 1 a cada 7 pts de limpeza (antes 12) e
+    limpeza cai 2.6/h (antes 1.8) → gaiola ~2 h, terrário ~3 h, com Aspen ~4–5 h.
+  - **Roda cansa:** cada corrida (a cena avisa via `wheel-run`) dá diversão
+    +0.6/s e gasta energia −0.4/s (+ um pouco de sede), com gotinha de suor;
+    offline a roda colocada deixa a energia cair ×1.15. Teste à noite: 60 s
+    de jogo aberto → diversão 40→70 e energia 90→70 (antes do ajuste fino).

@@ -43,13 +43,18 @@ export const CATALOG = {
   },
   roda: {
     label: 'Roda Silenciosa 25 cm', icon: '🎡', kind: 'item',
-    desc: 'Ele corre de madrugada e gasta energia feliz. A diversão cai bem mais devagar.',
+    desc: 'Ele corre de madrugada: cada corrida dá muita diversão, mas cansa — depois ele precisa descansar.',
     edu: 'Hamster corre quilômetros por noite! A roda precisa ser grande pra ele correr com as costas retas.',
   },
   toca: {
     label: 'Toca de madeira', icon: '🛖', kind: 'item',
     desc: 'Um esconderijo pra dormir seguro: descansa mais rápido e fica menos estressado.',
     edu: 'Hamster é presa na natureza: sem esconderijo ele vive assustado. A toca dá segurança.',
+  },
+  bebedouro: {
+    label: 'Bebedouro com suporte', icon: '🚰', kind: 'item',
+    desc: 'Fica em pé no chão, com o bico na altura certa. Água limpa por mais tempo.',
+    edu: 'Bebedouro de bico mantém a água limpa (sem sujeira do substrato) — e no suporte ele fica firme, sem furar o terrário.',
   },
 }
 export const CATALOG_KEYS = Object.keys(CATALOG)
@@ -63,11 +68,13 @@ export function isPlaced(pet, key) {
 }
 export function mods(pet) {
   const m = habitatOf(pet) === 'terrario'
-    ? { fun: 1.0, clean: 0.9, energy: 1.0, sleep: 1.0, comfort: 0.85 }
-    : { fun: 1.6, clean: 1.3, energy: 1.3, sleep: 0.75, comfort: 0.6 }  // gaiola: cansa e entristece mais
-  if (isPlaced(pet, 'substrato')) { m.clean *= 0.65; m.fun *= 0.9; m.comfort += 0.05 }
-  if (isPlaced(pet, 'roda'))      { m.fun *= 0.65; m.comfort += 0.03 }
-  if (isPlaced(pet, 'toca'))      { m.sleep *= 1.3; m.comfort += 0.07 }
+    ? { fun: 1.0, clean: 0.9, energy: 1.0, sleep: 1.0, thirst: 1.0, comfort: 0.85 }
+    : { fun: 1.6, clean: 1.3, energy: 1.3, sleep: 0.75, thirst: 1.0, comfort: 0.6 }  // gaiola: cansa e entristece mais
+  if (isPlaced(pet, 'substrato')) { m.clean *= 0.65; m.fun *= 0.9; m.comfort += 0.04 }
+  // Roda: diverte (diversão cai mais devagar) mas CANSA (energia cai mais rápido)
+  if (isPlaced(pet, 'roda'))      { m.fun *= 0.65; m.energy *= 1.15; m.comfort += 0.03 }
+  if (isPlaced(pet, 'toca'))      { m.sleep *= 1.3; m.comfort += 0.05 }
+  if (isPlaced(pet, 'bebedouro')) { m.thirst *= 0.85; m.comfort += 0.03 }
   m.comfort = Math.min(1, m.comfort)
   return m
 }
@@ -83,7 +90,7 @@ export function migrate(p) {
 
 // Quanto cada necessidade cai por hora (antes dos multiplicadores)
 // Calibrado pra quem entra 1–2x por dia: 1 dia fora = tristinho; 3 dias = doente
-const DECAY = { fome: 2.6, sede: 3, limpeza: 1.8, energia: 6, diversao: 2.4 }
+const DECAY = { fome: 2.6, sede: 3, limpeza: 2.6, energia: 6, diversao: 2.4 }
 const SLEEP_RECOVER = 14 // energia/h dormindo
 
 export const clamp = (v, a = 0, b = 100) => Math.max(a, Math.min(b, v))
@@ -130,7 +137,7 @@ export function advance(pet, toTime = Date.now()) {
     const h = step / 3600000
     const n = p.needs
     n.fome = clamp(n.fome - DECAY.fome * h)
-    n.sede = clamp(n.sede - DECAY.sede * h)
+    n.sede = clamp(n.sede - DECAY.sede * m.thirst * h)
     n.limpeza = clamp(n.limpeza - DECAY.limpeza * m.clean * h)
     n.diversao = clamp(n.diversao - DECAY.diversao * m.fun * (p.asleep ? 0.3 : 1) * h)
     if (p.asleep) n.energia = clamp(n.energia + SLEEP_RECOVER * m.sleep * h)
@@ -169,7 +176,9 @@ export function status(pet) {
 }
 
 // Quantas sujeirinhas aparecem no chão (derivado da limpeza)
-export const poopCount = pet => Math.max(0, Math.floor((100 - pet.needs.limpeza) / 12))
+// Uma sujeirinha a cada 7 pontos de limpeza (gaiola ~2 h, terrário ~3 h, terrário com Aspen ~4–5 h)
+export const POOP_STEP = 7
+export const poopCount = pet => Math.min(12, Math.max(0, Math.floor((100 - pet.needs.limpeza) / POOP_STEP)))
 
 // ─── Ações do tutor ──────────────────────────────────────────────────
 // Cada uma devolve { pet, msg, tip? } — `tip` é uma dica educativa.
@@ -193,7 +202,7 @@ export function water(pet) {
 
 export function cleanOne(pet) {
   const p = structuredClone(pet)
-  p.needs.limpeza = clamp(p.needs.limpeza + 12)
+  p.needs.limpeza = clamp(p.needs.limpeza + POOP_STEP)
   earn(p)
   return { pet: p }
 }
@@ -232,6 +241,16 @@ export function treat(pet) {
   return { pet: p, msg: 'Uma sementinha de girassol! 🌻', anim: 'eat' }
 }
 
+// Uma corrida na roda (vem da cena quando ele sai da roda): diverte e cansa
+export function wheelRun(pet, seconds) {
+  const p = structuredClone(pet)
+  const s = Math.max(0, Math.min(20, seconds))
+  p.needs.diversao = clamp(p.needs.diversao + s * 0.6)
+  p.needs.energia = clamp(p.needs.energia - s * 0.4)
+  p.needs.sede = clamp(p.needs.sede - s * 0.15)
+  return { pet: p }
+}
+
 // ─── Inventário ──────────────────────────────────────────────────────
 export function togglePlace(pet, key) {
   const p = structuredClone(pet)
@@ -254,7 +273,8 @@ export function togglePlace(pet, key) {
 // os reais (únicos, 1 uso, vindos do pedido) serão validados no servidor.
 const TEST_CODES = {
   'TESTE-TERRARIO': ['terrario'], 'TESTE-ASPEN': ['substrato'], 'TESTE-RODA': ['roda'],
-  'TESTE-TOCA': ['toca'], 'TESTE-TUDO': ['terrario', 'substrato', 'roda', 'toca'],
+  'TESTE-TOCA': ['toca'], 'TESTE-BEBEDOURO': ['bebedouro'],
+  'TESTE-TUDO': ['terrario', 'substrato', 'roda', 'toca', 'bebedouro'],
 }
 export function redeem(pet, raw) {
   const p = structuredClone(pet)
