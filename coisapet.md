@@ -7049,3 +7049,31 @@ Confirmado com o Raphael: o "Faturamento de <mês>" soma só o mês vigente
 - Gráfico: barras do mês passado em cinza, do mês atual na cor normal, hoje
   em tom suave; linha tracejada âmbar com a média/dia do mês; legenda.
 - `DailyBars` (widgets.jsx) ganhou props opcionais `splitFrom` e `avg`.
+
+## 2026-10-16 — MinhaCoisaPet (jogo do hamster) — protótipo 0.1
+
+Ideia do Raphael: jogo 2D pixel art em que o tutor cuida de um hamster (nunca
+acaba, pet nunca morre — só fica triste/doente), 100% marketing; produtos
+reais da CoisaPet viram itens no jogo via código de resgate (qualquer produto).
+Decisões (16/10): público geral, foco educativo total, ~10–12 produtos no
+começo (tudo amadeirado), assets gratuitos, endereço `game.coisapet.com.br`,
+nome MinhaCoisaPet, pet com nome. Espécies: começa com hamster (sírio,
+anão russo, sírio panda); porquinho-da-índia/gerbil depois.
+- Projeto separado em `game/` (Vite + React + Tailwind + Phaser 3), PWA,
+  base relativa. Deploy: `deploy.yml` builda e sobe `game/dist/` pra
+  `public_html/game/`. **Pendente (Raphael): criar o subdomínio
+  game.coisapet.com.br no hPanel apontando pra public_html/game.**
+- Pixel art desenhada por código (`art.js`) — sem licença de terceiros.
+- Protótipo 0.1 = sem login: progresso salvo no aparelho (localStorage).
+  Necessidades (barriguinha, água, limpeza, energia, diversão) + saúde, caem
+  com o relógio real (inclusive offline); calibrado: 1 dia fora = tristinho,
+  3 dias = doente. Hamster noturno (dorme de dia; acordar ele estressa).
+  Ações: ração, água, limpar (ou tocar na sujeirinha), carinho (tocar no
+  hamster), petisco (máx. 2/dia). Moeda "sementinhas" já acumula.
+  Dicas educativas no rodapé + contextuais.
+- Layout: celular em pé (cena em cima, painel embaixo), deitado/tablet/PC
+  (cena à esquerda, painel à direita), telas baixinhas compactam.
+- **Próximas etapas:** login (Supabase Auth num projeto SEPARADO do sistema
+  — as tabelas do sistema aceitam a chave pública, não misturar), loja/
+  inventário com os produtos reais, código de resgate impresso no picklist
+  (QR), terrário como novo ambiente.

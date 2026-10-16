@@ -43,6 +43,10 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_ML_CLIENT_ID: ${{ secrets.VITE_ML_CLIENT_ID }}
 
+      # ── Jogo MinhaCoisaPet (game/ é um projeto Vite separado) ──────
+      - name: Builda o jogo (gera game/dist/)
+        run: npm ci --prefix game && npm run build --prefix game
+
       # ── App React (dist/) → public_html/sistema/ ──────────────────
       # A conta FTP "CoisaPet" já ABRE DIRETO dentro da public_html de
       # verdade (confirmado pelo Raphael no FileZilla, 18/09 — conexão
@@ -95,3 +99,14 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./doc/
           server-dir: ./doc/
+
+      # Jogo → public_html/game/ (o subdomínio game.coisapet.com.br aponta pra
+      # essa pasta; enquanto não existir, abre em coisapet.com.br/game/)
+      - name: Deploy — /game (MinhaCoisaPet)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./game/dist/
+          server-dir: ./game/

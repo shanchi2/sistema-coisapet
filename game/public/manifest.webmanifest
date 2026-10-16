@@ -1,0 +1,12 @@
+{
+  "name": "MinhaCoisaPet",
+  "short_name": "MinhaCoisaPet",
+  "description": "Cuide do seu hamster: comida, água, limpeza e muito carinho.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#2b1d14",
+  "theme_color": "#2b1d14",
+  "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
