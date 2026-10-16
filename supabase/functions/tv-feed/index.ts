@@ -1,7 +1,7 @@
 // TV da Produção (07/10, fase100) — devolve, numa chamada só, tudo que a
 // TV do andar de cima mostra: alertas, coleta do Full, despacho do dia,
 // produção, avisos, passagem de turno, kanban, manutenção, checklist,
-// observações de mídia e aniversariantes.
+// observações de mídia, aniversariantes e o foco do dia por funcionário.
 //
 // Público (deploy --no-verify-jwt): quem chama é a TV, sem login. Cada
 // aparelho manda o seu código (gerado por diretor na tela "TV da
@@ -31,7 +31,7 @@ const stripHtml = (s: string | null) => (s || '').replace(/<br\s*\/?>/gi, '\n').
 
 export const MODULES = [
   'alertas', 'coleta_full', 'despacho', 'producao', 'avisos', 'passagem_turno',
-  'kanban', 'manutencao', 'checklist', 'midia', 'aniversariantes',
+  'kanban', 'manutencao', 'checklist', 'midia', 'aniversariantes', 'foco_dia',
 ]
 const TERMINAL = ['closed_ok', 'closed_with_changes', 'cancelled', 'expired']
 
@@ -58,7 +58,7 @@ serve(async (req) => {
     const warnDays = settings?.full_warn_days ?? 2
 
     const [shipR, manualR, ordersR, overdueR, attR, prodR, entriesR, annR, tvAlertsR, handR,
-      tasksR, maintR, logsR, machinesR, ckTasksR, ckEntriesR, ckUsersR, notesR, bdayR] = await Promise.all([
+      tasksR, maintR, logsR, machinesR, ckTasksR, ckEntriesR, ckUsersR, notesR, bdayR, focusR] = await Promise.all([
       sb.from('ml_full_inbound_shipments')
         .select('id, name, status, shipment_type, appointment_date, logistic_center_id, products_count, synced_at, items:ml_full_inbound_items(title, variation, declared_qty)')
         .not('status', 'in', `(${TERMINAL.join(',')})`).not('appointment_date', 'is', null)
@@ -88,6 +88,7 @@ serve(async (req) => {
       sb.from('system_users').select('id, name').eq('active', true).eq('role', 'atendimento'),
       sb.from('product_media_notes').select('product_id, body, created_at, created_by_name').eq('status', 'aberto').order('created_at', { ascending: false }).limit(50),
       sb.from('system_users').select('name, birthday').eq('active', true).not('birthday', 'is', null),
+      sb.from('daily_focus').select('employee_name, task, urgent, done, position, id').eq('date', today).order('position').order('id'),
     ])
 
     // ── Coleta do Full ────────────────────────────────────────────────
@@ -202,6 +203,13 @@ serve(async (req) => {
       .map((u: any) => ({ name: u.name, day: md(u.birthday), today: md(u.birthday) === md(today) }))
       .sort((a: any, b: any) => window7.indexOf(a.day) - window7.indexOf(b.day))
 
+    // ── Foco do dia por funcionário (aba em /servicos) ───────────────
+    const focusBy: Record<string, any[]> = {}
+    ;(focusR.data || []).forEach((f: any) => (focusBy[f.employee_name] ||= []).push({ task: f.task, urgent: f.urgent, done: f.done }))
+    const foco_dia = Object.entries(focusBy)
+      .map(([name, tasks]) => ({ name, tasks: tasks.sort((a, b) => (Number(a.done) - Number(b.done)) || (Number(b.urgent) - Number(a.urgent))) }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+
     // ── Alertas (o que pinta a TV de vermelho/amarelo) ───────────────
     const alerts: any[] = []
     coletas.forEach((c: any) => {
@@ -228,7 +236,7 @@ serve(async (req) => {
       data: {
         alertas: alerts,
         coleta_full: { list: coletas, last_sync: lastSyncRow?.synced_at || null, warn_days: warnDays },
-        despacho, producao, avisos, passagem_turno: passagem, kanban, manutencao, checklist, midia, aniversariantes,
+        despacho, producao, avisos, passagem_turno: passagem, kanban, manutencao, checklist, midia, aniversariantes, foco_dia,
       },
     })
   } catch (err) {
