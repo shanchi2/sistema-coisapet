@@ -7050,6 +7050,33 @@ Confirmado com o Raphael: o "Faturamento de <mês>" soma só o mês vigente
   em tom suave; linha tracejada âmbar com a média/dia do mês; legenda.
 - `DailyBars` (widgets.jsx) ganhou props opcionais `splitFrom` e `avg`.
 
+## 2026-10-16 — Pré-listas de envio pro Full (ML + Shopee)
+
+Pedido do Raphael: a API do ML não deixa montar o envio do Full pelo nosso
+sistema (confirmado — nem ML nem Shopee expõem criação de envio; até a
+leitura dos envios ML vem pela extensão/favorito). Solução: montar a lista
+AQUI e, na hora de criar o envio no painel deles, ir copiando código e
+marcando "já adicionei".
+
+- Nova aba **Pré-listas** em Gestão de Envios Full (`?aba=prelistas&lista=ID`),
+  componente `FullPrelistsPanel.jsx`.
+- Na **Reposição inteligente**, botão **"Montar pré-lista (N)"**: cria a lista
+  com tudo do plano (ideais + já no Full) que tem "Enviar agora" > 0, com a
+  quantidade sugerida (guardada em `suggested` pra comparar depois).
+- Na lista: quantidade editável, botões de copiar **MLB/ID**, **SKU** e título,
+  checkbox "já adicionei" (vai pro fim, riscado, guarda quem marcou),
+  barra de progresso, buscar e incluir outro anúncio, imprimir (folha com
+  ☐ pra separação), "Envio criado — concluir"/reabrir, excluir. Listas vazias
+  ML ou Shopee também.
+- Banco (fase108): `full_prelists` + `full_prelist_items` (RLS no padrão do
+  front). Fica no banco, não no navegador — qualquer PC vê a mesma lista.
+- **Acesso:** a tela Gestão de Envios Full ganhou módulo próprio
+  `full-envios` (antes usava `ml-insights`), ligado pra marketplace e
+  **produção** — assim a produção monta/confere envios sem ganhar o resto da
+  Otimização ML. Só unidades; R$ dos envios continua só pra Diretor.
+- Ideia pra depois: conferência planejado × enviado quando o envio do ML
+  entrar pela extensão.
+
 ## 2026-10-16 — MinhaCoisaPet (jogo do hamster) — protótipo 0.1
 
 Ideia do Raphael: jogo 2D pixel art em que o tutor cuida de um hamster (nunca
