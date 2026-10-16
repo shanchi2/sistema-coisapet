@@ -7107,3 +7107,8 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
   raio 11 → 17 px (`WHEEL_R`), ~36 px de diâmetro contra 16 px do hamster
   (mais que o dobro), com fundo de madeira clarinha e pé maior; hamster corre
   no "chão" de dentro da roda.
+- **0.2.2 (16/10)** — Roda redesenhada como a **Roda Silenciosa CoisaPet** real
+  (fotos do Raphael): disco de trás fechado (sem raios), aro de madeira com a
+  fileira de recortes, pista de cortiça, miolo com o logo e base branca em "T".
+  Desenhada pixel a pixel no canvas (nítida); 3 quadros — o giro aparece nos
+  recortes do aro andando. Raio 18 px.

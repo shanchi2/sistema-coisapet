@@ -11,7 +11,7 @@ const ZZZ = ['kkk', '..k', '.k.', 'kkk']
 const DROP = ['.c.', 'cCc', '.c.']
 
 // Madeira "amadeirado" dos produtos CoisaPet
-const WHEEL_R = 17 // raio da roda (hamster tem 16 px de comprimento)
+const WHEEL_R = 18 // raio da roda (hamster tem 16 px de comprimento)
 const WOOD = 0xc8955a, WOOD_D = 0x9a6a3a, WOOD_L = 0xe2b47c, INK = 0x3b2314
 
 // Ponte React ⇄ Phaser
@@ -31,7 +31,7 @@ export class CageScene extends Phaser.Scene {
     this.L = {
       toca: this.setup.toca ? 26 : null,
       bowl: this.setup.toca ? 50 : 28,
-      wheel: this.setup.roda ? 96 : null,
+      wheel: this.setup.roda ? (ter ? 96 : 92) : null,
       bottle: ter ? 127 : 118,
     }
   }
@@ -88,24 +88,38 @@ export class CageScene extends Phaser.Scene {
     add('bowl_full', BOWL_FULL); add('bowl_empty', BOWL_EMPTY)
     add('bottle', BOTTLE); add('poop', POOP)
     add('heart', HEART); add('zzz', ZZZ); add('drop', DROP)
-    // Roda: 2 quadros dos raios (+ e x) — gira sem borrar o pixel.
+    // Roda Silenciosa CoisaPet (fiel ao produto real): disco de trás FECHADO
+    // (sem raios — a patinha não prende), aro de madeira com a fileira de
+    // recortes, pista de cortiça por dentro e miolo com o logo. Desenhada
+    // pixel a pixel (nítida); o giro aparece nos recortes do aro andando.
     // Grande de propósito (mais que o dobro do hamster): roda pequena faz o
     // hamster correr com a coluna curvada — mensagem que a CoisaPet sempre passa.
-    const R = WHEEL_R, C = R + 2, S = C * 2
-    for (const [key, ang] of [['wheel_a', 0], ['wheel_b', Math.PI / 4]]) {
+    const R = WHEEL_R, C = R + 1, S = C * 2 + 1
+    const SLOTS = 14
+    for (let f = 0; f < 3; f++) {
+      const key = `wheel_${f}`
       if (this.textures.exists(key)) this.textures.remove(key)
-      const g = this.make.graphics({ add: false })
-      g.fillStyle(WOOD_L, 0.25).fillCircle(C, C, R - 1)        // fundo da roda (madeira clarinha)
-      g.lineStyle(3, WOOD_D).strokeCircle(C, C, R)
-      g.lineStyle(1, WOOD_L).strokeCircle(C, C, R - 2)
-      g.lineStyle(1, WOOD_D)
-      for (let i = 0; i < 4; i++) {
-        const a = ang + i * Math.PI / 2
-        g.lineBetween(C, C, C + Math.cos(a) * (R - 2), C + Math.sin(a) * (R - 2))
+      const cv = document.createElement('canvas'); cv.width = S; cv.height = S
+      const ctx = cv.getContext('2d')
+      const px = (x, y, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1) }
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const dx = x - C, dy = y - C, d = Math.hypot(dx, dy)
+        if (d > R + 0.5) continue
+        const ang = (Math.atan2(dy, dx) / (Math.PI * 2) + 1) % 1
+        if (d > R - 0.5) px(x, y, '#5a3418')                        // contorno
+        else if (d > R - 3.5) {                                       // aro com a fileira de recortes
+          const slot = ((ang * SLOTS + f / 3) % 1) < 0.22 && d > R - 2.5 && d < R - 1.2
+          px(x, y, slot ? '#3b2314' : d > R - 1.5 ? '#d9a26a' : '#c58c55')
+        } else if (d > R - 4.5) px(x, y, '#6e4122')                   // sombra entre aro e cortiça
+        else if (d > R - 6.5) {                                       // pista de cortiça
+          px(x, y, (x * 7 + y * 13) % 11 === 0 ? '#b98a57' : '#d3a774')
+        } else if (d < 3.6) {                                         // miolo com o logo
+          px(x, y, Math.abs(dx) < 1 && Math.abs(dy) < 1 ? '#2a1a0d' : d > 2.6 ? '#8a5228' : '#c98a52')
+        } else {                                                      // disco de trás (madeira avermelhada)
+          px(x, y, (x * 3 + Math.floor(y / 4)) % 9 === 0 ? '#a8622f' : '#b8723c')
+        }
       }
-      g.fillStyle(INK).fillRect(C - 1, C - 1, 3, 3)
-      g.generateTexture(key, S, S)
-      g.destroy()
+      this.textures.addCanvas(key, cv)
     }
   }
 
@@ -206,11 +220,14 @@ export class CageScene extends Phaser.Scene {
   drawWheel() {
     const x = this.L.wheel, fy = this.floorY
     const g = this.add.graphics().setDepth(2)
-    const cy = fy - WHEEL_R - 3
-    g.fillStyle(WOOD_D).fillRect(x - 1, cy, 3, fy - cy)    // suporte
-    g.fillStyle(WOOD).fillRect(x - 9, fy - 2, 19, 3)       // pé
-    g.fillStyle(WOOD_L).fillRect(x - 9, fy - 2, 19, 1)
-    this.wheel = this.add.image(x, cy, 'wheel_a').setDepth(2)
+    const cy = fy - WHEEL_R - 4
+    // Base branca em "T", como a do produto
+    g.fillStyle(0x4a4a4a).fillRect(x - 3, cy + 6, 6, fy - cy - 6)
+    g.fillStyle(0xf4f4f2).fillRect(x - 2, cy + 6, 4, fy - cy - 7)
+    g.fillStyle(0x4a4a4a).fillRect(x - 13, fy - 3, 27, 4)
+    g.fillStyle(0xf4f4f2).fillRect(x - 12, fy - 3, 25, 2)
+    g.fillStyle(0xd9d9d6).fillRect(x - 12, fy - 1, 25, 1)
+    this.wheel = this.add.image(x, cy, 'wheel_0').setDepth(2)
     this.wheelRunY = cy + WHEEL_R - 2                      // chão de dentro da roda
   }
 
@@ -324,7 +341,7 @@ export class CageScene extends Phaser.Scene {
     const speed = (sad ? 9 : 18) * (delta / 1000)
     let frame = sad ? 'sad' : 'idle'
 
-    if (this.wheel) this.wheel.setTexture(this.mode === 'wheel' && Math.floor(time / 90) % 2 ? 'wheel_b' : 'wheel_a')
+    if (this.wheel) this.wheel.setTexture(this.mode === 'wheel' ? `wheel_${Math.floor(time / 80) % 3}` : 'wheel_0')
 
     if (this.mode === 'sleep') {
       frame = 'sleep'
