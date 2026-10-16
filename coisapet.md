@@ -7084,3 +7084,21 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
   Agora desliga no `shutdown` E no `destroy`, e `applyState`/`playAnim`
   ignoram cena desmontada. Testado: 3x criar → cuidar → recomeçar sem erro.
   + meta `mobile-web-app-capable` (aviso do Chrome).
+- **0.2 (16/10) — etapa 2: inventário + terrário.** Itens são DESBLOQUEIOS
+  (comprou qualquer tamanho/quantidade → fica pra sempre; o tutor só coloca
+  ou guarda) — decisão: quantidade viraria "gastar e recomprar", soa cobrança.
+  - Catálogo (`CATALOG` em sim.js): Terrário CoisaPet (troca o ambiente),
+    Substrato Aspen (só com terrário), Roda Silenciosa 25 cm, Toca de madeira.
+  - Efeitos (`mods()`): gaiola = cansa ×1.3, diversão cai ×1.6, suja ×1.3,
+    dorme pior, conforto 60%. Terrário = tudo ×1, conforto 85%. Aspen: suja
+    ×0.65; Roda: diversão ×0.65; Toca: recupera sono ×1.3. Conforto entra no
+    humor. Teste: 12 h depois humor 65 (gaiola) → 74 (terrário) → 82 (completo).
+  - Cena: terrário MDF amadeirado com acrílico, substrato fundo com túnel
+    visível, roda que gira com ele correndo (mais à noite), toca onde ele
+    dorme escondido (só o "Zzz" aparece).
+  - Tela "🎁 Itens": resgatar código + colocar/guardar + "conforto do lar".
+    Por enquanto só CÓDIGOS DE TESTE (TESTE-TERRARIO/ASPEN/RODA/TOCA/TUDO),
+    validados no aparelho; os reais (únicos, 1 uso, do pedido) virão com o
+    login, validados no servidor.
+  - Bug achado no teste: a trava `sys.isActive()` (0.1.1) ignorava o 1º
+    desenho (sujeira/água só apareciam 5 s depois) — trocada por flag `dead`.
