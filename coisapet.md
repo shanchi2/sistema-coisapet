@@ -7139,3 +7139,12 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
     não o desviam (só um susto acorda). Aviso trocado pra "está com soninho".
   - Testes com relógio forçado (dia/noite): beber, ir dormir (saiu da roda,
     andou até a toca, entrou), acordar (saiu e foi pra roda), susto — sem erros.
+- **0.3.2 (16/10)** — Raphael: "que tal mudar o período de acordo com o relógio
+  do dispositivo? passou das 19h fica noite, às 7h fica dia". O jogo já usava
+  a hora local do aparelho; a noite agora começa às **19h** (antes 18h) —
+  constantes `DAY_START`/`NIGHT_START` em sim.js.
+  - Janela da cena mostra o céu: de dia azul com nuvens; de noite escuro com
+    lua e estrelas (além do filtro azulado que já existia).
+  - Ele vai SOZINHO beber e comer de vez em quando quando acordado (mais
+    quando sede/fome < 60) — o Raphael não tinha visto a animação de beber
+    porque jogou de dia e ele estava dormindo.

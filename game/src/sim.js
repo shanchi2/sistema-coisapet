@@ -119,10 +119,12 @@ export function dayKey(t) {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
 }
 
-// Hamster é NOTURNO: de dia (7h–18h) ele tende a dormir
+// Hamster é NOTURNO. Dia/noite segue o RELÓGIO DO APARELHO (hora local de
+// quem joga): das 7h às 19h é dia (ele tende a dormir); das 19h às 7h é noite.
+export const DAY_START = 7, NIGHT_START = 19
 export function isDaytime(t) {
   const h = new Date(t).getHours()
-  return h >= 7 && h < 18
+  return h >= DAY_START && h < NIGHT_START
 }
 
 // Avança a simulação `ms` milissegundos a partir de `pet.lastTick`.

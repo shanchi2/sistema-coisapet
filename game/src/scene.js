@@ -225,10 +225,17 @@ export class CageScene extends Phaser.Scene {
     g.fillStyle(0xf6e7cf).fillRect(0, 0, W, 78)
     g.fillStyle(0xefd9b6)
     for (let x = 0; x < W; x += 8) g.fillRect(x, 0, 4, 78)
-    // Janela
+    // Janela: céu de dia (azul com nuvem) e de noite (escuro, lua e estrelas)
     g.fillStyle(0x8a5a32).fillRect(96, 6, 38, 26)
     g.fillStyle(0xbfe3f5).fillRect(98, 8, 34, 22)
-    g.fillStyle(0x8a5a32).fillRect(114, 8, 2, 22).fillRect(98, 18, 34, 2)
+    g.fillStyle(0xffffff).fillRect(101, 12, 7, 2).fillRect(103, 11, 3, 1).fillRect(120, 23, 6, 2).fillRect(121, 22, 3, 1)
+    const n = this.add.graphics()
+    n.fillStyle(0x1b2550).fillRect(98, 8, 34, 22)
+    n.fillStyle(0xf5f0c8).fillRect(124, 10, 4, 4).fillStyle(0x1b2550).fillRect(126, 10, 2, 2) // lua
+    n.fillStyle(0xffffff)
+    for (const [x, y] of [[101, 10], [106, 14], [110, 9], [102, 24], [118, 12], [121, 26], [129, 22], [108, 27]]) n.fillRect(x, y, 1, 1)
+    this.nightSky = n.setVisible(false)
+    this.add.graphics().fillStyle(0x8a5a32).fillRect(114, 8, 2, 22).fillRect(98, 18, 34, 2) // caixilho por cima do céu
     // Mesa de madeira
     g.fillStyle(0xa5683a).fillRect(0, 78, W, 30)
     g.fillStyle(0x8c5530)
@@ -350,6 +357,7 @@ export class CageScene extends Phaser.Scene {
     const wb = this.waterBox
     this.water.setPosition(wb.x, wb.bottom).setSize(wb.w, Math.round((s.sede / 100) * wb.max))
     this.night.setFillStyle(0x101a40, s.night ? 0.32 : 0)
+    this.nightSky?.setVisible(!!s.night)
     // Cocôs: ajusta a quantidade (mantém os que já estão; evita a toca)
     while (this.poops.length > s.poops) this.poops.pop().destroy()
     while (this.poops.length < s.poops) {
@@ -550,6 +558,10 @@ export class CageScene extends Phaser.Scene {
         const wheelChance = s.night ? 0.45 : 0.2
         if (this.L.wheel && !sad && Math.random() < wheelChance) {
           this.walkTo(this.L.wheel, () => { this.wheelStart = this.time.now; this.setMode('wheel', Phaser.Math.Between(4000, 9000)) })
+        } else if (Math.random() < 0.12 + (s.sede < 60 ? 0.25 : 0) + (s.fome < 60 ? 0.15 : 0)) {
+          // Vai sozinho beber ou comer (mais quando está com sede/fome)
+          if (Math.random() < (s.sede <= s.fome ? 0.65 : 0.35)) this.walkTo(this.drinkX, () => { this.facing = 1; this.setMode('drink', 2600) })
+          else this.walkTo(this.L.bowl + 12, () => { this.facing = -1; this.setMode('eat', 2200) })
         } else if (this.L.toca && Math.random() < (sad ? 0.35 : 0.15)) {
           // Entra na toca e fica espiando pela porta
           this.walkTo(this.L.toca, () => { this.facing = 1; this.setMode('toca', Phaser.Math.Between(3500, 7000)) })
