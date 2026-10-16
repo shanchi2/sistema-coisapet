@@ -49,7 +49,12 @@ export class CageScene extends Phaser.Scene {
     this.applyState(this.state)
     bridge.on('state', this.applyState, this)
     bridge.on('anim', this.playAnim, this)
-    this.events.once('shutdown', () => { bridge.off('state', this.applyState, this); bridge.off('anim', this.playAnim, this) })
+    // Desliga a escuta quando a cena para OU quando o jogo inteiro é destruído
+    // (no "Recomeçar" o jogo é destruído — só 'shutdown' não bastava e a cena
+    // morta continuava recebendo estado → "Cannot read properties of undefined")
+    const unbind = () => { bridge.off('state', this.applyState, this); bridge.off('anim', this.playAnim, this) }
+    this.events.once('shutdown', unbind)
+    this.events.once('destroy', unbind)
   }
 
   makeTextures() {
@@ -113,6 +118,7 @@ export class CageScene extends Phaser.Scene {
   }
 
   applyState(s) {
+    if (!this.sys?.isActive() || !this.bowl?.scene) return // cena já desmontada
     this.state = s
     this.bowl.setTexture(s.fome >= 45 ? 'bowl_full' : 'bowl_empty')
     // Nível da água dentro do bebedouro (miolo de 10px)
@@ -145,6 +151,7 @@ export class CageScene extends Phaser.Scene {
   }
 
   playAnim(kind) {
+    if (!this.sys?.isActive()) return
     if (kind === 'eat') this.walkTo(BOWL_X + 12, () => this.setMode('eat', 2200))
     else if (kind === 'drink') this.walkTo(BOTTLE_X - 6, () => this.setMode('eat', 2000))
     else if (kind === 'happy') { this.setMode('happy', 900); this.hearts() }
