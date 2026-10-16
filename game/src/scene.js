@@ -137,6 +137,7 @@ export class CageScene extends Phaser.Scene {
     }
     this.makeTocaTexture()
     this.makeBebedouroTexture()
+    this.makeTerrariumFrameTexture()
   }
 
   // Desenho pixel a pixel num canvas novo
@@ -226,16 +227,16 @@ export class CageScene extends Phaser.Scene {
     g.fillStyle(0xefd9b6)
     for (let x = 0; x < W; x += 8) g.fillRect(x, 0, 4, 78)
     // Janela: céu de dia (azul com nuvem) e de noite (escuro, lua e estrelas)
-    g.fillStyle(0x8a5a32).fillRect(96, 6, 38, 26)
-    g.fillStyle(0xbfe3f5).fillRect(98, 8, 34, 22)
-    g.fillStyle(0xffffff).fillRect(101, 12, 7, 2).fillRect(103, 11, 3, 1).fillRect(120, 23, 6, 2).fillRect(121, 22, 3, 1)
+    g.fillStyle(0x8a5a32).fillRect(94, 0, 42, 15)
+    g.fillStyle(0xbfe3f5).fillRect(96, 1, 38, 12)
+    g.fillStyle(0xffffff).fillRect(99, 4, 7, 2).fillRect(101, 3, 3, 1).fillRect(121, 9, 6, 2).fillRect(122, 8, 3, 1)
     const n = this.add.graphics()
-    n.fillStyle(0x1b2550).fillRect(98, 8, 34, 22)
-    n.fillStyle(0xf5f0c8).fillRect(124, 10, 4, 4).fillStyle(0x1b2550).fillRect(126, 10, 2, 2) // lua
+    n.fillStyle(0x1b2550).fillRect(96, 1, 38, 12)
+    n.fillStyle(0xf5f0c8).fillRect(126, 3, 4, 4).fillStyle(0x1b2550).fillRect(128, 3, 2, 2) // lua
     n.fillStyle(0xffffff)
-    for (const [x, y] of [[101, 10], [106, 14], [110, 9], [102, 24], [118, 12], [121, 26], [129, 22], [108, 27]]) n.fillRect(x, y, 1, 1)
+    for (const [x, y] of [[99, 3], [104, 7], [109, 2], [100, 10], [119, 4], [122, 10], [131, 9], [111, 9]]) n.fillRect(x, y, 1, 1)
     this.nightSky = n.setVisible(false)
-    this.add.graphics().fillStyle(0x8a5a32).fillRect(114, 8, 2, 22).fillRect(98, 18, 34, 2) // caixilho por cima do céu
+    this.add.graphics().fillStyle(0x8a5a32).fillRect(114, 1, 2, 12).fillRect(96, 6, 38, 1) // caixilho por cima do céu
     // Mesa de madeira
     g.fillStyle(0xa5683a).fillRect(0, 78, W, 30)
     g.fillStyle(0x8c5530)
@@ -272,51 +273,91 @@ export class CageScene extends Phaser.Scene {
   }
 
   // ─── Terrário CoisaPet (MDF amadeirado + frente de acrílico) ───────
+  // Terrário CoisaPet (fiel ao produto): moldura frontal grossa de MDF com
+  // cantos arredondados, recortes de encaixe, logo no canto, tampa com fendas
+  // de ventilação, fundo de madeira com veio vertical e frente de acrílico.
+  // Janela (vão do acrílico): x 9–134, y 30–96.
   drawTerrariumBack() {
     const g = this.add.graphics()
-    const base = 95
-    // Fundo interno (madeira clarinha) e laterais
-    g.fillStyle(0xf3dcb5).fillRect(8, 26, 128, base - 26)
-    g.fillStyle(0xe9cc9c)
-    for (let y = 30; y < base; y += 9) g.fillRect(8, y, 128, 1)
+    const L = 9, R = 134, T = 30, B = 96
+    // Parede do fundo (veio vertical) + furinhos de fixação
+    g.fillStyle(0xe8bd86).fillRect(L, T, R - L + 1, B - T)
+    for (let x = L; x <= R; x++) {
+      const v = (x * 37) % 11
+      if (v < 2) g.fillStyle(0xd9aa72, 1).fillRect(x, T, 1, B - T)
+      else if (v === 5) g.fillStyle(0xf0c995, 1).fillRect(x, T, 1, B - T)
+    }
+    g.fillStyle(0x6e4628)
+    for (const x of [44, 72, 100]) { g.fillRect(x, 42, 1, 3); g.fillRect(x, 49, 1, 3) }
     // Substrato fundo com um túnel visível pelo acrílico
     if (this.setup.substrato) {
       const top = this.floorY - 1
-      g.fillStyle(0xe8c98a).fillRect(8, top, 128, base - top)
+      g.fillStyle(0xe8c98a).fillRect(L, top, R - L + 1, B - top)
       g.fillStyle(0xd1a960)
-      for (let i = 0; i < 70; i++) g.fillRect(9 + ((i * 37) % 126), top + 1 + ((i * 13) % (base - top - 2)), 2, 1)
+      for (let i = 0; i < 70; i++) g.fillRect(L + 1 + ((i * 37) % 124), top + 1 + ((i * 13) % (B - top - 2)), 2, 1)
       g.fillStyle(0xf6dfaa)
-      for (let i = 0; i < 40; i++) g.fillRect(9 + ((i * 53) % 126), top + ((i * 7) % (base - top - 1)), 1, 1)
-      // túnel cavado
+      for (let i = 0; i < 40; i++) g.fillRect(L + 1 + ((i * 53) % 124), top + ((i * 7) % (B - top - 1)), 1, 1)
       g.fillStyle(0x8a6a3a).fillRect(60, top + 5, 26, 3).fillRect(84, top + 3, 3, 5).fillRect(58, top + 5, 3, 5)
       g.fillStyle(0x6e5230).fillRect(61, top + 6, 24, 1)
     } else {
-      g.fillStyle(0xd9b98a).fillRect(8, this.floorY - 1, 128, 2) // fundo liso
+      g.fillStyle(0xcf9f68).fillRect(L, this.floorY - 1, R - L + 1, B - this.floorY + 1) // fundo de madeira
     }
   }
 
   drawTerrariumFront() {
-    const g = this.add.graphics().setDepth(6)
-    const base = 95
-    // Laterais e tampa de madeira (tampa com grade de ventilação)
-    g.fillStyle(WOOD).fillRect(5, 22, 4, base - 22 + 9).fillRect(135, 22, 4, base - 22 + 9)
-    g.fillStyle(WOOD_D).fillRect(8, 22, 1, base - 22 + 9).fillRect(135, 22, 1, base - 22 + 9)
-    g.fillStyle(WOOD).fillRect(5, 20, 134, 6)
-    g.fillStyle(WOOD_L).fillRect(5, 20, 134, 1)
-    g.fillStyle(WOOD_D)
-    for (let x = 14; x < 132; x += 4) g.fillRect(x, 22, 2, 2)
-    // Base
-    g.fillStyle(WOOD).fillRect(3, base, 138, 9)
-    g.fillStyle(WOOD_L).fillRect(3, base, 138, 1)
-    g.fillStyle(WOOD_D).fillRect(3, base + 8, 138, 1)
-    // Acrílico da frente: leve brilho
-    g.fillStyle(0xffffff, 0.06).fillRect(9, 26, 126, base - 26)
-    g.fillStyle(0xffffff, 0.35)
-    for (let i = 0; i < 10; i++) g.fillRect(14 + i, 34 - i, 1, 1)
-    for (let i = 0; i < 16; i++) g.fillRect(20 + i, 40 - i, 1, 1)
-    // Plaquinha da marca
-    g.fillStyle(INK).fillRect(62, base + 3, 20, 4)
-    g.fillStyle(WOOD_L).fillRect(64, base + 4, 2, 2).fillRect(68, base + 4, 2, 2).fillRect(72, base + 4, 2, 2).fillRect(76, base + 4, 4, 2)
+    // Tampa com fendas de ventilação (vista de cima, em perspectiva)
+    const t = this.add.graphics().setDepth(6)
+    t.fillStyle(0x3b2314).fillRect(5, 16, 134, 7)
+    t.fillStyle(0xdcae78).fillRect(6, 17, 132, 5)
+    t.fillStyle(0xe9c08c).fillRect(6, 17, 132, 1)
+    t.fillStyle(0x5a3a22)
+    for (let x = 22; x <= 118; x += 4) t.fillRect(x, 19, 2, 1)
+    t.fillRect(7, 18, 3, 1).fillRect(134, 18, 3, 1)                   // encaixes da tampa
+    // Abas de encaixe saindo pelas laterais
+    t.fillStyle(0xc89058).fillRect(0, 36, 3, 6).fillRect(0, 80, 3, 6).fillRect(141, 36, 3, 6).fillRect(141, 80, 3, 6)
+    t.fillStyle(0x3b2314).fillRect(0, 36, 1, 6).fillRect(0, 80, 1, 6).fillRect(143, 36, 1, 6).fillRect(143, 80, 1, 6)
+    // Moldura frontal (pixel a pixel, com cantos arredondados e janela vazada)
+    this.add.image(2, 22, 'terr_frame').setOrigin(0).setDepth(6)
+    // Acrílico: leve brilho
+    const a = this.add.graphics().setDepth(6)
+    a.fillStyle(0xffffff, 0.05).fillRect(9, 30, 126, 66)
+    a.fillStyle(0xffffff, 0.35)
+    for (let i = 0; i < 10; i++) a.fillRect(14 + i, 41 - i, 1, 1)
+    for (let i = 0; i < 16; i++) a.fillRect(20 + i, 47 - i, 1, 1)
+  }
+
+  makeTerrariumFrameTexture() {
+    // 140 x 83, posicionada em (2,22). Janela vazada: x 7–132, y 8–74 (local)
+    const W2 = 140, H2 = 83, r = 5, ir = 3
+    const wx0 = 7, wx1 = 132, wy0 = 8, wy1 = 74
+    const inRound = (x, y, x0, y0, x1, y1, rad) => {
+      if (x < x0 || x > x1 || y < y0 || y > y1) return false
+      const cx = x < x0 + rad ? x0 + rad : x > x1 - rad ? x1 - rad : x
+      const cy = y < y0 + rad ? y0 + rad : y > y1 - rad ? y1 - rad : y
+      return Math.hypot(x - cx, y - cy) <= rad + 0.3
+    }
+    const slots = [
+      [66, 3, 8, 1], [16, 3, 7, 1], [W2 - 23, 3, 7, 1],                 // em cima
+      [66, H2 - 4, 8, 1], [16, H2 - 4, 7, 1], [W2 - 23, H2 - 4, 7, 1],   // embaixo
+      [2, 18, 1, 6], [2, 54, 1, 6], [W2 - 3, 18, 1, 6], [W2 - 3, 54, 1, 6], // laterais
+    ]
+    this.pixelCanvas('terr_frame', W2, H2, px => {
+      for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+        const out = inRound(x, y, 0, 0, W2 - 1, H2 - 1, r)
+        if (!out) continue
+        const win = inRound(x, y, wx0, wy0, wx1, wy1, ir)
+        if (win) continue                                                  // vão do acrílico
+        const edgeOut = !inRound(x, y, 1, 1, W2 - 2, H2 - 2, r - 1)
+        const edgeIn = inRound(x, y, wx0 - 1, wy0 - 1, wx1 + 1, wy1 + 1, ir + 1)
+        if (edgeOut || edgeIn) { px(x, y, '#3b2314'); continue }
+        const grain = (y * 7 + Math.floor(x / 9) * 3) % 13
+        px(x, y, grain === 0 ? '#c58b52' : grain === 6 ? '#e2ad73' : '#d39a5e')
+      }
+      for (const [x, y, w, h] of slots) for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) px(x + i, y + j, '#3b2314')
+      // logo "coisa pet" gravado no canto inferior direito
+      const logo = ['.##.##.#.##..#.', '#..#.#.#.#..#.#', '.##.##.#.##..##']
+      logo.forEach((row, j) => [...row].forEach((c, i) => c === '#' && px(W2 - 21 + i, H2 - 8 + j, '#8a5530')))
+    })
   }
 
   // ─── Roda e toca ───────────────────────────────────────────────────
