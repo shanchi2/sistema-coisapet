@@ -7077,3 +7077,10 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
   — as tabelas do sistema aceitam a chave pública, não misturar), loja/
   inventário com os produtos reais, código de resgate impresso no picklist
   (QR), terrário como novo ambiente.
+- **0.1.1 (16/10)** — bug no "Recomeçar": a cena antiga do Phaser continuava
+  ouvindo a ponte (`bridge`) porque só desligava no `shutdown`; com o jogo
+  destruído (evento `destroy`) ela tentava trocar a textura do potinho →
+  "Cannot read properties of undefined (reading 'sys')" e a tela travava.
+  Agora desliga no `shutdown` E no `destroy`, e `applyState`/`playAnim`
+  ignoram cena desmontada. Testado: 3x criar → cuidar → recomeçar sem erro.
+  + meta `mobile-web-app-capable` (aviso do Chrome).
