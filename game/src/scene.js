@@ -11,6 +11,7 @@ const ZZZ = ['kkk', '..k', '.k.', 'kkk']
 const DROP = ['.c.', 'cCc', '.c.']
 
 // Madeira "amadeirado" dos produtos CoisaPet
+const WHEEL_R = 17 // raio da roda (hamster tem 16 px de comprimento)
 const WOOD = 0xc8955a, WOOD_D = 0x9a6a3a, WOOD_L = 0xe2b47c, INK = 0x3b2314
 
 // Ponte React ⇄ Phaser
@@ -30,7 +31,7 @@ export class CageScene extends Phaser.Scene {
     this.L = {
       toca: this.setup.toca ? 26 : null,
       bowl: this.setup.toca ? 50 : 28,
-      wheel: this.setup.roda ? 100 : null,
+      wheel: this.setup.roda ? 96 : null,
       bottle: ter ? 127 : 118,
     }
   }
@@ -87,19 +88,23 @@ export class CageScene extends Phaser.Scene {
     add('bowl_full', BOWL_FULL); add('bowl_empty', BOWL_EMPTY)
     add('bottle', BOTTLE); add('poop', POOP)
     add('heart', HEART); add('zzz', ZZZ); add('drop', DROP)
-    // Roda: 2 quadros dos raios (+ e x) — gira sem borrar o pixel
+    // Roda: 2 quadros dos raios (+ e x) — gira sem borrar o pixel.
+    // Grande de propósito (mais que o dobro do hamster): roda pequena faz o
+    // hamster correr com a coluna curvada — mensagem que a CoisaPet sempre passa.
+    const R = WHEEL_R, C = R + 2, S = C * 2
     for (const [key, ang] of [['wheel_a', 0], ['wheel_b', Math.PI / 4]]) {
       if (this.textures.exists(key)) this.textures.remove(key)
       const g = this.make.graphics({ add: false })
-      g.lineStyle(2, WOOD_D).strokeCircle(13, 13, 11)
-      g.lineStyle(1, WOOD_L).strokeCircle(13, 13, 9)
+      g.fillStyle(WOOD_L, 0.25).fillCircle(C, C, R - 1)        // fundo da roda (madeira clarinha)
+      g.lineStyle(3, WOOD_D).strokeCircle(C, C, R)
+      g.lineStyle(1, WOOD_L).strokeCircle(C, C, R - 2)
       g.lineStyle(1, WOOD_D)
       for (let i = 0; i < 4; i++) {
         const a = ang + i * Math.PI / 2
-        g.lineBetween(13, 13, 13 + Math.cos(a) * 10, 13 + Math.sin(a) * 10)
+        g.lineBetween(C, C, C + Math.cos(a) * (R - 2), C + Math.sin(a) * (R - 2))
       }
-      g.fillStyle(INK).fillRect(12, 12, 2, 2)
-      g.generateTexture(key, 26, 26)
+      g.fillStyle(INK).fillRect(C - 1, C - 1, 3, 3)
+      g.generateTexture(key, S, S)
       g.destroy()
     }
   }
@@ -201,9 +206,12 @@ export class CageScene extends Phaser.Scene {
   drawWheel() {
     const x = this.L.wheel, fy = this.floorY
     const g = this.add.graphics().setDepth(2)
-    g.fillStyle(WOOD_D).fillRect(x - 1, fy - 13, 2, 13)   // suporte
-    g.fillStyle(WOOD).fillRect(x - 7, fy - 1, 14, 2)       // pé
-    this.wheel = this.add.image(x, fy - 14, 'wheel_a').setDepth(2)
+    const cy = fy - WHEEL_R - 3
+    g.fillStyle(WOOD_D).fillRect(x - 1, cy, 3, fy - cy)    // suporte
+    g.fillStyle(WOOD).fillRect(x - 9, fy - 2, 19, 3)       // pé
+    g.fillStyle(WOOD_L).fillRect(x - 9, fy - 2, 19, 1)
+    this.wheel = this.add.image(x, cy, 'wheel_a').setDepth(2)
+    this.wheelRunY = cy + WHEEL_R - 2                      // chão de dentro da roda
   }
 
   drawToca() {
@@ -343,7 +351,7 @@ export class CageScene extends Phaser.Scene {
         frame = Math.floor(time / 70) % 2 ? 'walk' : 'idle'
         this.facing = 1
         h.x = this.L.wheel
-        h.y = fy - 4
+        h.y = this.wheelRunY
         if (time > this.modeUntil) this.leaveWheel()
       } else if (this.mode === 'eat') {
         frame = Math.floor(time / 220) % 2 ? 'eat' : 'idle'

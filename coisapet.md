@@ -7102,3 +7102,8 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
     login, validados no servidor.
   - Bug achado no teste: a trava `sys.isActive()` (0.1.1) ignorava o 1º
     desenho (sujeira/água só apareciam 5 s depois) — trocada por flag `dead`.
+- **0.2.1 (16/10)** — Raphael: "a rodinha pode ser maior, ela está do tamanho
+  do hamster — a gente sempre fala pra evitar rodinha pequena". Roda passou de
+  raio 11 → 17 px (`WHEEL_R`), ~36 px de diâmetro contra 16 px do hamster
+  (mais que o dobro), com fundo de madeira clarinha e pé maior; hamster corre
+  no "chão" de dentro da roda.
