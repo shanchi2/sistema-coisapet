@@ -7128,3 +7128,14 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
     +0.6/s e gasta energia −0.4/s (+ um pouco de sede), com gotinha de suor;
     offline a roda colocada deixa a energia cair ×1.15. Teste à noite: 60 s
     de jogo aberto → diversão 40→70 e energia 90→70 (antes do ajuste fino).
+- **0.3.1 (16/10)** — Raphael: animação de beber no bebedouro novo + "evitar
+  cortes: se ele quer dormir, precisa ir até a toca, não aparecer do nada".
+  - Quadro novo `drink` (corpo esticado, linguinha no bico): ele para com o
+    focinho no bico (`spout`), vira pro bebedouro, lambe e caem gotinhas.
+  - Sono sem corte: ao dar sono ele ANDA devagar (sonolento) até a toca (ou o
+    cantinho), entra pela porta e dorme; ao acordar sai pela porta e anda pra
+    fora; com susto (carinho dormindo) ele sai correndo. Só ao ABRIR o jogo
+    com ele já dormindo ele aparece direto na toca. Indo dormir, comida/água
+    não o desviam (só um susto acorda). Aviso trocado pra "está com soninho".
+  - Testes com relógio forçado (dia/noite): beber, ir dormir (saiu da roda,
+    andou até a toca, entrou), acordar (saiu e foi pra roda), susto — sem erros.

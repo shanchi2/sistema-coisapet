@@ -81,7 +81,11 @@ const H_SAD = [
   '................',
 ]
 
-export const HAMSTER_FRAMES = { idle: H_IDLE, walk: H_WALK, sleep: H_SLEEP, eat: H_EAT, sad: H_SAD }
+// Bebendo no bico: corpo esticado 1 px pra cima e a linguinha (rosa) no bico
+const H_DRINK = [...H_IDLE.slice(1, 10), H_IDLE[9], H_IDLE[10], '................']
+H_DRINK[3] = H_DRINK[3].slice(0, 15) + 'p'
+
+export const HAMSTER_FRAMES = { idle: H_IDLE, walk: H_WALK, sleep: H_SLEEP, eat: H_EAT, sad: H_SAD, drink: H_DRINK }
 
 // Objetos (paleta fixa)
 const OBJ_PAL = {

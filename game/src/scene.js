@@ -34,8 +34,12 @@ export class CageScene extends Phaser.Scene {
       wheel: this.setup.roda ? (this.setup.bebedouro ? (ter ? 92 : 88) : (ter ? 96 : 92)) : null,
       bottle: this.setup.bebedouro ? (ter ? 124 : 121) : (ter ? 127 : 118),
     }
-    // Onde ele para pra beber (bico do bebedouro de suporte fica à esquerda)
-    this.drinkX = this.setup.bebedouro ? this.L.bottle - 15 : this.L.bottle - 6
+    // Ponta do bico (onde a gotinha sai) e onde ele para pra beber: virado pra
+    // direita, com o focinho (7 px à frente do centro) encostado no bico
+    this.spout = this.setup.bebedouro
+      ? { x: this.L.bottle - 8, y: this.floorY - 7 }
+      : { x: this.L.bottle, y: this.floorY - 29 + 16 }
+    this.drinkX = this.spout.x - 8
   }
 
   create() {
@@ -360,40 +364,83 @@ export class CageScene extends Phaser.Scene {
       })
       this.poops.push(p)
     }
-    if (s.asleep && this.mode !== 'sleep') this.goSleep()
-    if (!s.asleep && this.mode === 'sleep') this.wake()
+    // Sem "cortes": com sono ele ANDA até a toca e entra; ao acordar, sai andando.
+    // Só no primeiro desenho (abriu o jogo e ele já estava dormindo) aparece direto.
+    const first = !this.started
+    this.started = true
+    if (s.asleep && this.mode !== 'sleep' && !this.sleepPending) this.goSleep(first)
+    if (!s.asleep && (this.mode === 'sleep' || this.sleepPending)) this.wake()
   }
 
   setMode(m, ms = 0) { this.mode = m; this.modeUntil = this.time.now + ms }
 
-  goSleep() {
-    this.targetX = null
-    this.setMode('sleep')
-    this.hamster.y = this.floorY
+  goSleep(instant = false) {
+    if (this.mode === 'wheel') this.leaveWheel()
+    if (instant || this.mode === 'toca') return this.settleSleep()
+    // Vai devagarinho pra cama (toca, ou o cantinho se não tiver toca)
+    this.sleepPending = true
+    const bed = this.L.toca ?? Math.min(Math.max(this.hamster.x, X_MIN + 8), 34)
+    this.walkTo(bed, () => this.enterAndSleep())
+  }
+
+  enterAndSleep() {
+    if (!this.sleepPending) return
+    this.facing = 1
+    this.setMode('busy', 99999)
     if (this.L.toca) {
-      // Dorme DENTRO da toca — aparece pela porta redonda, respirando
-      this.hamster.setPosition(this.L.toca, this.floorY - 5).setVisible(true)
-      this.facing = 1
-      this.breath?.stop()
-      this.breath = this.tweens.add({ targets: this.hamster, scaleY: 0.92, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' })
+      // Entra pela porta: sobe um pouquinho pra dentro da toca
+      this.tweens.add({ targets: this.hamster, y: this.floorY - 5, duration: 700, ease: 'Sine.easeOut', onComplete: () => this.settleSleep() })
     } else {
-      this.hamster.setPosition(Math.min(this.hamster.x, 40), this.floorY)
+      this.time.delayedCall(700, () => this.settleSleep())  // se ajeita e deita
     }
   }
 
-  wake() {
+  settleSleep() {
+    this.sleepPending = false
+    this.targetX = null
+    this.setMode('sleep')
+    this.facing = 1
+    if (this.L.toca) this.hamster.setPosition(this.L.toca, this.floorY - 5)
+    else this.hamster.y = this.floorY
+    this.hamster.setVisible(true)
+    this.breath?.stop()
+    this.breath = this.tweens.add({ targets: this.hamster, scaleY: 0.92, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' })
+  }
+
+  wake(scared = false) {
+    const wasGoing = this.sleepPending
+    this.sleepPending = false
     this.breath?.stop(); this.breath = null
     this.hamster.setScale(1).setVisible(true)
-    this.hamster.y = this.floorY
-    this.setMode('idle', 500)
+    const after = () => scared ? this.setMode('scared', 900) : this.setMode('idle', 600)
+    if (!wasGoing && this.L.toca && this.hamster.y < this.floorY) {
+      // Sai da toca pela porta e dá uns passinhos pra fora
+      this.setMode('busy', 99999)
+      this.tweens.add({ targets: this.hamster, y: this.floorY, duration: scared ? 200 : 600, ease: 'Sine.easeIn', onComplete: () => {
+        if (scared) {
+          // Leva um susto, treme e sai correndo da toca
+          after()
+          this.time.delayedCall(750, () => { if (this.mode === 'scared' || this.mode === 'idle') this.walkTo(this.L.toca + 30) })
+        } else this.walkTo(this.L.toca + 26)
+      } })
+    } else {
+      this.hamster.y = this.floorY
+      after()
+    }
   }
 
   playAnim(kind) {
     if (this.dead) return
+    const sleeping = this.mode === 'sleep' || this.sleepPending
+    if (sleeping) {
+      // Dormindo (ou indo dormir): só um susto acorda; comida/água ficam pra depois
+      if (kind === 'scared') this.wake(true)
+      return
+    }
     if (this.mode === 'wheel') this.leaveWheel()
     if (this.mode === 'toca') this.hamster.y = this.floorY
     if (kind === 'eat') this.walkTo(this.L.bowl + 12, () => this.setMode('eat', 2200))
-    else if (kind === 'drink') this.walkTo(this.drinkX, () => this.setMode('eat', 2000))
+    else if (kind === 'drink') this.walkTo(this.drinkX, () => { this.facing = 1; this.setMode('drink', 2600) })
     else if (kind === 'happy') { this.hamster.setVisible(true); this.setMode('happy', 900); this.hearts() }
     else if (kind === 'scared') { this.hamster.setVisible(true); this.setMode('scared', 900) }
   }
@@ -438,7 +485,7 @@ export class CageScene extends Phaser.Scene {
     const s = this.state
     const fy = this.floorY
     const sad = s.statusKey === 'triste' || s.statusKey === 'doente'
-    const speed = (sad ? 9 : 18) * (delta / 1000)
+    const speed = (this.sleepPending ? 8 : sad ? 9 : 18) * (delta / 1000)  // sonolento anda devagar
     let frame = sad ? 'sad' : 'idle'
 
     if (this.wheel) this.wheel.setTexture(this.mode === 'wheel' ? `wheel_${Math.floor(time / 80) % 3}` : 'wheel_0')
@@ -470,6 +517,18 @@ export class CageScene extends Phaser.Scene {
         h.x = this.L.wheel
         h.y = this.wheelRunY
         if (time > this.modeUntil) this.leaveWheel()
+      } else if (this.mode === 'busy') {
+        frame = 'idle'                                     // entrando/saindo da toca
+      } else if (this.mode === 'drink') {
+        // Lambendo o bico: estica e volta, e cai uma gotinha de vez em quando
+        frame = Math.floor(time / 260) % 2 ? 'drink' : 'idle'
+        this.facing = 1
+        if (!this.nextDrop || time > this.nextDrop) {
+          this.nextDrop = time + 650
+          const d = this.add.rectangle(this.spout.x, this.spout.y, 1, 1, 0x5dade2).setDepth(20)
+          this.tweens.add({ targets: d, y: d.y + 4, alpha: 0, duration: 450, onComplete: () => d.destroy() })
+        }
+        if (time > this.modeUntil) this.setMode('idle', 1200)
       } else if (this.mode === 'toca') {
         h.x = this.L.toca
         h.y = fy - 5

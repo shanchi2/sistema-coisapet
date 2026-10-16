@@ -159,7 +159,7 @@ function Game({ pet, setPet, onReset }) {
             <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-[#fbeedd] pixel-box rounded-md px-3 py-1.5 text-sm font-bold whitespace-nowrap shadow-lg">{toast}</div>
           )}
           {pet.asleep && (
-            <div className="absolute bottom-2 left-2 text-[11px] bg-black/50 text-white rounded px-2 py-1">Shhh… {pet.name} está dormindo</div>
+            <div className="absolute bottom-2 left-2 text-[11px] bg-black/50 text-white rounded px-2 py-1">Shhh… {pet.name} está com soninho 😴</div>
           )}
         </div>
 
