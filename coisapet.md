@@ -7148,3 +7148,10 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
   - Ele vai SOZINHO beber e comer de vez em quando quando acordado (mais
     quando sede/fome < 60) — o Raphael não tinha visto a animação de beber
     porque jogou de dia e ele estava dormindo.
+- **0.3.3 (16/10)** — Terrário redesenhado igual ao **Terrário CoisaPet** real
+  (fotos do Raphael): moldura frontal grossa de MDF com cantos arredondados
+  (por fora e por dentro), recortes de encaixe na moldura, abas laterais, logo
+  gravado no canto inferior direito, tampa com fendas de ventilação, parede
+  do fundo com veio vertical + furinhos de fixação, frente de acrílico. Moldura
+  desenhada pixel a pixel (`terr_frame`). Janela do quarto subiu pra continuar
+  aparecendo acima da tampa (céu dia/noite).
