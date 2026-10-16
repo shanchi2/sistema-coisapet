@@ -7162,3 +7162,8 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
   ter coordenadas fixas: tudo deriva de `W`/`H` (`TABLE`, moldura `FX/FY/FW/FH`
   e janela `WIN`). Layout: toca à esquerda, potinho, **meio livre**, roda e
   bebedouro à direita. Gaiola também se adapta.
+- **0.3.5 (16/10)** — Fendas de ventilação no alto da parede do fundo do
+  terrário (como os cortes do MDF do produto real — dá pra ver a parede do
+  quarto por elas). Parede do quarto trocada do papel listrado creme (as
+  listras verticais confundiam com o veio da madeira) para verde-sálvia liso
+  com bolinhas discretas e rodapé (`ROOM_WALL`).

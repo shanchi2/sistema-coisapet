@@ -9,6 +9,7 @@ export const W = 200
 export const H = 150
 const X_MIN = 16, X_MAX = W - 16
 const TABLE = H - 30                                   // tampo da mesa
+const ROOM_WALL = 0xd6e8dd                             // parede do quarto
 // Moldura frontal do terrário (e a janela/vão do acrílico dentro dela)
 const FX = 2, FY = 40, FW = W - 4, FH = H - 3 - FY
 const WIN = { L: FX + 7, R: FX + FW - 8, T: FY + 8, B: FY + FH - 9 }
@@ -232,9 +233,13 @@ export class CageScene extends Phaser.Scene {
   drawRoom() {
     const g = this.add.graphics()
     // Parede com papel listrado
-    g.fillStyle(0xf6e7cf).fillRect(0, 0, W, TABLE)
-    g.fillStyle(0xefd9b6)
-    for (let x = 0; x < W; x += 8) g.fillRect(x, 0, 4, TABLE)
+    // Parede lisa verde-sálvia com bolinhas discretas (o listrado vertical
+    // brigava com o veio da madeira do terrário)
+    g.fillStyle(ROOM_WALL).fillRect(0, 0, W, TABLE)
+    g.fillStyle(0xc6dccf)
+    for (let y = 6; y < TABLE; y += 12) for (let x = (y / 12) % 2 ? 10 : 4; x < W; x += 12) g.fillRect(x, y, 2, 2)
+    g.fillStyle(0xbcd3c6).fillRect(0, TABLE - 6, W, 6)                     // rodapé
+    g.fillStyle(0xe6f1ea).fillRect(0, TABLE - 6, W, 1)
     // Janela: céu de dia (azul com nuvem) e de noite (escuro, lua e estrelas)
     const wx = W - 62, wy = 4, ww = 48, wh = 26, sx = wx + 2, sy = wy + 2, sw = ww - 4, sh = wh - 4
     g.fillStyle(0x8a5a32).fillRect(wx, wy, ww, wh)
@@ -299,8 +304,15 @@ export class CageScene extends Phaser.Scene {
       if (v < 2) g.fillStyle(0xd9aa72, 1).fillRect(x, T, 1, B - T)
       else if (v === 5) g.fillStyle(0xf0c995, 1).fillRect(x, T, 1, B - T)
     }
+    // Fendas de ventilação no alto da parede (cortadas no MDF): dá pra ver a
+    // parede do quarto por elas, com a sombrinha da espessura da madeira
+    for (let x = L + 6; x <= R - 7; x += 6) {
+      g.fillStyle(0x6e4628).fillRect(x, T + 1, 3, 10)
+      g.fillStyle(ROOM_WALL).fillRect(x + 1, T + 2, 2, 8)
+      g.fillStyle(0xa7c2b3).fillRect(x + 1, T + 2, 1, 8)
+    }
     g.fillStyle(0x6e4628)
-    for (const f of [0.3, 0.5, 0.7]) { const x = Math.round(W * f); g.fillRect(x, T + 12, 1, 3); g.fillRect(x, T + 19, 1, 3) }
+    for (const f of [0.3, 0.5, 0.7]) { const x = Math.round(W * f); g.fillRect(x, T + 18, 1, 3); g.fillRect(x, T + 25, 1, 3) }
     // Substrato fundo com um túnel visível pelo acrílico
     if (this.setup.substrato) {
       const top = this.floorY - 1
