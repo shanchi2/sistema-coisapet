@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  NEEDS, NEED_INFO, SPECIES, HABITATS, TIPS, newPet, advance, status, poopCount, isDaytime,
-  feed, water, cleanOne, cleanAll, pet_, treat,
+  NEEDS, NEED_INFO, SPECIES, HABITATS, CATALOG, CATALOG_KEYS, TIPS, newPet, advance, status, poopCount, isDaytime,
+  feed, water, cleanOne, cleanAll, pet_, treat, migrate, habitatOf, isPlaced, togglePlace, redeem, mods,
 } from './sim'
 import { HAMSTER_FRAMES, paletteFor, spriteCanvas } from './art'
 import { createGame, bridge } from './scene'
 
-// MinhaCoisaPet — protótipo 0.1 (16/10). Por enquanto o progresso fica salvo
-// no próprio aparelho (localStorage); login e resgate de códigos vêm depois.
+// MinhaCoisaPet — protótipo (16/10). Por enquanto o progresso fica salvo no
+// próprio aparelho (localStorage); login e códigos reais vêm depois.
+// 0.2: inventário (terrário, substrato, roda, toca) + resgate de código.
 const SAVE_KEY = 'minhacoisapet_v1'
 
 function load() {
-  try { const p = JSON.parse(localStorage.getItem(SAVE_KEY)); return p?.v === 1 ? p : null } catch { return null }
+  try { const p = JSON.parse(localStorage.getItem(SAVE_KEY)); return p?.v === 1 ? migrate(p) : null } catch { return null }
 }
 function save(p) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(p)) } catch { /* sem storage */ } }
 
@@ -71,6 +72,7 @@ function Game({ pet, setPet, onReset }) {
   const [toast, setToast] = useState(null)
   const [tip, setTip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)])
   const [menu, setMenu] = useState(false)
+  const [inv, setInv] = useState(false)
   const st = status(pet)
   const night = !isDaytime(Date.now())
 
@@ -117,6 +119,15 @@ function Game({ pet, setPet, onReset }) {
 
   const days = Math.max(1, Math.ceil((Date.now() - pet.born) / 86400000))
 
+  // O que está montado no ambiente (muda o desenho da cena)
+  const setup = useMemo(() => ({
+    habitat: habitatOf(pet),
+    substrato: isPlaced(pet, 'substrato'), roda: isPlaced(pet, 'roda'), toca: isPlaced(pet, 'toca'),
+  }), [pet])
+  const setupKey = JSON.stringify(setup)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stableSetup = useMemo(() => setup, [setupKey])
+
   return (
     <div className="min-h-[100dvh] landscape:h-[100dvh] bg-[#2b1d14] flex flex-col">
       {/* Cabeçalho */}
@@ -124,10 +135,11 @@ function Game({ pet, setPet, onReset }) {
         <img src={spriteURL(pet.species)} alt="" className="w-8 h-6" style={{ imageRendering: 'pixelated' }} />
         <div className="min-w-0 flex-1">
           <p className="pixel text-[11px] sm:text-xs truncate">{pet.name}</p>
-          <p className="text-[11px] text-[#d9bfa0]">{SPECIES[pet.species].label} · dia {days} · {HABITATS[pet.habitat].label}</p>
+          <p className="text-[11px] text-[#d9bfa0] truncate">dia {days} · {HABITATS[habitatOf(pet)].label}<span className="hidden sm:inline"> · {SPECIES[pet.species].label}</span></p>
         </div>
         <span className="pixel text-[9px] sm:text-[10px] bg-[#fbeedd] text-[#3b2314] rounded px-2 py-1.5 whitespace-nowrap">{st.emoji} {st.label}</span>
         <span className="pixel text-[9px] sm:text-[10px] bg-[#ffd36b] text-[#3b2314] rounded px-2 py-1.5 whitespace-nowrap" title="Sementinhas: você ganha cuidando do seu pet">🌻 {pet.seeds}</span>
+        <button onClick={() => setInv(true)} className="pixel-btn pixel text-[9px] sm:text-[10px] bg-[#c8955a] text-white rounded px-2 py-1.5 whitespace-nowrap" title="Itens e resgate de código">🎁<span className="hidden sm:inline"> Itens</span></button>
         <button onClick={() => setMenu(m => !m)} className="text-[#fbeedd] text-xl px-1" aria-label="Menu">☰</button>
       </header>
 
@@ -141,7 +153,7 @@ function Game({ pet, setPet, onReset }) {
       {/* Corpo: em pé = coluna; deitado/PC = cena à esquerda, painel à direita */}
       <main className="flex-1 flex flex-col landscape:flex-row gap-3 px-3 sm:px-5 pb-3 min-h-0">
         <div className="relative w-full portrait:aspect-[4/3] portrait:max-h-[58dvh] landscape:flex-1 landscape:min-h-0 flex items-center justify-center">
-          <GameCanvas species={pet.species} state={sceneState} />
+          <GameCanvas species={pet.species} state={sceneState} setup={stableSetup} />
           {toast && (
             <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-[#fbeedd] pixel-box rounded-md px-3 py-1.5 text-sm font-bold whitespace-nowrap shadow-lg">{toast}</div>
           )}
@@ -174,6 +186,81 @@ function Game({ pet, setPet, onReset }) {
           <p className="text-[10px] text-[#a88a70] text-center">Toque no {pet.name} pra fazer carinho · toque na sujeirinha pra limpar</p>
         </aside>
       </main>
+      {inv && <Inventory pet={pet} onClose={() => setInv(false)}
+        onToggle={k => act(p => togglePlace(p, k))}
+        onRedeem={code => { const r = redeem(advance(pet), code); setPet(r.pet); return r }} />}
+    </div>
+  )
+}
+
+// ─── Itens: inventário + resgate de código ──────────────────────────
+function Inventory({ pet, onClose, onToggle, onRedeem }) {
+  const [code, setCode] = useState('')
+  const [msg, setMsg] = useState(null)
+  const m = mods(pet)
+  const submit = e => {
+    e.preventDefault()
+    if (!code.trim()) return
+    const r = onRedeem(code)
+    setMsg(r ? { ok: r.ok, text: r.msg } : null)
+    if (r?.ok) setCode('')
+  }
+  return (
+    <div className="fixed inset-0 z-40 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto bg-[#fbeedd] pixel-box rounded-t-xl sm:rounded-lg p-4 sm:p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="pixel text-sm text-[#3b2314]">🎁 Itens do {pet.name}</h2>
+          <button onClick={onClose} className="text-2xl leading-none px-2 text-[#8a6a52]" aria-label="Fechar">×</button>
+        </div>
+
+        {/* Resgatar código */}
+        <form onSubmit={submit} className="bg-white pixel-box rounded-md p-3 mb-4">
+          <p className="text-[13px] font-bold mb-1">Comprou um produto CoisaPet?</p>
+          <p className="text-[12px] text-[#6b4a32] mb-2">Digite o código que veio no cartãozinho da embalagem pra liberar o item aqui no jogo.</p>
+          <div className="flex gap-2">
+            <input value={code} onChange={e => { setCode(e.target.value); setMsg(null) }} placeholder="Ex.: CP-XXXX-XXXX"
+              className="flex-1 min-w-0 pixel-box rounded-md px-2.5 py-2 text-sm font-bold uppercase bg-[#fffaf2] outline-none" autoCapitalize="characters" />
+            <button className="pixel-btn rounded-md px-3 bg-[#2ecc71] text-white text-sm font-extrabold">Resgatar</button>
+          </div>
+          {msg && <p className={`text-[12px] font-bold mt-2 ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
+          <p className="text-[10px] text-[#a88a70] mt-2">Modo teste: TESTE-TERRARIO · TESTE-ASPEN · TESTE-RODA · TESTE-TOCA · TESTE-TUDO</p>
+        </form>
+
+        {/* Conforto do ambiente */}
+        <div className="flex items-center gap-2 mb-3 text-[12px] font-bold">
+          <span>Conforto do lar:</span>
+          <div className="flex-1 h-3 bg-[#3b2314] rounded-sm p-[2px]"><div className="h-full rounded-[1px] bg-[#c8955a] transition-all" style={{ width: `${Math.round(m.comfort * 100)}%` }} /></div>
+          <span className="tabular-nums">{Math.round(m.comfort * 100)}%</span>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          {CATALOG_KEYS.map(k => {
+            const it = CATALOG[k]
+            const owned = !!pet.owned[k]
+            const placed = isPlaced(pet, k)
+            const blocked = owned && it.needs && !pet.placed[it.needs]
+            return (
+              <div key={k} className={`pixel-box rounded-md p-3 flex gap-3 ${owned ? 'bg-white' : 'bg-[#efe3d1]'}`}>
+                <div className={`w-12 h-12 shrink-0 rounded-md flex items-center justify-center text-2xl ${owned ? 'bg-[#fff1d6]' : 'bg-[#e2d4bf] grayscale opacity-60'}`}>{owned ? it.icon : '🔒'}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-extrabold text-[14px] leading-tight">{it.label}</p>
+                    {owned ? (
+                      <button onClick={() => onToggle(k)} disabled={blocked}
+                        className={`pixel-btn rounded px-2.5 py-1 text-[11px] font-extrabold whitespace-nowrap ${placed ? 'bg-[#ffd36b]' : 'bg-[#2ecc71] text-white'}`}>
+                        {placed ? 'Guardar' : 'Colocar'}
+                      </button>
+                    ) : <span className="text-[10px] font-bold text-[#8a6a52] whitespace-nowrap">bloqueado</span>}
+                  </div>
+                  <p className="text-[12px] text-[#6b4a32] mt-0.5 leading-snug">{it.desc}</p>
+                  {blocked && <p className="text-[11px] text-rose-600 font-bold mt-1">Precisa do {CATALOG[it.needs].label} colocado.</p>}
+                  {!owned && <p className="text-[11px] text-[#c0392b] font-bold mt-1">Compre na CoisaPet e resgate o código 😉</p>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
@@ -204,16 +291,17 @@ function ActionBtn({ icon, label, color, onClick }) {
 }
 
 // Monta o Phaser uma vez e repassa o estado pela ponte
-function GameCanvas({ species, state }) {
+function GameCanvas({ species, state, setup }) {
   const ref = useRef(null)
   const gameRef = useRef(null)
   const stateRef = useRef(state)
   stateRef.current = state
 
   useEffect(() => {
-    gameRef.current = createGame(ref.current, { species, state: stateRef.current })
+    // Recria a cena quando muda a espécie ou o que está montado no ambiente
+    gameRef.current = createGame(ref.current, { species, state: stateRef.current, setup })
     return () => { gameRef.current?.destroy(true); gameRef.current = null }
-  }, [species])
+  }, [species, setup])
 
   useEffect(() => { bridge.emit('state', state) }, [state])
 

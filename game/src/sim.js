@@ -20,10 +20,65 @@ export const SPECIES = {
   panda: { label: 'Hamster sírio panda', coat: 'panda' },
 }
 
-// Ambientes: a gaiola de ferro é o começo "ruim" — o pet se estressa mais
-// e se diverte menos. Os terrários (vindos dos produtos reais) melhoram isso.
+// ─── Ambientes e itens (os produtos da CoisaPet) ─────────────────────
+// A gaiola de ferro é o começo "ruim": o pet cansa mais rápido, se diverte
+// menos e se suja mais. Cada produto real melhora a vida dele.
+// Itens são DESBLOQUEIOS: comprou (qualquer tamanho/quantidade) → fica no
+// inventário pra sempre; o tutor só escolhe se coloca ou guarda.
 export const HABITATS = {
-  gaiola: { label: 'Gaiola de ferro', funDecay: 1.6, cleanDecay: 1.3, comfort: 0.6 },
+  gaiola:   { label: 'Gaiola de ferro' },
+  terrario: { label: 'Terrário CoisaPet' },
+}
+
+export const CATALOG = {
+  terrario: {
+    label: 'Terrário CoisaPet', icon: '🏡', kind: 'habitat',
+    desc: 'Muito mais espaço de chão, sem grades e com visão de tudo. Ele cansa e se entedia bem menos.',
+    edu: 'Hamster precisa de espaço: quanto mais chão, melhor. Terrários evitam que ele roa grades e se machuque.',
+  },
+  substrato: {
+    label: 'Substrato Aspen', icon: '🪵', kind: 'item', needs: 'terrario',
+    desc: 'Camada funda pra cavar túneis. Segura o cheiro e a sujeira por mais tempo.',
+    edu: 'Na natureza o hamster vive em tocas subterrâneas — substrato fundo (15–20 cm) deixa ele cavar à vontade.',
+  },
+  roda: {
+    label: 'Roda Silenciosa 25 cm', icon: '🎡', kind: 'item',
+    desc: 'Ele corre de madrugada e gasta energia feliz. A diversão cai bem mais devagar.',
+    edu: 'Hamster corre quilômetros por noite! A roda precisa ser grande pra ele correr com as costas retas.',
+  },
+  toca: {
+    label: 'Toca de madeira', icon: '🛖', kind: 'item',
+    desc: 'Um esconderijo pra dormir seguro: descansa mais rápido e fica menos estressado.',
+    edu: 'Hamster é presa na natureza: sem esconderijo ele vive assustado. A toca dá segurança.',
+  },
+}
+export const CATALOG_KEYS = Object.keys(CATALOG)
+
+// Multiplicadores do ambiente atual (gaiola × terrário + itens colocados)
+export function habitatOf(pet) { return pet.placed?.terrario ? 'terrario' : 'gaiola' }
+export function isPlaced(pet, key) {
+  const it = CATALOG[key]
+  if (!pet.placed?.[key]) return false
+  return !it?.needs || !!pet.placed[it.needs]
+}
+export function mods(pet) {
+  const m = habitatOf(pet) === 'terrario'
+    ? { fun: 1.0, clean: 0.9, energy: 1.0, sleep: 1.0, comfort: 0.85 }
+    : { fun: 1.6, clean: 1.3, energy: 1.3, sleep: 0.75, comfort: 0.6 }  // gaiola: cansa e entristece mais
+  if (isPlaced(pet, 'substrato')) { m.clean *= 0.65; m.fun *= 0.9; m.comfort += 0.05 }
+  if (isPlaced(pet, 'roda'))      { m.fun *= 0.65; m.comfort += 0.03 }
+  if (isPlaced(pet, 'toca'))      { m.sleep *= 1.3; m.comfort += 0.07 }
+  m.comfort = Math.min(1, m.comfort)
+  return m
+}
+
+// Saves antigos (0.1) não tinham inventário
+export function migrate(p) {
+  if (!p) return p
+  if (!p.owned) p.owned = {}
+  if (!p.placed) p.placed = {}
+  if (!p.redeemed) p.redeemed = []
+  return p
 }
 
 // Quanto cada necessidade cai por hora (antes dos multiplicadores)
@@ -38,7 +93,9 @@ export function newPet({ name, species }) {
   return {
     v: 1,
     name, species,
-    habitat: 'gaiola',
+    owned: {},    // itens desbloqueados (por compra real / código)
+    placed: {},   // itens colocados no ambiente
+    redeemed: [], // códigos já usados neste save
     born: now,
     lastTick: now,
     needs: { fome: 70, sede: 70, limpeza: 80, energia: 80, diversao: 50 },
@@ -67,17 +124,17 @@ export function advance(pet, toTime = Date.now()) {
   const p = structuredClone(pet)
   let t = p.lastTick
   const end = Math.min(toTime, t + 14 * 86400000) // no máximo 14 dias de uma vez
-  const hab = HABITATS[p.habitat] || HABITATS.gaiola
+  const m = mods(p)
   while (t < end) {
     const step = Math.min(10 * 60000, end - t)
     const h = step / 3600000
     const n = p.needs
     n.fome = clamp(n.fome - DECAY.fome * h)
     n.sede = clamp(n.sede - DECAY.sede * h)
-    n.limpeza = clamp(n.limpeza - DECAY.limpeza * hab.cleanDecay * h)
-    n.diversao = clamp(n.diversao - DECAY.diversao * hab.funDecay * (p.asleep ? 0.3 : 1) * h)
-    if (p.asleep) n.energia = clamp(n.energia + SLEEP_RECOVER * hab.comfort * h)
-    else n.energia = clamp(n.energia - DECAY.energia * h)
+    n.limpeza = clamp(n.limpeza - DECAY.limpeza * m.clean * h)
+    n.diversao = clamp(n.diversao - DECAY.diversao * m.fun * (p.asleep ? 0.3 : 1) * h)
+    if (p.asleep) n.energia = clamp(n.energia + SLEEP_RECOVER * m.sleep * h)
+    else n.energia = clamp(n.energia - DECAY.energia * m.energy * h)
 
     // Dorme quando está cansado ou quando é dia e já descansou pouco;
     // acorda quando recuperou (à noite acorda mais fácil)
@@ -99,8 +156,7 @@ export function advance(pet, toTime = Date.now()) {
 export function mood(pet) {
   const n = pet.needs
   const avg = NEEDS.reduce((s, k) => s + n[k], 0) / NEEDS.length
-  const hab = HABITATS[pet.habitat] || HABITATS.gaiola
-  return clamp(avg * 0.8 + pet.health * 0.2 - (1 - hab.comfort) * 15)
+  return clamp(avg * 0.8 + pet.health * 0.2 - (1 - mods(pet).comfort) * 25)
 }
 
 export function status(pet) {
@@ -174,6 +230,43 @@ export function treat(pet) {
   p.needs.fome = clamp(p.needs.fome + 5)
   earn(p)
   return { pet: p, msg: 'Uma sementinha de girassol! 🌻', anim: 'eat' }
+}
+
+// ─── Inventário ──────────────────────────────────────────────────────
+export function togglePlace(pet, key) {
+  const p = structuredClone(pet)
+  const it = CATALOG[key]
+  if (!p.owned[key]) return { pet: p, msg: 'Você ainda não tem esse item.' }
+  if (it.needs && !p.placed[it.needs] && !p.placed[key]) {
+    return { pet: p, msg: `Precisa do ${CATALOG[it.needs].label} primeiro.`, tip: it.edu }
+  }
+  p.placed[key] = !p.placed[key]
+  // Guardou o terrário → o que depende dele volta pro inventário
+  if (!p.placed[key]) for (const [k, i] of Object.entries(CATALOG)) if (i.needs === key) p.placed[k] = false
+  if (p.placed[key]) {
+    if (key === 'terrario') p.needs.diversao = clamp(p.needs.diversao + 20)
+    return { pet: p, msg: key === 'terrario' ? `${p.name} ganhou um lar novo! 🏡` : `${it.label} colocado! ✨`, tip: it.edu, anim: 'happy' }
+  }
+  return { pet: p, msg: `${it.label} guardado.` }
+}
+
+// Códigos de resgate. Por enquanto (sem login) só existem CÓDIGOS DE TESTE;
+// os reais (únicos, 1 uso, vindos do pedido) serão validados no servidor.
+const TEST_CODES = {
+  'TESTE-TERRARIO': ['terrario'], 'TESTE-ASPEN': ['substrato'], 'TESTE-RODA': ['roda'],
+  'TESTE-TOCA': ['toca'], 'TESTE-TUDO': ['terrario', 'substrato', 'roda', 'toca'],
+}
+export function redeem(pet, raw) {
+  const p = structuredClone(pet)
+  const code = String(raw || '').trim().toUpperCase().replace(/\s+/g, '')
+  const items = TEST_CODES[code]
+  if (!items) return { pet: p, ok: false, msg: 'Código inválido. Confira e tente de novo.' }
+  if (p.redeemed.includes(code)) return { pet: p, ok: false, msg: 'Esse código já foi usado.' }
+  p.redeemed.push(code)
+  const got = items.filter(k => !p.owned[k])
+  items.forEach(k => { p.owned[k] = true })
+  p.seeds += 10
+  return { pet: p, ok: true, items: got, msg: got.length ? `Desbloqueado: ${got.map(k => CATALOG[k].label).join(', ')} 🎉` : 'Você já tinha esses itens — ganhou 10 sementinhas!' }
 }
 
 // ─── Dicas educativas (rodam no rodapé) ─────────────────────────────
