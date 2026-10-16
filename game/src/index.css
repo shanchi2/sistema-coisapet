@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: #2b1d14;
+  color: #3b2314;
+  font-family: Nunito, system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+canvas { image-rendering: pixelated; touch-action: manipulation; }
+.pixel { font-family: "Press Start 2P", monospace; letter-spacing: 0.02em; }
+.pixel-box {
+  border: 3px solid #3b2314;
+  box-shadow: inset -3px -3px 0 rgba(0,0,0,0.15), inset 3px 3px 0 rgba(255,255,255,0.35);
+}
+.pixel-btn {
+  border: 3px solid #3b2314;
+  box-shadow: inset -3px -3px 0 rgba(0,0,0,0.2), inset 3px 3px 0 rgba(255,255,255,0.4), 0 3px 0 #3b2314;
+  transition: transform .05s;
+}
+.pixel-btn:active:not(:disabled) { transform: translateY(3px); box-shadow: inset -3px -3px 0 rgba(0,0,0,0.2), inset 3px 3px 0 rgba(255,255,255,0.4), 0 0 0 #3b2314; }
+.pixel-btn:disabled { opacity: .5; }
