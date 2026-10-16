@@ -16,6 +16,7 @@ const MODULES = [
   { key: 'marketplaces-posvenda', label: 'Pós-venda ML + Shopee (sem valores)', section: 'Marketplaces', icon: '🛟' },
   { key: 'ml-insights',  label: 'Otimização ML',   section: 'Otimização ML', icon: '🩺' },
   { key: 'ml-reclamacoes', label: 'Reclamações ML (sem valores)', section: 'Otimização ML', icon: '🛡️' },
+  { key: 'full-envios',  label: 'Gestão de Envios Full + Pré-listas (sem valores)', section: 'Otimização ML', icon: '🚚' },
   { key: 'ml-historico', label: 'Histórico de Atualizações (ML)', section: 'Otimização ML', icon: '📜' },
   { key: 'shopee-insights', label: 'Shopee',        section: 'Shopee',        icon: '🛍️' },
   { key: 'shopee-retornos', label: 'Retornos Shopee (sem valores)', section: 'Shopee', icon: '↩️' },

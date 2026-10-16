@@ -54,7 +54,7 @@ const NAV_SECTIONS = [
       { to: '/ml/publicidade', moduleKey: 'ml-insights', icon: Megaphone,            label: 'Publicidade',           roles: ['admin','marketplace'] },
       { to: '/ml/oportunidades', moduleKey: 'ml-insights', icon: Rocket,             label: 'Oportunidades de Venda', roles: ['admin','marketplace'] },
       { to: '/ml/full',       moduleKey: 'ml-insights', icon: Warehouse,             label: 'Estoque Full',          roles: ['admin','marketplace'] },
-      { to: '/ml/full/envios', moduleKey: 'ml-insights', icon: Truck,                label: 'Gestão de Envios Full', roles: ['admin','marketplace'] },
+      { to: '/ml/full/envios', moduleKey: 'full-envios', icon: Truck,                label: 'Gestão de Envios Full', roles: ['admin','marketplace','producao'] },
     ],
   },
   {

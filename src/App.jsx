@@ -214,7 +214,7 @@ export default function App() {
                 <Route path="/ml/publicidade"    element={<GuardedRoute moduleKey="ml-insights"><MlAdsPage /></GuardedRoute>} />
                 <Route path="/ml/oportunidades"  element={<GuardedRoute moduleKey="ml-insights"><MlOpportunitiesPage /></GuardedRoute>} />
                 <Route path="/ml/full"           element={<GuardedRoute moduleKey="ml-insights"><MlFullStockPage /></GuardedRoute>} />
-                <Route path="/ml/full/envios"    element={<GuardedRoute moduleKey="ml-insights"><MlFullShipmentsPage /></GuardedRoute>} />
+                <Route path="/ml/full/envios"    element={<GuardedRoute moduleKey="full-envios"><MlFullShipmentsPage /></GuardedRoute>} />
                 <Route path="/ml/cupons"         element={<GuardedRoute moduleKey="ml-insights"><MlCouponsPage /></GuardedRoute>} />
                 <Route path="/ml/anuncios"       element={<GuardedRoute moduleKey="ml-insights"><MlActiveListingsPage /></GuardedRoute>} />
                 <Route path="/ml/anuncios/novo"  element={<GuardedRoute moduleKey="ml-insights"><MlCreateListingPage /></GuardedRoute>} />

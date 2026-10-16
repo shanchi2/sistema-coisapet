@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, AlertTriangle, Search, X, Download, Info, TrendingUp, TrendingDown, Minus, Sparkles, Warehouse, Truck, CalendarClock, PackagePlus, EyeOff, Eye, ExternalLink } from 'lucide-react'
+import { Loader2, AlertTriangle, Search, X, Download, Info, TrendingUp, TrendingDown, Minus, Sparkles, Warehouse, Truck, CalendarClock, PackagePlus, EyeOff, Eye, ExternalLink, ClipboardList } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
+import { createPrelist } from './FullPrelistsPanel'
 
 // Central de reposição do Full (16/10, pedido do Raphael): estuda as vendas
 // dos últimos 90 dias de cada variação (ML e Shopee) e diz
@@ -98,7 +101,9 @@ function Stat({ icon: Icon, label, value, detail, tone = 'text-slate-800' }) {
   )
 }
 
-export function FullReplenishmentPanel({ shipments }) {
+export function FullReplenishmentPanel({ shipments, onPrelist }) {
+  const { user } = useAuth()
+  const [creating, setCreating] = useState(false)
   const [plat, setPlat] = useState('ml')
   const [cfg, setCfg] = useState(readSettings)
   const [view, setView] = useState('ideal') // ideal | full | candidates | all
@@ -234,6 +239,21 @@ export function FullReplenishmentPanel({ shipments }) {
     urgent: visibleBase.filter(r => r.inFull && r.urgent).length,
   }
 
+  // Pré-lista com tudo que tem "Enviar agora" no plano (ideais + já no Full),
+  // independente do filtro/busca da tela — dá pra tirar/ajustar depois
+  async function makePrelist() {
+    const items = visibleBase.filter(r => (r.ideal || r.inFull) && r.sendNow > 0)
+      .sort((a, b) => (b.urgent - a.urgent) || (b.sendNow - a.sendNow))
+      .map(r => ({ ...r, qty: r.sendNow, suggested: r.sendNow }))
+    if (!items.length) return toast('Nada pra enviar agora nesse plano')
+    setCreating(true)
+    try {
+      const l = await createPrelist({ platform: plat, items, createdBy: user?.name })
+      toast.success(`Pré-lista criada com ${items.length} itens`)
+      onPrelist?.(l.id)
+    } catch (e) { toast.error(e.message) } finally { setCreating(false) }
+  }
+
   function exportCsv() {
     const head = ['Plataforma', 'Anúncio', 'Variação', 'SKU', 'No Full hoje', 'A caminho', 'Vendas 30d', 'Média/dia', 'Constância', `Média por envio (${cfg.cycle} dias)`, 'Enviar agora', 'Situação', 'Link']
     const lines = list.filter(r => r.sendNow > 0 || r.inFull).map(r => [PLAT[plat].short, r.title, r.variation || '', r.sku || '', r.fullStock, r.coming, r.m0, fmtDec(r.perDay), CONSIST[r.consistency].label, r.perShipment, r.sendNow, r.inFull ? 'Já no Full' : 'Novo no Full', r.permalink || ''])
@@ -267,7 +287,11 @@ export function FullReplenishmentPanel({ shipments }) {
               {p.label}
             </button>
           ))}
-          <button onClick={exportCsv} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-600">
+          <button onClick={makePrelist} disabled={creating}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-xs font-semibold text-white disabled:opacity-50">
+            {creating ? <Loader2 size={13} className="animate-spin" /> : <ClipboardList size={13} />} Montar pré-lista ({fmtInt(totals.sendNowItems)})
+          </button>
+          <button onClick={exportCsv} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-600">
             <Download size={13} /> Baixar plano (Excel)
           </button>
         </div>

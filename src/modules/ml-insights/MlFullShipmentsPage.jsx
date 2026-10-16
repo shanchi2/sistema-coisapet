@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Truck, Loader2, AlertTriangle, ExternalLink, ChevronDown, Info, PackageCheck, PackageX, Clock, Calendar, MapPin, Ban, Hourglass, RefreshCw, Search, Puzzle, Receipt, ChevronRight, Sparkles } from 'lucide-react'
+import { Truck, Loader2, AlertTriangle, ExternalLink, ChevronDown, Info, PackageCheck, PackageX, Clock, Calendar, MapPin, Ban, Hourglass, RefreshCw, Search, Puzzle, Receipt, ChevronRight, Sparkles, ClipboardList } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { InfoTooltip } from './InfoTooltip'
 import { FullSyncExtensionModal } from './FullSyncExtensionModal'
 import { FullReplenishmentPanel } from './FullReplenishmentPanel'
+import { FullPrelistsPanel } from './FullPrelistsPanel'
 
 function fmtDate(iso) {
   if (!iso) return null
@@ -351,8 +352,16 @@ export function MlFullShipmentsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const highlightId = searchParams.get('envio')
   // Abas: envios (acompanhamento) | reposicao (central de inteligência, 16/10)
-  const view = searchParams.get('aba') === 'reposicao' ? 'reposicao' : 'envios'
-  const setView = v => setSearchParams(p => { const n = new URLSearchParams(p); if (v === 'reposicao') n.set('aba', 'reposicao'); else n.delete('aba'); return n }, { replace: true })
+  // | prelistas (listas montadas aqui pra criar o envio no painel do ML/Shopee)
+  const aba = searchParams.get('aba')
+  const view = ['reposicao', 'prelistas'].includes(aba) ? aba : 'envios'
+  const prelistId = searchParams.get('lista')
+  const setView = (v, lista = null) => setSearchParams(p => {
+    const n = new URLSearchParams(p)
+    if (v === 'envios') n.delete('aba'); else n.set('aba', v)
+    if (lista) n.set('lista', lista); else n.delete('lista')
+    return n
+  }, { replace: !lista })
   const [shipments, setShipments] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -455,7 +464,7 @@ export function MlFullShipmentsPage() {
         </div>
 
         <div className="inline-flex items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl">
-          {[['envios', 'Envios', Truck], ['reposicao', 'Reposição inteligente', Sparkles]].map(([k, l, Icon]) => (
+          {[['envios', 'Envios', Truck], ['reposicao', 'Reposição inteligente', Sparkles], ['prelistas', 'Pré-listas', ClipboardList]].map(([k, l, Icon]) => (
             <button key={k} onClick={() => setView(k)}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${view === k ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
               <Icon size={15} /> {l}
@@ -464,8 +473,10 @@ export function MlFullShipmentsPage() {
         </div>
 
         {view === 'reposicao' && (shipments
-          ? <FullReplenishmentPanel shipments={shipments} />
+          ? <FullReplenishmentPanel shipments={shipments} onPrelist={id => setView('prelistas', String(id))} />
           : <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-slate-400" /></div>)}
+
+        {view === 'prelistas' && <FullPrelistsPanel openId={prelistId} onOpen={id => setView('prelistas', id ? String(id) : null)} />}
 
         {view === 'envios' && <>
         {/* Quão atual é isso aqui — o ML não tem API pra Envios Full */}
