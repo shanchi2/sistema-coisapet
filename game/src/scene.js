@@ -64,6 +64,10 @@ export class CageScene extends Phaser.Scene {
       wheel: this.setup.roda ? bottle - (this.setup.bebedouro ? 46 : 40) : null,
       bottle,
     }
+    // Banheira de areia e pedra de resfriamento ficam no meio, depois do potinho
+    let mid = this.L.bowl + 22
+    if (this.setup.banheira) { this.L.bath = mid; mid += 23 }
+    if (this.setup.pedra) this.L.stone = mid
     // Ponta do bico (onde a gotinha sai) e onde ele para pra beber: virado pra
     // direita, com o focinho (7 px à frente do centro) encostado no bico
     this.spout = this.setup.bebedouro
@@ -79,6 +83,12 @@ export class CageScene extends Phaser.Scene {
     if (ter) this.drawTerrariumBack(); else this.drawCageBack()
     if (this.setup.roda) this.drawWheel()
     if (this.setup.toca) this.drawToca()
+    if (this.L.stone) this.add.image(this.L.stone, this.floorY + 1, 'stone').setOrigin(0.5, 1).setDepth(2)
+    if (this.L.bath) {
+      // Fundo (areia) atrás do hamster; frente (barro) por cima — ele "entra" no pote
+      this.add.image(this.L.bath, this.floorY - 6, 'bath_back').setOrigin(0.5, 1).setDepth(2)
+      this.add.image(this.L.bath, this.floorY + 1, 'bath_front').setOrigin(0.5, 1).setDepth(5)
+    }
 
     const fy = this.floorY
     this.bowl = this.add.image(this.L.bowl, fy - 1, 'bowl_full').setOrigin(0.5, 1).setDepth(3)
@@ -168,6 +178,58 @@ export class CageScene extends Phaser.Scene {
     this.makeTocaTexture()
     this.makeBebedouroTexture()
     this.makeTerrariumFrameTexture()
+    this.makeBathStoneTextures()
+  }
+
+  // Banheira de barro (terracota) com areia de quartzo, pedra de granito e a
+  // cadeira de praia (listrada) que aparece quando ele relaxa na pedra
+  makeBathStoneTextures() {
+    // Areia + borda de trás (20 x 4)
+    this.pixelCanvas('bath_back', 20, 4, px => {
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 20; x++) {
+        const e = ((x - 9.5) / 9.5) ** 2 + ((y - 3) / 3) ** 2
+        if (e > 1) continue
+        if (e > 0.62) { px(x, y, y < 2 ? '#8e3b1c' : '#a9472a'); continue }       // borda de trás
+        px(x, y, (x * 5 + y * 7) % 9 === 0 ? '#d9c7a8' : (x + y) % 7 === 0 ? '#f3e7d2' : '#e8d8bd') // areia
+      }
+    })
+    // Corpo do pote (20 x 7): mais largo embaixo, como o da foto
+    this.pixelCanvas('bath_front', 22, 7, px => {
+      for (let y = 0; y < 7; y++) {
+        const half = y === 0 ? 10 : 9.5 + y * 0.25
+        for (let x = 0; x < 22; x++) {
+          const dx = Math.abs(x - 10.5)
+          if (dx > half) continue
+          if (y === 0) { px(x, y, dx > half - 1 ? '#7a2f15' : '#d0643a'); continue }  // aro da frente
+          if (y === 6) { px(x, y, '#6e2a12'); continue }
+          const edge = dx > half - 1
+          px(x, y, edge ? '#7a2f15' : x < 6 ? '#b94d27' : x > 15 ? '#a3401f' : '#c4562d')
+        }
+      }
+    })
+    // Pedra de granito (24 x 5): tampo salpicado + lateral mais escura
+    this.pixelCanvas('stone', 24, 5, px => {
+      for (let y = 0; y < 5; y++) for (let x = 0; x < 24; x++) {
+        if ((x === 0 || x === 23) && y === 0) continue
+        const n = (x * 37 + y * 101 + x * y * 13) % 17
+        if (y === 4 || x === 0 || x === 23) { px(x, y, '#3c4048'); continue }
+        if (y === 3) { px(x, y, n < 6 ? '#55595f' : '#6a6e75'); continue }       // lateral
+        px(x, y, n < 4 ? '#2f3238' : n < 9 ? '#9aa0a8' : n < 12 ? '#d7dbe0' : '#7d838b') // tampo
+      }
+    })
+    // Cadeira de praia (22 x 12): lona listrada vermelha/branca (assento reto,
+    // encosto inclinado à direita) + pés de madeira em X
+    this.pixelCanvas('chair', 22, 12, px => {
+      const top = x => (x < 14 ? 6 : 6 - (x - 14))
+      for (let x = 2; x <= 20; x++) {
+        px(x, top(x), Math.floor(x / 3) % 2 ? '#e74c3c' : '#ffffff')
+        px(x, top(x) + 1, Math.floor(x / 3) % 2 ? '#c0392b' : '#e6e6e6')
+        px(x, top(x) + 2, '#8e2a20')                                               // sombra da lona
+      }
+      const wood = '#8a5a32'
+      for (let i = 0; i < 4; i++) { px(4 + i, 9 + (i >> 1), wood); px(15 - i, 9 + (i >> 1), wood) } // pés em X
+      px(3, 11, wood); px(16, 11, wood)
+    })
   }
 
   // Desenho pixel a pixel num canvas novo
@@ -498,7 +560,75 @@ export class CageScene extends Phaser.Scene {
 
   setMode(m, ms = 0) { this.mode = m; this.modeUntil = this.time.now + ms }
 
+  // Sai do banho / da cadeira de praia no meio (sono, comida, susto...)
+  endSpecial() {
+    if (this.mode === 'bath' || this.mode === 'chill' || this.mode === 'towel') {
+      this.chair?.setVisible(false)
+      this.hamster.setPosition(this.hamster.x, this.floorY).setAngle(0)
+      this.setMode('idle', 500)
+    }
+  }
+
+  // Banheirinha: enrola na toalha → pula no pote → rola na areia → sai e se sacode
+  startBath() {
+    this.nextBath = this.time.now + 50000
+    const bx = this.L.bath
+    this.walkTo(bx - 15, () => {
+      this.facing = 1
+      this.setMode('towel', 1400)
+      this.time.delayedCall(1400, () => {
+        if (this.mode !== 'towel' || this.dead) return
+        this.setMode('busy', 99999)
+        this.tweens.add({ targets: this.hamster, x: bx, duration: 520, ease: 'Sine.easeInOut' })
+        this.tweens.add({ targets: this.hamster, y: this.floorY - 9, duration: 260, yoyo: true, ease: 'Sine.easeOut', onComplete: () => {
+          if (this.sleepPending || this.dead) return              // deu sono no meio: deixa ele ir dormir
+          this.hamster.y = this.floorY - 2
+          this.setMode('bath', 3600)
+        } })
+      })
+    })
+  }
+  finishBath() {
+    const bx = this.L.bath
+    this.setMode('busy', 99999)
+    this.tweens.add({ targets: this.hamster, x: bx + 16, duration: 500, ease: 'Sine.easeInOut' })
+    this.tweens.add({ targets: this.hamster, y: this.floorY - 9, duration: 250, yoyo: true, onComplete: () => {
+      if (this.dead) return
+      this.hamster.y = this.floorY
+      this.sandPuff(this.hamster.x, this.hamster.y - 4, 8)   // se sacode
+      if (!this.sleepPending) this.setMode('scared', 600)    // tremidinha = sacudida
+      bridge.emit('sand-bath')
+    } })
+  }
+  sandPuff(x, y, n = 3) {
+    for (let i = 0; i < n; i++) {
+      const s = this.add.rectangle(x + Phaser.Math.Between(-5, 5), y, 1, 1, Phaser.Math.RND.pick([0xe8d8bd, 0xd9c7a8, 0xf3e7d2])).setDepth(20)
+      this.tweens.add({ targets: s, x: s.x + Phaser.Math.Between(-6, 6), y: y - Phaser.Math.Between(3, 9), alpha: 0, duration: 500, onComplete: () => s.destroy() })
+    }
+  }
+
+  // Pedra: cadeira de praia + óculos escuros, relaxando no geladinho 😎
+  startChill() {
+    this.nextChill = this.time.now + 55000
+    const sx = this.L.stone
+    this.walkTo(sx - 1, () => {
+      if (!this.chair) this.chair = this.add.image(0, 0, 'chair').setOrigin(0.5, 1).setDepth(3)
+      this.chair.setPosition(sx, this.floorY - 4).setVisible(true).setAlpha(0)
+      this.tweens.add({ targets: this.chair, alpha: 1, duration: 300 })
+      this.facing = 1
+      this.hamster.setPosition(sx + 1, this.floorY - 8)
+      this.setMode('chill', Phaser.Math.Between(6000, 9000))
+    })
+  }
+  finishChill() {
+    this.tweens.add({ targets: this.chair, alpha: 0, duration: 300, onComplete: () => this.chair.setVisible(false) })
+    this.hamster.y = this.floorY
+    this.setMode('idle', 800)
+    bridge.emit('chill')
+  }
+
   goSleep(instant = false) {
+    this.endSpecial()
     if (this.mode === 'wheel') this.leaveWheel()
     if (instant || this.mode === 'toca') return this.settleSleep()
     // Vai devagarinho pra cama (toca, ou o cantinho se não tiver toca)
@@ -562,6 +692,7 @@ export class CageScene extends Phaser.Scene {
       return
     }
     if (this.mode === 'wheel') this.leaveWheel()
+    this.endSpecial()
     if (this.mode === 'toca') this.hamster.y = this.floorY
     if (kind === 'eat') this.walkTo(this.L.bowl + 12, () => this.setMode('eat', 2200))
     else if (kind === 'drink') this.walkTo(this.drinkX, () => { this.facing = 1; this.setMode('drink', 2600) })
@@ -653,6 +784,21 @@ export class CageScene extends Phaser.Scene {
           this.tweens.add({ targets: d, y: d.y + 4, alpha: 0, duration: 450, onComplete: () => d.destroy() })
         }
         if (time > this.modeUntil) this.setMode('idle', 1200)
+      } else if (this.mode === 'towel') {
+        frame = 'towel'                                    // enroladinho na toalha
+        this.facing = 1
+      } else if (this.mode === 'bath') {
+        // Rolando na areia: vira pra lá e pra cá e levanta areinha
+        frame = Math.floor(time / 180) % 3 === 2 ? 'sleep' : 'idle'
+        this.facing = Math.floor(time / 360) % 2 ? 1 : -1
+        h.y = fy - 2 - (Math.floor(time / 180) % 2)
+        if (!this.nextSand || time > this.nextSand) { this.nextSand = time + 220; this.sandPuff(this.L.bath, fy - 6, 2) }
+        if (time > this.modeUntil) this.finishBath()
+      } else if (this.mode === 'chill') {
+        frame = 'chill'                                    // óculos escuros na cadeira de praia
+        this.facing = 1
+        h.y = fy - 8 + (Math.floor(time / 1600) % 2 ? 0 : 0)
+        if (time > this.modeUntil) this.finishChill()
       } else if (this.mode === 'toca') {
         h.x = this.L.toca
         h.y = fy - 5
@@ -678,6 +824,10 @@ export class CageScene extends Phaser.Scene {
           // Vai sozinho beber ou comer (mais quando está com sede/fome)
           if (Math.random() < (s.sede <= s.fome ? 0.65 : 0.35)) this.walkTo(this.drinkX, () => { this.facing = 1; this.setMode('drink', 2600) })
           else this.walkTo(this.L.bowl + 12, () => { this.facing = -1; this.setMode('eat', 2200) })
+        } else if (this.L.bath && !sad && time > (this.nextBath || 0) && Math.random() < 0.18) {
+          this.startBath()
+        } else if (this.L.stone && !sad && time > (this.nextChill || 0) && Math.random() < 0.2) {
+          this.startChill()
         } else if (this.L.toca && Math.random() < (sad ? 0.35 : 0.15)) {
           // Entra na toca e fica espiando pela porta
           this.walkTo(this.L.toca, () => { this.facing = 1; this.setMode('toca', Phaser.Math.Between(3500, 7000)) })

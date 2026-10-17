@@ -57,6 +57,16 @@ export const CATALOG = {
     desc: 'Fica em pé no chão, com o bico na altura certa. Água limpa por mais tempo.',
     edu: 'Bebedouro de bico mantém a água limpa (sem sujeira do substrato) — e no suporte ele fica firme, sem furar o terrário.',
   },
+  banheira: {
+    label: 'Banheira de areia', icon: '🛁', kind: 'item',
+    desc: 'Potinho de barro com areia de quartzo fininha. Ele rola na areia e fica com o pelo limpinho e feliz.',
+    edu: 'Hamster NÃO toma banho de água — ele se limpa rolando na areia. Use areia de quartzo fininha, nunca areia de gato.',
+  },
+  pedra: {
+    label: 'Pedra de resfriamento', icon: '🪨', kind: 'item',
+    desc: 'Placa de granito que fica geladinha. Nos dias quentes ele deita nela pra se refrescar — e cansa menos.',
+    edu: 'Calor é perigoso pro hamster (acima de 28 °C ele sofre). A pedra de granito fica fresca e ajuda ele a regular a temperatura.',
+  },
   plaquinha: {
     label: 'Plaquinha com o nome', icon: '🏷️', kind: 'item', needs: 'terrario',
     desc: 'Plaquinha de MDF gravada com o nome do seu pet, presa no topo do terrário.',
@@ -81,6 +91,8 @@ export function mods(pet) {
   if (isPlaced(pet, 'roda'))      { m.fun *= 0.65; m.energy *= 1.15; m.comfort += 0.03 }
   if (isPlaced(pet, 'toca'))      { m.sleep *= 1.3; m.comfort += 0.05 }
   if (isPlaced(pet, 'bebedouro')) { m.thirst *= 0.85; m.comfort += 0.03 }
+  if (isPlaced(pet, 'banheira'))  { m.clean *= 0.9; m.fun *= 0.92; m.comfort += 0.04 }  // pelo limpo, menos tédio
+  if (isPlaced(pet, 'pedra'))     { m.energy *= 0.92; m.comfort += 0.03 }               // refresca: cansa menos
   m.comfort = Math.min(1, m.comfort)
   return m
 }
@@ -259,6 +271,22 @@ export function wheelRun(pet, seconds) {
   return { pet: p }
 }
 
+// Banho de areia (a cena avisa quando ele termina de rolar na banheirinha)
+export function sandBath(pet) {
+  const p = structuredClone(pet)
+  p.needs.diversao = clamp(p.needs.diversao + 6)
+  p.needs.limpeza = clamp(p.needs.limpeza + 4)
+  return { pet: p, msg: `${p.name} tomou banho de areia! ✨`, tip: CATALOG.banheira.edu }
+}
+
+// Relaxando na pedra geladinha (óculos escuros e cadeira de praia 😎)
+export function chillStone(pet) {
+  const p = structuredClone(pet)
+  p.needs.energia = clamp(p.needs.energia + 5)
+  p.needs.diversao = clamp(p.needs.diversao + 3)
+  return { pet: p, msg: `${p.name} curtindo a pedrinha geladinha 😎`, tip: CATALOG.pedra.edu }
+}
+
 // ─── Inventário ──────────────────────────────────────────────────────
 export function togglePlace(pet, key) {
   const p = structuredClone(pet)
@@ -282,7 +310,8 @@ export function togglePlace(pet, key) {
 const TEST_CODES = {
   'TESTE-TERRARIO': ['terrario'], 'TESTE-ASPEN': ['substrato'], 'TESTE-RODA': ['roda'],
   'TESTE-TOCA': ['toca'], 'TESTE-BEBEDOURO': ['bebedouro'], 'TESTE-PLAQUINHA': ['plaquinha'],
-  'TESTE-TUDO': ['terrario', 'substrato', 'roda', 'toca', 'bebedouro', 'plaquinha'],
+  'TESTE-BANHEIRA': ['banheira'], 'TESTE-PEDRA': ['pedra'],
+  'TESTE-TUDO': ['terrario', 'substrato', 'roda', 'toca', 'bebedouro', 'banheira', 'pedra', 'plaquinha'],
 }
 export function redeem(pet, raw) {
   const p = structuredClone(pet)
