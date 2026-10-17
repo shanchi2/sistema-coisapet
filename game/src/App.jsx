@@ -311,6 +311,7 @@ function Game({ pet, setPet, onReset, account }) {
   const setup = useMemo(() => ({
     habitat: habitatOf(pet),
     substrato: isPlaced(pet, 'substrato'), roda: isPlaced(pet, 'roda'), toca: isPlaced(pet, 'toca'), bebedouro: isPlaced(pet, 'bebedouro'),
+    plaquinha: isPlaced(pet, 'plaquinha') ? pet.name : null, // nome gravado na plaquinha
   }), [pet])
   const setupKey = JSON.stringify(setup)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -431,7 +432,7 @@ function Inventory({ pet, onClose, onToggle, onRedeem }) {
             <button className="pixel-btn rounded-md px-3 bg-[#2ecc71] text-white text-sm font-extrabold">Resgatar</button>
           </div>
           {msg && <p className={`text-[12px] font-bold mt-2 ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
-          <p className="text-[10px] text-[#a88a70] mt-2">Modo teste: TESTE-TERRARIO · TESTE-ASPEN · TESTE-RODA · TESTE-TOCA · TESTE-TUDO</p>
+          <p className="text-[10px] text-[#a88a70] mt-2">Modo teste: TESTE-TERRARIO · TESTE-ASPEN · TESTE-RODA · TESTE-TOCA · TESTE-PLAQUINHA · TESTE-TUDO</p>
         </form>
 
         {/* Conforto do ambiente */}

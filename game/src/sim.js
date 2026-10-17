@@ -57,6 +57,11 @@ export const CATALOG = {
     desc: 'Fica em pé no chão, com o bico na altura certa. Água limpa por mais tempo.',
     edu: 'Bebedouro de bico mantém a água limpa (sem sujeira do substrato) — e no suporte ele fica firme, sem furar o terrário.',
   },
+  plaquinha: {
+    label: 'Plaquinha com o nome', icon: '🏷️', kind: 'item', needs: 'terrario',
+    desc: 'Plaquinha de MDF gravada com o nome do seu pet, presa no topo do terrário.',
+    edu: 'Dar nome e ter um cantinho só dele ajuda a criar rotina: hamster gosta de tudo sempre no mesmo lugar.',
+  },
 }
 export const CATALOG_KEYS = Object.keys(CATALOG)
 
@@ -276,8 +281,8 @@ export function togglePlace(pet, key) {
 // os reais (únicos, 1 uso, vindos do pedido) serão validados no servidor.
 const TEST_CODES = {
   'TESTE-TERRARIO': ['terrario'], 'TESTE-ASPEN': ['substrato'], 'TESTE-RODA': ['roda'],
-  'TESTE-TOCA': ['toca'], 'TESTE-BEBEDOURO': ['bebedouro'],
-  'TESTE-TUDO': ['terrario', 'substrato', 'roda', 'toca', 'bebedouro'],
+  'TESTE-TOCA': ['toca'], 'TESTE-BEBEDOURO': ['bebedouro'], 'TESTE-PLAQUINHA': ['plaquinha'],
+  'TESTE-TUDO': ['terrario', 'substrato', 'roda', 'toca', 'bebedouro', 'plaquinha'],
 }
 export function redeem(pet, raw) {
   const p = structuredClone(pet)
