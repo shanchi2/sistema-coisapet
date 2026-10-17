@@ -22,6 +22,26 @@ const DROP = ['.c.', 'cCc', '.c.']
 const WHEEL_R = 18 // raio da roda (hamster tem 16 px de comprimento)
 const WOOD = 0xc8955a, WOOD_D = 0x9a6a3a, WOOD_L = 0xe2b47c, INK = 0x3b2314
 
+// Fonte em pixel 3x5 (maiúsculas, como a gravação a laser da plaquinha).
+// Letras largas (M, N, W) têm mais colunas. Acento é removido (É → E).
+const FONT = {
+  A: ['.#.', '#.#', '###', '#.#', '#.#'], B: ['##.', '#.#', '##.', '#.#', '##.'], C: ['.##', '#..', '#..', '#..', '.##'],
+  D: ['##.', '#.#', '#.#', '#.#', '##.'], E: ['###', '#..', '##.', '#..', '###'], F: ['###', '#..', '##.', '#..', '#..'],
+  G: ['.##', '#..', '#.#', '#.#', '.##'], H: ['#.#', '#.#', '###', '#.#', '#.#'], I: ['###', '.#.', '.#.', '.#.', '###'],
+  J: ['..#', '..#', '..#', '#.#', '.#.'], K: ['#.#', '#.#', '##.', '#.#', '#.#'], L: ['#..', '#..', '#..', '#..', '###'],
+  M: ['#...#', '##.##', '#.#.#', '#...#', '#...#'], N: ['#..#', '##.#', '#.##', '#..#', '#..#'], O: ['.#.', '#.#', '#.#', '#.#', '.#.'],
+  P: ['##.', '#.#', '##.', '#..', '#..'], Q: ['.#.', '#.#', '#.#', '##.', '.##'], R: ['##.', '#.#', '##.', '#.#', '#.#'],
+  S: ['.##', '#..', '.#.', '..#', '##.'], T: ['###', '.#.', '.#.', '.#.', '.#.'], U: ['#.#', '#.#', '#.#', '#.#', '###'],
+  V: ['#.#', '#.#', '#.#', '#.#', '.#.'], W: ['#...#', '#...#', '#.#.#', '##.##', '#...#'], X: ['#.#', '#.#', '.#.', '#.#', '#.#'],
+  Y: ['#.#', '#.#', '.#.', '.#.', '.#.'], Z: ['###', '..#', '.#.', '#..', '###'],
+  0: ['###', '#.#', '#.#', '#.#', '###'], 1: ['.#.', '##.', '.#.', '.#.', '###'], 2: ['##.', '..#', '.#.', '#..', '###'],
+  3: ['##.', '..#', '.#.', '..#', '##.'], 4: ['#.#', '#.#', '###', '..#', '..#'], 5: ['###', '#..', '##.', '..#', '##.'],
+  6: ['.##', '#..', '###', '#.#', '###'], 7: ['###', '..#', '.#.', '.#.', '.#.'], 8: ['###', '#.#', '###', '#.#', '###'],
+  9: ['###', '#.#', '###', '..#', '##.'], ' ': ['..', '..', '..', '..', '..'], '-': ['...', '...', '###', '...', '...'],
+  '.': ['.', '.', '.', '.', '#'], '!': ['#', '#', '#', '.', '#'], '&': ['.#.', '#.#', '.#.', '#.#', '.##'],
+}
+const plateText = name => (name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().split('').filter(c => FONT[c])
+
 // Ponte React ⇄ Phaser
 export const bridge = new Phaser.Events.EventEmitter()
 
@@ -347,12 +367,38 @@ export class CageScene extends Phaser.Scene {
     }
     // Moldura frontal (pixel a pixel, com cantos arredondados e janela vazada)
     this.add.image(FX, FY, 'terr_frame').setOrigin(0).setDepth(6)
+    if (this.setup.plaquinha) this.drawNamePlate(this.setup.plaquinha)
     // Acrílico: leve brilho
     const a = this.add.graphics().setDepth(6)
     a.fillStyle(0xffffff, 0.05).fillRect(WIN.L, WIN.T, WIN.R - WIN.L + 1, WIN.B - WIN.T)
     a.fillStyle(0xffffff, 0.35)
     for (let i = 0; i < 10; i++) a.fillRect(WIN.L + 5 + i, WIN.T + 11 - i, 1, 1)
     for (let i = 0; i < 16; i++) a.fillRect(WIN.L + 11 + i, WIN.T + 17 - i, 1, 1)
+  }
+
+  // Plaquinha CoisaPet com o nome do pet (MDF claro, gravação marrom,
+  // cantos arredondados), presa no centro do topo da moldura do terrário
+  drawNamePlate(name) {
+    const chars = plateText(name)
+    if (!chars.length) return
+    const textW = chars.reduce((t, c) => t + FONT[c][0].length + 1, -1)
+    const pw = textW + 8, ph = 9
+    this.pixelCanvas('plate', pw, ph + 1, px => {
+      for (let y = 0; y <= ph; y++) for (let x = 0; x < pw; x++) {
+        const corner = (x === 0 || x === pw - 1) && (y === 0 || y === ph - 1)
+        if (y === ph) { if (x > 0 && x < pw - 1) px(x, y, '#00000040'); continue } // sombrinha
+        if (corner) continue
+        const edge = x === 0 || x === pw - 1 || y === 0 || y === ph - 1
+        px(x, y, edge ? '#5a3418' : (x + y * 3) % 11 === 0 ? '#e6dccb' : '#f1e9da')
+      }
+      let cx = 4
+      for (const c of chars) {
+        const g = FONT[c]
+        g.forEach((row, gy) => [...row].forEach((ch, gx) => { if (ch === '#') px(cx + gx, 2 + gy, '#5a3418') }))
+        cx += g[0].length + 1
+      }
+    })
+    this.add.image(Math.round(W / 2 - pw / 2), FY, 'plate').setOrigin(0).setDepth(7)
   }
 
   makeTerrariumFrameTexture() {

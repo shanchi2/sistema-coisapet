@@ -7244,3 +7244,9 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
   - Testado ponta a ponta no servidor (código errado/certo/reusado, save,
     token inválido, apagar conta) — a conta de teste foi apagada.
   - Próximo: validar códigos de produto no servidor (cada código 1 uso).
+- **0.4.1 (17/10)** — Item novo **Plaquinha com o nome** (produto real da
+  CoisaPet): plaquinha de MDF claro com cantos arredondados e o nome do pet
+  gravado em marrom, presa no centro do topo da moldura do terrário (precisa
+  do terrário). Como o mundo é 200x150, o texto usa uma **fonte em pixel 3x5**
+  desenhada à mão (`FONT` em `scene.js`, maiúsculas, M/N/W mais largas,
+  acento removido). Código de teste `TESTE-PLAQUINHA` (e entra no TESTE-TUDO).
