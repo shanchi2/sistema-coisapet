@@ -1,5 +1,4 @@
 import Phaser from 'phaser'
-import { CHILL_SIZE, UMBRELLA_SIZE, DRINK_SIZE, TOWEL_SIZE, drawChill, drawUmbrella, drawDrink, drawTowel } from './hires'
 import { HAMSTER_FRAMES, BOWL_FULL, BOWL_EMPTY, BOTTLE, POOP, paletteFor, spriteCanvas } from './art'
 
 // Mundo em "pixels de jogo" (o Phaser amplia mantendo o pixel nítido)
@@ -8,9 +7,6 @@ import { HAMSTER_FRAMES, BOWL_FULL, BOWL_EMPTY, BOTTLE, POOP, paletteFor, sprite
 // ganha espaço livre pra receber mais produtos. Tudo abaixo deriva de W/H.
 export const W = 200
 export const H = 150
-// Resolução real da tela = mundo x Z (câmera com zoom Z): o que é pixel art
-// continua igual, e as cenas "hi" (hires.js) ganham 4x mais detalhe
-export const Z = 4
 const X_MIN = 16, X_MAX = W - 16
 const TABLE = H - 30                                   // tampo da mesa
 const ROOM_WALL = 0xd6e8dd                             // parede do quarto
@@ -81,7 +77,6 @@ export class CageScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.setZoom(Z).centerOn(W / 2, H / 2)
     this.makeTextures()
     this.drawRoom()
     const ter = this.setup.habitat === 'terrario'
@@ -184,11 +179,6 @@ export class CageScene extends Phaser.Scene {
     this.makeBebedouroTexture()
     this.makeTerrariumFrameTexture()
     this.makeBathStoneTextures()
-    // Cenas em alta resolução (traço fino): cadeira de praia, guarda-sol, suco, toalha
-    this.hiTexture('chill_hi', CHILL_SIZE, ctx => drawChill(ctx, pal))
-    this.hiTexture('umbrella_hi', UMBRELLA_SIZE, drawUmbrella)
-    this.hiTexture('drink_hi', DRINK_SIZE, drawDrink)
-    this.hiTexture('towel_hi', TOWEL_SIZE, ctx => drawTowel(ctx, pal))
   }
 
   // Banheira de barro (terracota) com areia de quartzo, pedra de granito e a
@@ -227,19 +217,19 @@ export class CageScene extends Phaser.Scene {
         px(x, y, n < 4 ? '#2f3238' : n < 9 ? '#9aa0a8' : n < 12 ? '#d7dbe0' : '#7d838b') // tampo
       }
     })
-  }
-
-  // Desenho vetorial em Z x (o ctx já vem escalado: coordenadas = pixels do mundo)
-  hiTexture(key, [w, h], paint) {
-    if (this.textures.exists(key)) this.textures.remove(key)
-    const cv = document.createElement('canvas'); cv.width = w * Z; cv.height = h * Z
-    const ctx = cv.getContext('2d')
-    ctx.scale(Z, Z)
-    paint(ctx)
-    this.textures.addCanvas(key, cv)
-  }
-  hiImage(key, depth) {
-    return this.add.image(0, 0, key).setScale(1 / Z).setOrigin(0.5, 1).setDepth(depth).setVisible(false)
+    // Cadeira de praia (22 x 12): lona listrada vermelha/branca (assento reto,
+    // encosto inclinado à direita) + pés de madeira em X
+    this.pixelCanvas('chair', 22, 12, px => {
+      const top = x => (x < 14 ? 6 : 6 - (x - 14))
+      for (let x = 2; x <= 20; x++) {
+        px(x, top(x), Math.floor(x / 3) % 2 ? '#e74c3c' : '#ffffff')
+        px(x, top(x) + 1, Math.floor(x / 3) % 2 ? '#c0392b' : '#e6e6e6')
+        px(x, top(x) + 2, '#8e2a20')                                               // sombra da lona
+      }
+      const wood = '#8a5a32'
+      for (let i = 0; i < 4; i++) { px(4 + i, 9 + (i >> 1), wood); px(15 - i, 9 + (i >> 1), wood) } // pés em X
+      px(3, 11, wood); px(16, 11, wood)
+    })
   }
 
   // Desenho pixel a pixel num canvas novo
@@ -573,8 +563,7 @@ export class CageScene extends Phaser.Scene {
   // Sai do banho / da cadeira de praia no meio (sono, comida, susto...)
   endSpecial() {
     if (this.mode === 'bath' || this.mode === 'chill' || this.mode === 'towel') {
-      for (const im of [this.chillImg, this.umbrellaImg, this.drinkImg, this.towelImg]) { this.tweens.killTweensOf(im || {}); im?.setVisible(false) }
-      this.hamster.setVisible(true)
+      this.chair?.setVisible(false)
       this.hamster.setPosition(this.hamster.x, this.floorY).setAngle(0)
       this.setMode('idle', 500)
     }
@@ -584,18 +573,11 @@ export class CageScene extends Phaser.Scene {
   startBath() {
     this.nextBath = this.time.now + 50000
     const bx = this.L.bath
-    this.walkTo(bx - 22, () => {
+    this.walkTo(bx - 15, () => {
       this.facing = 1
-      this.setMode('towel', 1800)
-      // Enrola na toalha (desenho em alta resolução no lugar do pixel art)
-      if (!this.towelImg) this.towelImg = this.hiImage('towel_hi', 5.5)
-      this.hamster.setVisible(false)
-      this.towelImg.setPosition(this.hamster.x, this.floorY).setVisible(true).setAlpha(1).setAngle(0)
-      this.tweens.add({ targets: this.towelImg, angle: { from: -4, to: 4 }, duration: 300, yoyo: true, repeat: 2 })
-      this.time.delayedCall(1800, () => {
+      this.setMode('towel', 1400)
+      this.time.delayedCall(1400, () => {
         if (this.mode !== 'towel' || this.dead) return
-        this.towelImg.setVisible(false)
-        this.hamster.setVisible(true)
         this.setMode('busy', 99999)
         this.tweens.add({ targets: this.hamster, x: bx, duration: 520, ease: 'Sine.easeInOut' })
         this.tweens.add({ targets: this.hamster, y: this.floorY - 9, duration: 260, yoyo: true, ease: 'Sine.easeOut', onComplete: () => {
@@ -630,32 +612,16 @@ export class CageScene extends Phaser.Scene {
     this.nextChill = this.time.now + 55000
     const sx = this.L.stone
     this.walkTo(sx - 1, () => {
-      // Cadeira de praia + guarda-sol + suquinho, em alta resolução
-      if (!this.chillImg) {
-        this.umbrellaImg = this.hiImage('umbrella_hi', 2.5)
-        this.chillImg = this.hiImage('chill_hi', 3)
-        this.drinkImg = this.hiImage('drink_hi', 3)
-      }
-      const fy = this.floorY
-      this.umbrellaImg.setPosition(sx - 11, fy + 1)
-      this.chillImg.setPosition(sx, fy - 3).setScale(1 / Z)
-      this.drinkImg.setPosition(sx + 15, fy + 1)
-      this.hamster.setVisible(false)
+      if (!this.chair) this.chair = this.add.image(0, 0, 'chair').setOrigin(0.5, 1).setDepth(3)
+      this.chair.setPosition(sx, this.floorY - 4).setVisible(true).setAlpha(0)
+      this.tweens.add({ targets: this.chair, alpha: 1, duration: 300 })
       this.facing = 1
-      for (const im of [this.umbrellaImg, this.chillImg, this.drinkImg]) {
-        im.setVisible(true).setAlpha(0)
-        this.tweens.add({ targets: im, alpha: 1, duration: 350 })
-      }
-      // respirando tranquilo
-      this.tweens.add({ targets: this.chillImg, scaleY: 0.97 / Z, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' })
-      this.setMode('chill', Phaser.Math.Between(7000, 10000))
+      this.hamster.setPosition(sx + 1, this.floorY - 8)
+      this.setMode('chill', Phaser.Math.Between(6000, 9000))
     })
   }
   finishChill() {
-    const ims = [this.umbrellaImg, this.chillImg, this.drinkImg]
-    this.tweens.killTweensOf(this.chillImg)
-    this.tweens.add({ targets: ims, alpha: 0, duration: 300, onComplete: () => ims.forEach(im => im.setVisible(false)) })
-    this.hamster.setVisible(true)
+    this.tweens.add({ targets: this.chair, alpha: 0, duration: 300, onComplete: () => this.chair.setVisible(false) })
     this.hamster.y = this.floorY
     this.setMode('idle', 800)
     bridge.emit('chill')
@@ -819,7 +785,8 @@ export class CageScene extends Phaser.Scene {
         }
         if (time > this.modeUntil) this.setMode('idle', 1200)
       } else if (this.mode === 'towel') {
-        this.facing = 1                                    // (desenho da toalha fica no towelImg)
+        frame = 'towel'                                    // enroladinho na toalha
+        this.facing = 1
       } else if (this.mode === 'bath') {
         // Rolando na areia: vira pra lá e pra cá e levanta areinha
         frame = Math.floor(time / 180) % 3 === 2 ? 'sleep' : 'idle'
@@ -828,7 +795,9 @@ export class CageScene extends Phaser.Scene {
         if (!this.nextSand || time > this.nextSand) { this.nextSand = time + 220; this.sandPuff(this.L.bath, fy - 6, 2) }
         if (time > this.modeUntil) this.finishBath()
       } else if (this.mode === 'chill') {
-        this.facing = 1                                    // (cadeira + óculos ficam no chillImg)
+        frame = 'chill'                                    // óculos escuros na cadeira de praia
+        this.facing = 1
+        h.y = fy - 8 + (Math.floor(time / 1600) % 2 ? 0 : 0)
         if (time > this.modeUntil) this.finishChill()
       } else if (this.mode === 'toca') {
         h.x = this.L.toca
@@ -874,8 +843,8 @@ export function createGame(parent, { species, state, setup }) {
   return new Phaser.Game({
     type: Phaser.AUTO,
     parent,
-    width: W * Z,
-    height: H * Z,
+    width: W,
+    height: H,
     pixelArt: true,
     roundPixels: true,
     backgroundColor: '#2b1d14',

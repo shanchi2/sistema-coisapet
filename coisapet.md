@@ -7263,14 +7263,8 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
   - Ficam no meio do terrário (depois do potinho); funcionam também na
     gaiola. Banho/pedra são espontâneos (com intervalo), e se der sono no
     meio ele larga e vai dormir. Códigos `TESTE-BANHEIRA`, `TESTE-PEDRA`.
-- **0.5.1 (17/10)** — "8 bits não tão 8 bits" (Raphael achou difícil
-  entender cadeira/óculos em pixel de 1x1). A tela agora é renderizada em
-  **4x a resolução do mundo** (`Z = 4`, câmera com zoom 4): todo o pixel art
-  continua idêntico, mas dá pra ter desenhos com traço fino. Novo
-  `game/src/hires.js` (desenho vetorial em canvas, coordenadas do mundo):
-  cena da pedra = **guarda-sol listrado + cadeira de praia listrada + hamster
-  de barriga pra cima com óculos escuros (com brilho na lente), patinhas na
-  barriga, bigode + suquinho de laranja com canudo e guarda-chuvinha**,
-  respirando devagar; toalha = **enrolado na toalha listrada com turbante**,
-  balançando. As cores seguem a pelagem da espécie. Frames de pixel antigos
-  (towel/chill) e a textura `chair` saíram.
+- **0.5.1 → revertido (17/10)** — Tentei refazer as cenas da pedra/toalha em
+  traço fino vetorial (tela 4x, `hires.js`). O Raphael achou feio (estilo liso
+  não combina com o pixel art do resto). Voltou o pixel art de antes (cadeira
+  e óculos em pixel). Lição: manter tudo em pixel art; se precisar de mais
+  detalhe, fazer pixel art com pixels menores, nunca vetor.
