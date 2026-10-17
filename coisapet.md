@@ -7250,3 +7250,16 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
   do terrário). Como o mundo é 200x150, o texto usa uma **fonte em pixel 3x5**
   desenhada à mão (`FONT` em `scene.js`, maiúsculas, M/N/W mais largas,
   acento removido). Código de teste `TESTE-PLAQUINHA` (e entra no TESTE-TUDO).
+- **0.5 (17/10)** — Dois itens novos (produtos reais) com animação:
+  - **Banheira de areia** (pote de barro + areia de quartzo): de vez em
+    quando ele se **enrola na toalha** (frame `towel`), pula dentro do pote,
+    **rola na areia** (vira pra lá e pra cá, levanta areinha) e sai se
+    sacudindo. Efeito: limpeza cai mais devagar, menos tédio, +conforto; cada
+    banho dá +6 diversão/+4 limpeza. Dica: hamster não toma banho de água.
+  - **Pedra de resfriamento** (granito): ele vai até a pedra, aparece uma
+    **cadeira de praia listrada** e ele deita **de óculos escuros** (frame
+    `chill`) por uns segundos. Efeito: cansa menos (energia ×0.92),
+    +conforto; cada relaxada dá +5 energia/+3 diversão. Dica sobre calor.
+  - Ficam no meio do terrário (depois do potinho); funcionam também na
+    gaiola. Banho/pedra são espontâneos (com intervalo), e se der sono no
+    meio ele larga e vai dormir. Códigos `TESTE-BANHEIRA`, `TESTE-PEDRA`.

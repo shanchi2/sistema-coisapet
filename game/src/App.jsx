@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   NEEDS, NEED_INFO, SPECIES, HABITATS, CATALOG, CATALOG_KEYS, TIPS, newPet, advance, status, poopCount, isDaytime,
-  feed, water, cleanOne, cleanAll, pet_, treat, wheelRun, migrate, habitatOf, isPlaced, togglePlace, redeem, mods,
+  feed, water, cleanOne, cleanAll, pet_, treat, wheelRun, sandBath, chillStone, migrate, habitatOf, isPlaced, togglePlace, redeem, mods,
 } from './sim'
 import { HAMSTER_FRAMES, paletteFor, spriteCanvas } from './art'
 import { createGame, bridge } from './scene'
@@ -297,8 +297,14 @@ function Game({ pet, setPet, onReset, account }) {
     const onPet = () => act(pet_)
     const onClean = () => act(cleanOne)
     const onWheel = secs => act(p => wheelRun(p, secs))
+    const onBath = () => act(sandBath)
+    const onChill = () => act(chillStone)
     bridge.on('tap-pet', onPet); bridge.on('clean-one', onClean); bridge.on('wheel-run', onWheel)
-    return () => { bridge.off('tap-pet', onPet); bridge.off('clean-one', onClean); bridge.off('wheel-run', onWheel) }
+    bridge.on('sand-bath', onBath); bridge.on('chill', onChill)
+    return () => {
+      bridge.off('tap-pet', onPet); bridge.off('clean-one', onClean); bridge.off('wheel-run', onWheel)
+      bridge.off('sand-bath', onBath); bridge.off('chill', onChill)
+    }
   }, [act])
 
   const sceneState = useMemo(() => ({
@@ -311,6 +317,7 @@ function Game({ pet, setPet, onReset, account }) {
   const setup = useMemo(() => ({
     habitat: habitatOf(pet),
     substrato: isPlaced(pet, 'substrato'), roda: isPlaced(pet, 'roda'), toca: isPlaced(pet, 'toca'), bebedouro: isPlaced(pet, 'bebedouro'),
+    banheira: isPlaced(pet, 'banheira'), pedra: isPlaced(pet, 'pedra'),
     plaquinha: isPlaced(pet, 'plaquinha') ? pet.name : null, // nome gravado na plaquinha
   }), [pet])
   const setupKey = JSON.stringify(setup)
@@ -432,7 +439,7 @@ function Inventory({ pet, onClose, onToggle, onRedeem }) {
             <button className="pixel-btn rounded-md px-3 bg-[#2ecc71] text-white text-sm font-extrabold">Resgatar</button>
           </div>
           {msg && <p className={`text-[12px] font-bold mt-2 ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
-          <p className="text-[10px] text-[#a88a70] mt-2">Modo teste: TESTE-TERRARIO · TESTE-ASPEN · TESTE-RODA · TESTE-TOCA · TESTE-PLAQUINHA · TESTE-TUDO</p>
+          <p className="text-[10px] text-[#a88a70] mt-2">Modo teste: TESTE-TERRARIO · TESTE-ASPEN · TESTE-RODA · TESTE-TOCA · TESTE-BANHEIRA · TESTE-PEDRA · TESTE-PLAQUINHA · TESTE-TUDO</p>
         </form>
 
         {/* Conforto do ambiente */}
