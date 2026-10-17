@@ -85,7 +85,17 @@ const H_SAD = [
 const H_DRINK = [...H_IDLE.slice(1, 10), H_IDLE[9], H_IDLE[10], '................']
 H_DRINK[3] = H_DRINK[3].slice(0, 15) + 'p'
 
-export const HAMSTER_FRAMES = { idle: H_IDLE, walk: H_WALK, sleep: H_SLEEP, eat: H_EAT, sad: H_SAD, drink: H_DRINK }
+// Enrolado na toalha (antes do banho de areia): corpo coberto por toalha
+// azulzinha com listras brancas, só a cabeça e as orelhas de fora
+const H_TOWEL = H_IDLE.map((row, y) => (y < 3 || y > 8) ? row : [...row].map((ch, x) =>
+  x >= 1 && x <= 9 && 'bdl'.includes(ch) ? ((x + y) % 4 === 0 ? 'w' : 'C') : ch).join(''))
+
+// Relaxando na pedra: deitado (como dormindo) mas de olho aberto… com óculos escuros 😎
+const H_CHILL = [...H_SLEEP]
+H_CHILL[6] = '.obddbbbbkkbkko.'
+H_CHILL[7] = 'obdddbbbbkkgkkbo'
+
+export const HAMSTER_FRAMES = { idle: H_IDLE, walk: H_WALK, sleep: H_SLEEP, eat: H_EAT, sad: H_SAD, drink: H_DRINK, towel: H_TOWEL, chill: H_CHILL }
 
 // Objetos (paleta fixa)
 const OBJ_PAL = {
