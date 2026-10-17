@@ -7217,3 +7217,30 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
   quarto por elas). Parede do quarto trocada do papel listrado creme (as
   listras verticais confundiam com o veio da madeira) para verde-sálvia liso
   com bolinhas discretas e rodapé (`ROOM_WALL`).
+- **0.4 (17/10)** — **Login + save na nuvem**, sem projeto Supabase novo
+  (Raphael não quis pagar ~US$10/mês só pro jogo). Fica no projeto do
+  sistema, mas isolado:
+  - Tabelas `game_players`, `game_login_codes`, `game_sessions`, `game_saves`
+    (fase110) com RLS ligado, sem policy e `REVOKE` de anon/authenticated —
+    a chave pública não enxerga nada. Só a Edge Function **`game-api`**
+    (service role, `--no-verify-jwt`) mexe nelas.
+  - O jogo **não usa o Supabase Auth** (nenhum jogador vira "authenticated"
+    no banco do sistema). Login próprio: e-mail → código de 6 dígitos pelo
+    **Resend** (mesma `RESEND_KEY` e remetente `noreply@coisapet.com.br` do
+    sistema) → token de sessão aleatório (guarda só o hash, 180 dias).
+    Limites: 1 código/min e 6/h por e-mail, 20/h por IP, 5 tentativas por
+    código, código vale 15 min.
+  - Login é **opcional** (visitante continua jogando; bolinha amarela no ☰
+    lembra de salvar). Ao entrar, o pet do aparelho sobe pra conta; se a
+    conta já tem OUTRO pet, aparece "Qual pet continua?". Mesmo pet → fica a
+    cópia cuidada por último (`lastTick`).
+  - Save sobe no máx. a cada 20 s e ao esconder/fechar a aba (`keepalive`);
+    o aparelho guarda cópia (abre sem internet).
+  - **Relógio do servidor** (`game/src/clock.js`): toda resposta da game-api
+    traz `now`; a simulação usa essa hora (até visitante, via `time`) —
+    mexer no relógio do celular não engana mais.
+  - LGPD: só o e-mail; caixinha "12+ ou com responsável"; menu ☰ tem
+    **Sair** e **Apagar conta** (apaga jogador, sessões, save e códigos).
+  - Testado ponta a ponta no servidor (código errado/certo/reusado, save,
+    token inválido, apagar conta) — a conta de teste foi apagada.
+  - Próximo: validar códigos de produto no servidor (cada código 1 uso).
