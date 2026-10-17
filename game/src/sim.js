@@ -1,3 +1,4 @@
+import { now as clockNow } from './clock'
 // ─── Simulação do pet (regras puras, sem nada visual) ─────────────────
 // Necessidades vão de 0 a 100 (100 = tudo ótimo) e caem com o tempo REAL,
 // inclusive com o jogo fechado: ao abrir, calculamos quanto tempo passou.
@@ -96,7 +97,7 @@ const SLEEP_RECOVER = 14 // energia/h dormindo
 export const clamp = (v, a = 0, b = 100) => Math.max(a, Math.min(b, v))
 
 export function newPet({ name, species }) {
-  const now = Date.now()
+  const now = clockNow()
   return {
     v: 1,
     name, species,
@@ -129,7 +130,7 @@ export function isDaytime(t) {
 
 // Avança a simulação `ms` milissegundos a partir de `pet.lastTick`.
 // Faz em passos de até 10 min pra o sono/acordar acontecer no meio.
-export function advance(pet, toTime = Date.now()) {
+export function advance(pet, toTime = clockNow()) {
   const p = structuredClone(pet)
   let t = p.lastTick
   const end = Math.min(toTime, t + 14 * 86400000) // no máximo 14 dias de uma vez
@@ -232,7 +233,7 @@ export function pet_(pet) {
 
 export function treat(pet) {
   const p = structuredClone(pet)
-  const today = dayKey(Date.now())
+  const today = dayKey(clockNow())
   if (p.treatsToday.day !== today) p.treatsToday = { day: today, n: 0 }
   if (p.treatsToday.n >= 2) return { pet: p, msg: 'Chega de petisco por hoje!', tip: 'Petisco (como semente de girassol) é gordurosinho: no máximo 1 ou 2 por dia.' }
   if (p.asleep) return { pet: p, msg: `${p.name} está dormindo. Deixa pra depois 😴` }
