@@ -145,6 +145,68 @@ export function isDaytime(t) {
   return h >= DAY_START && h < NIGHT_START
 }
 
+// ─── Clima do dia (18/10, ideia do Raphael) ──────────────────────────
+// Cada dia tem um clima, igual pra todo mundo e sempre o mesmo naquele dia
+// (sorteado a partir da data, com peso pela estação do ano no Brasil).
+// Muda o comportamento (calorão → pedra; frio/chuva → toca) e as dicas.
+export const WEATHER = {
+  sol:     { label: 'Dia agradável', icon: '🌤️', temp: [22, 26],
+    tip: 'Dia agradável! Entre 20 °C e 24 °C é a temperatura ideal pro hamster — aproveite pra limpar e organizar o terrário.' },
+  nublado: { label: 'Nublado', icon: '☁️', temp: [19, 23],
+    tip: 'Dia nublado e fresquinho. Hamster gosta de rotina: mantenha comida e água sempre nos mesmos lugares.' },
+  chuva:   { label: 'Chuva', icon: '🌧️', temp: [17, 21],
+    tip: 'Dia de chuva: ele fica mais na toca. Deixe o terrário longe de janelas e de umidade — umidade faz mal pro hamster.' },
+  calor:   { label: 'Calorão', icon: '🥵', temp: [31, 35],
+    tip: 'Calorão! Acima de 28 °C o hamster sofre: deixe o terrário longe do sol, troque a água mais vezes e ofereça a pedra de granito pra ele se refrescar.' },
+  frio:    { label: 'Friozinho', icon: '🥶', temp: [11, 16],
+    tip: 'Dia frio: ele fica mais quietinho na toca e come um pouco mais. Substrato fundo e toca ajudam a manter o calor — nunca use aquecedor direto nele.' },
+}
+// Pesos por mês (hemisfério sul): verão quente e chuvoso, inverno frio
+const SEASON = [
+  { calor: 35, sol: 25, chuva: 30, nublado: 10, frio: 0 },  // jan
+  { calor: 35, sol: 25, chuva: 30, nublado: 10, frio: 0 },  // fev
+  { calor: 25, sol: 30, chuva: 30, nublado: 15, frio: 0 },  // mar
+  { calor: 10, sol: 40, chuva: 20, nublado: 25, frio: 5 },  // abr
+  { calor: 5, sol: 35, chuva: 15, nublado: 30, frio: 15 },  // mai
+  { calor: 0, sol: 30, chuva: 10, nublado: 25, frio: 35 },  // jun
+  { calor: 0, sol: 30, chuva: 10, nublado: 20, frio: 40 },  // jul
+  { calor: 5, sol: 35, chuva: 10, nublado: 25, frio: 25 },  // ago
+  { calor: 10, sol: 40, chuva: 15, nublado: 25, frio: 10 }, // set
+  { calor: 20, sol: 35, chuva: 25, nublado: 15, frio: 5 },  // out
+  { calor: 25, sol: 30, chuva: 30, nublado: 15, frio: 0 },  // nov
+  { calor: 35, sol: 25, chuva: 30, nublado: 10, frio: 0 },  // dez
+]
+function hash01(str) {
+  let h = 2166136261
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) }
+  return ((h >>> 0) % 100000) / 100000
+}
+export function weatherOn(t = clockNow()) {
+  const d = new Date(t)
+  const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+  const w = SEASON[d.getMonth()]
+  let r = hash01('clima:' + key) * 100, pick = 'sol'
+  for (const [k, v] of Object.entries(w)) { if (r < v) { pick = k; break } r -= v }
+  const info = WEATHER[pick]
+  const temp = Math.round(info.temp[0] + hash01('temp:' + key) * (info.temp[1] - info.temp[0]))
+  return { key: pick, ...info, temp }
+}
+// Efeito do clima nas necessidades (multiplicadores por hora)
+function weatherMods(wk, pet) {
+  const m = { thirst: 1, hunger: 1, energy: 1, fun: 1 }
+  if (wk === 'calor') {
+    m.thirst = 1.35                                              // calor dá sede
+    if (isPlaced(pet, 'pedra')) m.energy = 0.95                  // com a pedra ele se refresca
+    else { m.energy = 1.15; m.fun = 1.1 }                         // sem: cansa e fica jururu
+  } else if (wk === 'frio') {
+    m.hunger = 1.15                                              // gasta mais energia pra se aquecer
+    if (!isPlaced(pet, 'toca') && !isPlaced(pet, 'substrato')) m.energy = 1.1
+  } else if (wk === 'chuva') {
+    m.fun = 1.08                                                 // dia de tédio
+  }
+  return m
+}
+
 // Avança a simulação `ms` milissegundos a partir de `pet.lastTick`.
 // Faz em passos de até 10 min pra o sono/acordar acontecer no meio.
 export function advance(pet, toTime = clockNow()) {
@@ -156,12 +218,13 @@ export function advance(pet, toTime = clockNow()) {
     const step = Math.min(10 * 60000, end - t)
     const h = step / 3600000
     const n = p.needs
-    n.fome = clamp(n.fome - DECAY.fome * h)
-    n.sede = clamp(n.sede - DECAY.sede * m.thirst * h)
+    const wm = weatherMods(weatherOn(t).key, p)
+    n.fome = clamp(n.fome - DECAY.fome * wm.hunger * h)
+    n.sede = clamp(n.sede - DECAY.sede * m.thirst * wm.thirst * h)
     n.limpeza = clamp(n.limpeza - DECAY.limpeza * m.clean * h)
-    n.diversao = clamp(n.diversao - DECAY.diversao * m.fun * (p.asleep ? 0.3 : 1) * h)
+    n.diversao = clamp(n.diversao - DECAY.diversao * m.fun * wm.fun * (p.asleep ? 0.3 : 1) * h)
     if (p.asleep) n.energia = clamp(n.energia + SLEEP_RECOVER * m.sleep * h)
-    else n.energia = clamp(n.energia - DECAY.energia * m.energy * h)
+    else n.energia = clamp(n.energia - DECAY.energia * m.energy * wm.energy * h)
 
     // Dorme quando está cansado ou quando é dia e já descansou pouco;
     // acorda quando recuperou (à noite acorda mais fácil)

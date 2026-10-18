@@ -7268,3 +7268,22 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
   não combina com o pixel art do resto). Voltou o pixel art de antes (cadeira
   e óculos em pixel). Lição: manter tudo em pixel art; se precisar de mais
   detalhe, fazer pixel art com pixels menores, nunca vetor.
+- **0.6 (18/10)** — **Clima do dia** + banheira/pedra mais frequentes.
+  - Diagnóstico: não estava travado — a escolha do que fazer era uma FILA
+    (roda primeiro, 45% à noite; depois comida/água; só então banheira 18% e
+    pedra 20%) → na prática ~8% cada. Virou **sorteio com pesos** (todas as
+    atividades concorrem juntas) e o intervalo entre banhos/pedra caiu de
+    ~50 s pra 35 s.
+  - `weatherOn(t)` em `sim.js`: cada dia tem um clima — **agradável,
+    nublado, chuva, calorão, friozinho** — igual pra todo mundo naquele dia
+    (sorteado pela data, com peso por estação do hemisfério sul: verão
+    quente/chuvoso, inverno frio) e uma temperatura dentro da faixa.
+  - Efeitos: calorão = mais sede, cansa mais sem a pedra (com a pedra cansa
+    menos), ele vai MUITO pra pedra (peso ×4, volta a cada 15 s, fica mais
+    tempo); frio = mais fome, fica bem mais na toca (peso ×3.5, 9–16 s),
+    quase não vai pra pedra; chuva = mais tédio, mais toca.
+  - Visual: a janela muda (sol no calorão, nuvens no nublado, céu escuro com
+    pingos animados na chuva, geadinha nos cantos no frio). Selo no topo
+    (ex.: 🥵 35°), aviso ao abrir o jogo nos dias especiais e a **dica do
+    clima** abre o quadro de dicas (e volta a cada 3 dicas).
+  - Corrigido: mensagem (toast) comprida saía cortada no celular — agora quebra linha.
