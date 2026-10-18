@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  NEEDS, NEED_INFO, SPECIES, HABITATS, CATALOG, CATALOG_KEYS, TIPS, newPet, advance, status, poopCount, isDaytime,
+  NEEDS, NEED_INFO, SPECIES, HABITATS, CATALOG, CATALOG_KEYS, TIPS, newPet, weatherOn, advance, status, poopCount, isDaytime,
   feed, water, cleanOne, cleanAll, pet_, treat, wheelRun, sandBath, chillStone, migrate, habitatOf, isPlaced, togglePlace, redeem, mods,
 } from './sim'
 import { HAMSTER_FRAMES, paletteFor, spriteCanvas } from './art'
@@ -257,7 +257,9 @@ function Onboarding({ onStart, account }) {
 // ─── Jogo ────────────────────────────────────────────────────────────
 function Game({ pet, setPet, onReset, account }) {
   const [toast, setToast] = useState(null)
-  const [tip, setTip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)])
+  // Clima do dia: a dica do clima aparece primeiro e volta de tempos em tempos
+  const weather = weatherOn(now())
+  const [tip, setTip] = useState(() => weather.tip)
   const [menu, setMenu] = useState(false)
   const [inv, setInv] = useState(false)
   const st = status(pet)
@@ -274,9 +276,20 @@ function Game({ pet, setPet, onReset, account }) {
 
   // Troca a dica do rodapé de tempos em tempos
   useEffect(() => {
-    const id = setInterval(() => setTip(TIPS[Math.floor(Math.random() * TIPS.length)]), 25000)
+    let i = 0
+    const id = setInterval(() => {
+      i++
+      setTip(i % 3 === 0 ? weatherOn(now()).tip : TIPS[Math.floor(Math.random() * TIPS.length)])
+    }, 25000)
     return () => clearInterval(id)
   }, [])
+
+  // Aviso do clima ao abrir o jogo
+  useEffect(() => {
+    const w = weatherOn(now())
+    const msg = { calor: 'Calorão hoje! 🥵 Ele vai procurar a pedra geladinha', frio: 'Dia frio 🥶 Ele vai ficar mais na toca', chuva: 'Dia de chuva 🌧️ Bom dia pra ficar quentinho na toca' }[w.key]
+    if (msg) { const t = setTimeout(() => say(msg), 1200); return () => clearTimeout(t) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const say = useCallback((msg, t) => {
     if (msg) { setToast(msg); clearTimeout(say.t); say.t = setTimeout(() => setToast(null), 2600) }
@@ -309,7 +322,8 @@ function Game({ pet, setPet, onReset, account }) {
 
   const sceneState = useMemo(() => ({
     asleep: pet.asleep, statusKey: st.key, fome: pet.needs.fome, sede: pet.needs.sede, poops: poopCount(pet), night,
-  }), [pet, st.key, night])
+    weather: weather.key,
+  }), [pet, st.key, night, weather.key])
 
   const days = Math.max(1, Math.ceil((now() - pet.born) / 86400000))
 
@@ -333,7 +347,8 @@ function Game({ pet, setPet, onReset, account }) {
           <p className="pixel text-[11px] sm:text-xs truncate">{pet.name}</p>
           <p className="text-[11px] text-[#d9bfa0] truncate">dia {days} · {HABITATS[habitatOf(pet)].label}<span className="hidden sm:inline"> · {SPECIES[pet.species].label}</span></p>
         </div>
-        <span className="pixel text-[9px] sm:text-[10px] bg-[#fbeedd] text-[#3b2314] rounded px-2 py-1.5 whitespace-nowrap">{st.emoji} {st.label}</span>
+        <span className="pixel text-[9px] sm:text-[10px] bg-[#fbeedd] text-[#3b2314] rounded px-2 py-1.5 whitespace-nowrap" title={`Clima de hoje: ${weather.label}`}>{weather.icon} {weather.temp}°<span className="hidden sm:inline"> {weather.label}</span></span>
+        <span className="pixel text-[9px] sm:text-[10px] bg-[#fbeedd] text-[#3b2314] rounded px-2 py-1.5 whitespace-nowrap">{st.emoji}<span className="hidden min-[380px]:inline"> {st.label}</span></span>
         <span className="pixel text-[9px] sm:text-[10px] bg-[#ffd36b] text-[#3b2314] rounded px-2 py-1.5 whitespace-nowrap" title="Sementinhas: você ganha cuidando do seu pet">🌻 {pet.seeds}</span>
         <button onClick={() => setInv(true)} className="pixel-btn pixel text-[9px] sm:text-[10px] bg-[#c8955a] text-white rounded px-2 py-1.5 whitespace-nowrap" title="Itens e resgate de código">🎁<span className="hidden sm:inline"> Itens</span></button>
         <button onClick={() => setMenu(m => !m)} className="relative text-[#fbeedd] text-xl px-1" aria-label="Menu">☰
@@ -371,7 +386,7 @@ function Game({ pet, setPet, onReset, account }) {
         <div className="relative w-full portrait:aspect-[4/3] portrait:max-h-[58dvh] landscape:flex-1 landscape:min-h-0 flex items-center justify-center">
           <GameCanvas species={pet.species} state={sceneState} setup={stableSetup} />
           {toast && (
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-[#fbeedd] pixel-box rounded-md px-3 py-1.5 text-sm font-bold whitespace-nowrap shadow-lg">{toast}</div>
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 w-max max-w-[92%] text-center bg-[#fbeedd] pixel-box rounded-md px-3 py-1.5 text-sm font-bold leading-snug shadow-lg">{toast}</div>
           )}
           {pet.asleep && (
             <div className="absolute bottom-2 left-2 text-[11px] bg-black/50 text-white rounded px-2 py-1">Shhh… {pet.name} está com soninho 😴</div>
@@ -396,7 +411,7 @@ function Game({ pet, setPet, onReset, account }) {
 
           {/* Dica educativa */}
           <div className="bg-[#fff7e6] pixel-box rounded-md p-3 text-[13px] leading-snug text-[#3b2314] [@media(orientation:landscape)_and_(max-height:520px)]:hidden">
-            <p className="pixel text-[9px] text-[#c0392b] mb-1.5">Dica do tutor</p>
+            <p className="pixel text-[9px] text-[#c0392b] mb-1.5">{tip === weather.tip ? `${weather.icon} ${weather.label} · ${weather.temp} °C` : 'Dica do tutor'}</p>
             {tip}
           </div>
           <p className="text-[10px] text-[#a88a70] text-center">Toque no {pet.name} pra fazer carinho · toque na sujeirinha pra limpar</p>

@@ -327,12 +327,17 @@ export class CageScene extends Phaser.Scene {
     g.fillStyle(0x8a5a32).fillRect(wx, wy, ww, wh)
     g.fillStyle(0xbfe3f5).fillRect(sx, sy, sw, sh)
     g.fillStyle(0xffffff).fillRect(sx + 3, sy + 4, 8, 2).fillRect(sx + 5, sy + 3, 4, 1).fillRect(sx + 28, sy + 14, 7, 2).fillRect(sx + 29, sy + 13, 4, 1)
+    // Céu do clima do dia (calorão, nublado, chuva, frio) por cima do céu padrão
+    this.win = { sx, sy, sw, sh }
+    this.weatherSky = this.add.graphics()
     const n = this.add.graphics()
     n.fillStyle(0x1b2550).fillRect(sx, sy, sw, sh)
     n.fillStyle(0xf5f0c8).fillRect(sx + sw - 9, sy + 3, 5, 5).fillStyle(0x1b2550).fillRect(sx + sw - 7, sy + 3, 3, 3) // lua
     n.fillStyle(0xffffff)
     for (const [x, y] of [[3, 3], [8, 12], [14, 4], [4, 18], [27, 5], [30, 16], [40, 14], [18, 15], [35, 10]]) n.fillRect(sx + x, sy + y, 1, 1)
     this.nightSky = n.setVisible(false)
+    this.rain = this.add.graphics()          // pingos de chuva (desenhados no update)
+    this.frost = this.add.graphics()         // geadinha nos cantos (dia frio)
     this.add.graphics().fillStyle(0x8a5a32).fillRect(wx + ww / 2 - 1, sy, 2, sh).fillRect(sx, wy + wh / 2, sw, 1) // caixilho por cima do céu
     // Mesa de madeira
     g.fillStyle(0xa5683a).fillRect(0, TABLE, W, H - TABLE)
@@ -524,6 +529,34 @@ export class CageScene extends Phaser.Scene {
     return this.add.image(this.L.toca, this.floorY + 1, 'toca').setOrigin(0.5, 1).setDepth(5)
   }
 
+  // Céu do dia conforme o clima (só aparece de dia; à noite fica o céu noturno)
+  drawWeatherSky(key) {
+    const { sx, sy, sw, sh } = this.win, g = this.weatherSky, f = this.frost
+    g.clear(); f.clear()
+    if (key === 'calor') {
+      g.fillStyle(0xffe2a0).fillRect(sx, sy, sw, sh)
+      g.fillStyle(0xffc94a).fillRect(sx + 5, sy + 3, 7, 7).fillRect(sx + 4, sy + 4, 9, 5).fillRect(sx + 6, sy + 2, 5, 9)  // sol
+      g.fillStyle(0xfff4c8).fillRect(sx + 7, sy + 5, 2, 2)
+      g.fillStyle(0xffd77a)
+      for (const [x, y] of [[2, 6], [15, 6], [8, 0], [8, 13], [3, 1], [14, 11], [14, 1], [3, 11]]) g.fillRect(sx + x, sy + y, 1, 1) // raios
+    } else if (key === 'nublado' || key === 'chuva') {
+      g.fillStyle(key === 'chuva' ? 0x8e9aa8 : 0xc6d0da).fillRect(sx, sy, sw, sh)
+      g.fillStyle(key === 'chuva' ? 0x6f7b89 : 0xe9eef3)
+      g.fillRect(sx + 2, sy + 4, 14, 4).fillRect(sx + 5, sy + 2, 8, 2).fillRect(sx + 22, sy + 8, 16, 4).fillRect(sx + 25, sy + 6, 9, 2)
+      if (key === 'nublado') g.fillStyle(0xffffff).fillRect(sx + 5, sy + 2, 6, 1).fillRect(sx + 25, sy + 6, 7, 1)
+    } else if (key === 'frio') {
+      g.fillStyle(0xdde9f2).fillRect(sx, sy, sw, sh)
+      g.fillStyle(0xffffff).fillRect(sx + 6, sy + 5, 9, 2).fillRect(sx + 26, sy + 12, 8, 2)
+    }
+    if (key === 'frio') {                                   // geadinha nos cantos do vidro (dia e noite)
+      f.fillStyle(0xffffff, 0.85)
+      f.fillRect(sx, sy, 4, 1).fillRect(sx, sy, 1, 4).fillRect(sx + 1, sy + 1, 1, 1)
+      f.fillRect(sx + sw - 4, sy + sh - 1, 4, 1).fillRect(sx + sw - 1, sy + sh - 4, 1, 4).fillRect(sx + sw - 2, sy + sh - 2, 1, 1)
+      f.fillRect(sx + sw - 4, sy, 4, 1).fillRect(sx + sw - 1, sy, 1, 3).fillRect(sx, sy + sh - 1, 3, 1).fillRect(sx, sy + sh - 3, 1, 3)
+    }
+    this.wKey = key
+  }
+
   applyState(s) {
     // (não usar sys.isActive(): durante o create() a cena ainda não está "ativa"
     // e o primeiro desenho — sujeira, água — era ignorado)
@@ -536,6 +569,9 @@ export class CageScene extends Phaser.Scene {
     this.water.setPosition(wb.x, wb.bottom).setSize(wb.w, Math.round((s.sede / 100) * wb.max))
     this.night.setFillStyle(0x101a40, s.night ? 0.32 : 0)
     this.nightSky?.setVisible(!!s.night)
+    if (s.weather !== this.wKey) this.drawWeatherSky(s.weather)
+    this.weatherSky?.setVisible(!s.night)
+    if (s.weather !== 'chuva') this.rain?.clear()
     // Cocôs: ajusta a quantidade (mantém os que já estão; evita a toca)
     while (this.poops.length > s.poops) this.poops.pop().destroy()
     while (this.poops.length < s.poops) {
@@ -571,7 +607,7 @@ export class CageScene extends Phaser.Scene {
 
   // Banheirinha: enrola na toalha → pula no pote → rola na areia → sai e se sacode
   startBath() {
-    this.nextBath = this.time.now + 50000
+    this.nextBath = this.time.now + 35000
     const bx = this.L.bath
     this.walkTo(bx - 15, () => {
       this.facing = 1
@@ -608,8 +644,8 @@ export class CageScene extends Phaser.Scene {
   }
 
   // Pedra: cadeira de praia + óculos escuros, relaxando no geladinho 😎
-  startChill() {
-    this.nextChill = this.time.now + 55000
+  startChill(hot = false) {
+    this.nextChill = this.time.now + (hot ? 15000 : 35000)   // no calorão ele volta pra pedra toda hora
     const sx = this.L.stone
     this.walkTo(sx - 1, () => {
       if (!this.chair) this.chair = this.add.image(0, 0, 'chair').setOrigin(0.5, 1).setDepth(3)
@@ -617,7 +653,7 @@ export class CageScene extends Phaser.Scene {
       this.tweens.add({ targets: this.chair, alpha: 1, duration: 300 })
       this.facing = 1
       this.hamster.setPosition(sx + 1, this.floorY - 8)
-      this.setMode('chill', Phaser.Math.Between(6000, 9000))
+      this.setMode('chill', hot ? Phaser.Math.Between(9000, 14000) : Phaser.Math.Between(6000, 9000))
     })
   }
   finishChill() {
@@ -743,6 +779,17 @@ export class CageScene extends Phaser.Scene {
     const speed = (this.sleepPending ? 8 : sad ? 9 : 18) * (delta / 1000)  // sonolento anda devagar
     let frame = sad ? 'sad' : 'idle'
 
+    // Chuvinha na janela (dia e noite)
+    if (s.weather === 'chuva' && this.win) {
+      const { sx, sy, sw, sh } = this.win, r = this.rain
+      r.clear(); r.fillStyle(0xcfe6ff, 0.9)
+      for (let i = 0; i < 14; i++) {
+        const x = sx + ((i * 7 + Math.floor(time / 90) * 3) % sw)
+        const y = sy + ((i * 11 + Math.floor(time / 40)) % (sh - 2))
+        r.fillRect(x, y, 1, 2)
+      }
+    }
+
     if (this.wheel) this.wheel.setTexture(this.mode === 'wheel' ? `wheel_${Math.floor(time / 80) % 3}` : 'wheel_0')
 
     if (this.mode === 'sleep') {
@@ -816,21 +863,33 @@ export class CageScene extends Phaser.Scene {
         h.x += Math.sin(time / 30) * 0.6
         if (time > this.modeUntil) this.setMode('idle', 1000)
       } else if (time > this.modeUntil) {
-        // Decide o que fazer: roda (mais à noite), passear ou ficar parado
-        const wheelChance = s.night ? 0.45 : 0.2
-        if (this.L.wheel && !sad && Math.random() < wheelChance) {
+        // Decide o que fazer: sorteio com PESOS (antes era uma fila em que a roda
+        // vinha primeiro e quase nunca sobrava vez pra banheira/pedra). O clima
+        // do dia muda os pesos: calorão → pedra; frio/chuva → toca.
+        const wk = s.weather
+        const hot = wk === 'calor', cold = wk === 'frio', rain = wk === 'chuva'
+        const opts = []
+        if (this.L.wheel && !sad) opts.push(['wheel', (s.night ? 3 : 1.5) * (hot ? 0.5 : cold ? 0.8 : 1)])
+        opts.push(['food', 0.8 + (s.sede < 60 ? 2.5 : 0) + (s.fome < 60 ? 1.5 : 0) + (hot ? 0.8 : 0)])
+        if (this.L.bath && !sad && time > (this.nextBath || 0)) opts.push(['bath', 1.6 * (rain ? 1.2 : hot ? 0.8 : 1)])
+        if (this.L.stone && !sad && time > (this.nextChill || 0)) opts.push(['chill', 1.6 * (hot ? 4 : cold ? 0.1 : 1)])
+        if (this.L.toca) opts.push(['toca', (sad ? 3 : 1) * (cold ? 3.5 : rain ? 2 : 1)])
+        opts.push(['wander', sad ? 1.2 : 3])
+        let r = Math.random() * opts.reduce((t, o) => t + o[1], 0), pick = 'wander'
+        for (const [k, w] of opts) { if (r < w) { pick = k; break } r -= w }
+        if (pick === 'wheel') {
           this.walkTo(this.L.wheel, () => { this.wheelStart = this.time.now; this.setMode('wheel', Phaser.Math.Between(4000, 9000)) })
-        } else if (Math.random() < 0.12 + (s.sede < 60 ? 0.25 : 0) + (s.fome < 60 ? 0.15 : 0)) {
-          // Vai sozinho beber ou comer (mais quando está com sede/fome)
-          if (Math.random() < (s.sede <= s.fome ? 0.65 : 0.35)) this.walkTo(this.drinkX, () => { this.facing = 1; this.setMode('drink', 2600) })
+        } else if (pick === 'food') {
+          // Vai sozinho beber ou comer (mais quando está com sede/fome; no calor, mais água)
+          if (Math.random() < (hot ? 0.75 : s.sede <= s.fome ? 0.65 : 0.35)) this.walkTo(this.drinkX, () => { this.facing = 1; this.setMode('drink', 2600) })
           else this.walkTo(this.L.bowl + 12, () => { this.facing = -1; this.setMode('eat', 2200) })
-        } else if (this.L.bath && !sad && time > (this.nextBath || 0) && Math.random() < 0.18) {
+        } else if (pick === 'bath') {
           this.startBath()
-        } else if (this.L.stone && !sad && time > (this.nextChill || 0) && Math.random() < 0.2) {
-          this.startChill()
-        } else if (this.L.toca && Math.random() < (sad ? 0.35 : 0.15)) {
-          // Entra na toca e fica espiando pela porta
-          this.walkTo(this.L.toca, () => { this.facing = 1; this.setMode('toca', Phaser.Math.Between(3500, 7000)) })
+        } else if (pick === 'chill') {
+          this.startChill(hot)
+        } else if (pick === 'toca') {
+          // Entra na toca e fica espiando pela porta (no frio fica bem mais tempo)
+          this.walkTo(this.L.toca, () => { this.facing = 1; this.setMode('toca', cold ? Phaser.Math.Between(9000, 16000) : Phaser.Math.Between(3500, 7000)) })
         } else if (!sad || Math.random() < 0.4) this.walkTo(Phaser.Math.Between(X_MIN + 6, X_MAX - 6))
         else this.setMode('idle', 3000)
       }
