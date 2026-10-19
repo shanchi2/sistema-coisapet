@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
-import { Users, Eye, Heart, Sparkles, Clock, ExternalLink, Bookmark, Share2, MessageCircle, ArrowUpDown, CalendarClock, MapPin, Image as ImageIcon, Info } from 'lucide-react'
-import { fmtInt, fmtPct, fmtDate, fmtDateTime, bestHours, hourlyLocal, engagement, KIND, STATUS, PRODUCT_LABEL } from './igApi'
+import { useMemo } from 'react'
+import { Users, Eye, Heart, Sparkles, Clock, CalendarClock, MapPin, Image as ImageIcon } from 'lucide-react'
+import { fmtInt, fmtPct, fmtDateTime, bestHours, hourlyLocal, engagement, KIND, STATUS } from './igApi'
+import { IgPostsTable } from './IgPostsTable'
+import { IgLearnings } from './IgLearnings'
 
 function Kpi({ icon: Icon, label, value, detail, tone = 'text-slate-800' }) {
   return (
@@ -44,17 +46,7 @@ function Line({ points, height = 90 }) {
   )
 }
 
-const SORTS = {
-  recent: { label: 'Mais recentes', fn: (a, b) => new Date(b.posted_at) - new Date(a.posted_at) },
-  reach:  { label: 'Alcance',       fn: (a, b) => (b.insights?.reach || 0) - (a.insights?.reach || 0) },
-  eng:    { label: 'Engajamento',   fn: (a, b, f) => (engagement(b, f) || 0) - (engagement(a, f) || 0) },
-  saved:  { label: 'Salvamentos',   fn: (a, b) => (b.insights?.saved || 0) - (a.insights?.saved || 0) },
-  shares: { label: 'Compartilh.',   fn: (a, b) => (b.insights?.shares || 0) - (a.insights?.shares || 0) },
-}
-
 export function IgDashboard({ account, daily, media, posts, onOpenPost }) {
-  const [sort, setSort] = useState('recent')
-  const [type, setType] = useState('todos')
   const followers = account?.followers_count || 0
   const t = account?.totals_28d || {}
 
@@ -71,11 +63,6 @@ export function IgDashboard({ account, daily, media, posts, onOpenPost }) {
   const best = bestHours(account?.online_followers, 3)
 
   const upcoming = posts.filter(p => ['agendado', 'publicando', 'erro'].includes(p.status)).slice(0, 6)
-
-  const list = useMemo(() => {
-    const f = media.filter(m => type === 'todos' || (type === 'REELS' ? m.media_product_type === 'REELS' : type === 'STORY' ? m.media_product_type === 'STORY' : type === 'CAROUSEL_ALBUM' ? m.media_type === 'CAROUSEL_ALBUM' : (m.media_type === 'IMAGE' && m.media_product_type === 'FEED')))
-    return [...f].sort((a, b) => SORTS[sort].fn(a, b, followers)).slice(0, 30)
-  }, [media, sort, type, followers])
 
   // Melhor formato (média de alcance por tipo nos últimos 60 dias)
   const byFormat = useMemo(() => {
@@ -174,7 +161,7 @@ export function IgDashboard({ account, daily, media, posts, onOpenPost }) {
                   <div className="h-2 rounded-full bg-slate-100 overflow-hidden"><div className={`h-full rounded-full ${i === 0 ? 'bg-pink-500' : 'bg-violet-300'}`} style={{ width: `${(f.reach / byFormat[0].reach) * 100}%` }} /></div>
                 </div>
               ))}
-              <p className="text-[11px] text-slate-400">Média de alcance por post nos últimos 60 dias.</p>
+              <p className="text-[11px] text-slate-400">Média de alcance por post (todos os posts com métrica).</p>
             </div>
           ) : <p className="text-xs text-slate-400">Aparece depois da primeira atualização.</p>}
         </div>
@@ -202,61 +189,9 @@ export function IgDashboard({ account, daily, media, posts, onOpenPost }) {
         </div>
       </div>
 
-      {/* Posts publicados */}
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-        <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100">
-          <p className="text-sm font-bold text-slate-700 mr-auto">Posts publicados</p>
-          <select value={type} onChange={e => setType(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
-            <option value="todos">Todos os formatos</option><option value="IMAGE">Fotos</option><option value="CAROUSEL_ALBUM">Carrosséis</option><option value="REELS">Reels</option><option value="STORY">Stories</option>
-          </select>
-          <div className="flex items-center gap-1 text-xs"><ArrowUpDown size={12} className="text-slate-400" />
-            <select value={sort} onChange={e => setSort(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
-              {Object.entries(SORTS).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
-            </select>
-          </div>
-        </div>
-        {list.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
-                <tr>
-                  <th className="text-left px-4 py-2 font-semibold">Post</th>
-                  <th className="px-2 py-2 font-semibold text-right">Alcance</th>
-                  <th className="px-2 py-2 font-semibold text-right"><Heart size={12} className="inline" /></th>
-                  <th className="px-2 py-2 font-semibold text-right"><MessageCircle size={12} className="inline" /></th>
-                  <th className="px-2 py-2 font-semibold text-right"><Bookmark size={12} className="inline" /></th>
-                  <th className="px-2 py-2 font-semibold text-right"><Share2 size={12} className="inline" /></th>
-                  <th className="px-2 py-2 font-semibold text-right">Engaj.</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {list.map(m => (
-                  <tr key={m.id} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-2.5 min-w-[240px]">
-                        <Thumb url={m.thumbnail_url || (m.media_type !== 'VIDEO' ? m.media_url : null)} video={m.media_type === 'VIDEO'} />
-                        <div className="min-w-0">
-                          <p className="text-xs text-slate-700 line-clamp-1 max-w-[340px]">{m.caption || '(sem legenda)'}</p>
-                          <p className="text-[11px] text-slate-400">{fmtDate(m.posted_at)} · {m.media_type === 'CAROUSEL_ALBUM' ? 'Carrossel' : PRODUCT_LABEL[m.media_product_type] || m.media_type}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums">{fmtInt(m.insights?.reach)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{fmtInt(m.like_count ?? m.insights?.likes)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{fmtInt(m.comments_count)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{fmtInt(m.insights?.saved)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{fmtInt(m.insights?.shares)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums font-semibold text-emerald-600">{fmtPct(engagement(m, followers))}</td>
-                    <td className="px-3 py-2 text-right">{m.permalink && <a href={m.permalink} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-pink-500"><ExternalLink size={14} /></a>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <p className="text-sm text-slate-400 p-6 text-center">Nenhum post ainda.</p>}
-        <p className="text-[11px] text-slate-400 px-4 py-2 border-t border-slate-100 flex items-center gap-1"><Info size={11} /> Métricas detalhadas vêm dos posts dos últimos 60 dias; atualiza sozinho a cada hora.</p>
-      </div>
+      <IgLearnings media={media} />
+
+      <IgPostsTable media={media} followers={followers} />
     </div>
   )
 }

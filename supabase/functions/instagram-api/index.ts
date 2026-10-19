@@ -191,25 +191,49 @@ async function runSync(sb: any, token: string) {
   }
   await sb.from('ig_account').upsert(acc)
 
-  // Posts (até 100 mais recentes)
+  // Posts: o histórico inteiro (até 300 mais recentes)
   const MEDIA_FIELDS = 'id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count'
   let page = await ig(token, `${igId}/media`, { fields: MEDIA_FIELDS, limit: 50 })
   const media: any[] = [...(page.data || [])]
-  if (page.paging?.next && media.length >= 50) {
-    const p2 = await tryIg(token, page.paging.next)
-    media.push(...(p2?.data || []))
+  for (let i = 0; i < 5 && page.paging?.next && (page.data || []).length >= 50; i++) {
+    page = await tryIg(token, page.paging.next) || {}
+    media.push(...(page.data || []))
   }
-  // Métricas: posts dos últimos 60 dias (no máx. 40 por rodada)
-  const recent = media.filter(m => Date.now() - new Date(m.timestamp).getTime() < 60 * 86400e3).slice(0, 40)
+  // Métricas (20/10): antes só os últimos 60 dias — com ~1 post/semana sobravam
+  // 6 posts com métrica. Agora: posts dos últimos 30 dias sempre; os demais
+  // quando ainda não têm métrica ou ela tem mais de 7 dias (máx. 60 por
+  // rodada, então o histórico inteiro fica completo em poucas horas).
+  const { data: known } = await sb.from('ig_media').select('id, insights')
+  const seen: Record<string, number> = {}
+  for (const k of known || []) seen[k.id] = k.insights?._at ? new Date(k.insights._at).getTime() : 0
+  const age = (m: any) => Date.now() - new Date(m.timestamp).getTime()
+  const fresh = media.filter(m => age(m) < 30 * 86400e3)
+  const stale = media.filter(m => age(m) >= 30 * 86400e3 && (!seen[m.id] || Date.now() - seen[m.id] > 7 * 86400e3))
+  const todo = [...fresh, ...stale].slice(0, 60)
+  const METRICS: Record<string, string[]> = {
+    REELS: [
+      'reach,views,saved,shares,total_interactions,likes,comments,ig_reels_avg_watch_time,ig_reels_video_view_total_time',
+      'reach,views,saved,shares,total_interactions,likes,comments',
+      'reach,saved,shares,total_interactions',
+    ],
+    FEED: [
+      'reach,views,saved,shares,total_interactions,likes,comments,profile_visits,follows',
+      'reach,views,saved,shares,total_interactions,likes,comments',
+      'reach,saved,total_interactions',
+    ],
+  }
   const insights: Record<string, any> = {}
-  await Promise.all(recent.map(async m => {
-    const reels = m.media_product_type === 'REELS'
-    const metrics = reels
-      ? 'reach,views,saved,shares,total_interactions,likes,comments,ig_reels_avg_watch_time'
-      : 'reach,views,saved,shares,total_interactions,likes,comments'
-    const r = await tryIg(token, `${m.id}/insights`, { metric: metrics }) || await tryIg(token, `${m.id}/insights`, { metric: 'reach,saved,total_interactions' })
-    if (r?.data) insights[m.id] = Object.fromEntries(r.data.map((x: any) => [x.name, x.values?.[0]?.value ?? x.total_value?.value ?? 0]))
-  }))
+  for (let i = 0; i < todo.length; i += 8) {
+    await Promise.all(todo.slice(i, i + 8).map(async m => {
+      for (const metric of METRICS[m.media_product_type === 'REELS' ? 'REELS' : 'FEED']) {
+        const r = await tryIg(token, `${m.id}/insights`, { metric })
+        if (r?.data) {
+          insights[m.id] = { ...Object.fromEntries(r.data.map((x: any) => [x.name, x.values?.[0]?.value ?? x.total_value?.value ?? 0])), _at: now.toISOString() }
+          break
+        }
+      }
+    }))
+  }
   const rows = media.map(m => ({
     id: m.id, caption: m.caption || null, media_type: m.media_type, media_product_type: m.media_product_type,
     media_url: m.media_url || null, thumbnail_url: m.thumbnail_url || null, permalink: m.permalink,
