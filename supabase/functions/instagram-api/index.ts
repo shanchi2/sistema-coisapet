@@ -108,6 +108,10 @@ async function accountId(sb: any) {
   return data?.ig_user_id as string | undefined
 }
 const spDate = (d = new Date()) => new Date(d.getTime() - 3 * 3600e3).toISOString().slice(0, 10)
+// Séries "period=day" da Meta vêm com end_time = FIM do dia (meia-noite do
+// Pacífico, ~07:00Z) — o valor é do dia ANTERIOR a esse carimbo.
+const endDay = (endTime: string) => spDate(new Date(new Date(endTime).getTime() - 12 * 3600e3))
+const spMidnight = (day: string) => Math.floor(Date.parse(day + 'T03:00:00Z') / 1000)   // 00:00 em Brasília
 
 async function refreshTokenIfNeeded(sb: any, token: string) {
   const at = await getSecret(sb, 'refreshed_at')
@@ -160,13 +164,21 @@ async function runSync(sb: any, token: string) {
   // Alcance dia a dia (30 dias) → ig_account_daily
   const series = await tryIg(token, `${igId}/insights`, { metric: 'reach', period: 'day', since: until - 29 * 86400, until })
   const reachByDay: Record<string, number> = {}
-  for (const v of series?.data?.[0]?.values || []) reachByDay[spDate(new Date(v.end_time))] = v.value
+  for (const v of series?.data?.[0]?.values || []) reachByDay[endDay(v.end_time)] = v.value
   const daily = Object.entries(reachByDay).map(([day, reach]) => ({ day, reach, updated_at: now.toISOString() }))
   if (daily.length) await sb.from('ig_account_daily').upsert(daily, { onConflict: 'day', ignoreDuplicates: false })
   await sb.from('ig_account_daily').upsert({
     day: spDate(now), followers_count: me.followers_count, follows_count: me.follows_count, media_count: me.media_count,
     ...(reachByDay[spDate(now)] !== undefined ? { reach: reachByDay[spDate(now)] } : {}), updated_at: now.toISOString(),
   })
+
+  // Seguidores ganhos/perdidos por dia (20/10, pedido do Raphael — a Isa
+  // contava na mão todo fim de dia). follows_and_unfollows com breakdown
+  // follow_type, um pedido por dia (dia de Brasília). A Meta guarda ~30 dias;
+  // daqui pra frente o histórico fica no nosso banco. Hoje e ontem são
+  // sempre rebuscados; dias fechados só se ainda não foram buscados depois
+  // de fechar.
+  await syncFollows(sb, token, igId, now)
 
   // Horário em que os seguidores estão online (média por hora)
   const of = await tryIg(token, `${igId}/insights`, { metric: 'online_followers', period: 'lifetime' })
@@ -249,6 +261,41 @@ async function runSync(sb: any, token: string) {
   const withComments = media.filter(m => (m.comments_count || 0) > 0 && Date.now() - new Date(m.timestamp).getTime() < 45 * 86400e3).slice(0, 20)
   await Promise.all(withComments.map(m => syncComments(sb, token, m.id, me.username)))
   return { username: me.username, media: media.length, comments_posts: withComments.length }
+}
+
+async function syncFollows(sb: any, token: string, igId: string, now: Date) {
+  const nowSec = Math.floor(now.getTime() / 1000)
+  const days: string[] = []
+  for (let i = 0; i < 30; i++) days.push(spDate(new Date(now.getTime() - i * 86400e3)))
+  const { data: have } = await sb.from('ig_account_daily').select('day, follows_at').in('day', days)
+  const fetchedAt: Record<string, number> = {}
+  for (const h of have || []) if (h.follows_at) fetchedAt[h.day] = new Date(h.follows_at).getTime() / 1000
+  const need = days.filter((d, i) => i < 2 || !fetchedAt[d] || fetchedAt[d] < spMidnight(d) + 86400 + 2 * 3600)
+  const out: Record<string, { follows: number | null, unfollows: number | null }> = {}
+  for (let i = 0; i < need.length; i += 6) {
+    await Promise.all(need.slice(i, i + 6).map(async d => {
+      const since = spMidnight(d), until = Math.min(since + 86400, nowSec)
+      if (until - since < 120) return
+      const r = await tryIg(token, `${igId}/insights`, { metric: 'follows_and_unfollows', period: 'day', metric_type: 'total_value', breakdown: 'follow_type', since, until })
+      const res = r?.data?.[0]?.total_value?.breakdowns?.[0]?.results
+      if (!r?.data) return
+      let follows = 0, unfollows = 0
+      for (const x of res || []) {
+        const k = String(x.dimension_values?.[0] || '').toUpperCase()
+        if (k === 'FOLLOWER') follows = x.value || 0
+        else if (k === 'NON_FOLLOWER') unfollows = x.value || 0
+      }
+      out[d] = { follows, unfollows }
+    }))
+  }
+  // Plano B: follower_count (só ganhos) se a métrica acima não vier
+  if (!Object.keys(out).length) {
+    const fc = await tryIg(token, `${igId}/insights`, { metric: 'follower_count', period: 'day', since: nowSec - 29 * 86400, until: nowSec })
+    for (const v of fc?.data?.[0]?.values || []) out[endDay(v.end_time)] = { follows: v.value ?? 0, unfollows: null }
+  }
+  const rows = Object.entries(out).map(([day, v]) => ({ day, new_follows: v.follows, unfollows: v.unfollows, follows_at: now.toISOString() }))
+  if (rows.length) await sb.from('ig_account_daily').upsert(rows)
+  return rows.length
 }
 
 async function syncComments(sb: any, token: string, mediaId: string, selfUser: string) {

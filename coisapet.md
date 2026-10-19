@@ -7100,6 +7100,32 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — Instagram: aba Seguidores (ganhos/perdidos por dia)
+
+Pedido do Raphael: a Isa contava na mão, todo fim de dia, quantos seguidores
+novos entraram. Agora tem a aba **Seguidores** no /instagram.
+
+- **De onde vem**: `follows_and_unfollows` da Meta com `breakdown=follow_type`
+  (FOLLOWER = novos, NON_FOLLOWER = deixaram), um pedido por dia (dia de
+  Brasília, 00h–24h), em `syncFollows` da função. Colunas novas em
+  `ig_account_daily`: `new_follows`, `unfollows`, `follows_at`. Hoje e ontem
+  são rebuscados a cada sync; dias fechados só uma vez depois de fechar.
+- **A Meta só guarda ~30 dias** pra trás (o histórico começou em 20/09);
+  daqui pra frente fica tudo no nosso banco.
+- **Atraso de 1–2 dias**: a Meta devolve 0/0 nos dias mais recentes até o
+  número sair. Nesses dias a tela mostra "aguardando a Meta" e usa o
+  **saldo pela contagem total** (foto de `followers_count` que o sync tira de
+  hora em hora: total no fim do dia − total no fim do dia anterior),
+  marcado "total". A partir de 20/10 todo dia tem foto de fechamento.
+- Tela: atalhos (Hoje, Ontem, 7/30 dias, Este mês, Mês passado) + datas
+  livres; cards (novos, deixaram, saldo, total); gráfico de entradas×saídas
+  com bolinha nos dias com post; tabela dia a dia com total no fim do dia
+  (≈ = reconstruído de trás pra frente) e miniaturas dos posts do dia; resumo
+  por mês; **Copiar resumo** (texto pronto pro WhatsApp) e CSV.
+- Corrigido junto: séries diárias da Meta (alcance) vêm com `end_time` = fim
+  do dia; agora gravamos no dia certo (antes ficava 1 dia adiantado).
+- Card "Seguidores" do Painel passou a mostrar o saldo de 7 dias pela Meta.
+
 ## 2026-10-20 — Instagram: Posts publicados com "Ordenar por", detalhes e Aprendizados
 
 Pedido do Raphael depois de conectar a conta (deu certo, 4,2 mil seguidores):
