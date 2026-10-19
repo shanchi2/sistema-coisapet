@@ -6,7 +6,7 @@ import {
   ChevronRight, ChevronDown, Truck, History,
   TrendingUp, Calendar, FileSpreadsheet, MessageSquare, MessagesSquare,
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
-  PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, Link2, ClipboardCheck, Clock,
+  PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, CalendarDays, Link2, ClipboardCheck, Clock,
   HeartPulse, MessageCircle, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film, Zap,
   Briefcase, Crown, Bookmark, Component, RotateCcw, Headset, HandCoins, Tv, ShieldAlert, LifeBuoy,
 } from 'lucide-react'
@@ -74,6 +74,7 @@ const NAV_SECTIONS = [
     label: 'Blog',
     items: [
       { to: '/blog', moduleKey: 'blog', icon: Newspaper, label: 'Posts', roles: ['admin','marketplace'] },
+      { to: '/blog/calendario', moduleKey: 'blog', icon: CalendarDays, label: 'Calendário e Métricas', roles: ['admin','marketplace'] },
       { to: '/blog/gerar-lote', moduleKey: 'blog', icon: Layers, label: 'Geração em Massa', roles: ['admin','marketplace'] },
     ],
   },
