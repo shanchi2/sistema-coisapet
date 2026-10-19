@@ -7100,6 +7100,34 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — Instagram: aba Parcerias (influencers)
+
+Raphael procurou os posts das influencers no módulo e não achou — não
+existia ainda (eu tinha deixado a decisão em aberto). Feito o caminho
+recomendado:
+
+- **Limite da Meta (testado na API)**: post collab é da conta da
+  influencer e só ela vê as métricas; na conexão "login do Instagram" não
+  existem `business_discovery` nem `collaborative_media` ("nonexisting
+  field"). `GET /<IG_ID>/tags` funciona (marcação de pessoa na foto).
+- **Aba Parcerias** (`IgPartners.jsx`, fase113): cadastro de influencers
+  (@, nome, contato, cidade, cupom, ativa) e de cada post de parceria (link,
+  data, formato, tipo collab/marcação/@/stories, números dos prints:
+  visualizações, alcance, curtidas, comentários, compartilhamentos,
+  salvamentos, cliques no link, usos do cupom, e os próprios prints
+  guardados no bucket `instagram-media`).
+- **Efeito nos seguidores da @coisapet**: saldo (novos − deixaram, aba
+  Seguidores) no dia do post + 2 dias, menos 3× a média diária dos 14 dias
+  anteriores. Aparece por post e somado por influencer.
+- **Marcações automáticas**: o sync puxa `/tags` pra `ig_tagged_media`
+  (só leitura pro front); botão "Registrar" liga a marcação a uma
+  influencer (cria a influencer se não existir).
+- Valor pago à influencer NÃO foi incluído (R$ só pra Diretoria — se
+  quiser, fazer numa tabela à parte, revogada pro anon).
+- Próximo passo possível: ligar também o "login do Facebook" no app da
+  Meta (página do FB vinculada) pra puxar curtidas/comentários públicos e
+  os posts collab automaticamente.
+
 ## 2026-10-20 — Avaliações: subfiltros, prazo de edição, acompanhamento e modelos de resposta
 
 Pedido do Raphael (fluxo do Atendimento): nas avaliações 1–3★ a equipe tenta

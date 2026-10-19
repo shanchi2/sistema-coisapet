@@ -260,7 +260,17 @@ async function runSync(sb: any, token: string) {
   // Comentários: posts dos últimos 45 dias que têm comentário (máx. 20)
   const withComments = media.filter(m => (m.comments_count || 0) > 0 && Date.now() - new Date(m.timestamp).getTime() < 45 * 86400e3).slice(0, 20)
   await Promise.all(withComments.map(m => syncComments(sb, token, m.id, me.username)))
-  return { username: me.username, media: media.length, comments_posts: withComments.length }
+
+  // Posts de outras contas que marcaram a @coisapet na foto (20/10, aba
+  // Parcerias). Collab e menção na legenda a Meta não entrega nessa conexão.
+  const tags = await tryIg(token, `${igId}/tags`, { fields: 'id,username,caption,media_type,media_product_type,media_url,permalink,timestamp,like_count,comments_count', limit: 50 })
+  const tagRows = (tags?.data || []).map((t: any) => ({
+    id: t.id, username: t.username || null, caption: t.caption || null, media_type: t.media_type, media_product_type: t.media_product_type || null,
+    media_url: t.media_url || null, permalink: t.permalink || null, posted_at: t.timestamp || null,
+    like_count: t.like_count ?? null, comments_count: t.comments_count ?? null, updated_at: now.toISOString(),
+  }))
+  if (tagRows.length) await sb.from('ig_tagged_media').upsert(tagRows)
+  return { username: me.username, media: media.length, comments_posts: withComments.length, tagged: tagRows.length }
 }
 
 async function syncFollows(sb: any, token: string, igId: string, now: Date) {
