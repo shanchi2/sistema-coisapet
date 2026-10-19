@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Instagram, RefreshCw, Loader2, LayoutDashboard, CalendarDays, MessageCircle, Send, Settings, Plus, AlertTriangle, UserPlus } from 'lucide-react'
+import { Instagram, RefreshCw, Loader2, LayoutDashboard, CalendarDays, MessageCircle, Send, Settings, Plus, AlertTriangle, UserPlus, Handshake } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -11,6 +11,7 @@ import { IgComments } from './IgComments'
 import { IgDirects } from './IgDirects'
 import { IgConnect } from './IgConnect'
 import { IgFollowers } from './IgFollowers'
+import { IgPartners } from './IgPartners'
 import { IgComposer } from './IgComposer'
 
 // Instagram dentro do sistema (19/10, pedido do Raphael): painel de métricas,
@@ -20,6 +21,7 @@ import { IgComposer } from './IgComposer'
 const TABS = [
   { key: 'painel',      label: 'Painel',      icon: LayoutDashboard },
   { key: 'seguidores',  label: 'Seguidores',  icon: UserPlus },
+  { key: 'parcerias',   label: 'Parcerias',   icon: Handshake },
   { key: 'calendario',  label: 'Calendário',  icon: CalendarDays },
   { key: 'comentarios', label: 'Comentários', icon: MessageCircle },
   { key: 'directs',     label: 'Directs',     icon: Send },
@@ -134,6 +136,8 @@ export function InstagramPage() {
         <IgDashboard account={account} daily={daily} media={media} posts={posts} onOpenPost={p => setComposer({ post: p })} />
       ) : tab === 'seguidores' ? (
         <IgFollowers account={account} media={media} />
+      ) : tab === 'parcerias' ? (
+        <IgPartners />
       ) : tab === 'calendario' ? (
         <IgCalendar posts={posts} media={media} account={account} onNew={date => setComposer({ date })} onOpen={p => setComposer({ post: p })} />
       ) : tab === 'comentarios' ? (
