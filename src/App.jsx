@@ -106,6 +106,7 @@ import { MlCreateListingPage } from './modules/ml-insights/MlCreateListingPage'
 import { BlogPage } from './modules/blog/BlogPage'
 import { BlogPostEditorPage } from './modules/blog/BlogPostEditorPage'
 import { BlogBulkGeneratePage } from './modules/blog/BlogBulkGeneratePage'
+import { BlogCalendarPage } from './modules/blog/BlogCalendarPage'
 
 
 
@@ -223,6 +224,7 @@ export default function App() {
                 <Route path="/blog"             element={<GuardedRoute moduleKey="blog"><BlogPage /></GuardedRoute>} />
                 <Route path="/blog/novo"        element={<GuardedRoute moduleKey="blog"><BlogPostEditorPage /></GuardedRoute>} />
                 <Route path="/blog/gerar-lote"  element={<GuardedRoute moduleKey="blog"><BlogBulkGeneratePage /></GuardedRoute>} />
+                <Route path="/blog/calendario"  element={<GuardedRoute moduleKey="blog"><BlogCalendarPage /></GuardedRoute>} />
                 <Route path="/blog/:id"         element={<GuardedRoute moduleKey="blog"><BlogPostEditorPage /></GuardedRoute>} />
 
                 {/* Catálogo */}

@@ -7100,6 +7100,34 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-19 — Blog: Calendário e Métricas
+
+Pedido do Raphael: calendário visual com a data dos posts que entraram e os
+agendados, e as métricas de cada post (visualizações, cliques, banners) numa
+visão mais linear.
+
+- Tela nova **/blog/calendario** (menu Blog → "Calendário e Métricas"),
+  `BlogCalendarPage.jsx`.
+- **Calendário do mês** (seg→dom): posts publicados (verde) no dia em que
+  entraram, agendados (âmbar) no dia marcado; o fundo de cada dia fica mais
+  verde quanto mais visualizações o blog teve (número no canto). Hoje com
+  borda roxa. Clique no post abre o painel.
+- **Números do mês:** publicados no mês, agendados (e o próximo),
+  visualizações do blog no mês, cliques (links de produto + banners), dias
+  sem post novo (vermelho se > 7).
+- **Linha do tempo dos posts:** capa, título, categoria, data, dias no ar,
+  visualizações, média/dia (desde que entrou ou desde 10/09), últimos 7 dias,
+  barrinhas dos últimos 30 dias, cliques nos links de produto, exibições/
+  cliques/% do banner. Ordena por data, visualizações, média/dia, 7 dias ou
+  cliques.
+- **Painel do post:** números, gráfico de 30 dias, de onde vieram os leitores
+  (direto/google/bing…), links de produto clicados, cliques no banner por
+  produto/plataforma, botões Editar e Ver no site.
+- Dados: `blog_posts` + `blog_post_views` + `blog_product_clicks` +
+  `blog_banner_events` (sem tabela nova). Visualizações só desde 10/09/2026
+  (aviso na tela). Na hora: 1.181 visualizações em 34 posts, 397 eventos de
+  banner.
+
 ## 2026-10-16 — MinhaCoisaPet (jogo do hamster) — protótipo 0.1
 
 Ideia do Raphael: jogo 2D pixel art em que o tutor cuida de um hamster (nunca
