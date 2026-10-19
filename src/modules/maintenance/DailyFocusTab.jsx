@@ -22,7 +22,7 @@ const firstName = n => (n || '').split(' ')[0]
 // Fora da lista: diretoria, escritórios terceirizados e contas genéricas
 const GENERIC = /^(produção|producao|atendimento|administrador)\b/i
 
-export function DailyFocusTab() {
+export function DailyFocusTab({ onShowDone }) {
   const { user } = useAuth()
   const [date, setDate] = useState(todayISO())
   const [people, setPeople] = useState([])
@@ -161,8 +161,10 @@ export function DailyFocusTab() {
                   <p className="text-[11px] text-slate-400">{list.filter(i => i.done).length} de {list.length} feitas</p>
                 </div>
               </div>
+              {/* 20/10: concluídas saem do card (ficam na aba Concluídos) */}
+              {list.every(i => i.done) && <p className="text-xs text-emerald-600 font-semibold py-1">🎉 Tudo feito por hoje!</p>}
               <ul className="flex flex-col gap-1.5">
-                {list.map(i => (
+                {list.filter(i => !i.done).map(i => (
                   <li key={i.id} className={`group flex items-start gap-2 rounded-xl px-2.5 py-2 border ${i.urgent && !i.done ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100'}`}>
                     <button onClick={() => patch(i.id, { done: !i.done, done_at: !i.done ? new Date().toISOString() : null })} title={i.done ? 'Desmarcar' : 'Marcar como feito'}
                       className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${i.done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 bg-white hover:border-emerald-400'}`}>
@@ -183,6 +185,11 @@ export function DailyFocusTab() {
                   </li>
                 ))}
               </ul>
+              {list.some(i => i.done) && (
+                <button onClick={onShowDone} className="self-start text-[11px] font-semibold text-emerald-700 hover:underline flex items-center gap-1">
+                  <Check size={12} /> {list.filter(i => i.done).length} concluída{list.filter(i => i.done).length === 1 ? '' : 's'} — ver em Concluídos
+                </button>
+              )}
             </div>
           ))}
         </div>

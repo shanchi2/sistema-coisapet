@@ -178,9 +178,9 @@ function MachineCard({ machine, logs, onEdit, onDelete, onAddLog, onEditLog, onD
                       </div>
                       {log.notes && <p className="text-xs text-slate-400 mt-1 italic">{log.notes}</p>}
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={()=>onEditLog(machine,log)} className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700"><Edit2 size={11}/></button>
-                      <button onClick={()=>setDelLog(log)} className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500"><Trash2 size={11}/></button>
+                    <div className="flex gap-1 shrink-0">
+                      <button onClick={()=>onEditLog(machine,log)} title="Editar lançamento" className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-200 hover:text-slate-800"><Edit2 size={12}/> Editar</button>
+                      <button onClick={()=>setDelLog(log)} title="Excluir" className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500"><Trash2 size={12}/></button>
                     </div>
                   </div>
                 ))}
@@ -202,7 +202,7 @@ const PERIOD_OPTIONS = [
   { value: 'custom', label: 'Personalizado' },
 ]
 
-function ReportView({ logs, machines }){
+function ReportView({ logs, machines, onEditLog }){
   const [period,    setPeriod]    = useState('30')
   const [customStart, setCustomStart] = useState(subDays(30))
   const [customEnd,   setCustomEnd]   = useState(today())
@@ -401,6 +401,7 @@ function ReportView({ logs, machines }){
                         </div>
                       )}
                     </div>
+                    {onEditLog && <button onClick={()=>onEditLog(l.machine,l)} title="Editar lançamento" className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800 shrink-0"><Edit2 size={12}/> Editar</button>}
                   </div>
                 ))}
               </div>
@@ -417,7 +418,7 @@ function ReportView({ logs, machines }){
 const WEEKDAYS_CAL = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab']
 const MONTH_NAMES_CAL = ['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
-function CalendarDayModal({ date, events, onClose }){
+function CalendarDayModal({ date, events, onClose, onEditLog }){
   const todayStr = today()
   if(!date) return null
   return(
@@ -459,6 +460,7 @@ function CalendarDayModal({ date, events, onClose }){
                       {ev.notes && <p className="text-xs text-slate-400 mt-0.5 italic">{ev.notes}</p>}
                       <p className={`text-[10px] font-bold mt-1 ${lbl}`}>{txt}</p>
                     </div>
+                    {onEditLog && ev.id && <button onClick={()=>{ onClose(); onEditLog(ev.machine, ev) }} title="Editar lançamento" className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:bg-white/70 hover:text-slate-800 shrink-0"><Edit2 size={12}/> Editar</button>}
                   </div>
                 )
               })
@@ -469,7 +471,7 @@ function CalendarDayModal({ date, events, onClose }){
   )
 }
 
-function CalendarView({ logs, machines }){
+function CalendarView({ logs, machines, onEditLog }){
   const now = new Date()
   const [year,   setYear]   = useState(now.getFullYear())
   const [month,  setMonth]  = useState(now.getMonth())
@@ -589,7 +591,7 @@ function CalendarView({ logs, machines }){
         </div>
       </div>
 
-      {selDay && <CalendarDayModal date={selDay} events={selEvents} onClose={()=>setSelDay(null)}/>}
+      {selDay && <CalendarDayModal date={selDay} events={selEvents} onClose={()=>setSelDay(null)} onEditLog={onEditLog}/>}
     </div>
   )
 }
@@ -697,10 +699,10 @@ export function MaintenancePage(){
       </div>
 
       {/* View: relatório */}
-      {view==='report' && <ReportView logs={logs} machines={machines}/>}
+      {view==='report' && <ReportView logs={logs} machines={machines} onEditLog={(m,l)=>setLogModal({initialMachine:m,log:l})}/>}
 
       {/* View: calendário */}
-      {view==='calendar' && <CalendarView logs={logs} machines={machines}/>}
+      {view==='calendar' && <CalendarView logs={logs} machines={machines} onEditLog={(m,l)=>setLogModal({initialMachine:m,log:l})}/>}
 
       {/* View: lista de máquinas */}
       {view==='list' && <>
