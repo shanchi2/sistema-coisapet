@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { StatTile, fmtInt } from '../dashboard/widgets'
 import { Modal } from '../../components/ui/Modal'
+import { MediaViewer, MediaThumb } from '../../components/ui/MediaViewer'
 import { PLAT, PlatBadge, Segmented, PlatformFilter, usePlatformFilter, norm, fetchAll } from './shared'
 
 // Avaliações dos marketplaces (Fase 3 da unificação, 10/10).
@@ -44,6 +45,7 @@ export function MarketplaceReviewsPage() {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
+  const [viewer, setViewer] = useState(null)   // { items, index } — fotos/vídeos sem abrir aba nova (20/10)
 
   const load = useCallback(async () => {
     setList(null); setError(null)
@@ -151,7 +153,12 @@ export function MarketplaceReviewsPage() {
               {!visible.length && <div className="card py-14 text-center text-slate-400"><CheckCircle2 size={26} className="mx-auto mb-2 text-emerald-400" />Nada aqui com esse filtro.</div>}
               {visible.slice(0, 150).map(c => {
                 const it = itemOf(c)
-                const imgs = c.platform === 'ml' ? c.media.images.map(id => [mlImg(id), mlImg(id, 'F')]) : c.media.images.map(u => [u, u])
+                // fotos (miniatura + tamanho grande) e vídeos, pro visualizador
+                const media = [
+                  ...(c.platform === 'ml' ? c.media.images.map(id => ({ thumb: mlImg(id), url: mlImg(id, 'F'), type: 'image' })) : c.media.images.map(u => ({ thumb: u, url: u, type: 'image' }))),
+                  ...(c.media.video_urls || []).map(u => ({ url: u, type: 'video' })),
+                ].map(m => ({ ...m, label: `${it?.title || 'Avaliação'} · ${c.buyer || PLAT[c.platform].short}` }))
+                const hiddenVideos = Math.max(0, (c.media.videos || 0) - (c.media.video_urls || []).length)
                 return (
                   <div key={c.key} className={`card !p-4 flex gap-3 ${c.rating <= 3 ? 'border-rose-200' : ''}`} style={{ boxShadow: `inset 4px 0 0 ${PLAT[c.platform].color}` }}>
                     {it?.thumb ? <img src={it.thumb} alt="" className="w-12 h-12 rounded-lg object-cover bg-slate-100 shrink-0" loading="lazy" /> : <span className="w-12 h-12 rounded-lg bg-slate-100 shrink-0" />}
@@ -163,7 +170,16 @@ export function MarketplaceReviewsPage() {
                       <p className="text-[12px] text-slate-500 truncate" title={it?.title}>{it?.title || `Anúncio ${c.item_id}`}{c.model_id && it?.vars?.[c.model_id] ? ` · ${it.vars[c.model_id]}` : ''}</p>
  {c.headline && <p className="text-sm font-semibold text-slate-800">{c.headline}</p>}
                       {c.text ? <p className="text-sm text-slate-800 whitespace-pre-line">{c.text}</p> : !c.headline && <p className="text-xs text-slate-400 italic">(só deu a nota, sem comentário)</p>}
-                      {imgs.length > 0 && <div className="flex gap-1.5 mt-1">{imgs.slice(0, 5).map(([t, f]) => <a key={t} href={f} target="_blank" rel="noreferrer"><img src={t} alt="" className="w-14 h-14 rounded-lg object-cover bg-slate-100" loading="lazy" /></a>)}</div>}
+                      {media.length > 0 && (
+                        <div className="flex gap-1.5 mt-1 flex-wrap">
+                          {media.slice(0, 6).map((m, k) => (
+                            <MediaThumb key={m.url} item={{ ...m, url: m.thumb || m.url }} size="w-16 h-16" onClick={() => setViewer({ items: media, index: k })}>
+                              {k === 5 && media.length > 6 && <span className="absolute inset-0 bg-black/55 text-white text-sm font-bold flex items-center justify-center">+{media.length - 6}</span>}
+                            </MediaThumb>
+                          ))}
+                        </div>
+                      )}
+                      {hiddenVideos > 0 && <p className="text-[11px] text-slate-400">{hiddenVideos} vídeo{hiddenVideos === 1 ? '' : 's'} — só dá pra assistir no app {PLAT[c.platform].short}</p>}
                       {!c.replyable ? null : c.reply
                         ? <div className="mt-1 rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-[13px] text-slate-700"><p className="text-[10px] font-bold text-violet-600 mb-0.5">Resposta da CoisaPet · {fmtDT(c.reply.at)}</p>{c.reply.text}</div>
                         : <button onClick={() => { setReplyFor(c); setText(c.rating >= 5 && !c.text ? TEMPLATES[0][1] : '') }} className="btn-primary py-1.5 text-xs self-start mt-1"><MessageSquareReply size={13} /> Responder</button>}
@@ -210,6 +226,8 @@ export function MarketplaceReviewsPage() {
           </p>
         </>
       )}
+
+      {viewer && <MediaViewer items={viewer.items} index={viewer.index} onClose={() => setViewer(null)} />}
 
       <Modal open={!!replyFor} onClose={() => !sending && setReplyFor(null)} title="Responder avaliação" subtitle="A resposta fica pública no anúncio da Shopee e não dá pra editar depois"
         footer={<div className="flex justify-end gap-2">
