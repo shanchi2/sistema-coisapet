@@ -7100,6 +7100,33 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — Avaliações: subfiltros, prazo de edição, acompanhamento e modelos de resposta
+
+Pedido do Raphael (fluxo do Atendimento): nas avaliações 1–3★ a equipe tenta
+falar com o cliente ANTES de responder (ele ainda pode mudar a nota); as
+4–5★ recebem resposta padrão. Faltavam subfiltros e modelos prontos.
+
+- **Prazo de edição da Shopee — conferido na API (20/10, ~1.000 avaliações
+  de 90 dias)**: campo `editable` = `EDITABLE` até o **30º dia**, `EXPIRED`
+  depois, `HAVE_EDITED_ONCE` quando o comprador já editou (só pode 1x).
+  **Responder NÃO trava a edição** pela API: 392 avaliações já respondidas
+  continuavam `EDITABLE`. (Mantido o fluxo da equipe de esperar; a tela só
+  mostra o prazo.)
+- **Subfiltros do "Sem resposta"**: Todas · Positivas 4–5★ · Negativas · em
+  contato (edição aberta) · Negativas · prazo encerrado (hora de responder).
+- Nas negativas da Shopee: "edição fecha em X dias (dd/mm)" (âmbar nos
+  últimos 5 dias) + **acompanhamento do contato** (Em contato / Resolvido /
+  Sem retorno + anotação, com quem e quando) em
+  `marketplace_review_followups` (fase112).
+- **Modelos** em `src/modules/marketplaces/reviewTemplates.js`: 6 positivos,
+  4 pra negativa só com estrelas, 5 pra negativa com comentário (montagem,
+  avaria, "já falamos com você"…). O modal abre com um modelo sorteado do
+  grupo certo, botão "outro", e mostra os outros grupos. Aviso se a edição
+  ainda estiver aberta.
+- **Responder positivas em lote** (até 50): cada uma com um modelo sorteado
+  (sem repetir o anterior), dá pra trocar/editar/tirar antes; envia uma a
+  uma com progresso e lista as que falharem.
+
 ## 2026-10-20 — Avaliações dos marketplaces: fotos e vídeos sem abrir aba nova
 
 Pedido do Raphael (/marketplaces/avaliacoes): as fotos das avaliações abriam
