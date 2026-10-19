@@ -6,7 +6,7 @@ import {
   ChevronRight, ChevronDown, Truck, History,
   TrendingUp, Calendar, FileSpreadsheet, MessageSquare, MessagesSquare,
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
-  PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, CalendarDays, Link2, ClipboardCheck, Clock,
+  PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, CalendarDays, Instagram, Link2, ClipboardCheck, Clock,
   HeartPulse, MessageCircle, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film, Zap,
   Briefcase, Crown, Bookmark, Component, RotateCcw, Headset, HandCoins, Tv, ShieldAlert, LifeBuoy,
 } from 'lucide-react'
@@ -84,6 +84,7 @@ const NAV_SECTIONS = [
     // acessa cada um continua igual (roles + Controle de Acesso).
     label: 'Mkt & Atendimento',
     items: [
+      { to: '/instagram',      moduleKey: 'instagram',    icon: Instagram,      label: 'Instagram',          roles: ['admin','atendimento','marketplace'] },
       { to: '/avaliacoes', moduleKey: 'avaliacoes', icon: Star, label: 'Avaliações', roles: ['admin','administrativo','atendimento'] },
       { to: '/orcamentos',     moduleKey: 'orcamentos',   icon: Receipt,        label: 'Orçamentos',         roles: ['admin','administrativo','atendimento'] },
       { to: '/qrcode',        moduleKey: 'qrcode',       icon: QrCode,         label: 'QR Code',           roles: ['admin','administrativo','atendimento','producao'] },

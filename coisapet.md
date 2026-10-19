@@ -7100,6 +7100,58 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-19 — Instagram dentro do sistema (`/instagram`)
+
+Pedido do Raphael: focar em social media, principalmente Instagram — postar,
+agendar e acompanhar o @coisapet pelo sistema. Acesso: Diretoria (sempre),
+Atendimento e "Marketing" (= perfil `marketplace`, que hoje não tem ninguém;
+ajustável no Controle de Acesso, módulo `instagram`).
+
+- **API**: "Instagram API with Instagram Login" (graph.instagram.com v23,
+  conta profissional, sem Página do Facebook). App da Meta fica em modo
+  desenvolvimento — funciona pra própria conta, sem App Review.
+- **Conexão**: a Diretoria cola o token gerado no painel da Meta na aba
+  *Conta*; a função valida com `/me` e guarda em `ig_secrets` (RLS sem policy
+  + REVOKE — só a service role lê). Renova sozinho 1x/dia
+  (`refresh_access_token`), então não vence. Alternativa: secret
+  `IG_ACCESS_TOKEN` da função (se mudar, passa a valer — compara hash).
+- **Segurança**: o front SÓ LÊ as tabelas `ig_*`. Tudo que escreve (salvar/
+  agendar/publicar, responder/ocultar/excluir comentário, DM, IA) passa pela
+  Edge Function `instagram-api` (--no-verify-jwt), que confere o token da
+  sessão do sistema (fase106) via `ig_session_user(p_token)` + módulo
+  `instagram`. Quem só tem a chave pública do site não consegue postar.
+  Directs não são gravados no banco (busca ao vivo).
+- **Agendamento**: a API não agenda — o post fica em `ig_posts` e o cron
+  `instagram-cron` (5 em 5 min, prova com `ig_secrets.cron_secret`) publica
+  quando chega a hora. Publicação em etapas guardadas em `containers`
+  (cria container → espera a Meta processar vídeo → `media_publish`), então
+  Reels demorado continua na rodada seguinte. Erro de validação para na
+  hora (status `erro` com a mensagem); erro passageiro tenta até 6x.
+  Limite da Meta: 100 posts/24h via API (mostrado na aba Conta).
+- **Sync** (cron, 1x/hora, ou botão Atualizar): perfil, totais de 28 dias,
+  alcance diário (`ig_account_daily` — seguidores começam a ter histórico a
+  partir da conexão), horário em que os seguidores estão online (a Meta manda
+  no fuso do Pacífico; o front converte), público (idade/gênero/cidade, só
+  com 100+ seguidores), até 100 posts com métricas dos últimos 60 dias e
+  comentários dos últimos 45 dias.
+- **Telas** (`src/modules/instagram/`): Painel (KPIs, alcance/dia,
+  seguidores, melhor horário, formato que rende mais, público, tabela de
+  posts com ordenação), Calendário (agendados/rascunhos/erros + o que foi
+  postado direto pelo app), editor de post (foto/carrossel/Reels/story,
+  converte foto pra JPEG e encaixa em 4:5/1:1/9:16, legenda com contador
+  2.200/30 hashtags, grupos de hashtag, legenda com IA (gpt-4o-mini),
+  sugestão de horário, prévia), **carrossel a partir de post do blog** (IA
+  resume em slides, desenho em canvas 1080×1350 com 4 temas, editável),
+  Comentários (pendentes/todos/ocultos, responder com respostas rápidas,
+  ocultar, excluir, marcar resolvido) e Directs (janela de 24h da Meta).
+- Mídias vão pro bucket público `instagram-media` (a Meta baixa por URL).
+- Banco: `supabase/fase111-instagram.sql`. Função:
+  `supabase/functions/instagram-api/`.
+- **Pendente (Raphael)**: criar o app na Meta e conectar (passo a passo na
+  aba Conta). Pra Directs, ativar "Permitir acesso às mensagens" no app do
+  Instagram. Ideias depois: respostas automáticas por palavra-chave em
+  comentário, relatório mensal, Facebook/TikTok.
+
 ## 2026-10-19 — Blog: Calendário e Métricas
 
 Pedido do Raphael: calendário visual com a data dos posts que entraram e os

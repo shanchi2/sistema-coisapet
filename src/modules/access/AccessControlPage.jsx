@@ -10,6 +10,7 @@ const MODULES = [
   { key: 'kanban',       label: 'Kanban',          section: 'Principal',     icon: '📋' },
   { key: 'kanban-op',    label: 'Kanban Operacional', section: 'Principal',  icon: '🗂️' },
   { key: 'pedidos',      label: 'Pedidos',         section: 'Principal',     icon: '🛒' },
+  { key: 'instagram',    label: 'Instagram (posts, agenda, comentários e directs)', section: 'Mkt & Atendimento', icon: '📸' },
   { key: 'orcamentos',   label: 'Orçamentos',      section: 'Mkt & Atendimento',     icon: '🧾' },
   { key: 'reunioes',     label: 'Reuniões',        section: 'Principal',     icon: '🗓️' },
   { key: 'marketplaces', label: 'Marketplaces (ML + Shopee unificado)', section: 'Marketplaces', icon: '🛒' },
