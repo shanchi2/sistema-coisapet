@@ -7100,6 +7100,21 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — Avaliações dos marketplaces: fotos e vídeos sem abrir aba nova
+
+Pedido do Raphael (/marketplaces/avaliacoes): as fotos das avaliações abriam
+em outra aba do Chrome. Agora clicar na miniatura abre o `MediaViewer` (o
+mesmo de Retornos Shopee/Atualização de Mídia): tela cheia, ← → entre as
+mídias da avaliação, Esc fecha, botões de baixar/abrir original.
+
+- **Vídeos da Shopee**: antes só vinha a contagem. `shopee-extra` (action
+  `comments`) agora também devolve `media.video_urls` (mp4 da Shopee) e
+  eles tocam no visualizador. Testado ao vivo: 61 das últimas 300 avaliações
+  tinham vídeo, todas com link.
+- ML: fotos em tamanho grande (`-F`); vídeo do ML não vem na API → aviso
+  "só dá pra assistir no app".
+- Até 6 miniaturas por avaliação, a 6ª com "+N" se tiver mais.
+
 ## 2026-10-20 — Instagram: aba Seguidores (ganhos/perdidos por dia)
 
 Pedido do Raphael: a Isa contava na mão, todo fim de dia, quantos seguidores

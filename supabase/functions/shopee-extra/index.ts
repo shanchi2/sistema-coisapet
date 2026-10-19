@@ -74,7 +74,12 @@ serve(async (req) => {
         order_sn: c.order_sn, buyer: c.buyer_username, rating: c.rating_star, text: c.comment || '', at: c.create_time ? new Date(c.create_time * 1000).toISOString() : null,
         hidden: !!c.hidden, editable: c.editable,
         reply: c.comment_reply?.reply ? { text: c.comment_reply.reply, at: c.comment_reply.create_time ? new Date(c.comment_reply.create_time * 1000).toISOString() : null, hidden: !!c.comment_reply.hidden } : null,
-        media: { images: c.media?.image_url_list ?? [], videos: (c.media?.video_url_list ?? []).length },
+        // 20/10: links dos vídeos também (pro visualizador na tela); a Shopee
+        // manda string ou objeto { video_url, thumbnail_url } conforme a versão
+        media: {
+          images: c.media?.image_url_list ?? [], videos: (c.media?.video_url_list ?? []).length,
+          video_urls: (c.media?.video_url_list ?? []).map((v: any) => typeof v === 'string' ? v : (v?.video_url || v?.url || null)).filter(Boolean),
+        },
       }))
       return json({ ok: true, results })
     }
