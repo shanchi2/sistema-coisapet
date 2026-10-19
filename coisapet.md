@@ -7100,6 +7100,33 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — Instagram: Posts publicados com "Ordenar por", detalhes e Aprendizados
+
+Pedido do Raphael depois de conectar a conta (deu certo, 4,2 mil seguidores):
+"ordenar por" nos posts publicados e mais informações úteis.
+
+- **Métricas do histórico inteiro**: antes a sync só buscava métricas dos
+  posts dos últimos 60 dias — com ~1 post/semana só 6 de 100 tinham alcance.
+  Agora puxa até 300 posts; posts de 30 dias pra cá são atualizados sempre e
+  os antigos ganham métrica (60 por rodada, renovada a cada 7 dias). Novas
+  métricas: seguidores ganhos e visitas ao perfil (feed), tempo médio
+  assistido (Reels). `insights._at` marca quando foi buscada.
+- **Tabela nova** (`IgPostsTable.jsx`): "Ordenar por" em destaque (data,
+  visualizações, alcance, curtidas, comentários, salvos, compartilhamentos,
+  engajamento, desempenho vs. média, seguidores ganhos, visitas ao perfil,
+  taxa de salvamento, tamanho da legenda) + seta ↑↓; clique no cabeçalho
+  também ordena. Filtros de formato, período e busca na legenda/hashtag;
+  resumo do recorte; "Mostrar mais"; exportar CSV (abre no Excel).
+- **"vs. média"**: alcance do post ÷ mediana de alcance do MESMO formato
+  (sem métrica: curtidas ÷ mediana de curtidas). 1,0× = post típico; verde
+  ≥1,3×, vermelho ≤0,7×. Assim Reels não "ganha" de foto só por ser Reels.
+- **Detalhe do post** (clique na linha): todas as métricas com % vs. média
+  do formato, hashtags, legenda completa e comentários.
+- **Aprendizados da conta** (`IgLearnings.jsx`, último ano): melhor dia da
+  semana, melhor período do dia pelos RESULTADOS (≠ seguidores online),
+  ritmo de postagem (posts/semana nas últimas 12 semanas + dias desde o
+  último), hashtags que mais e menos rendem (3+ posts), tamanho de legenda.
+
 ## 2026-10-19 — Instagram dentro do sistema (`/instagram`)
 
 Pedido do Raphael: focar em social media, principalmente Instagram — postar,
