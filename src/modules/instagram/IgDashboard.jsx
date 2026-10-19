@@ -54,7 +54,9 @@ export function IgDashboard({ account, daily, media, posts, onOpenPost }) {
     .map(d => ({ v: d.followers_count, title: `${new Date(d.day + 'T12:00:00').toLocaleDateString('pt-BR')}: ${fmtInt(d.followers_count)} seguidores` })), [daily])
   const reachSeries = useMemo(() => daily.slice(-30)
     .map(d => ({ v: d.reach || 0, title: `${new Date(d.day + 'T12:00:00').toLocaleDateString('pt-BR')}: ${fmtInt(d.reach)} contas alcançadas` })), [daily])
-  const gained = followersSeries.length > 1 ? followersSeries.at(-1).v - followersSeries[Math.max(0, followersSeries.length - 8)].v : null
+  // saldo dos últimos 7 dias pela Meta (novos − deixaram), aba Seguidores tem o detalhe
+  const week = daily.filter(d => d.new_follows != null).slice(-7)
+  const gained = week.length ? week.reduce((s, d) => s + d.new_follows - (d.unfollows || 0), 0) : null
 
   const last30 = media.filter(m => Date.now() - new Date(m.posted_at) < 30 * 86400e3 && m.media_product_type !== 'STORY')
   const avgEng = last30.length ? last30.reduce((s, m) => s + (engagement(m, followers) || 0), 0) / last30.length : null
@@ -93,7 +95,7 @@ export function IgDashboard({ account, daily, media, posts, onOpenPost }) {
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi icon={Users} label="Seguidores" value={fmtInt(followers)}
-          detail={gained != null ? `${gained >= 0 ? '+' : ''}${fmtInt(gained)} nos últimos 7 dias` : t.follower != null ? `+${fmtInt(t.follower)} novos em 28 dias` : 'segue no sistema a partir de hoje'}
+          detail={gained != null ? `${gained >= 0 ? '+' : ''}${fmtInt(gained)} nos últimos 7 dias · ver por dia na aba Seguidores` : 'detalhe por dia na aba Seguidores'}
           tone="text-violet-700" />
         <Kpi icon={Eye} label="Alcance (28 dias)" value={fmtInt(t.reach)} detail={t.views != null ? `${fmtInt(t.views)} visualizações` : 'contas únicas que viram'} />
         <Kpi icon={Heart} label="Interações (28 dias)" value={fmtInt(t.total_interactions)}

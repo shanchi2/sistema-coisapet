@@ -182,3 +182,7 @@ SELECT cron.schedule('instagram-cron', '*/5 * * * *', $$
     headers := '{"Content-Type":"application/json"}'::jsonb,
     timeout_milliseconds := 150000);
 $$);
+
+-- 20/10: seguidores ganhos/perdidos por dia (aba Seguidores)
+ALTER TABLE public.ig_account_daily ADD COLUMN IF NOT EXISTS new_follows int,
+  ADD COLUMN IF NOT EXISTS unfollows int, ADD COLUMN IF NOT EXISTS follows_at timestamptz;
