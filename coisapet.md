@@ -7100,6 +7100,26 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — Menu "Dia a Dia" × "Análises e Conferências", Serviços e Afazeres + Concluídos, editar manutenção
+
+Pedidos do Raphael:
+- **Menu**: o grupo "Produção" virou dois — **Dia a Dia** (Pedidos, Kanban
+  Operacional, Produção, Passagem de Turno, Manutenção, Serviços e
+  Afazeres, Baixa Diária, Compra da Lousa, Produção Horistas) e **Análises
+  e Conferências** (Planos de corte/chapas, Variações, Kits, Produtos,
+  Manuais, Conferência de Matéria-Prima, Matéria-Prima, Embalagem, Estoque
+  nos Marketplaces). Controle de Acesso com os mesmos nomes de grupo.
+- **"Serviços" → "Serviços e Afazeres"** (menu e título).
+- **Aba Concluídos** (`DoneTab.jsx`): o que cada funcionário terminou —
+  Foco do dia (`daily_focus.done`) + Serviços do barracão
+  (`maintenance_tasks` concluídos, pelo responsável) — agrupado por pessoa,
+  com período (hoje/7/30/mês/90) e busca; "reabrir" devolve pra lista.
+  Nos cards do Foco do dia as concluídas saem do card (fica "N concluída(s)
+  — ver em Concluídos"); a coluna "Feito" do barracão mostra só o de hoje.
+- **Editar manutenção já lançada**: a edição existia mas escondida (ícone
+  só no hover, dentro da máquina aberta). Agora o botão "Editar" aparece
+  visível no Relatório, na lista das máquinas e no Calendário.
+
 ## 2026-10-20 — Instagram: aba Parcerias (influencers)
 
 Raphael procurou os posts das influencers no módulo e não achou — não

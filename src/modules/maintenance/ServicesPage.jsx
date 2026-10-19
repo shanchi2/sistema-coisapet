@@ -11,6 +11,7 @@ import toast from 'react-hot-toast'
 import { useSearchParams } from 'react-router-dom'
 import { Target } from 'lucide-react'
 import { DailyFocusTab } from './DailyFocusTab'
+import { DoneTab } from './DoneTab'
 
 // ── Configurações ──────────────────────────────────────────────
 const CAT_CFG = {
@@ -376,9 +377,12 @@ function TaskCard({ task, users, onEdit, onDelete, onMoveStatus, colIndex, colCo
 }
 
 // ── Coluna do Kanban ───────────────────────────────────────────
-function Column({ col, tasks, users, onEdit, onDelete, onMoveStatus, onNew, dragging, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function Column({ col, tasks, users, onEdit, onDelete, onMoveStatus, onNew, dragging, onDragStart, onDragOver, onDrop, onDragEnd, onShowDone }) {
   const Icon  = col.icon
-  const items = tasks.filter(t => t.type === col.type && t.status === col.status)
+  // "Feito" mostra só o de hoje — o resto vai pra aba Concluídos (20/10)
+  const today = todayISO()
+  const allDone = col.status === 'concluido' ? tasks.filter(t => t.type === col.type && t.status === 'concluido') : []
+  const items = tasks.filter(t => t.type === col.type && t.status === col.status && (col.status !== 'concluido' || (t.completed_at || '').slice(0, 10) === today))
   const STATUS_ORDER = ['pendente','prioridade','concluido']
   const colIndex = STATUS_ORDER.indexOf(col.status)
 
@@ -406,9 +410,14 @@ function Column({ col, tasks, users, onEdit, onDelete, onMoveStatus, onNew, drag
       {/* Cards */}
       <div className={`flex flex-col gap-2 flex-1 rounded-xl p-1 transition-colors min-h-[80px]
         ${dragging ? 'ring-1 ring-dashed ring-slate-200 bg-slate-50/60' : ''}`}>
+        {col.status === 'concluido' && allDone.length > items.length && (
+          <button onClick={onShowDone} className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 text-left">
+            ✓ {allDone.length - items.length} concluído{allDone.length - items.length === 1 ? '' : 's'} antes de hoje — ver em Concluídos
+          </button>
+        )}
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            <p className="text-xs text-slate-300 font-medium">Nenhum item</p>
+            <p className="text-xs text-slate-300 font-medium">{col.status === 'concluido' ? 'Nada concluído hoje' : 'Nenhum item'}</p>
           </div>
         ) : (
           items.map(task => (
@@ -432,8 +441,8 @@ export function ServicesPage() {
   const { user } = useAuth()
   // Abas (16/10): serviços do barracão | foco do dia por funcionário (vai pra TV)
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = searchParams.get('aba') === 'foco' ? 'foco' : 'servicos'
-  const setTab = t => setSearchParams(p => { const n = new URLSearchParams(p); if (t === 'foco') n.set('aba', 'foco'); else n.delete('aba'); return n }, { replace: true })
+  const tab = ['foco', 'concluidos'].includes(searchParams.get('aba')) ? searchParams.get('aba') : 'servicos'
+  const setTab = t => setSearchParams(p => { const n = new URLSearchParams(p); if (t !== 'servicos') n.set('aba', t); else n.delete('aba'); return n }, { replace: true })
   const [tasks,   setTasks]   = useState([])
   const [users,   setUsers]   = useState([])
   const [loading, setLoading] = useState(true)
@@ -579,8 +588,8 @@ export function ServicesPage() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h2 className="page-title">Serviços</h2>
-          <p className="page-subtitle">{tab === 'foco' ? 'O que é prioridade pra cada funcionário no dia — aparece na TV' : 'Tarefas e serviços pendentes do barracão'}</p>
+          <h2 className="page-title">Serviços e Afazeres</h2>
+          <p className="page-subtitle">{tab === 'foco' ? 'O que é prioridade pra cada funcionário no dia — aparece na TV' : tab === 'concluidos' ? 'O que cada funcionário já terminou — sai das listas e fica guardado aqui' : 'Tarefas e serviços pendentes do barracão'}</p>
         </div>
         {tab === 'servicos' && (
           <button onClick={() => openNew('servico')} className="btn-primary">
@@ -590,7 +599,7 @@ export function ServicesPage() {
       </div>
 
       <div className="inline-flex self-start items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl">
-        {[['servicos', 'Serviços do barracão', Wrench], ['foco', 'Foco do dia por funcionário', Target]].map(([k, l, Icon]) => (
+        {[['servicos', 'Serviços do barracão', Wrench], ['foco', 'Foco do dia por funcionário', Target], ['concluidos', 'Concluídos', CheckCircle2]].map(([k, l, Icon]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${tab === k ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
             <Icon size={15}/> {l}
@@ -598,10 +607,10 @@ export function ServicesPage() {
         ))}
       </div>
 
-      {tab === 'foco' ? <DailyFocusTab/> : <>
+      {tab === 'foco' ? <DailyFocusTab onShowDone={() => setTab('concluidos')}/> : tab === 'concluidos' ? <DoneTab/> : <>
 
       {/* KPIs */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="card py-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center">
             <span className="text-2xl font-black text-slate-700">{total}</span>
@@ -671,6 +680,7 @@ export function ServicesPage() {
                 onDragOver={() => {}}
                 onDrop={handleDrop}
                 onDragEnd={() => setDragging(null)}
+                onShowDone={() => setTab('concluidos')}
               />
             ))}
           </div>

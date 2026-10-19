@@ -93,26 +93,33 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    label: 'Produção',
+    // 20/10 (pedido do Raphael): a antiga "Produção" virou 2 grupos — o que
+    // a equipe usa todo dia e o que é análise/conferência/cadastro.
+    label: 'Dia a Dia',
     items: [
       { to: '/pedidos',        moduleKey: 'pedidos',      icon: ClipboardList,  label: 'Pedidos',            roles: ['admin','administrativo','atendimento'] },
       { to: '/kanban-op',      moduleKey: 'kanban-op',    icon: Kanban,         label: 'Kanban Operacional', roles: ['admin','administrativo','atendimento','producao','marketplace'] },
-      { to: '/materia-prima',  moduleKey: 'materiais',    icon: Boxes,          label: 'Matéria-Prima',     roles: ['admin','administrativo','producao','marketplace'] },
-      { to: '/packaging',      moduleKey: 'packaging',    icon: Package,        label: 'Embalagem',         roles: ['admin','administrativo','producao'] },
-      { to: '/produtos',       moduleKey: 'produtos',     icon: Package,        label: 'Produtos',          roles: ['admin','administrativo','producao','marketplace'] },
-      { to: '/kits',           moduleKey: 'produtos',     icon: Component,      label: 'Kits',               roles: ['admin','administrativo','producao','marketplace'] },
-      { to: '/variacoes',      moduleKey: 'produtos',     icon: Layers,         label: 'Variações',         roles: ['admin','administrativo','marketplace'] },
       { to: '/producao',       moduleKey: 'producao',     icon: Factory,        label: 'Produção',          roles: ['admin','administrativo','producao'] },
-      { to: '/estoque-marketplaces', moduleKey: 'producao', icon: Boxes,        label: 'Estoque nos Marketplaces', roles: ['admin','administrativo','producao'] },
-      { to: '/producao/chapas', moduleKey: 'producao',    icon: Layers,         label: 'Planos de corte',   roles: ['admin','administrativo','producao'] },
-      { to: '/manuais',        moduleKey: 'manuais',      icon: BookOpen,       label: 'Manuais',           roles: ['admin','administrativo','producao'] },
+      { to: '/passagem-turno', moduleKey: 'producao',     icon: ClipboardList,  label: 'Passagem de Turno', roles: ['admin','administrativo','producao'] },
       { to: '/manutencao',     moduleKey: 'manutencao',   icon: Wrench,         label: 'Manutenção',        roles: ['admin','administrativo','producao'] },
-      { to: '/servicos',        moduleKey: 'manutencao',   icon: ShoppingCart,   label: 'Serviços', roles: ['admin','administrativo','producao'] },
+      { to: '/servicos',        moduleKey: 'manutencao',   icon: ShoppingCart,   label: 'Serviços e Afazeres', roles: ['admin','administrativo','producao'] },
       { to: '/baixa-diaria',   moduleKey: 'baixa-diaria', icon: PackageMinus,   label: 'Baixa Diária',      roles: ['admin','administrativo','producao'] },
       { to: '/compra-lousa',   moduleKey: 'compra-lousa', icon: ShoppingBag,    label: 'Compra da Lousa',   roles: ['admin','administrativo','producao'] },
-      { to: '/conferencia-materia-prima', moduleKey: 'conferencia-materia-prima', icon: ClipboardCheck, label: 'Conferência de Matéria-Prima', roles: ['admin','administrativo','producao'] },
       { to: '/producao-horistas', moduleKey: 'producao-horistas', icon: Clock, label: 'Produção Horistas', roles: ['admin'] },
-      { to: '/passagem-turno', moduleKey: 'producao',     icon: ClipboardList,  label: 'Passagem de Turno', roles: ['admin','administrativo','producao'] },
+    ],
+  },
+  {
+    label: 'Análises e Conferências',
+    items: [
+      { to: '/producao/chapas', moduleKey: 'producao',    icon: Layers,         label: 'Planos de corte',   roles: ['admin','administrativo','producao'] },
+      { to: '/variacoes',      moduleKey: 'produtos',     icon: Layers,         label: 'Variações',         roles: ['admin','administrativo','marketplace'] },
+      { to: '/kits',           moduleKey: 'produtos',     icon: Component,      label: 'Kits',               roles: ['admin','administrativo','producao','marketplace'] },
+      { to: '/produtos',       moduleKey: 'produtos',     icon: Package,        label: 'Produtos',          roles: ['admin','administrativo','producao','marketplace'] },
+      { to: '/manuais',        moduleKey: 'manuais',      icon: BookOpen,       label: 'Manuais',           roles: ['admin','administrativo','producao'] },
+      { to: '/conferencia-materia-prima', moduleKey: 'conferencia-materia-prima', icon: ClipboardCheck, label: 'Conferência de Matéria-Prima', roles: ['admin','administrativo','producao'] },
+      { to: '/materia-prima',  moduleKey: 'materiais',    icon: Boxes,          label: 'Matéria-Prima',     roles: ['admin','administrativo','producao','marketplace'] },
+      { to: '/packaging',      moduleKey: 'packaging',    icon: Package,        label: 'Embalagem',         roles: ['admin','administrativo','producao'] },
+      { to: '/estoque-marketplaces', moduleKey: 'producao', icon: Boxes,        label: 'Estoque nos Marketplaces', roles: ['admin','administrativo','producao'] },
     ],
   },
   {
@@ -203,7 +210,8 @@ const SECTION_COLORS = {
   'Shopee':           { base: '#EE4D2D', light: '#FDBA74' }, // laranja Shopee
   'Blog':              { base: '#6366F1', light: '#A5B4FC' }, // indigo
   'Mkt & Atendimento': { base: '#EC4899', light: '#F9A8D4' }, // pink
-  'Produção':         { base: '#10B981', light: '#6EE7B7' }, // emerald
+  'Dia a Dia':        { base: '#10B981', light: '#6EE7B7' }, // emerald (era "Produção")
+  'Análises e Conferências': { base: '#14B8A6', light: '#5EEAD4' }, // teal
   'Recursos Humanos': { base: '#8B5CF6', light: '#C4B5FD' }, // violeta
   'Gestão':           { base: '#0EA5E9', light: '#7DD3FC' }, // azul
   'Diretoria':        { base: '#D946EF', light: '#F0ABFC' }, // magenta
@@ -219,7 +227,8 @@ const SECTION_ICONS = {
   'Shopee':           ShoppingBag,
   'Blog':              Newspaper,
   'Mkt & Atendimento': Headset,
-  'Produção':         Factory,
+  'Dia a Dia':        Factory,
+  'Análises e Conferências': ClipboardCheck,
   'Recursos Humanos': Users,
   'Gestão':           Briefcase,
   'Diretoria':        Crown,
