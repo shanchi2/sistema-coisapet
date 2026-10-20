@@ -119,7 +119,7 @@ const NAV_SECTIONS = [
       { to: '/conferencia-materia-prima', moduleKey: 'conferencia-materia-prima', icon: ClipboardCheck, label: 'Conferência de Matéria-Prima', roles: ['admin','administrativo','producao'] },
       { to: '/materia-prima',  moduleKey: 'materiais',    icon: Boxes,          label: 'Matéria-Prima',     roles: ['admin','administrativo','producao','marketplace'] },
       { to: '/packaging',      moduleKey: 'packaging',    icon: Package,        label: 'Embalagem',         roles: ['admin','administrativo','producao'] },
-      { to: '/estoque-marketplaces', moduleKey: 'producao', icon: Boxes,        label: 'Estoque nos Marketplaces', roles: ['admin','administrativo','producao'] },
+      { to: '/estoque-marketplaces', moduleKey: 'estoque-marketplaces', icon: Boxes,        label: 'Estoque nos Marketplaces', roles: ['admin','administrativo','producao'] },
     ],
   },
   {

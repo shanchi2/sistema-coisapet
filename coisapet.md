@@ -7100,6 +7100,15 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — Estoque nos Marketplaces com módulo próprio no Controle de Acesso
+
+Pedido do Raphael: liberar a tela pra Produção, mas com controle separado.
+Antes ela usava o módulo `producao` (quem via Produção via o Estoque, e o
+contrário também). Agora tem o módulo **`estoque-marketplaces`** (seção
+"Análises e Conferências" no Controle de Acesso), que começou com as mesmas
+permissões do `producao`: Produção ✅, Gerente/Atendimento/Marketplace ❌
+(fase115). Rota e menu usam a chave nova.
+
 ## 2026-10-20 — Estoque nos Marketplaces: cores que não trabalhamos mais
 
 Pedido do Raphael (/estoque-marketplaces): algumas cores (Verde-claro,
