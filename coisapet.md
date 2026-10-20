@@ -7100,6 +7100,17 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — TV da Produção: turno do dia × turno da noite
+
+Pedido do Raphael: depois das 19h ficam só o João Vitor e o Diovani, e pra
+eles pouca coisa da TV importa. Em "O que exibir" agora há duas abas —
+**Turno do dia** e **Turno da noite** — cada uma com seus liga/desliga e
+ordem; e o horário da troca (padrão noite 19:00–06:00). O `tv-feed` escolhe
+a lista pelo horário de Brasília (`tv_settings.modules_night`, `night_start`,
+`night_end`, fase118) e a TV mostra um selo "🌙 Turno da noite" no topo. A
+lista da noite começou como cópia da do dia — o Raphael desliga o que não
+serve. Layout, tempo de slide e tamanho do texto valem pros dois turnos.
+
 ## 2026-10-20 — TV da Produção: tamanho do texto por TV
 
 Pedido do Raphael: a TV do barracão é de 32" e a letra ficou pequena (~20%).

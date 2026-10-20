@@ -62,6 +62,12 @@ serve(async (req) => {
     const today = isoDay(now)
     const { data: settings } = await sb.from('tv_settings').select('*').eq('id', 'default').maybeSingle()
     const warnDays = settings?.full_warn_days ?? 2
+    // Turno da noite (20/10): depois das 19h a TV usa a lista `modules_night`
+    const hhmm = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(now)
+    const nStart = settings?.night_start || '19:00', nEnd = settings?.night_end || '06:00'
+    const isNight = nStart > nEnd ? (hhmm >= nStart || hhmm < nEnd) : (hhmm >= nStart && hhmm < nEnd)
+    const dayMods = settings?.modules?.length ? settings.modules : MODULES.map(key => ({ key, enabled: true }))
+    const activeMods = isNight && settings?.modules_night?.length ? settings.modules_night : dayMods
 
     const [shipR, manualR, ordersR, overdueR, attR, prodR, entriesR, annR, tvAlertsR, handR,
       tasksR, maintR, logsR, machinesR, ckTasksR, ckEntriesR, ckUsersR, notesR, bdayR, focusR] = await Promise.all([
@@ -248,7 +254,8 @@ serve(async (req) => {
         mode: settings?.mode || 'consultorio',
         slide_seconds: settings?.slide_seconds || 10,
         font_scale: screen.font_scale || 100, // tamanho do texto desta TV (20/10)
-        modules: settings?.modules?.length ? settings.modules : MODULES.map(key => ({ key, enabled: true })),
+        shift: isNight ? 'noite' : 'dia',
+        modules: activeMods,
       },
       data: {
         alertas: alerts,

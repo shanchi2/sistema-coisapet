@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Siren, WifiOff, Tv, AlertTriangle } from 'lucide-react'
+import { Siren, WifiOff, Tv, AlertTriangle, Moon } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { moduleByKey, normalizeModules, countdown, whenLabel, fmtHour } from './tvModules'
 
@@ -181,7 +181,8 @@ export function TvPage() {
           <div className="w-14 h-14 rounded-2xl bg-rose-600 flex items-center justify-center text-2xl font-black">CP</div>
           <div>
             <p className="text-[1.9rem] font-black leading-none">CoisaPet · Produção</p>
-            <p className="text-xl text-slate-400 mt-1">{(s => s.charAt(0).toUpperCase() + s.slice(1))(nowDate.toLocaleDateString('pt-BR', { timeZone: TZ, weekday: 'long', day: '2-digit', month: 'long' }))}</p>
+            <p className="text-xl text-slate-400 mt-1 flex items-center gap-3">{(s => s.charAt(0).toUpperCase() + s.slice(1))(nowDate.toLocaleDateString('pt-BR', { timeZone: TZ, weekday: 'long', day: '2-digit', month: 'long' }))}
+              {feed.settings?.shift === 'noite' && <span className="flex items-center gap-1.5 text-lg font-bold text-indigo-300 bg-indigo-950/70 border border-indigo-700 rounded-lg px-2.5 py-0.5"><Moon className="w-5 h-5" />Turno da noite</span>}</p>
           </div>
         </div>
         <div className="flex items-center gap-6">

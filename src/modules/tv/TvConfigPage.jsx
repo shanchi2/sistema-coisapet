@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Tv, ExternalLink, Save, ArrowUp, ArrowDown, Megaphone, Truck, KeyRound, Copy, Check, Trash2, Loader2, Monitor, LayoutPanelLeft, GalleryHorizontal, Plus } from 'lucide-react'
+import { Tv, ExternalLink, Save, ArrowUp, ArrowDown, Megaphone, Truck, KeyRound, Copy, Check, Trash2, Loader2, Monitor, LayoutPanelLeft, GalleryHorizontal, Plus, Sun, Moon } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { moduleByKey, normalizeModules } from './tvModules'
@@ -80,7 +80,12 @@ export function TvConfigPage() {
     const err = [s, a, rh, sc].find(r => r.error)
     if (err) { toast.error('Erro ao carregar: ' + err.error.message); return }
     const row = s.data || { mode: 'consultorio', slide_seconds: 10, full_warn_days: 2, modules: [] }
-    const c = { mode: row.mode, slide_seconds: row.slide_seconds, full_warn_days: row.full_warn_days, modules: normalizeModules(row.modules) }
+    const c = {
+      mode: row.mode, slide_seconds: row.slide_seconds, full_warn_days: row.full_warn_days, modules: normalizeModules(row.modules),
+      // Turno da noite (20/10): lista própria + horário da troca
+      modules_night: normalizeModules(row.modules_night?.length ? row.modules_night : row.modules),
+      night_start: row.night_start || '19:00', night_end: row.night_end || '06:00',
+    }
     setSaved(c); setCfg(c)
     setAlerts(a.data || []); setRhAvisos(rh.data || []); setScreens(sc.data || [])
   }, [])
@@ -96,12 +101,15 @@ export function TvConfigPage() {
     setSaved(cfg)
     toast.success('Salvo — a TV pega a mudança em até 1 minuto.')
   }
-  const setMod = (i, patch) => setCfg(c => ({ ...c, modules: c.modules.map((m, k) => k === i ? { ...m, ...patch } : m) }))
+  // Qual lista está sendo editada: turno do dia (`modules`) ou da noite (`modules_night`)
+  const [shift, setShift] = useState('dia')
+  const listKey = shift === 'noite' ? 'modules_night' : 'modules'
+  const setMod = (i, patch) => setCfg(c => ({ ...c, [listKey]: c[listKey].map((m, k) => k === i ? { ...m, ...patch } : m) }))
   const move = (i, dir) => setCfg(c => {
-    const list = [...c.modules]; const j = i + dir
+    const list = [...c[listKey]]; const j = i + dir
     if (j < 0 || j >= list.length) return c
     ;[list[i], list[j]] = [list[j], list[i]]
-    return { ...c, modules: list }
+    return { ...c, [listKey]: list }
   })
 
   async function addAviso() {
@@ -220,15 +228,31 @@ export function TvConfigPage() {
             </Panel>
 
             {/* Módulos */}
-            <Panel icon={Tv} title="O que exibir" desc="Liga/desliga cada módulo e define a ordem. Módulo sem nada pra mostrar no momento é pulado sozinho.">
+            <Panel icon={Tv} title="O que exibir" desc="Liga/desliga cada módulo e define a ordem, separado por turno — a TV troca de lista sozinha no horário. Módulo sem nada pra mostrar no momento é pulado sozinho.">
+              <div className="flex flex-wrap items-center gap-3 mb-3">
+                <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+                  {[['dia', Sun, `Turno do dia (${cfg.night_end}–${cfg.night_start})`], ['noite', Moon, `Turno da noite (${cfg.night_start}–${cfg.night_end})`]].map(([k, Icon, l]) => (
+                    <button key={k} onClick={() => setShift(k)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold ${shift === k ? (k === 'noite' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-800 shadow-sm') : 'text-slate-500 hover:text-slate-700'}`}>
+                      <Icon size={13} />{l}
+                      <span className="opacity-70">· {cfg[k === 'noite' ? 'modules_night' : 'modules'].filter(m => m.enabled).length} ligados</span>
+                    </button>
+                  ))}
+                </div>
+                <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">Noite das
+                  <input type="time" value={cfg.night_start} onChange={e => setCfg(c => ({ ...c, night_start: e.target.value || '19:00' }))} className="text-sm border border-slate-200 rounded-lg px-2 py-1 bg-white" />
+                  às
+                  <input type="time" value={cfg.night_end} onChange={e => setCfg(c => ({ ...c, night_end: e.target.value || '06:00' }))} className="text-sm border border-slate-200 rounded-lg px-2 py-1 bg-white" />
+                </label>
+              </div>
               <ul className="flex flex-col gap-2">
-                {cfg.modules.map((m, i) => {
+                {cfg[listKey].map((m, i) => {
                   const def = moduleByKey[m.key]
                   return (
                     <li key={m.key} className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${m.enabled ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50'}`}>
                       <div className="flex flex-col">
                         <button onClick={() => move(i, -1)} disabled={i === 0} className="text-slate-400 hover:text-slate-700 disabled:opacity-20"><ArrowUp size={13} /></button>
-                        <button onClick={() => move(i, 1)} disabled={i === cfg.modules.length - 1} className="text-slate-400 hover:text-slate-700 disabled:opacity-20"><ArrowDown size={13} /></button>
+                        <button onClick={() => move(i, 1)} disabled={i === cfg[listKey].length - 1} className="text-slate-400 hover:text-slate-700 disabled:opacity-20"><ArrowDown size={13} /></button>
                       </div>
                       <def.icon size={18} className={m.enabled ? 'text-slate-600' : 'text-slate-300'} />
                       <div className="min-w-0 flex-1">
