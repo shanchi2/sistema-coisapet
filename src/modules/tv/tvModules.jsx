@@ -1,4 +1,4 @@
-import { Truck, PackageCheck, Factory, Megaphone, ArrowLeftRight, KanbanSquare, Wrench, ListChecks, Camera, Cake, Siren, CheckCircle2, Clock, AlertTriangle, Target } from 'lucide-react'
+import { Truck, PackageCheck, Factory, Megaphone, ArrowLeftRight, KanbanSquare, Wrench, ListChecks, Camera, Cake, Siren, CheckCircle2, Clock, AlertTriangle, Target, Star, PackageX, Undo2, Trophy, Instagram, Heart, MessageCircle, UserPlus, UserMinus } from 'lucide-react'
 
 // TV da Produção (07/10, fase100) — cada módulo tem uma versão GRANDE
 // (destaque / slide) e uma MINI (coluna lateral do modo consultório).
@@ -470,7 +470,232 @@ export const TV_MODULES = [
       )
     },
   },
+  // ── 20/10: blocos novos (pedido do Raphael — liga/desliga na config) ──
+  {
+    key: 'elogios', label: 'Mural de elogios', icon: Star,
+    desc: 'Avaliações 5★ com comentário ou foto do ML e da Shopee (últimos 30 dias). Pro time ver o que o cliente achou do trabalho.',
+    has: d => d.elogios?.list?.length > 0,
+    Big: ({ d, tick }) => {
+      const L = d.elogios.list
+      const start = (tick * 3) % L.length
+      const pick = [0, 1, 2].map(i => L[(start + i) % L.length]).filter((x, i, a) => a.indexOf(x) === i)
+      const [main, ...rest] = pick
+      return (
+        <BigFrame icon={Star} title="O que os clientes estão dizendo" tone="amber"
+          right={<span className="text-xl text-slate-400">{d.elogios.total} elogios 5★ em 30 dias</span>}>
+          <div className="h-full grid grid-cols-[1.35fr_1fr] gap-5 min-h-0">
+            <Review r={main} big />
+            <div className="flex flex-col gap-5 min-h-0">{rest.map((r, k) => <Review key={k} r={r} />)}</div>
+          </div>
+        </BigFrame>
+      )
+    },
+    Mini: ({ d }) => {
+      const e = d.elogios
+      const r = e?.list?.[0]
+      return (
+        <MiniFrame icon={Star} title="Elogios 5★" tone="text-amber-300">
+          <MiniBig tone="text-amber-300">{e?.total || 0}<span className="text-slate-500 text-[1.8rem]"> em 30 dias</span></MiniBig>
+          <MiniTxt>{r ? `“${r.text || 'Mandou foto do produto'}”` : 'Nenhum ainda'}</MiniTxt>
+        </MiniFrame>
+      )
+    },
+  },
+  {
+    key: 'estoque_mkt', label: 'Acabando nos marketplaces', icon: PackageX,
+    desc: 'Variações que venderam nos últimos 60 dias e estão zeradas, acabando (< 7 dias) ou baixas (< 15 dias) no ML e na Shopee — sem as cores ocultas e sem o Full. Pra produção saber o que puxar.',
+    has: d => d.estoque_mkt?.list?.length > 0,
+    Big: ({ d }) => {
+      const x = d.estoque_mkt
+      return (
+        <BigFrame icon={PackageX} title="Acabando nos marketplaces" tone="rose"
+          right={<span className="text-xl text-slate-400">{x.zero} zerado{x.zero === 1 ? '' : 's'} · {x.crit} acabando · {x.low} baixo{x.low === 1 ? '' : 's'}</span>}>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 content-start">
+            {x.list.slice(0, 10).map((r, k) => (
+              <div key={k} className={`flex items-center gap-4 rounded-2xl px-4 py-3 border ${r.level === 'zero' ? 'bg-rose-950/50 border-rose-700' : r.level === 'crit' ? 'bg-amber-950/40 border-amber-600/60' : 'bg-slate-900 border-slate-800'}`}>
+                {r.thumb ? <img src={r.thumb} alt="" referrerPolicy="no-referrer" className="w-16 h-16 rounded-xl object-cover bg-white shrink-0" /> : <div className="w-16 h-16 rounded-xl bg-slate-800 shrink-0" />}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xl font-bold text-slate-100 truncate">{r.title}</p>
+                  <p className="text-lg text-slate-400 truncate">{SOURCE[r.platform]}{r.variation ? ` · ${r.variation}` : ''} · vendeu {r.sold60} em 60 dias</p>
+                </div>
+                <span className={`text-lg font-black px-3 py-1 rounded-lg shrink-0 text-center ${r.level === 'zero' ? 'bg-rose-600 text-white' : r.level === 'crit' ? 'bg-amber-400 text-amber-950' : 'bg-slate-700 text-slate-100'}`}>{r.level === 'zero' ? 'ZERADO' : `${r.stock} un.`}{r.level !== 'zero' && r.days != null && <span className="block text-sm font-bold opacity-80">~{r.days} dias</span>}</span>
+              </div>
+            ))}
+          </div>
+        </BigFrame>
+      )
+    },
+    Mini: ({ d }) => {
+      const x = d.estoque_mkt
+      const z = x?.zero || 0, n = x?.list?.length ? (x.zero + x.crit + x.low) : 0
+      return (
+        <MiniFrame icon={PackageX} title="Estoque nos marketplaces" tone="text-rose-300" alert={z > 0}>
+          <MiniBig tone={z ? 'text-rose-300' : n ? 'text-amber-300' : 'text-emerald-400'}>{z ? z : n}<span className="text-slate-500 text-[1.8rem]"> {z ? `zerado${z === 1 ? '' : 's'}` : 'acabando'}</span></MiniBig>
+          <MiniTxt>{x?.list?.[0] ? `${x.list[0].title}${x.list[0].variation ? ` · ${x.list[0].variation}` : ''}` : 'Tudo que vende tem estoque'}</MiniTxt>
+        </MiniFrame>
+      )
+    },
+  },
+  {
+    key: 'pos_venda', label: 'O que está voltando', icon: Undo2,
+    desc: 'Motivos de reclamação e devolução dos últimos 30 dias (quebrado, faltando peça, diferente…) e os produtos que mais voltaram. Sem cliente e sem valores.',
+    has: d => d.pos_venda?.total > 0,
+    Big: ({ d }) => {
+      const x = d.pos_venda
+      const max = Math.max(...x.cats.map(c => c.n), 1)
+      return (
+        <BigFrame icon={Undo2} title="O que está voltando · 30 dias" tone="amber"
+          right={<span className="text-xl text-slate-400">{plural(x.total, 'caso', 'casos')} · {x.ours} por problema no produto</span>}>
+          <div className="h-full grid grid-cols-2 gap-8 min-h-0">
+            <div className="flex flex-col gap-4">
+              {x.cats.map(c => (
+                <div key={c.key}>
+                  <div className="flex items-baseline justify-between mb-1.5">
+                    <p className={`text-2xl font-bold ${c.ours ? 'text-amber-200' : 'text-slate-300'}`}>{c.label}</p>
+                    <p className="text-3xl font-black tabular-nums text-white">{c.n}</p>
+                  </div>
+                  <Bar value={c.n} total={max} color={c.ours ? 'bg-amber-400' : 'bg-slate-500'} />
+                </div>
+              ))}
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-400 uppercase mb-3">Produtos que mais voltaram</p>
+              {x.products.length ? (
+                <div className="flex flex-col gap-3">
+                  {x.products.map((p, k) => (
+                    <div key={k} className="rounded-2xl bg-slate-900 border border-slate-800 px-5 py-3.5 flex items-center gap-4">
+                      <p className="text-[2.4rem] font-black tabular-nums text-amber-300 w-14 text-center shrink-0">{p.n}×</p>
+                      <div className="min-w-0"><p className="text-xl font-bold text-slate-100 line-clamp-2">{p.name}</p><p className="text-lg text-slate-400">{p.cat}</p></div>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-2xl text-emerald-400">Nenhum produto voltou por defeito ou peça faltando 🎉</p>}
+            </div>
+          </div>
+        </BigFrame>
+      )
+    },
+    Mini: ({ d }) => {
+      const x = d.pos_venda
+      return (
+        <MiniFrame icon={Undo2} title="O que está voltando" tone="text-amber-300">
+          <MiniBig tone={x?.ours ? 'text-amber-300' : 'text-emerald-400'}>{x?.ours || 0}<span className="text-slate-500 text-[1.8rem]"> por produto</span></MiniBig>
+          <MiniTxt>{x?.cats?.[0] ? `Mais comum: ${x.cats[0].label}` : 'Nada em 30 dias'}</MiniTxt>
+        </MiniFrame>
+      )
+    },
+  },
+  {
+    key: 'concluidos', label: 'Concluídos do dia anterior', icon: Trophy,
+    desc: 'Quantas tarefas cada um terminou no último dia de trabalho (Foco do dia + Serviços do barracão), pra reconhecer o esforço da turma.',
+    has: d => d.concluidos?.total > 0,
+    Big: ({ d, today }) => {
+      const x = d.concluidos
+      const label = x.day === addDays(today, -1) ? 'ontem' : fmtDayMonth(x.day + 'T12:00:00Z')
+      const cols = x.people.length <= 2 ? 'grid-cols-2' : x.people.length <= 6 ? 'grid-cols-3' : 'grid-cols-4'
+      return (
+        <BigFrame icon={Trophy} title={`Concluídos ${label}`} tone="emerald" right={<span className="text-xl text-slate-400">{plural(x.total, 'tarefa', 'tarefas')} no total</span>}>
+          <div className={`grid ${cols} gap-4 content-start`}>
+            {x.people.map((p, k) => (
+              <div key={k} className="rounded-3xl bg-emerald-950/30 border-2 border-emerald-700/60 px-6 py-5">
+                <div className="flex items-baseline justify-between gap-3 mb-2">
+                  <p className="text-[2.4rem] leading-none font-black text-white truncate">{p.name.split(' ')[0]}</p>
+                  <p className="text-[2.6rem] leading-none font-black tabular-nums text-emerald-400">{p.n}</p>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {p.tasks.slice(0, 3).map((t, j) => <p key={j} className="text-xl text-slate-300 leading-snug line-clamp-1 flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />{t}</p>)}
+                  {p.n > 3 && <p className="text-lg text-slate-500">+ {p.n - 3}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </BigFrame>
+      )
+    },
+    Mini: ({ d, today }) => {
+      const x = d.concluidos
+      return (
+        <MiniFrame icon={Trophy} title={`Concluídos ${x?.day === addDays(today, -1) ? 'ontem' : x?.day ? fmtDayMonth(x.day + 'T12:00:00Z') : ''}`} tone="text-emerald-300">
+          <MiniBig tone="text-emerald-400">{x?.total || 0}<span className="text-slate-500 text-[1.8rem]"> tarefa{x?.total === 1 ? '' : 's'}</span></MiniBig>
+          <MiniTxt>{x?.people?.length ? x.people.slice(0, 4).map(p => `${p.name.split(' ')[0]} ${p.n}`).join(' · ') : 'Nada concluído na semana'}</MiniTxt>
+        </MiniFrame>
+      )
+    },
+  },
+  {
+    key: 'instagram', label: 'Instagram', icon: Instagram,
+    desc: 'Seguidores, quantos ganhamos e perdemos no último dia fechado, o último post e quem marcou a @coisapet (influencers e clientes).',
+    has: d => !!d.instagram,
+    Big: ({ d, tick }) => {
+      const x = d.instagram
+      const tagged = x.tagged?.length ? x.tagged[tick % x.tagged.length] : null
+      return (
+        <BigFrame icon={Instagram} title={`Instagram @${x.username || 'coisapet'}`} tone="violet">
+          <div className="h-full grid grid-cols-[0.9fr_1fr_1fr] gap-5 min-h-0">
+            <div className="flex flex-col gap-4">
+              <Tile label="Seguidores" value={(x.followers || 0).toLocaleString('pt-BR')} tone="text-white" sub={x.week_net != null ? `${x.week_net >= 0 ? '+' : ''}${x.week_net} na semana` : null} />
+              {x.last_day && (
+                <div className="rounded-2xl bg-slate-900 border border-slate-800 px-6 py-5">
+                  <p className="text-lg font-bold uppercase tracking-wide text-slate-400">Dia {fmtDayMonth(x.last_day.day + 'T12:00:00Z')}</p>
+                  <p className="text-[2.6rem] font-black tabular-nums text-emerald-400 mt-2 flex items-center gap-3"><UserPlus className="w-9 h-9" />+{x.last_day.gained}</p>
+                  <p className="text-[2rem] font-black tabular-nums text-rose-300 mt-1 flex items-center gap-3"><UserMinus className="w-8 h-8" />−{x.last_day.lost}</p>
+                </div>
+              )}
+            </div>
+            {x.post ? <IgCard title="Último post" image={x.post.image} caption={x.post.caption} at={x.post.at} likes={x.post.likes} comments={x.post.comments} extra={x.post.reach ? `${x.post.reach.toLocaleString('pt-BR')} alcançados` : null} /> : <div />}
+            {tagged ? <IgCard title={`@${tagged.username} marcou a gente`} image={tagged.image} caption={tagged.caption} at={tagged.at} likes={tagged.likes} /> : (
+              <div className="rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center text-2xl text-slate-500 text-center px-6">Ninguém marcou a @coisapet nos últimos 30 dias</div>
+            )}
+          </div>
+        </BigFrame>
+      )
+    },
+    Mini: ({ d }) => {
+      const x = d.instagram
+      return (
+        <MiniFrame icon={Instagram} title="Instagram" tone="text-violet-300">
+          <MiniBig>{(x?.followers || 0).toLocaleString('pt-BR')}<span className="text-slate-500 text-[1.8rem]"> seguidores</span></MiniBig>
+          <MiniTxt>{x?.last_day ? <><span className="text-emerald-400 font-bold">+{x.last_day.gained}</span> / <span className="text-rose-300 font-bold">−{x.last_day.lost}</span> em {fmtDayMonth(x.last_day.day + 'T12:00:00Z')}</> : 'Sem dados do dia ainda'}</MiniTxt>
+        </MiniFrame>
+      )
+    },
+  },
 ]
+
+// Cartão de avaliação do mural de elogios
+function Review({ r, big }) {
+  if (!r) return null
+  const photo = r.photos?.[0]
+  return (
+    <div className={`rounded-3xl bg-slate-900 border border-amber-500/30 overflow-hidden flex ${big ? 'flex-col' : 'flex-row'} min-h-0 flex-1`}>
+      {photo && <img src={photo} alt="" referrerPolicy="no-referrer" className={big ? 'w-full flex-1 min-h-0 object-cover bg-slate-800' : 'w-40 h-full object-cover bg-slate-800 shrink-0'} />}
+      <div className={`px-6 py-5 flex flex-col gap-2 min-w-0 ${big && !photo ? 'flex-1 justify-center' : ''}`}>
+        <p className="text-amber-300 text-2xl tracking-widest">★★★★★</p>
+        {r.text && <p className={`${big ? (photo ? 'text-[2rem] line-clamp-3' : 'text-[2.8rem] line-clamp-6') : 'text-[1.6rem] line-clamp-3'} leading-snug text-white font-semibold`}>“{r.text}”</p>}
+        <p className="text-lg text-slate-400 truncate">{SOURCE[r.platform]}{r.product ? ` · ${r.product}` : ''} · {fmtDayMonth(r.at)}</p>
+      </div>
+    </div>
+  )
+}
+
+// Cartão de post do Instagram (último post / marcação)
+function IgCard({ title, image, caption, at, likes, comments, extra }) {
+  return (
+    <div className="rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden flex flex-col min-h-0">
+      <p className="px-5 pt-4 pb-2 text-xl font-bold text-violet-200 truncate">{title}</p>
+      {image ? <img src={image} alt="" referrerPolicy="no-referrer" className="w-full flex-1 min-h-0 object-cover bg-slate-800" /> : <div className="flex-1 bg-slate-800" />}
+      <div className="px-5 py-3 flex flex-col gap-1">
+        {caption && <p className="text-lg text-slate-200 line-clamp-2">{caption}</p>}
+        <p className="text-lg text-slate-400 flex items-center gap-4">
+          <span className="flex items-center gap-1.5"><Heart className="w-5 h-5" />{likes ?? 0}</span>
+          {comments != null && <span className="flex items-center gap-1.5"><MessageCircle className="w-5 h-5" />{comments}</span>}
+          {extra && <span>{extra}</span>}
+          <span className="ml-auto">{fmtDayMonth(at)}</span>
+        </p>
+      </div>
+    </div>
+  )
+}
 
 // Kanban na TV da produção: só setores Produção e Geral
 function kanbanProd(d) {

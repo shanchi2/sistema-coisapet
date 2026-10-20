@@ -7100,6 +7100,41 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — TV da Produção: 5 blocos novos (liga/desliga na config)
+
+Pedido do Raphael: levar pra TV o que os módulos novos têm de útil pro
+barracão. Todos entram em Diretoria → TV da Produção, com interruptor e
+ordem, igual aos outros (entram LIGADOS no fim da lista; ele desliga o que
+não quiser). Nada de R$.
+- **Mural de elogios**: avaliações 5★ com texto ou foto dos últimos 30 dias
+  (ML de `ml_reviews`; Shopee direto da API `get_comment`). Alterna 3 por
+  vez, priorizando as com foto.
+- **Acabando nos marketplaces**: mesma régua do Estoque nos Marketplaces
+  (ativos, sem Full, sem as cores ocultas), mas só o que vendeu nos últimos
+  60 dias: zerado → acabando (< 7 dias) → baixo (< 15 dias). Zerado parado
+  há meses não aparece (no dia 20/10 eram 81 zerados, nenhum vendendo).
+- **O que está voltando**: motivos de reclamação ML + devolução Shopee dos
+  últimos 30 dias, nas categorias do Pós-venda, e os produtos que mais
+  voltaram por defeito/peça faltando/diferente. Sem cliente.
+- **Concluídos do dia anterior**: último dia (até 7 atrás) com algo
+  concluído no Foco do dia ou nos Serviços, por pessoa.
+- **Instagram**: seguidores, +ganhos/−perdas do último dia fechado, saldo
+  dos 7 dias, último post e quem marcou a @coisapet (sem vídeos).
+- Técnico: os 3 pesados ficam em `tv_cache` (fase116) por 15–30 min, já
+  que a TV pergunta a cada minuto; cada bloco falha sozinho sem derrubar a
+  TV. `tv-feed` agora importa `../_shared/shopee.ts` (subir junto).
+- Código de TV de teste "teste-claude-temp" foi criado pro teste e
+  **revogado** (o DELETE dava timeout no SQL do MCP).
+
+## 2026-10-20 — 4 pedidos manuais de teste arquivados
+
+Pedido do Raphael: sumir com os "Pedidos atrasados" da Expedição que eram
+testes (manuais de 25/05, 27/05 e 07/07: Kerollainy, teste2, Jessica,
+Jordane). Arquivados via SQL (`orders.archived = true`, nunca DELETE), ids
+697366fc…, ed6598f5…, b4c6cf5e…, ccd8c692…. Pra desfazer: `archived=false`.
+Pendência conhecida: o sistema não tem botão pra dar baixa/arquivar pedido
+manual (o picklist não trata manuais). O Raphael disse que não precisa agora.
+
 ## 2026-10-20 — Estoque nos Marketplaces com módulo próprio no Controle de Acesso
 
 Pedido do Raphael: liberar a tela pra Produção, mas com controle separado.
