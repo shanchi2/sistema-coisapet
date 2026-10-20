@@ -1,3 +1,4 @@
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Truck, PackageCheck, Factory, Megaphone, ArrowLeftRight, KanbanSquare, Wrench, ListChecks, Camera, Cake, Siren, CheckCircle2, Clock, AlertTriangle, Target, Star, PackageX, Undo2, Trophy, Instagram, Heart, MessageCircle, UserPlus, UserMinus } from 'lucide-react'
 
 // TV da Produção (07/10, fase100) — cada módulo tem uma versão GRANDE
@@ -30,6 +31,49 @@ export function countdown(iso, now) {
 const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`
 const SOURCE = { ml: 'Mercado Livre', shopee: 'Shopee', manual: 'Manual' }
 
+// ── Rolagem automática (20/10) ───────────────────────────────────────
+// Conteúdo maior que a tela: espera parado, desce devagar até o fim, segura
+// um pouco e avisa a TV quanto tempo precisa (o slide não troca no meio).
+export const TvScrollContext = createContext(null)
+const SCROLL_WAIT = 3000, SCROLL_HOLD = 3000
+// Bordas suaves enquanto rola (o texto some aos poucos em vez de cortar)
+const FADE = 'linear-gradient(to bottom, transparent 0, #000 1.5rem, #000 calc(100% - 1.5rem), transparent 100%)'
+function AutoScroll({ children }) {
+  const outer = useRef(null), inner = useRef(null)
+  const report = useContext(TvScrollContext)
+  const [anim, setAnim] = useState(null) // { dist, ms }
+  useEffect(() => {
+    const o = outer.current, i = inner.current
+    if (!o || !i) return
+    let started = false, t
+    const measure = () => {
+      if (started) return
+      const dist = Math.round(i.scrollHeight - o.clientHeight)
+      if (dist <= 8) return
+      // ~2,5 rem por segundo (≈ 40px/s numa TV 1080p): leve, dá pra ler
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+      const ms = Math.round((dist / (rem * 2.5)) * 1000)
+      started = true
+      report?.(SCROLL_WAIT + ms + SCROLL_HOLD)
+      t = setTimeout(() => setAnim({ dist, ms }), SCROLL_WAIT)
+    }
+    measure()
+    const ro = new ResizeObserver(measure) // fotos que carregam depois mudam a altura
+    ro.observe(i)
+    const stop = setTimeout(() => ro.disconnect(), 4000)
+    return () => { clearTimeout(t); clearTimeout(stop); ro.disconnect() }
+  }, [report])
+  return (
+    <div ref={outer} className="flex-1 min-h-0 overflow-hidden"
+      style={anim ? { maskImage: FADE, WebkitMaskImage: FADE } : undefined}>
+      <div ref={inner} className="h-full"
+        style={anim ? { transform: `translateY(-${anim.dist}px)`, transition: `transform ${anim.ms}ms linear` } : undefined}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 // ── Peças visuais ────────────────────────────────────────────────────
 function BigFrame({ icon: Icon, title, tone = 'slate', right, children }) {
   const tones = { slate: 'text-slate-300', rose: 'text-rose-300', amber: 'text-amber-300', emerald: 'text-emerald-300', sky: 'text-sky-300', violet: 'text-violet-300' }
@@ -41,7 +85,7 @@ function BigFrame({ icon: Icon, title, tone = 'slate', right, children }) {
         </h2>
         {right}
       </div>
-      <div className="flex-1 min-h-0">{children}</div>
+      <AutoScroll>{children}</AutoScroll>
     </div>
   )
 }
@@ -110,13 +154,13 @@ export const TV_MODULES = [
             {c.body && <p className="text-2xl text-slate-200">{c.body}</p>}
             {items.length > 0 && (
               <div className="grid grid-cols-2 gap-x-6 gap-y-2 overflow-hidden content-start">
-                {items.slice(0, 14).map((i, k) => (
+                {items.slice(0, 40).map((i, k) => (
                   <div key={k} className="flex items-center justify-between gap-3 border-b border-slate-800 py-1.5">
                     <p className="text-xl text-slate-200 truncate">{i.title}{i.variation ? <span className="text-slate-400"> · {i.variation}</span> : ''}</p>
                     <p className="text-2xl font-black tabular-nums text-white shrink-0">{i.qty}</p>
                   </div>
                 ))}
-                {items.length > 14 && <p className="text-xl text-slate-400 py-1.5">+ {items.length - 14} produtos (veja no sistema)</p>}
+                {items.length > 40 && <p className="text-xl text-slate-400 py-1.5">+ {items.length - 40} produtos (veja no sistema)</p>}
               </div>
             )}
           </div>
@@ -284,14 +328,14 @@ export const TV_MODULES = [
       return (
         <BigFrame icon={KanbanSquare} title="Tarefas da produção" tone="sky" right={<span className="text-xl text-slate-400">{plural(list.length, 'tarefa', 'tarefas')}</span>}>
           <div className="flex flex-col gap-3">
-            {list.slice(0, 8).map((t, k) => (
+            {list.slice(0, 20).map((t, k) => (
               <div key={k} className="flex items-center gap-5 rounded-2xl bg-slate-900 border border-slate-800 px-6 py-4">
                 <span className={`text-lg font-black px-3 py-1 rounded-lg shrink-0 ${W[t.when][1]}`}>{W[t.when][0]}</span>
                 <p className="text-[1.9rem] text-slate-100 truncate flex-1">{t.title}</p>
                 {['urgente', 'alta'].includes(t.priority) && <span className="text-lg font-bold text-rose-300 uppercase shrink-0">{t.priority}</span>}
               </div>
             ))}
-            {list.length > 8 && <p className="text-xl text-slate-400">+ {list.length - 8} tarefas</p>}
+            {list.length > 20 && <p className="text-xl text-slate-400">+ {list.length - 20} tarefas</p>}
           </div>
         </BigFrame>
       )
@@ -323,13 +367,13 @@ export const TV_MODULES = [
                 <p className={`text-2xl font-bold ${x.late ? 'text-rose-300' : 'text-amber-300'}`}>{x.late ? 'Revisão atrasada' : 'Revisão'} · {fmtDayMonth(x.next + 'T12:00:00Z')}</p>
               </div>
             ))}
-            {services.slice(0, 8 - m.machines.length).map((s, k) => (
+            {services.slice(0, 20).map((s, k) => (
               <div key={'s' + k} className="flex items-center gap-4 rounded-2xl bg-slate-900 border border-slate-800 px-6 py-3.5">
                 {s.urgent && <span className="text-lg font-black px-3 py-1 rounded-lg bg-rose-600 text-white shrink-0">PRIORIDADE</span>}
                 <p className="text-[1.8rem] text-slate-100 truncate">{s.title.replace(/;\s*$/, '')}</p>
               </div>
             ))}
-            {services.length > 8 - m.machines.length && <p className="text-xl text-slate-400">+ {services.length - (8 - m.machines.length)} serviços em aberto</p>}
+            {services.length > 20 && <p className="text-xl text-slate-400">+ {services.length - 20} serviços em aberto</p>}
           </div>
         </BigFrame>
       )
@@ -417,13 +461,13 @@ export const TV_MODULES = [
                 <div key={k} className={`rounded-3xl px-6 py-5 border-2 ${hot ? 'bg-rose-950/50 border-rose-600' : 'bg-slate-900 border-slate-700'}`}>
                   <p className="text-[2.6rem] leading-none font-black text-white mb-3">{p.name.split(' ')[0]}</p>
                   <div className="flex flex-col gap-2.5">
-                    {open.slice(0, 4).map((t, j) => (
+                    {open.slice(0, 8).map((t, j) => (
                       <p key={j} className="text-[1.75rem] leading-snug text-slate-100">
                         {t.urgent && <span className="text-lg font-black px-2.5 py-0.5 rounded-lg bg-rose-600 text-white mr-2 align-middle">URGENTE</span>}
                         {t.task}
                       </p>
                     ))}
-                    {open.length > 4 && <p className="text-xl text-slate-400">+ {open.length - 4} tarefas</p>}
+                    {open.length > 8 && <p className="text-xl text-slate-400">+ {open.length - 8} tarefas</p>}
                     {p.tasks.length > open.length && <p className="text-lg text-emerald-400 flex items-center gap-1.5"><CheckCircle2 className="w-5 h-5" />{p.tasks.length - open.length} feita{p.tasks.length - open.length > 1 ? 's' : ''}</p>}
                   </div>
                 </div>
@@ -511,7 +555,7 @@ export const TV_MODULES = [
         <BigFrame icon={PackageX} title="Acabando nos marketplaces" tone="rose"
           right={<span className="text-xl text-slate-400">{x.zero} zerado{x.zero === 1 ? '' : 's'} · {x.crit} acabando · {x.low} baixo{x.low === 1 ? '' : 's'}</span>}>
           <div className="grid grid-cols-2 gap-x-6 gap-y-3 content-start">
-            {x.list.slice(0, 10).map((r, k) => (
+            {x.list.map((r, k) => (
               <div key={k} className={`flex items-center gap-4 rounded-2xl px-4 py-3 border ${r.level === 'zero' ? 'bg-rose-950/50 border-rose-700' : r.level === 'crit' ? 'bg-amber-950/40 border-amber-600/60' : 'bg-slate-900 border-slate-800'}`}>
                 {r.thumb ? <img src={r.thumb} alt="" referrerPolicy="no-referrer" className="w-16 h-16 rounded-xl object-cover bg-white shrink-0" /> : <div className="w-16 h-16 rounded-xl bg-slate-800 shrink-0" />}
                 <div className="min-w-0 flex-1">

@@ -7100,6 +7100,19 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — TV da Produção: rolagem automática nos slides compridos
+
+Pedido do Raphael: slide com mais conteúdo do que cabe na tela rola sozinho,
+leve. `AutoScroll` (tvModules.jsx, dentro do `BigFrame` de todos os
+destaques): mede se o conteúdo passa da altura; se passa, fica 3s parado,
+desce a ~2,5 rem/s (≈40px/s numa TV 1080p, ajusta com o tamanho do texto),
+segura 3s no fim e avisa a TV quanto tempo precisa — o slide só troca
+depois (`TvScrollContext`; máx. 2 min). Bordas com fade enquanto rola. Com
+isso as listas mostram mais itens (Kanban e Manutenção até 20, itens da
+coleta até 40, Foco do dia até 8 por pessoa, estoque todos os 12).
+Testado: 18 serviços em 120% → Manutenção ficou 28s rolando, depois
+Expedição nos 5s normais.
+
 ## 2026-10-20 — TV da Produção: turno do dia × turno da noite
 
 Pedido do Raphael: depois das 19h ficam só o João Vitor e o Diovani, e pra
