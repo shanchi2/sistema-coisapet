@@ -7100,6 +7100,23 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — Estoque nos Marketplaces: cores que não trabalhamos mais
+
+Pedido do Raphael (/estoque-marketplaces): algumas cores (Verde-claro,
+Gepeto…) ficam sem estoque de propósito e poluíam a lista.
+
+- Botão **"Cores ocultas"** (e seção no painel Filtros): abre a lista de
+  TODAS as partes de variação com quantas variações e quantas zeradas;
+  marcou, some da lista e dos números. Busca por cor.
+- A variação é quebrada em partes ("Bege / Verde-claro" → bege, verde
+  claro), então ocultar "Verde-claro" esconde também as combinações.
+  Normalização: minúscula, sem acento, hífen = espaço.
+- Lista **da empresa** (banco `marketplace_stock_hidden_variations`,
+  fase114) — diferente dos "Produtos ocultos", que são por navegador.
+- Chave "Esconder estas cores" pra ver tudo temporariamente; etiqueta
+  "N cores ocultas (X variações)" quando ativo; atalho 🎨 ao passar o mouse
+  na variação.
+
 ## 2026-10-20 — Menu "Dia a Dia" × "Análises e Conferências", Serviços e Afazeres + Concluídos, editar manutenção
 
 Pedidos do Raphael:
