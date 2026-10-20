@@ -278,7 +278,7 @@ export default function App() {
                 <Route path="/producao-horistas" element={<GuardedRoute moduleKey="producao-horistas"><ProductionEntriesPage /></GuardedRoute>} />
                 <Route path="/bio-links" element={<GuardedRoute moduleKey="bio-links"><BioLinksPage /></GuardedRoute>} />
                 <Route path="/honorarios" element={<GuardedRoute moduleKey="honorarios"><HonorariosPage /></GuardedRoute>} />
-                <Route path="/estoque-marketplaces" element={<GuardedRoute moduleKey="producao"><MarketplaceStockPage /></GuardedRoute>} />
+                <Route path="/estoque-marketplaces" element={<GuardedRoute moduleKey="estoque-marketplaces"><MarketplaceStockPage /></GuardedRoute>} />
                 <Route path="/tv-producao" element={<GuardedRoute moduleKey="tv-producao"><TvConfigPage /></GuardedRoute>} />
                 <Route path="/blog-banners" element={<GuardedRoute moduleKey="blog-banners"><BlogBannersPage /></GuardedRoute>} />
 

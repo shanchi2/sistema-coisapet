@@ -32,6 +32,7 @@ const MODULES = [
   { key: 'compra-lousa', label: 'Compra da Lousa', section: 'Dia a Dia', icon: '🛍️' },
   { key: 'pedidos-materia-prima', label: 'Pedidos de Matéria-Prima', section: 'Gestão', icon: '🪵' },
   { key: 'conferencia-materia-prima', label: 'Conferência de Matéria-Prima', section: 'Análises e Conferências', icon: '📋' },
+  { key: 'estoque-marketplaces', label: 'Estoque nos Marketplaces', section: 'Análises e Conferências', icon: '📦' },
   { key: 'controle-midia', label: 'Atualização de Mídia', section: 'Mkt & Atendimento', icon: '🎬' },
   { key: 'produtos',     label: 'Produtos',        section: 'Catálogo',      icon: '🐾' },
   { key: 'materiais',    label: 'Matéria-Prima',   section: 'Catálogo',      icon: '🪵' },
