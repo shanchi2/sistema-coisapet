@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Siren, WifiOff, Tv, AlertTriangle, Moon } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { moduleByKey, normalizeModules, countdown, whenLabel, fmtHour } from './tvModules'
+import { moduleByKey, normalizeModules, countdown, whenLabel, fmtHour, TvScrollContext } from './tvModules'
 
 // TV da Produção (07/10, fase100) — endereço próprio (/sistema/tv), sem
 // login e sem menu. O aparelho guarda o código dele (gerado por diretor
@@ -113,7 +113,24 @@ export function TvPage() {
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [])
 
   const slideMs = (feed?.settings?.slide_seconds || 10) * 1000
-  useEffect(() => { const t = setInterval(() => setTick(x => x + 1), slideMs); return () => clearInterval(t) }, [slideMs])
+  // Troca de slide: no tempo configurado, ou mais se o destaque estiver
+  // rolando sozinho (conteúdo maior que a tela) — até 2 min no máximo
+  // (tickRef é atualizado no render: o efeito do filho mede antes do efeito daqui)
+  const tickRef = useRef(0)
+  tickRef.current = tick
+  const needRef = useRef({ tick: -1, ms: 0 })
+  const reportNeed = useCallback(ms => { needRef.current = { tick: tickRef.current, ms: Math.min(ms, 120000) } }, [])
+  useEffect(() => {
+    const start = Date.now()
+    let t
+    const go = () => {
+      const need = needRef.current.tick === tick ? needRef.current.ms : 0
+      const wait = Math.max(slideMs, need) - (Date.now() - start)
+      if (wait > 50) t = setTimeout(go, wait); else setTick(x => x + 1)
+    }
+    t = setTimeout(go, slideMs)
+    return () => clearTimeout(t)
+  }, [tick, slideMs])
 
   // Tela sempre acesa (quando o navegador da TV deixa) + cursor some parado
   useEffect(() => {
@@ -208,7 +225,9 @@ export function TvPage() {
       <main className={`flex-1 min-h-0 px-10 pb-8 ${mode === 'consultorio' ? 'grid grid-cols-[1fr_27rem] gap-6' : ''}`}>
         <section key={mainKey + tick} className="h-full min-h-0 rounded-3xl bg-slate-900/40 border border-slate-800/80 p-8 overflow-hidden animate-[fadeIn_.5s_ease]">
           <style>{'@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}'}</style>
-          {Main ? <Main d={d} today={today} now={now} tick={Math.floor(tick / Math.max(1, seq.length))} /> : null}
+          <TvScrollContext.Provider value={reportNeed}>
+            {Main ? <Main d={d} today={today} now={now} tick={Math.floor(tick / Math.max(1, seq.length))} /> : null}
+          </TvScrollContext.Provider>
         </section>
         {mode === 'consultorio' && (
           <aside className="min-h-0 flex flex-col gap-4">
