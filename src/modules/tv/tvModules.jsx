@@ -483,7 +483,7 @@ export const TV_MODULES = [
       return (
         <BigFrame icon={Star} title="O que os clientes estão dizendo" tone="amber"
           right={<span className="text-xl text-slate-400">{d.elogios.total} elogios 5★ em 30 dias</span>}>
-          <div className="h-full grid grid-cols-[1.35fr_1fr] gap-5 min-h-0">
+          <div className="h-full grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-5 min-h-0">
             <Review r={main} big />
             <div className="flex flex-col gap-5 min-h-0">{rest.map((r, k) => <Review key={k} r={r} />)}</div>
           </div>
@@ -546,7 +546,7 @@ export const TV_MODULES = [
       return (
         <BigFrame icon={Undo2} title="O que está voltando · 30 dias" tone="amber"
           right={<span className="text-xl text-slate-400">{plural(x.total, 'caso', 'casos')} · {x.ours} por problema no produto</span>}>
-          <div className="h-full grid grid-cols-2 gap-8 min-h-0">
+          <div className="h-full grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-8 min-h-0">
             <div className="flex flex-col gap-4">
               {x.cats.map(c => (
                 <div key={c.key}>
@@ -631,7 +631,7 @@ export const TV_MODULES = [
       const tagged = x.tagged?.length ? x.tagged[tick % x.tagged.length] : null
       return (
         <BigFrame icon={Instagram} title={`Instagram @${x.username || 'coisapet'}`} tone="violet">
-          <div className="h-full grid grid-cols-[0.9fr_1fr_1fr] gap-5 min-h-0">
+          <div className="h-full grid grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)] gap-5 min-h-0">
             <div className="flex flex-col gap-4">
               <Tile label="Seguidores" value={(x.followers || 0).toLocaleString('pt-BR')} tone="text-white" sub={x.week_net != null ? `${x.week_net >= 0 ? '+' : ''}${x.week_net} na semana` : null} />
               {x.last_day && (

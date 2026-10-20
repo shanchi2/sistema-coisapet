@@ -41,16 +41,17 @@ async function checkNewVersion() {
 function readCode() { try { return localStorage.getItem(CODE_KEY) || '' } catch { return '' } }
 function saveCode(c) { try { c ? localStorage.setItem(CODE_KEY, c) : localStorage.removeItem(CODE_KEY) } catch { /* sem storage */ } }
 
-// Escala tudo pela largura da tela: 16px de base numa TV 1920 de largura
-function useTvScale() {
+// Escala tudo pela largura da tela: 16px de base numa TV 1920 de largura,
+// vezes o "tamanho do texto" daquela TV (20/10 — TV de 32" usa 120%)
+function useTvScale(pct = 100) {
   useEffect(() => {
     const html = document.documentElement
     const prev = html.style.fontSize
-    const apply = () => { html.style.fontSize = `${Math.max(8, (window.innerWidth / 1920) * 16)}px` }
+    const apply = () => { html.style.fontSize = `${Math.max(8, (window.innerWidth / 1920) * 16 * (pct / 100))}px` }
     apply()
     window.addEventListener('resize', apply)
     return () => { window.removeEventListener('resize', apply); html.style.fontSize = prev }
-  }, [])
+  }, [pct])
 }
 
 function CodeForm({ error, onSubmit }) {
@@ -71,7 +72,6 @@ function CodeForm({ error, onSubmit }) {
 }
 
 export function TvPage() {
-  useTvScale()
   const [params, setParams] = useSearchParams()
   const [code, setCode] = useState(() => params.get('code') || readCode())
   const [feed, setFeed] = useState(null)
@@ -80,6 +80,7 @@ export function TvPage() {
   const [now, setNow] = useState(Date.now())
   const [tick, setTick] = useState(0)
   const [cursorHidden, setCursorHidden] = useState(false)
+  useTvScale(feed?.settings?.font_scale || 100)
 
   // ?code=... na URL: guarda e limpa a URL (não fica visível na TV)
   useEffect(() => {
