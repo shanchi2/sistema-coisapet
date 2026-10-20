@@ -7100,6 +7100,16 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — TV da Produção se atualiza sozinha quando sobe versão nova
+
+Pedido do Raphael: ninguém precisar dar F5 na TV do barracão. A cada minuto
+(junto com o `tv-feed`) a TV baixa o `index.html` publicado (sem cache) e
+compara o script principal (`/sistema/assets/index-<hash>.js`) com o que
+ela carregou; se mudou, recarrega. Trava anti-loop: não recarrega duas
+vezes pro mesmo hash (sessionStorage). Configuração (ligar/desligar blocos,
+ordem, modo) já chegava em até 1 min sem recarregar — isso cobre só
+mudança de CÓDIGO. O reload de 6 em 6h continua como reserva.
+
 ## 2026-10-20 — TV da Produção: 5 blocos novos (liga/desliga na config)
 
 Pedido do Raphael: levar pra TV o que os módulos novos têm de útil pro

@@ -8,11 +8,35 @@ import { moduleByKey, normalizeModules, countdown, whenLabel, fmtHour } from './
 // login e sem menu. O aparelho guarda o código dele (gerado por diretor
 // na tela "TV da Produção") e busca tudo na Edge Function `tv-feed` a
 // cada minuto. Sem internet, continua mostrando o último dado com aviso.
+// 20/10: também confere a cada minuto se subiu versão nova do sistema e
+// recarrega sozinha (ninguém precisa dar F5 na TV do barracão).
 
 const CODE_KEY = 'coisapet_tv_code'
 const REFRESH_MS = 60 * 1000
 const RELOAD_MS = 6 * 60 * 60 * 1000 // recarrega a página inteira a cada 6h (TV ligada o dia todo)
 const TZ = 'America/Sao_Paulo'
+
+// Versão nova no ar? Compara o script principal (nome com hash do Vite) do
+// index.html publicado com o que esta página carregou. Só em produção.
+const VERSION_KEY = 'coisapet_tv_reloaded_for'
+const scriptOf = html => (html.match(/<script[^>]+type="module"[^>]+src="([^"]+\/assets\/index-[^"]+\.js)"/) || [])[1] || null
+async function checkNewVersion() {
+  if (!import.meta.env.PROD) return
+  const mine = [...document.querySelectorAll('script[type="module"][src]')].map(s => new URL(s.src).pathname).find(p => /\/assets\/index-/.test(p))
+  if (!mine) return
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL.replace(/\/$/, '')}/index.html?v=${Date.now()}`, { cache: 'no-store' })
+    if (!res.ok) return
+    const live = scriptOf(await res.text())
+    if (!live || live === mine) return
+    // Evita ficar recarregando em loop se o servidor ainda serve o antigo
+    let last = null
+    try { last = sessionStorage.getItem(VERSION_KEY) } catch { /* sem storage */ }
+    if (last === live) return
+    try { sessionStorage.setItem(VERSION_KEY, live) } catch { /* sem storage */ }
+    window.location.reload()
+  } catch { /* sem internet: tenta no próximo minuto */ }
+}
 
 function readCode() { try { return localStorage.getItem(CODE_KEY) || '' } catch { return '' } }
 function saveCode(c) { try { c ? localStorage.setItem(CODE_KEY, c) : localStorage.removeItem(CODE_KEY) } catch { /* sem storage */ } }
@@ -80,7 +104,7 @@ export function TvPage() {
 
   useEffect(() => {
     load()
-    const r = setInterval(load, REFRESH_MS)
+    const r = setInterval(() => { load(); checkNewVersion() }, REFRESH_MS)
     const reload = setTimeout(() => window.location.reload(), RELOAD_MS)
     return () => { clearInterval(r); clearTimeout(reload) }
   }, [load])
