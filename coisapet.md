@@ -7100,6 +7100,15 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — 4 pedidos manuais de teste arquivados
+
+Pedido do Raphael: sumir com os "Pedidos atrasados" da Expedição que eram
+testes (manuais de 25/05, 27/05 e 07/07: Kerollainy, teste2, Jessica,
+Jordane). Arquivados via SQL (`orders.archived = true`, nunca DELETE), ids
+697366fc…, ed6598f5…, b4c6cf5e…, ccd8c692…. Pra desfazer: `archived=false`.
+Pendência conhecida: o sistema não tem botão pra dar baixa/arquivar pedido
+manual (o picklist não trata manuais). O Raphael disse que não precisa agora.
+
 ## 2026-10-20 — Estoque nos Marketplaces com módulo próprio no Controle de Acesso
 
 Pedido do Raphael: liberar a tela pra Produção, mas com controle separado.
