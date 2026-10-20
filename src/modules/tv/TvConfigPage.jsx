@@ -47,6 +47,7 @@ function Switch({ on, onChange }) {
     </button>
   )
 }
+const FONT_SCALES = [90, 100, 110, 120, 130, 140, 150]
 const LEVELS = [
   { v: 'info', label: 'Informativo', cls: 'bg-emerald-50 text-emerald-700' },
   { v: 'atencao', label: 'Atenção', cls: 'bg-amber-50 text-amber-700' },
@@ -74,7 +75,7 @@ export function TvConfigPage() {
       supabase.from('tv_alerts').select('*').eq('active', true).order('created_at', { ascending: false }),
       supabase.from('announcements').select('id, title, priority, expires_at, show_on_tv, created_at').is('employee_id', null)
         .or(`expires_at.is.null,expires_at.gt.${nowIso}`).order('created_at', { ascending: false }).limit(15),
-      supabase.from('tv_screens').select('id, label, created_at, created_by_name, last_seen_at').is('revoked_at', null).order('created_at'),
+      supabase.from('tv_screens').select('id, label, created_at, created_by_name, last_seen_at, font_scale').is('revoked_at', null).order('created_at'),
     ])
     const err = [s, a, rh, sc].find(r => r.error)
     if (err) { toast.error('Erro ao carregar: ' + err.error.message); return }
@@ -145,6 +146,13 @@ export function TvConfigPage() {
     setCreated({ label, code }); setScreenLabel('')
     loadAll()
   }
+  // Tamanho do texto por TV (20/10): TV pequena (32") pede letra maior
+  async function setScale(s, v) {
+    setScreens(list => list.map(x => x.id === s.id ? { ...x, font_scale: v } : x))
+    const { error } = await supabase.from('tv_screens').update({ font_scale: v }).eq('id', s.id)
+    if (error) toast.error(error.message); else toast.success(`Texto em ${v}% na "${s.label}" — muda em até 1 minuto`)
+  }
+
   async function revoke(s) {
     if (!confirm(`Revogar o código de "${s.label}"? Essa TV para de mostrar os dados até receber um código novo.`)) return
     const { error } = await supabase.from('tv_screens').update({ revoked_at: new Date().toISOString() }).eq('id', s.id)
@@ -298,7 +306,7 @@ export function TvConfigPage() {
             </Panel>
 
             {/* TVs */}
-            <Panel icon={KeyRound} title="TVs conectadas" desc="Cada TV usa um código próprio. Revogue se trocar de aparelho.">
+            <Panel icon={KeyRound} title="TVs conectadas" desc="Cada TV usa um código próprio. Revogue se trocar de aparelho. Em Aa você escolhe o tamanho do texto de cada TV.">
               {screens === null ? <Loader2 size={14} className="animate-spin text-slate-400" /> : (
                 <ul className="flex flex-col gap-1.5 mb-3">
                   {screens.length === 0 && <p className="text-xs text-slate-400">Nenhuma TV ainda.</p>}
@@ -306,6 +314,10 @@ export function TvConfigPage() {
                     <li key={s.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2">
                       <Monitor size={14} className="text-slate-400" />
                       <div className="min-w-0 flex-1"><p className="text-xs font-semibold text-slate-700">{s.label}</p><p className="text-[11px] text-slate-400">{fmtAgo(s.last_seen_at)}</p></div>
+                      <select value={s.font_scale || 100} onChange={e => setScale(s, Number(e.target.value))} title="Tamanho do texto nesta TV (muda em até 1 minuto)"
+                        className="text-[11px] font-semibold text-slate-600 border border-slate-200 rounded-md px-1 py-0.5 bg-white">
+                        {FONT_SCALES.map(v => <option key={v} value={v}>Aa {v}%</option>)}
+                      </select>
                       <button onClick={() => revoke(s)} title="Revogar" className="text-slate-300 hover:text-rose-500"><Trash2 size={13} /></button>
                     </li>
                   ))}

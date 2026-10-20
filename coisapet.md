@@ -7100,6 +7100,16 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-20 — TV da Produção: tamanho do texto por TV
+
+Pedido do Raphael: a TV do barracão é de 32" e a letra ficou pequena (~20%).
+Em vez de aumentar pra todas, cada código de TV ganhou um "Aa" (90% a 150%)
+na lista "TVs conectadas" da config (`tv_screens.font_scale`, fase117). As
+duas TVs ativas ("TV - Barracão" e "PC-Barracão") já foram pra 120%. A TV
+recebe pelo `tv-feed` e multiplica a escala base; muda em até 1 minuto.
+Testado em 120% com todos os blocos — grade do mural de elogios, Instagram
+e "O que está voltando" passou a usar minmax(0, …) pra não desequilibrar.
+
 ## 2026-10-20 — TV da Produção se atualiza sozinha quando sobe versão nova
 
 Pedido do Raphael: ninguém precisar dar F5 na TV do barracão. A cada minuto

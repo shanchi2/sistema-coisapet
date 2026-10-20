@@ -49,7 +49,7 @@ serve(async (req) => {
   if (!token) return json({ error: 'Falta o código da TV' }, 401)
 
   const sb = db()
-  const { data: screen } = await sb.from('tv_screens').select('id, label, last_seen_at')
+  const { data: screen } = await sb.from('tv_screens').select('id, label, last_seen_at, font_scale')
     .eq('token_hash', await sha256Hex(token)).is('revoked_at', null).maybeSingle()
   if (!screen) return json({ error: 'Código da TV inválido ou revogado' }, 401)
   // "Visto por último" — no máx. 1 escrita por minuto
@@ -247,6 +247,7 @@ serve(async (req) => {
       settings: {
         mode: settings?.mode || 'consultorio',
         slide_seconds: settings?.slide_seconds || 10,
+        font_scale: screen.font_scale || 100, // tamanho do texto desta TV (20/10)
         modules: settings?.modules?.length ? settings.modules : MODULES.map(key => ({ key, enabled: true })),
       },
       data: {
