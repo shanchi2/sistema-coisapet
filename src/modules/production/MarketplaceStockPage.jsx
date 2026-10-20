@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Boxes, RefreshCw, Loader2, Search, X, ExternalLink, Warehouse, Download, Info, EyeOff, Eye, ChevronLeft, ChevronRight, Plus, PauseCircle, TrendingUp, SlidersHorizontal, ArrowUpDown, RotateCcw, Pencil, Lock, CheckCircle2, XCircle, Send, ArrowRight } from 'lucide-react'
+import { Boxes, RefreshCw, Loader2, Search, X, ExternalLink, Warehouse, Download, Info, EyeOff, Eye, ChevronLeft, ChevronRight, Plus, PauseCircle, TrendingUp, SlidersHorizontal, ArrowUpDown, RotateCcw, Pencil, Lock, CheckCircle2, XCircle, Send, ArrowRight, Palette } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Panel, fmtInt } from '../dashboard/widgets'
 import { Modal } from '../../components/ui/Modal'
@@ -40,6 +40,10 @@ const canEdit = r => !r.is_full && r.variation !== '(variações não lidas)'
 
 const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
 // "COR: AMADEIRADO - SALA DUPLA" / "Amadeirado / Sala dupla" / "Completo,25g" → "amadeirado|sala dupla"
+// Partes da variação ("Bege / Verde-claro" → ["bege", "verde claro"]) — usadas
+// pra ocultar cores que a CoisaPet não trabalha mais (20/10, pedido do Raphael)
+const varParts = v => norm(v).split(/[,/;|]|\s-\s/).map(p => p.replace(/^[^:]*:\s*/, '').replace(/-/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)
+const prettyPart = v => (v || '').split(/[,/;|]|\s-\s/).map(p => p.replace(/^[^:]*:\s*/, '').trim()).filter(Boolean)
 const normVar = v => norm(v).split(/[,/;|]|\s-\s/).map(p => p.replace(/^[^:]*:\s*/, '').trim()).filter(Boolean).sort().join('|')
 function fmtAgo(iso) {
   if (!iso) return 'nunca'
@@ -142,6 +146,10 @@ export function MarketplaceStockPage() {
   const [filtersOpen, setFiltersOpen] = useState(false)
   const filtersRef = useRef(null)
   const [newHidden, setNewHidden] = useState('')
+  // Cores/variações ocultas: lista da EMPRESA (banco), vale pra todo mundo
+  const [hiddenVars, setHiddenVars] = useState([])   // [{ term, label }]
+  const [hideVarsOn, setHideVarsOn] = useState(true)
+  const [varPicker, setVarPicker] = useState(null)   // null | { q }
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(25)
   // Edição de estoque (09/10): { [rkey]: nova quantidade } — só vai pras
@@ -159,6 +167,7 @@ export function MarketplaceStockPage() {
     setError(null)
     try {
       const since = new Date(Date.now() - 30 * 86400000).toISOString()
+      supabase.from('marketplace_stock_hidden_variations').select('term, label').order('label').then(({ data }) => setHiddenVars(data || []))
       const [s, o, sy] = await Promise.all([
         fetchAll(() => supabase.from('marketplace_stock').select('*').order('id')),
         fetchAll(() => supabase.from('orders').select('source, status_ml, marketplace_status, items:order_items(qty, sku, titulo, variacao)').in('source', ['ml', 'shopee']).gte('data_venda', since).order('data_venda')),
@@ -214,7 +223,7 @@ export function MarketplaceStockPage() {
       const days = perDay ? r.stock / perDay : null
       const st = r.stock ?? 0
       const lvl = st <= 0 ? 'zero' : (days != null && days < 7) || st <= 2 ? 'crit' : (days != null && days < 15) || st <= 5 ? 'low' : 'ok'
-      return { ...r, sold30: sold30 ?? 0, matched: sold30 != null, perDay, days, level: lvl, ntitle: norm(r.title) }
+      return { ...r, sold30: sold30 ?? 0, matched: sold30 != null, perDay, days, level: lvl, ntitle: norm(r.title), vparts: varParts(r.variation) }
     })
   }, [stock, vel])
 
@@ -223,17 +232,45 @@ export function MarketplaceStockPage() {
   const isHidden = useCallback(r => hiddenNorm.some(h => r.ntitle.includes(h)), [hiddenNorm])
   const hiddenCount = useMemo(() => rows.filter(isHidden).length, [rows, isHidden])
 
+  const hiddenVarSet = useMemo(() => new Set(hiddenVars.map(h => h.term)), [hiddenVars])
+  const isVarHidden = useCallback(r => r.vparts.some(p => hiddenVarSet.has(p)), [hiddenVarSet])
+  const hiddenVarCount = useMemo(() => rows.filter(isVarHidden).length, [rows, isVarHidden])
+  // Todas as cores/partes de variação, com quantas variações e quantas zeradas
+  const allParts = useMemo(() => {
+    const m = {}
+    for (const r of rows) {
+      const labels = prettyPart(r.variation)
+      r.vparts.forEach((t, i) => {
+        const x = m[t] ||= { term: t, label: labels[i] || t, n: 0, zero: 0 }
+        x.n++; if (r.level === 'zero') x.zero++
+      })
+    }
+    return Object.values(m).sort((a, b) => b.n - a.n || a.label.localeCompare(b.label))
+  }, [rows])
+  async function toggleVar(part, on) {
+    if (on) {
+      setHiddenVars(h => [...h.filter(x => x.term !== part.term), { term: part.term, label: part.label }].sort((a, b) => a.label.localeCompare(b.label)))
+      const { error } = await supabase.from('marketplace_stock_hidden_variations').upsert({ term: part.term, label: part.label, created_by: user?.name || null })
+      if (error) toast.error('Não salvou: ' + error.message)
+    } else {
+      setHiddenVars(h => h.filter(x => x.term !== part.term))
+      const { error } = await supabase.from('marketplace_stock_hidden_variations').delete().eq('term', part.term)
+      if (error) toast.error('Não salvou: ' + error.message)
+    }
+  }
+
   // Base = tudo que passa pelos filtros "de fundo" (ocultos, Full, pausados,
   // vendendo, busca) — os números dos resumos e chips saem daqui
   const base = useMemo(() => {
     const q = norm(search)
     return rows
       .filter(r => !hidden.on || !isHidden(r))
+      .filter(r => !hideVarsOn || !isVarHidden(r))
       .filter(r => showFull || !r.is_full)
       .filter(r => showPaused || r.status === 'active')
       .filter(r => !onlySelling || r.sold30 > 0)
       .filter(r => !q || r.ntitle.includes(q) || norm(r.variation).includes(q) || norm(r.sku).includes(q) || norm(r.item_id).includes(q))
-  }, [rows, hidden.on, isHidden, showFull, showPaused, onlySelling, search])
+  }, [rows, hidden.on, isHidden, hideVarsOn, isVarHidden, showFull, showPaused, onlySelling, search])
 
   const visible = useMemo(() => {
     const order = { zero: 0, crit: 1, low: 2, ok: 3 }
@@ -250,7 +287,7 @@ export function MarketplaceStockPage() {
   }, [base, plat, level, sortBy])
 
   // Volta pra página 1 quando muda filtro
-  useEffect(() => { setPage(0) }, [plat, level, search, showFull, showPaused, onlySelling, sortBy, hidden, pageSize])
+  useEffect(() => { setPage(0) }, [plat, level, search, showFull, showPaused, onlySelling, sortBy, hidden, hiddenVars, hideVarsOn, pageSize])
   const pages = Math.max(1, Math.ceil(visible.length / pageSize))
   const cur = Math.min(page, pages - 1)
   const pageRows = visible.slice(cur * pageSize, cur * pageSize + pageSize)
@@ -335,6 +372,7 @@ export function MarketplaceStockPage() {
   function resetFilters() {
     setShowFull(true); setShowPaused(true); setOnlySelling(false)
     setHidden({ list: DEFAULT_HIDDEN, on: true })
+    setHideVarsOn(true)
   }
   // Fecha o painel de filtros clicando fora
   useEffect(() => {
@@ -346,6 +384,7 @@ export function MarketplaceStockPage() {
   // Filtros "escondidos" no painel que estão mudando a lista — viram etiquetas visíveis
   const activeFilters = [
     hidden.on && hidden.list.length > 0 && { key: 'hidden', icon: EyeOff, label: `${hidden.list.length} produto${hidden.list.length === 1 ? '' : 's'} oculto${hidden.list.length === 1 ? '' : 's'} (${fmtInt(hiddenCount)} variações)`, clear: () => setHidden(h => ({ ...h, on: false })) },
+    hideVarsOn && hiddenVars.length > 0 && { key: 'vars', icon: Palette, label: `${hiddenVars.length} cor${hiddenVars.length === 1 ? '' : 'es'} oculta${hiddenVars.length === 1 ? '' : 's'} (${fmtInt(hiddenVarCount)} variações)`, clear: () => setHideVarsOn(false) },
     !showFull && { key: 'full', icon: Warehouse, label: 'Sem ML Full', clear: () => setShowFull(true) },
     !showPaused && { key: 'paused', icon: PauseCircle, label: 'Sem pausados', clear: () => setShowPaused(true) },
     onlySelling && { key: 'selling', icon: TrendingUp, label: 'Só o que vendeu em 30d', clear: () => setOnlySelling(false) },
@@ -440,7 +479,7 @@ export function MarketplaceStockPage() {
                   {activeFilters.length > 0 && <span className={`min-w-[20px] h-5 px-1 rounded-full text-[11px] font-bold flex items-center justify-center ${filtersOpen ? 'bg-white text-slate-800' : 'bg-slate-800 text-white'}`}>{activeFilters.length}</span>}
                 </button>
                 {filtersOpen && (
-                  <div className="absolute right-0 top-11 z-30 w-[380px] max-w-[calc(100vw-2rem)] bg-white rounded-2xl border border-slate-200 shadow-xl">
+                  <div className="absolute right-0 top-11 z-30 w-[380px] max-w-[calc(100vw-2rem)] max-h-[75vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-xl">
                     <div className="p-4 flex flex-col gap-1">
                       <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">Mostrar na lista</p>
                       <Switch on={showFull} onChange={setShowFull} icon={Warehouse} label="Anúncios ML Full" hint="estoque que está no armazém do ML" />
@@ -464,6 +503,20 @@ export function MarketplaceStockPage() {
                         <button className="btn-secondary h-9 py-0 text-xs disabled:opacity-40" disabled={!newHidden.trim()}><Plus size={13} /> Adicionar</button>
                       </form>
                     </div>
+                    <div className="p-4 border-t border-slate-100 flex flex-col gap-2">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Cores / variações que não trabalhamos mais</p>
+                      <Switch on={hideVarsOn} onChange={setHideVarsOn} icon={Palette} label="Esconder estas cores" hint={`${fmtInt(hiddenVarCount)} variações · vale pra todo mundo`} />
+                      <div className="flex flex-wrap gap-1.5">
+                        {hiddenVars.map(h => (
+                          <span key={h.term} className="inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full bg-slate-100 border border-slate-200 text-xs text-slate-700">
+                            {h.label}
+                            <button onClick={() => toggleVar(h, false)} className="p-0.5 rounded-full text-slate-400 hover:bg-white hover:text-rose-500" title="Voltar a mostrar"><X size={12} /></button>
+                          </span>
+                        ))}
+                        {!hiddenVars.length && <p className="text-xs text-slate-400">Nenhuma cor oculta.</p>}
+                      </div>
+                      <button onClick={() => { setVarPicker({ q: '' }); setFiltersOpen(false) }} className="btn-secondary h-9 py-0 text-xs self-start"><Palette size={13} /> Escolher cores pra ocultar…</button>
+                    </div>
                     <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between gap-2 bg-slate-50/60 rounded-b-2xl">
                       <button onClick={resetFilters} className="btn-secondary h-8 py-0 text-xs"><RotateCcw size={12} /> Restaurar padrão</button>
                       <button onClick={() => setFiltersOpen(false)} className="btn-primary h-8 py-0 text-xs">Pronto</button>
@@ -471,6 +524,11 @@ export function MarketplaceStockPage() {
                   </div>
                 )}
               </div>
+
+              <button onClick={() => setVarPicker({ q: '' })} title="Escolher cores/variações que não trabalhamos mais (somem da lista)"
+                className="h-9 px-3.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700 hover:border-slate-400 flex items-center gap-2">
+                <Palette size={14} /> Cores ocultas{hiddenVars.length > 0 && <span className="min-w-[20px] h-5 px-1 rounded-full text-[11px] font-bold flex items-center justify-center bg-slate-800 text-white">{hiddenVars.length}</span>}
+              </button>
 
               <div className="flex items-center gap-2 h-9 border border-slate-200 rounded-xl pl-3 pr-1 bg-white">
                 <ArrowUpDown size={14} className="text-slate-400" />
@@ -537,7 +595,14 @@ export function MarketplaceStockPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-2 text-slate-600">{r.variation || <span className="text-slate-300">—</span>}</td>
+                        <td className="px-2 text-slate-600">
+                          {r.variation ? (
+                            <span className="inline-flex items-center gap-1">
+                              {r.variation}
+                              <button onClick={() => setVarPicker({ q: prettyPart(r.variation)[0] || '' })} className="text-slate-300 hover:text-violet-600 opacity-0 group-hover:opacity-100 transition" title="Ocultar esta cor"><Palette size={12} /></button>
+                            </span>
+                          ) : <span className="text-slate-300">—</span>}
+                        </td>
                         <td className="px-2 text-right">{stockCell(r)}</td>
                         <td className="px-2 text-right tabular-nums text-slate-600">{r.matched ? r.sold30 : <span className="text-slate-300" title="Não achei vendas desse anúncio pelo SKU nem pelo título">?</span>}</td>
                         <td className="px-2 text-right tabular-nums text-slate-700">{r.level === 'zero' ? <span className="text-rose-600 font-semibold">acabou</span> : r.days != null ? (r.days < 1 ? '< 1 dia' : `${Math.floor(r.days)} dias`) : <span className="text-slate-300">—</span>}</td>
@@ -584,6 +649,36 @@ export function MarketplaceStockPage() {
           <button onClick={() => { setSent(null); setReviewOpen(true) }} className="h-9 px-4 rounded-xl text-sm font-bold bg-violet-500 hover:bg-violet-400 flex items-center gap-2"><Send size={14} /> Revisar e enviar</button>
         </div>
       )}
+
+      <Modal open={!!varPicker} onClose={() => setVarPicker(null)} title="Cores / variações que não trabalhamos mais"
+        subtitle="Marcadas somem da lista (e dos números) — é proposital estarem sem estoque. Vale pra todo mundo; dá pra desmarcar quando quiser."
+        footer={<div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-slate-500">{hiddenVars.length} oculta{hiddenVars.length === 1 ? '' : 's'} · {fmtInt(hiddenVarCount)} variações escondidas</span>
+          <button onClick={() => setVarPicker(null)} className="btn-primary">Pronto</button>
+        </div>}>
+        {varPicker && (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 h-9 bg-white focus-within:border-slate-400">
+              <Search size={14} className="text-slate-400" />
+              <input autoFocus value={varPicker.q} onChange={e => setVarPicker({ q: e.target.value })} placeholder="Buscar cor (ex.: verde, gepeto)…" className="bg-transparent outline-none text-sm w-full" />
+              {varPicker.q && <button onClick={() => setVarPicker({ q: '' })} className="text-slate-400"><X size={13} /></button>}
+            </div>
+            <div className="flex flex-col gap-1 max-h-[55vh] overflow-y-auto -mx-1 px-1">
+              {allParts.filter(pt => !varPicker.q.trim() || pt.term.includes(norm(varPicker.q).replace(/-/g, ' '))).slice(0, 200).map(pt => {
+                const on = hiddenVarSet.has(pt.term)
+                return (
+                  <label key={pt.term} className={`flex items-center gap-3 rounded-xl px-3 py-2 cursor-pointer border ${on ? 'bg-violet-50 border-violet-200' : 'border-transparent hover:bg-slate-50'}`}>
+                    <input type="checkbox" checked={on} onChange={e => toggleVar(pt, e.target.checked)} className="accent-violet-600 w-4 h-4" />
+                    <span className="flex-1 text-sm font-medium text-slate-700">{pt.label}</span>
+                    <span className="text-[11px] text-slate-400 tabular-nums">{fmtInt(pt.n)} variaç{pt.n === 1 ? 'ão' : 'ões'}{pt.zero ? <> · <span className="text-rose-500 font-semibold">{fmtInt(pt.zero)} zeradas</span></> : ''}</span>
+                  </label>
+                )
+              })}
+              {!allParts.length && <p className="text-sm text-slate-400 text-center py-6">Carregando variações…</p>}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={reviewOpen} onClose={closeReview} size="xl"
         title={sent ? 'Resultado do envio' : 'Enviar estoque pras plataformas'}
