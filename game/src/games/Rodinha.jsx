@@ -11,7 +11,7 @@ export const meta = {
   how: 'Toque na tela (ou espaço) quando a setinha estiver na faixa verde: o hamster acelera! Errou o tempo, ele tropeça. Você tem 30 segundos.',
 }
 
-export default function Rodinha({ pet, onEnd }) {
+export default function Rodinha({ pet, onEnd, paused }) {
   const ref = useRef(null)
   useEffect(() => {
     const canvas = ref.current, ctx = canvas.getContext('2d')
@@ -80,6 +80,7 @@ export default function Rodinha({ pet, onEnd }) {
     let raf, last = performance.now()
     function step(now) {
       const dt = Math.min(0.033, (now - last) / 1000); last = now
+      if (paused.current) { raf = requestAnimationFrame(step); return }
       g.t += dt; g.msgT -= dt; g.stumble -= dt
       // setinha vai e volta, mais rápida com o combo
       g.cur += g.cdir * dt * (0.9 + Math.min(g.combo, 12) * 0.07)

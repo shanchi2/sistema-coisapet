@@ -87,3 +87,6 @@ const HEART = ['.rr.rr.', 'rRRrRRr', 'rRRRRRr', '.rRRRr.', '..rRr..', '...r...']
 const HEART_OFF = HEART.map(r => r.replace(/[rR]/g, 's'))
 let HEARTS = null
 export const hearts = () => HEARTS || (HEARTS = { on: sprite(HEART), off: sprite(HEART_OFF) })
+
+// Cabeça do gato (adversário do Jogo da Velha) — 10x8
+export const CAT_HEAD = ['.k......k.', 'kak....kak', 'kaakkkkaak', 'kaaaaaaaak', 'kagkaagkak', 'kaaaapaaak', '.kaawwaak.', '..kkkkkk..']

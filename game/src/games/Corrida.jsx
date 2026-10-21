@@ -23,7 +23,7 @@ export const meta = {
   how: 'Toque na tela (ou espaço) pra pular. Segure pra pular mais alto. Pegue as sementes e não bata nos obstáculos!',
 }
 
-export default function Corrida({ pet, onEnd }) {
+export default function Corrida({ pet, onEnd, paused }) {
   const ref = useRef(null)
   useEffect(() => {
     const canvas = ref.current, ctx = canvas.getContext('2d')
@@ -64,6 +64,7 @@ export default function Corrida({ pet, onEnd }) {
     let raf, last = performance.now()
     function step(now) {
       const dt = Math.min(0.033, (now - last) / 1000); last = now
+      if (paused.current) { raf = requestAnimationFrame(step); return }
       g.t += dt
       g.speed = Math.min(190, 75 + g.t * 2.2)
       const dx = g.speed * dt

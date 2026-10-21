@@ -7786,3 +7786,22 @@ com os minijogos sugeridos.
   Sementes". Conquistas novas: Explorador, Comilão, Tatu, Maratonista,
   Memória de elefante.
 - Ranking → aba **🕹️ Recordes** com seletor por jogo.
+
+## 2026-10-22 — Fliperama: sair da partida, labirinto casa a casa, Jogo da Velha, Memória com níveis
+
+Ajustes pedidos pelo Raphael depois de testar:
+- **Sair no meio da partida**: botão "✕ Sair" (e o voltar do Android) pausa
+  o jogo e pergunta "Sair da partida?". Sair = os pontos não contam, o pet
+  não cansa e não vale XP. Continuar = segue de onde parou.
+- **Labirinto**: cada toque anda **1 casa** (antes corria até a curva).
+  Segurar o botão vai andando casa a casa.
+- **Segurar o dedo** não abre mais o menu do Android/iPhone ("clique
+  direito"), nem seleciona texto, nem arrasta imagem (só nos campos de texto).
+- **❌ Jogo da Velha** (novo): o hamster da pessoa contra o gato, 5 rodadas,
+  dificuldade Fácil/Médio/Difícil (vitória 100/200/300; empate 30). No
+  difícil o gato joga perfeito (minimax).
+- **🧠 Memória**: 5 níveis (12 → 16 → 20 → 24 → 30 cartas) com 19 desenhos
+  (produtos, comidas boas e que fazem mal, raças) e tempo por nível.
+- Servidor (game-api v4): limites da Memória (até 4000) e da Velha (até
+  1500); conquista "Estrategista" (900 na Velha); "Memória de elefante" agora
+  é 1500.

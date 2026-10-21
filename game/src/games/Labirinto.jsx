@@ -4,8 +4,8 @@ import { ITEM_ICONS, hamsterSprites, sprite, text } from './common'
 // 🕳️ Labirinto de Túneis (0.6) — guiar o hamster pelos túneis do substrato
 // até a toca. Cada fase o labirinto cresce. Tempo corre: chegar na toca dá
 // +100 pontos e +12 s; semente no caminho dá +10.
-// Mexe com ← ↑ → ↓, deslizando o dedo ou pelos botões. O hamster corre até
-// a próxima encruzilhada, seguindo as curvas do túnel sozinho.
+// Mexe com ← ↑ → ↓, deslizando o dedo ou pelos botões: cada toque anda UMA
+// casa (22/10, pedido do Raphael); segurar o botão vai andando casa a casa.
 const VW = 176, TOP = 16, VH = TOP + 176
 const BIG_SEED = ['..k..', '.kwk.', 'kwkwk', 'kwkwk', 'kwkwk', '.kwk.', '..k..']
 let SPR = null
@@ -35,7 +35,7 @@ function makeMaze(n) {
 const DIRS = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] }
 const BACK = { n: 's', s: 'n', e: 'w', w: 'e' }
 
-export default function Labirinto({ pet, onEnd }) {
+export default function Labirinto({ pet, onEnd, paused }) {
   const ref = useRef(null)
   const input = useRef(null)
   useEffect(() => {
@@ -72,7 +72,6 @@ export default function Labirinto({ pet, onEnd }) {
     window.addEventListener('keydown', kd); area.addEventListener('pointerdown', pd); area.addEventListener('pointerup', pu)
 
     const open = (x, y, d) => g.maze.at(x, y)[d]
-    const exits = (x, y) => Object.keys(DIRS).filter(d => open(x, y, d)).length
 
     function draw() {
       ctx.imageSmoothingEnabled = false
@@ -113,12 +112,16 @@ export default function Labirinto({ pet, onEnd }) {
     let raf, last = performance.now()
     function step(now) {
       const dt = Math.min(0.033, (now - last) / 1000); last = now
+      if (paused.current) { raf = requestAnimationFrame(step); return }
       g.t += dt; g.banner -= dt
       if (!g.over) g.time -= dt
       if (g.time <= 0 && !g.over) { g.over = true; draw(); setTimeout(() => onEnd({ score: g.score, seeds: g.seeds }), 900); return }
-      // movimento: parado na casa → aceita direção; andando → corre até curva/encruzilhada
-      if (!g.dir && g.want && open(g.px, g.py, g.want)) { g.dir = g.want; g.want = null }
-      else if (!g.dir) g.want = g.want && open(g.px, g.py, g.want) ? g.want : null
+      // movimento: cada comando anda uma casa (se tiver túnel pra lá)
+      if (!g.dir && g.want) {
+        if (open(g.px, g.py, g.want)) g.dir = g.want
+        else if (DIRS[g.want][0]) g.face = DIRS[g.want][0]
+        g.want = null
+      }
       // virar pra trás no meio do túnel: vale na hora
       if (g.dir && g.want === BACK[g.dir]) {
         const [bx, by] = DIRS[g.dir]
@@ -135,13 +138,7 @@ export default function Labirinto({ pet, onEnd }) {
           if (si >= 0) { g.seedsAt.splice(si, 1); g.seeds++; g.score += 10 }
           if (tx === g.goal[0] && ty === g.goal[1]) {
             g.score += 100; g.time += 12; newLevel()
-          } else {
-            // no túnel (2 saídas) segue sozinho, inclusive nas curvas;
-            // para no beco sem saída e nas encruzilhadas (a pessoa escolhe)
-            if (g.want && g.want !== BACK[g.dir] && open(tx, ty, g.want)) { g.dir = g.want; g.want = null }
-            else if (exits(tx, ty) === 2) g.dir = Object.keys(DIRS).find(d => d !== BACK[g.dir] && open(tx, ty, d))
-            else g.dir = null
-          }
+          } else g.dir = null
         }
       }
       draw()
@@ -154,8 +151,14 @@ export default function Labirinto({ pet, onEnd }) {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // segurar o botão: anda uma casa e repete enquanto estiver apertado
+  const hold = useRef(null)
+  const stop = () => { clearInterval(hold.current); hold.current = null }
+  useEffect(() => stop, [])
+  const press = d => { stop(); input.current?.(d); hold.current = setInterval(() => input.current?.(d), 150) }
   const Btn = ({ d, label, cls }) => (
-    <button onPointerDown={e => { e.stopPropagation(); input.current?.(d) }} className={`pixel-btn rounded-md bg-[#fbeedd] text-[#3b2314] text-xl w-14 h-14 flex items-center justify-center ${cls}`}>{label}</button>
+    <button onPointerDown={e => { e.preventDefault(); press(d) }} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop}
+      className={`pixel-btn rounded-md bg-[#fbeedd] text-[#3b2314] text-xl w-14 h-14 flex items-center justify-center ${cls}`}>{label}</button>
   )
   return (
     <div className="absolute inset-0 flex flex-col landscape:flex-row items-center justify-center gap-2 touch-none select-none p-2">

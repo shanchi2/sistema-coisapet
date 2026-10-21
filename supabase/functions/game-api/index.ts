@@ -88,7 +88,8 @@ const ACHIEVEMENTS: Record<string, (c: any) => boolean> = {
   sementeiro:  c => (c.bests.sementes || 0) >= 400,
   labirinteiro: c => (c.bests.labirinto || 0) >= 600,
   maratonista: c => (c.bests.rodinha || 0) >= 250,
-  memoria_boa: c => (c.bests.memoria || 0) >= 800,
+  memoria_boa: c => (c.bests.memoria || 0) >= 1500,
+  estrategista: c => (c.bests.velha || 0) >= 900,
   sabichao_10: c => c.p.quiz_right >= 10,
   lar_doce_lar: c => c.p.pet_public?.habitat === 'terrario',
   colecionador: c => (c.p.pet_public?.owned?.length || 0) >= 8,
@@ -112,7 +113,8 @@ const GAMES: Record<string, { rate: number, base: number, max?: number, minMs?: 
   sementes:  { rate: 45, base: 60 },
   labirinto: { rate: 60, base: 200 },
   rodinha:   { rate: 15, base: 30, maxMs: 45000 },
-  memoria:   { rate: 1000, base: 0, max: 1000, minMs: 6000 },
+  memoria:   { rate: 200, base: 0, max: 4000, minMs: 6000 },  // 5 níveis
+  velha:     { rate: 150, base: 0, max: 1500, minMs: 5000 },  // 5 rodadas × até 300
 }
 
 // ── Utilitários ─────────────────────────────────────────────────────

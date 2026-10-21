@@ -7,14 +7,15 @@ import Sementes, { meta as mSementes } from './games/Sementes'
 import Labirinto, { meta as mLabirinto } from './games/Labirinto'
 import Rodinha, { meta as mRodinha } from './games/Rodinha'
 import Memoria, { meta as mMemoria } from './games/Memoria'
+import Velha, { meta as mVelha } from './games/Velha'
 
 // ─── Fliperama (0.6, 22/10 — pedido do Raphael: jogo em TELA CHEIA, não modal)
 // Ocupa a tela toda (e pede tela cheia ao navegador quando dá). Tela inicial
-// com os 5 minijogos; cada um abre ocupando tudo, com intro → partida → resultado.
+// com os minijogos; cada um abre ocupando tudo, com intro → partida → resultado.
 // O servidor assina o início e confere tempo × pontos de cada jogo.
 export const GAMES = [
   { ...mCorrida, C: Corrida }, { ...mSementes, C: Sementes }, { ...mLabirinto, C: Labirinto },
-  { ...mRodinha, C: Rodinha }, { ...mMemoria, C: Memoria },
+  { ...mRodinha, C: Rodinha }, { ...mMemoria, C: Memoria }, { ...mVelha, C: Velha },
 ]
 const sprite = (sp, f = 'idle') => spriteCanvas(HAMSTER_FRAMES[f], paletteFor(sp)).toDataURL()
 
@@ -27,21 +28,27 @@ function leaveFullscreen() {
 
 export default function Arcade({ pet, token, me, onClose, onFinish, initial }) {
   const [sel, setSel] = useState(initial || null)
+  const back = useRef(null) // o jogo aberto diz o que o "voltar" faz (pergunta se sai da partida)
   useEffect(() => { goFullscreen(); return leaveFullscreen }, [])
-  // botão "voltar" do celular fecha o jogo/fliperama em vez de sair do app
+  // botão "voltar" do celular: no jogo volta pros jogos (ou pergunta se sai
+  // da partida); na tela inicial fecha o fliperama — nunca sai do app
   useEffect(() => {
     history.pushState({ arcade: 1 }, '')
-    const onPop = () => onClose()
+    const onPop = () => {
+      if (back.current) { history.pushState({ arcade: 1 }, ''); back.current() }
+      else onClose()
+    }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  back.current = sel ? back.current : null
   const close = () => { if (history.state?.arcade) history.back(); else onClose() }
 
   const game = GAMES.find(g => g.key === sel)
   return (
     <div className="fixed inset-0 z-50 bg-[#2b1d14] text-[#fbeedd] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
       {game
-        ? <Play key={game.key} game={game} pet={pet} token={token} me={me} onBack={() => setSel(null)} onFinish={onFinish} />
+        ? <Play key={game.key} game={game} pet={pet} token={token} me={me} onBack={() => setSel(null)} onFinish={onFinish} backRef={back} />
         : <Hub pet={pet} me={me} onPick={setSel} onClose={close} />}
     </div>
   )
@@ -87,11 +94,20 @@ function Hub({ pet, me, onPick, onClose }) {
   )
 }
 
-function Play({ game, pet, token, me, onBack, onFinish }) {
+function Play({ game, pet, token, me, onBack, onFinish, backRef }) {
   const [phase, setPhase] = useState('intro') // intro | play | over
   const [result, setResult] = useState(null)
   const [round, setRound] = useState(0)
+  const [askQuit, setAskQuit] = useState(false)
+  const paused = useRef(false)
+  paused.current = askQuit
   const run = useRef(null)
+  // Voltar no meio da partida: pausa e pergunta. Sair = abandona (não conta
+  // ponto, não cansa o pet, não vale XP)
+  const goBack = () => { if (phase === 'play') setAskQuit(true); else onBack() }
+  backRef.current = goBack
+  useEffect(() => () => { backRef.current = null }, [backRef])
+  function quit() { setAskQuit(false); run.current = null; setPhase('intro') ; onBack() }
   const gate = canRun(pet)
   const best = me?.bests?.[game.key] || 0
   const portrait = typeof window !== 'undefined' && matchMedia('(orientation: portrait)').matches
@@ -103,6 +119,7 @@ function Play({ game, pet, token, me, onBack, onFinish }) {
     setResult(null); setRound(r => r + 1); setPhase('play')
   }
   async function end({ score, seeds }) {
+    if (!run.current) return // partida abandonada
     const ms = Math.round(performance.now() - run.current.startedAt)
     const res = { score, seeds, sending: true }
     setResult(res); setPhase('over')
@@ -120,12 +137,24 @@ function Play({ game, pet, token, me, onBack, onFinish }) {
   return (
     <>
       <header className="flex items-center gap-2 px-3 py-2 shrink-0">
-        <button onClick={onBack} disabled={phase === 'play'} className="pixel-btn rounded-md bg-[#fbeedd] text-[#3b2314] px-3 py-1.5 text-[12px] font-extrabold disabled:opacity-40">← Jogos</button>
+        <button onClick={goBack} className="pixel-btn rounded-md bg-[#fbeedd] text-[#3b2314] px-3 py-1.5 text-[12px] font-extrabold">{phase === 'play' ? '✕ Sair' : '← Jogos'}</button>
         <h1 className="pixel text-[10px] sm:text-xs flex-1 truncate">{game.icon} {game.label}</h1>
         <span className="text-[11px] font-bold text-[#ffd36b] whitespace-nowrap">🏆 {Math.max(best, result?.score || 0)}</span>
       </header>
       <main className="relative flex-1 min-h-0">
-        {phase === 'play' && <G key={round} pet={pet} onEnd={end} />}
+        {phase === 'play' && <G key={round} pet={pet} onEnd={end} paused={paused} />}
+        {askQuit && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 px-6">
+            <div className="bg-[#fbeedd] text-[#3b2314] pixel-box rounded-lg p-5 max-w-xs w-full text-center">
+              <p className="pixel text-xs leading-relaxed">Sair da partida?</p>
+              <p className="text-[13px] mt-2">O jogo está pausado. Se sair agora, os pontos dessa partida <b>não contam</b>.</p>
+              <div className="flex gap-2 mt-4">
+                <button onClick={() => setAskQuit(false)} className="pixel-btn flex-1 rounded-md py-2.5 bg-[#2ecc71] text-white text-[13px] font-extrabold">Continuar</button>
+                <button onClick={quit} className="pixel-btn flex-1 rounded-md py-2.5 bg-[#e74c3c] text-white text-[13px] font-extrabold">Sair</button>
+              </div>
+            </div>
+          </div>
+        )}
         {phase === 'intro' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
             <img src={sprite(pet.species, 'walk')} alt="" className="w-28 h-[84px] animate-bounce" style={{ imageRendering: 'pixelated' }} />
