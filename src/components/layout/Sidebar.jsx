@@ -8,7 +8,7 @@ import {
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
   PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, CalendarDays, Instagram, Link2, ClipboardCheck, Clock,
   HeartPulse, MessageCircle, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film, Zap,
-  Briefcase, Crown, Bookmark, Component, RotateCcw, Headset, HandCoins, Tv, ShieldAlert, LifeBuoy,
+  Briefcase, Crown, Bookmark, Component, RotateCcw, Headset, HandCoins, Tv, ShieldAlert, LifeBuoy, Gamepad2,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
@@ -143,6 +143,7 @@ const NAV_SECTIONS = [
       { to: '/financeiro',   moduleKey: 'financeiro',   icon: DollarSign,   label: 'Financeiro',   roles: ['admin','administrativo'] },
       { to: '/drive',        moduleKey: 'drive',        icon: HardDrive,    label: 'Drive',        roles: ['admin','administrativo','marketplace'] },
       { to: '/coisadecor',   moduleKey: 'coisadecor',   icon: Gem,          label: 'CoisaDecor',   roles: ['admin','administrativo'] },
+      { to: '/minhacoisapet', moduleKey: 'minhacoisapet', icon: Gamepad2,   label: 'MinhaCoisaPet (jogo)', roles: ['admin'] },
       { to: '/compras',      moduleKey: 'financeiro',   icon: ShoppingCart, label: 'Compras',      roles: ['admin','administrativo'] },
       { to: '/pedidos-materia-prima', moduleKey: 'pedidos-materia-prima', icon: Layers, label: 'Pedidos de Matéria-Prima', roles: ['admin','administrativo'] },
       { to: '/fornecedores', moduleKey: 'fornecedores', icon: Truck,        label: 'Fornecedores', roles: ['admin','administrativo'] },

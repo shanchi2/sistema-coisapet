@@ -18,6 +18,7 @@ import { FinancialPage }         from './modules/financial/FinancialPage'
 import { FinanceiroDiretoriaPage } from './modules/financial/FinanceiroDiretoriaPage'
 import { DrivePage }             from './modules/drive/DrivePage'
 import { CoisaDecorPage }        from './modules/coisadecor/CoisaDecorPage'
+import { GameAdminPage }         from './modules/game/GameAdminPage'
 import { ReportsPage }           from './modules/reports/ReportsPage'
 import { UsersPage }             from './modules/users/UsersPage'
 import { SuppliersPage }         from './modules/suppliers/SuppliersPage'
@@ -241,6 +242,7 @@ export default function App() {
                 <Route path="/financeiro-diretoria" element={<GuardedRoute moduleKey="financeiro-dir"><FinanceiroDiretoriaPage /></GuardedRoute>} />
                 <Route path="/drive"                element={<GuardedRoute moduleKey="drive"><DrivePage /></GuardedRoute>} />
                 <Route path="/coisadecor"           element={<GuardedRoute moduleKey="coisadecor"><CoisaDecorPage /></GuardedRoute>} />
+                <Route path="/minhacoisapet"        element={<GuardedRoute moduleKey="minhacoisapet"><GameAdminPage /></GuardedRoute>} />
                 <Route path="/relatorios"           element={<GuardedRoute moduleKey="relatorios"><ReportsPage /></GuardedRoute>} />
                 <Route path="/pedidos"              element={<GuardedRoute moduleKey="pedidos"><OrdersPage /></GuardedRoute>} />
                 <Route path="/pick-list"            element={<GuardedRoute moduleKey="pedidos"><PickListShopee /></GuardedRoute>} />
