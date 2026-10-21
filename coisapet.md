@@ -7100,6 +7100,14 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-21 — Config da TV: endereço sempre visível + código novo por TV
+
+O Raphael não lembrava mais o link da TV. Em "TVs conectadas" agora fica
+sempre o **endereço da TV** (coisapet.com.br/sistema/tv) com copiar/abrir.
+O código de cada TV continua guardado só como hash (não dá pra mostrar de
+novo); pra uma TV que perdeu o código há o botão 🔄 "código novo" na linha
+dela — troca o hash e mantém nome e tamanho do texto (o código antigo para).
+
 ## 2026-10-21 — TV da Produção: bloco "Envios pro Full" completo
 
 Pedido do Raphael: um dos maiores motivos da TV é não esquecer o Full —

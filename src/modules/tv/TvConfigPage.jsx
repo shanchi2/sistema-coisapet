@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Tv, ExternalLink, Save, ArrowUp, ArrowDown, Megaphone, Truck, KeyRound, Copy, Check, Trash2, Loader2, Monitor, LayoutPanelLeft, GalleryHorizontal, Plus, Sun, Moon } from 'lucide-react'
+import { Tv, ExternalLink, Save, ArrowUp, ArrowDown, Megaphone, Truck, KeyRound, Copy, Check, Trash2, Loader2, Monitor, LayoutPanelLeft, GalleryHorizontal, Plus, Sun, Moon, RefreshCw } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { moduleByKey, normalizeModules } from './tvModules'
@@ -161,6 +161,17 @@ export function TvConfigPage() {
     if (error) toast.error(error.message); else toast.success(`Texto em ${v}% na "${s.label}" — muda em até 1 minuto`)
   }
 
+  // Código novo pra uma TV que já existe (21/10): o código só é guardado como
+  // hash, então não dá pra "mostrar de novo" — troca por outro e mantém o
+  // nome e o tamanho do texto. O código antigo para de funcionar.
+  async function reissue(s) {
+    if (!confirm(`Gerar um código novo pra "${s.label}"? O código atual dessa TV para de funcionar — você vai precisar abrir o endereço novo nela.`)) return
+    const code = newCode()
+    const { error } = await supabase.from('tv_screens').update({ token_hash: await sha256Hex(code) }).eq('id', s.id)
+    if (error) { toast.error('Erro: ' + error.message); return }
+    setCreated({ label: s.label, code })
+  }
+
   async function revoke(s) {
     if (!confirm(`Revogar o código de "${s.label}"? Essa TV para de mostrar os dados até receber um código novo.`)) return
     const { error } = await supabase.from('tv_screens').update({ revoked_at: new Date().toISOString() }).eq('id', s.id)
@@ -175,6 +186,7 @@ export function TvConfigPage() {
   const avisosTv = alerts.filter(a => a.kind === 'aviso')
   const coletasTv = alerts.filter(a => a.kind === 'coleta' && new Date(a.event_at) > new Date(Date.now() - 12 * 3600e3))
   const installUrl = created ? `${window.location.origin}${TV_PATH}?code=${created.code}` : ''
+  const tvUrl = `${window.location.origin}${TV_PATH}`
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 lg:p-8">
@@ -342,6 +354,7 @@ export function TvConfigPage() {
                         className="text-[11px] font-semibold text-slate-600 border border-slate-200 rounded-md px-1 py-0.5 bg-white">
                         {FONT_SCALES.map(v => <option key={v} value={v}>Aa {v}%</option>)}
                       </select>
+                      <button onClick={() => reissue(s)} title="Gerar código novo pra esta TV (o atual para de funcionar)" className="text-slate-300 hover:text-sky-600"><RefreshCw size={13} /></button>
                       <button onClick={() => revoke(s)} title="Revogar" className="text-slate-300 hover:text-rose-500"><Trash2 size={13} /></button>
                     </li>
                   ))}
@@ -368,6 +381,16 @@ export function TvConfigPage() {
                   <button onClick={genScreen} className="btn-primary text-xs flex items-center gap-1.5 whitespace-nowrap shrink-0"><KeyRound size={13} />Gerar código</button>
                 </div>
               )}
+              {/* Endereço fixo da TV (21/10, pedido do Raphael: "não lembro mais qual é") */}
+              <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200 p-3 flex flex-col gap-1.5">
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Endereço da TV</p>
+                <div className="flex gap-2">
+                  <code className="flex-1 min-w-0 text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 truncate select-all">{tvUrl}</code>
+                  <button onClick={() => copy(tvUrl, 'tv')} title="Copiar" className="px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600">{copied === 'tv' ? <Check size={13} /> : <Copy size={13} />}</button>
+                  <a href={TV_PATH} target="_blank" rel="noreferrer" title="Abrir" className="px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 flex items-center"><ExternalLink size={13} /></a>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">A TV já guarda o código dela; é só abrir esse endereço. O código não fica salvo no sistema (só uma "impressão digital", por segurança) — se uma TV pedir o código de novo, use <RefreshCw size={10} className="inline -mt-0.5" /> nela pra gerar outro.</p>
+              </div>
               <p className="text-[11px] text-slate-400 mt-3 leading-relaxed">Na TV: abra o endereço no navegador e dê <b>dois cliques</b> na tela pra entrar em tela cheia. Ela se atualiza sozinha a cada minuto.</p>
             </Panel>
           </div>
