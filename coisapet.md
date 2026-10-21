@@ -7100,6 +7100,27 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-21 — Reuniões: tela redesenhada (equipe + linha do tempo + painel lateral)
+
+Pedido do Raphael ("merece um carinho a mais", painel da direita no lugar do
+modal). MeetingsPage reescrita:
+- Cabeçalho em gradiente com 4 indicadores: próximas (e quantas aguardam
+  confirmação), sem registro, combinados em aberto/cumpridos, e pessoas sem
+  conversa há +60 dias e nada agendado.
+- Coluna **Equipe** (ordenada por quem está há mais tempo sem conversar):
+  avatar com cor por pessoa, "última há X dias"/"próxima em X dias" (âmbar
+  quando passa de 60 dias), nº de combinados em aberto; clicar filtra e mostra
+  o cartão da pessoa com "Agendar com Fulano".
+- **Linha do tempo** agrupada por mês, cartão com bloco de data, status,
+  clima, resumo, pontos +/− e barrinha de combinados. Busca no texto dos
+  registros, combinados e nomes. Abre em "Realizadas".
+- **Painel deslizante** (direita, ESC fecha, acima do chat): ver o registro
+  (falado, positivos verde/a desenvolver âmbar, combinados clicáveis pra
+  marcar cumprido na hora, observações internas em cartão escuro, próxima
+  conversa) + histórico das outras reuniões com a pessoa; "Editar" troca pro
+  formulário no próprio painel. "Nova reunião" também virou painel, com
+  escolha do colaborador por avatar e títulos prontos.
+
 ## 2026-10-21 — Reuniões: registro pós-reunião (só diretoria) + reuniões antigas
 
 Pedido do Raphael (/reunioes, one-a-one):
@@ -7116,7 +7137,15 @@ Pedido do Raphael (/reunioes, one-a-one):
   registrar" e já abre o registro. Diretor pode excluir reunião passada.
 - Filtro por colaborador (histórico de one-a-ones da pessoa) e KPIs
   "Realizadas sem registro" e "Combinados em aberto".
-- Pendente: importar o Excel de reuniões antigas (aguardando o arquivo).
+- **Importado** (21/10) o Excel "ONE A ONE - GSS Indústria": 13 reuniões com
+  registro (nov/2025, jul–ago/2026 e a "reunião de 1 mês" do Daniel em 16/10).
+  Mapeamento: pontos positivos/melhoria → campos próprios; "ações combinadas"
+  quebradas no "/" → combinados (prazo da planilha; ✓ quando status Concluído);
+  OBS → observações internas; responsável GABRIEL → criado por Gabriel.
+  Horário não existia na planilha → 10:00. Pela decisão do Raphael: LUIS de
+  11/11/2025 e ANTONIO (07/11/2025) ficaram de fora; EDUARDO → Luis Eduardo;
+  CÉSAR → Antônio César. João Vitor (linha sem data) → aguardando a data pra
+  agendar. O SQL de importação NÃO foi versionado (tem conteúdo sensível).
 
 ## 2026-10-21 — Config da TV: endereço sempre visível + código novo por TV
 
