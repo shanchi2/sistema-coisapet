@@ -66,9 +66,11 @@ const MISSIONS: Record<string, { label: string, icon: string, target: number, se
   run300: { label: 'Faça 300 pontos na Corrida', icon: '🏃', target: 300, server: true },
   run3:   { label: 'Jogue 3 Corridas', icon: '🏁', target: 3, server: true },
   quiz:   { label: 'Responda a pergunta do dia', icon: '❓', target: 1, server: true },
+  games2: { label: 'Jogue 2 minijogos diferentes', icon: '🕹️', target: 2, server: true },
+  sementes200: { label: 'Faça 200 pontos na Chuva de Sementes', icon: '🌻', target: 200, server: true },
 }
 const CARE = ['feed2', 'water1', 'clean1', 'pet5', 'treat1']
-const PLAY = ['run300', 'run3', 'quiz']
+const PLAY = ['run300', 'run3', 'quiz', 'games2', 'sementes200']
 const MISSION_XP = 20, MISSION_ALL_XP = 20
 
 // Conquistas (+25 XP cada, viram figurinha no álbum)
@@ -82,6 +84,11 @@ const ACHIEVEMENTS: Record<string, (c: any) => boolean> = {
   nivel_10:    c => levelOf(c.p.xp) >= 10,
   corredor_500:  c => c.bestRun >= 500,
   corredor_1500: c => c.bestRun >= 1500,
+  explorador:  c => Object.keys(GAMES).every(g => c.bests[g] > 0),
+  sementeiro:  c => (c.bests.sementes || 0) >= 400,
+  labirinteiro: c => (c.bests.labirinto || 0) >= 600,
+  maratonista: c => (c.bests.rodinha || 0) >= 250,
+  memoria_boa: c => (c.bests.memoria || 0) >= 800,
   sabichao_10: c => c.p.quiz_right >= 10,
   lar_doce_lar: c => c.p.pet_public?.habitat === 'terrario',
   colecionador: c => (c.p.pet_public?.owned?.length || 0) >= 8,
@@ -97,7 +104,16 @@ const GOALS: Record<string, (c: any) => boolean> = {
   sabichao_20: c => c.p.quiz_right >= 20,
   liga_diamante: c => c.lastWeekXp >= LEAGUES[3].min,
 }
-const RUN_XP_DAY = 45 // teto de XP por dia vindo dos minijogos
+const RUN_XP_DAY = 60 // teto de XP por dia vindo dos minijogos (somando todos)
+// Minijogos (0.6): limites anti-trapaça — pontos por segundo + base, teto
+// absoluto e duração mínima/máxima. Pontuação fora disso é recusada.
+const GAMES: Record<string, { rate: number, base: number, max?: number, minMs?: number, maxMs?: number }> = {
+  corrida:   { rate: 40, base: 60 },
+  sementes:  { rate: 45, base: 60 },
+  labirinto: { rate: 60, base: 200 },
+  rodinha:   { rate: 15, base: 30, maxMs: 45000 },
+  memoria:   { rate: 1000, base: 0, max: 1000, minMs: 6000 },
+}
 
 // ── Utilitários ─────────────────────────────────────────────────────
 async function sha256Hex(text: string) {
@@ -220,15 +236,17 @@ async function friendCodeFor(sb: any, p: any) {
 // Confere conquistas e metas com prêmio; devolve as novas pra mostrar no jogo
 async function checkAwards(sb: any, p: any) {
   const today = spDay(), ws = weekStart(today)
-  const [{ data: best }, { count: friends }, { count: visits }, { count: contest }, { data: board }] = await Promise.all([
-    sb.from('game_scores').select('score').eq('player_id', p.id).eq('game', 'corrida').order('score', { ascending: false }).limit(1).maybeSingle(),
+  const [{ data: bestRows }, { count: friends }, { count: visits }, { count: contest }, { data: board }] = await Promise.all([
+    sb.rpc('game_player_bests', { p_id: p.id, p_day: today }),
     sb.from('game_friends').select('friend_id', { count: 'exact', head: true }).eq('player_id', p.id),
     sb.from('game_visits').select('host_id', { count: 'exact', head: true }).eq('visitor_id', p.id),
     sb.from('game_contest_entries').select('id', { count: 'exact', head: true }).eq('player_id', p.id),
     sb.rpc('game_week_board', { p_start: ws }),
   ])
   const mine = (board || []).find((r: any) => r.player_id === p.id)
-  const ctx = { p, bestRun: best?.score || 0, friends: friends || 0, visits: visits || 0, contest: contest || 0, lastWeekXp: mine?.xp_last || 0 }
+  const bests: Record<string, number> = {}, todayBy: Record<string, { best: number, count: number }> = {}
+  for (const r of bestRows || []) { bests[r.game] = r.best; todayBy[r.game] = { best: r.today_best, count: r.today_count } }
+  const ctx = { p, bests, todayBy, bestRun: bests.corrida || 0, friends: friends || 0, visits: visits || 0, contest: contest || 0, lastWeekXp: mine?.xp_last || 0 }
   const fresh: string[] = []
   const ach = { ...(p.achievements || {}) }
   for (const [k, test] of Object.entries(ACHIEVEMENTS)) {
@@ -260,16 +278,19 @@ async function checkAwards(sb: any, p: any) {
 async function meOf(sb: any, p: any, awards?: any) {
   const today = spDay(), ws = weekStart(today)
   const aw = awards || await checkAwards(sb, p)
-  const [{ data: xpToday }, { data: runs }, { data: quiz }, { data: goals }, { data: rewards }] = await Promise.all([
+  const [{ data: xpToday }, { data: quiz }, { data: goals }, { data: rewards }] = await Promise.all([
     sb.from('game_xp').select('source, ref, xp').eq('player_id', p.id).eq('day', today),
-    sb.from('game_scores').select('score').eq('player_id', p.id).eq('game', 'corrida').eq('day', today),
     sb.from('game_quiz_answers').select('correct').eq('player_id', p.id).eq('day', today).maybeSingle(),
     sb.from('game_reward_goals').select('key, label, descr, reward').eq('active', true).order('sort'),
     sb.from('game_rewards').select('goal_key, code, reward, created_at, used_at').eq('player_id', p.id),
   ])
   const claimed = (xpToday || []).filter((x: any) => x.source === 'mission').map((x: any) => x.ref)
-  const runBest = Math.max(0, ...(runs || []).map((r: any) => r.score))
-  const serverProgress: Record<string, number> = { run300: runBest, run3: runs?.length || 0, quiz: quiz ? 1 : 0 }
+  const tb = aw.ctx.todayBy
+  const runBest = tb.corrida?.best || 0
+  const serverProgress: Record<string, number> = {
+    run300: runBest, run3: tb.corrida?.count || 0, quiz: quiz ? 1 : 0,
+    games2: Object.values(tb).filter((x: any) => x.count > 0).length, sementes200: tb.sementes?.best || 0,
+  }
   const missions = missionsOn(today).map(id => ({
     id, ...MISSIONS[id], claimed: claimed.includes(id),
     progress: MISSIONS[id].server ? serverProgress[id] : null,
@@ -285,7 +306,8 @@ async function meOf(sb: any, p: any, awards?: any) {
     achievements: p.achievements || {},
     quiz: { answered: !!quiz, correct: quiz?.correct ?? null, right: p.quiz_right, total: p.quiz_total },
     missions, all_bonus: claimed.includes('all'),
-    runs_today: runs?.length || 0, run_best_today: runBest, run_best: aw.ctx.bestRun,
+    runs_today: tb.corrida?.count || 0, run_best_today: runBest, run_best: aw.ctx.bestRun,
+    bests: aw.ctx.bests, today_games: tb,
     run_xp_today: (xpToday || []).filter((x: any) => x.source === 'run').reduce((s: number, x: any) => s + x.xp, 0), run_xp_cap: RUN_XP_DAY,
     xp_today: (xpToday || []).reduce((s: number, x: any) => s + x.xp, 0),
     league: { ...league, last_week_xp: lastWeekXp, next: LEAGUES[LEAGUES.indexOf(league) + 1] || null },
@@ -489,22 +511,27 @@ serve(async (req) => {
       // Minijogo: o servidor assina o início; no fim confere se o tempo e os pontos fazem sentido
       case 'run_start': {
         const p = await mustPlayer(sb, body.token)
-        const payload = `${p.id}.${now()}`
+        const game = GAMES[body.game] ? body.game : 'corrida'
+        const payload = `${p.id}.${game}.${now()}`
         return json({ run_id: `${payload}.${await hmac(payload)}`, now: now() })
       }
 
       case 'run_submit': {
         const p = await mustPlayer(sb, body.token)
-        const [pid, t, sig] = String(body.run_id || '').split('.')
-        if (pid !== p.id || !t || sig !== await hmac(`${pid}.${t}`)) return json({ error: 'Partida inválida' }, 400)
+        const parts = String(body.run_id || '').split('.')
+        // formato novo: id.jogo.início.assinatura (o antigo, sem jogo, é a Corrida)
+        const [pid, game, t, sig] = parts.length === 4 ? parts : [parts[0], 'corrida', parts[1], parts[2]]
+        const signed = parts.length === 4 ? `${pid}.${game}.${t}` : `${pid}.${t}`
+        if (pid !== p.id || !t || !GAMES[game] || sig !== await hmac(signed)) return json({ error: 'Partida inválida' }, 400)
+        const G = GAMES[game]
         const ms = Math.round(Number(body.ms) || 0), score = Math.round(Number(body.score) || 0)
         const elapsed = now() - Number(t)
-        if (ms < 1000 || ms > 20 * 60e3 || elapsed + 3000 < ms || elapsed > 30 * 60e3) return json({ error: 'Partida inválida' }, 400)
-        if (score < 0 || score > ms / 1000 * 40 + 60) return json({ error: 'Pontuação inválida' }, 400)
+        if (ms < (G.minMs || 1000) || ms > (G.maxMs || 20 * 60e3) || elapsed + 3000 < ms || elapsed > 30 * 60e3) return json({ error: 'Partida inválida' }, 400)
+        if (score < 0 || score > ms / 1000 * G.rate + G.base || (G.max && score > G.max)) return json({ error: 'Pontuação inválida' }, 400)
         const today = spDay()
-        const { data: prevBest } = await sb.from('game_scores').select('score').eq('player_id', p.id).eq('game', 'corrida').order('score', { ascending: false }).limit(1).maybeSingle()
+        const { data: prevBest } = await sb.from('game_scores').select('score').eq('player_id', p.id).eq('game', game).order('score', { ascending: false }).limit(1).maybeSingle()
         // a mesma partida não conta 2x (run_ref é único)
-        const ins = await sb.from('game_scores').insert({ player_id: p.id, game: 'corrida', score, ms, day: today, run_ref: `${pid}.${t}` })
+        const ins = await sb.from('game_scores').insert({ player_id: p.id, game, score, ms, day: today, run_ref: signed })
         if (ins.error) { if (ins.error.code === '23505') return json({ error: 'Partida já enviada' }, 400); throw ins.error }
         const { data: runXp } = await sb.from('game_xp').select('xp').eq('player_id', p.id).eq('day', today).eq('source', 'run')
         const used = (runXp || []).reduce((s: number, x: any) => s + x.xp, 0)
@@ -529,10 +556,14 @@ serve(async (req) => {
             league: leagueOf(r.xp_last).key }
         }
         const league = rows.filter((r: any) => leagueOf(r.xp_last).key === myLeague.key).sort((a: any, b: any) => b.xp_week - a.xp_week).map(card)
-        const runs = rows.filter((r: any) => r.best_run > 0).sort((a: any, b: any) => b.best_run - a.best_run).slice(0, 30).map(card)
+        // recordes da semana de um minijogo (padrão: Corrida)
+        const game = GAMES[body.game] ? body.game : 'corrida'
+        const { data: bestRows } = await sb.rpc('game_week_best', { p_start: ws, p_game: game })
+        const rowById = new Map(rows.map((r: any) => [r.player_id, r]))
+        const runs = (bestRows || []).map((b: any) => ({ ...card(rowById.get(b.player_id) || { player_id: b.player_id, xp_week: 0, xp_last: 0 }), best_run: b.best }))
         const general = [...rows].sort((a: any, b: any) => b.xp_week - a.xp_week).slice(0, 50).map(card)
         const end = new Date(addDays(ws, 7) + 'T03:00:00Z').getTime() // segunda 00h de Brasília
-        return json({ week_start: ws, ends_at: end, league: myLeague, leagues: LEAGUES, board: league.slice(0, 50), runs, general, now: now() })
+        return json({ week_start: ws, ends_at: end, league: myLeague, leagues: LEAGUES, board: league.slice(0, 50), runs, game, general, now: now() })
       }
 
       case 'friends': {

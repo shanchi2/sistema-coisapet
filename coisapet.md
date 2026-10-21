@@ -7760,3 +7760,29 @@ conta" e, depois, tudo da conversa sobre propósito/competição.
   apagar sem confirmação) e as funções `zz_gt`/`zz_gr` esvaziadas.
 - Pendências/ideias: mais minijogos (Chuva de Sementes, Labirinto),
   automatizar prêmio do vencedor do concurso, imprimir os cartõezinhos.
+
+## 2026-10-22 — MinhaCoisaPet 0.6: Fliperama em tela cheia + 4 minijogos novos
+
+Pedido do Raphael: "ao invés de modal, abrir o jogo em tela cheia" e seguir
+com os minijogos sugeridos.
+- **Fliperama** (`game/src/Arcade.jsx`): botão 🕹️ Jogos abre uma tela cheia
+  (pede tela cheia ao navegador no celular; no iPhone ocupa a tela toda do
+  app). Tela inicial com os 5 jogos (recorde de cada, energia do pet, XP dos
+  jogos hoje). Cada jogo abre ocupando tudo: intro → partida → resultado.
+  O botão "voltar" do celular fecha o fliperama em vez de sair do app.
+- Jogos (`game/src/games/`), todos em pixel art e com o hamster da pessoa:
+  - 🏃 **Corrida** (o mesmo de antes, agora em tela cheia).
+  - 🌻 **Chuva de Sementes**: arrasta o hamster e pega o que cai; chocolate,
+    uva, cebola e laranja tiram vida e explicam por que fazem mal.
+  - 🕳️ **Labirinto de Túneis**: fases crescentes, setas/deslizar/botões; o
+    hamster segue o túnel sozinho até a próxima encruzilhada.
+  - 🎡 **Rodinha Turbo**: ritmo — toque na faixa verde pra acelerar, 30 s.
+  - 🧠 **Memória CoisaPet**: 6 pares de produtos da loja; a cada par aparece
+    pra que serve o produto.
+- Servidor (game-api v3 + fase121): partida assinada por jogo; limites
+  anti-trapaça por jogo; recordes por jogo (`game_player_bests`,
+  `game_week_best`); teto de XP dos jogos subiu pra 60/dia (soma de todos).
+  Missões novas: "Jogue 2 minijogos diferentes", "200 pontos na Chuva de
+  Sementes". Conquistas novas: Explorador, Comilão, Tatu, Maratonista,
+  Memória de elefante.
+- Ranking → aba **🕹️ Recordes** com seletor por jogo.

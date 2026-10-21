@@ -27,8 +27,14 @@ export const ACH_INFO = {
   amigo:       { icon: '🤝', label: 'Fez um amigo', desc: 'Adicionou um amigo no jogo' },
   visitante:   { icon: '👋', label: 'Visitante', desc: 'Fez carinho no pet de alguém' },
   concurso:    { icon: '📸', label: 'Concorrente', desc: 'Inscreveu o terrário no concurso' },
+  explorador:  { icon: '🕹️', label: 'Explorador', desc: 'Jogou os 5 minijogos' },
+  sementeiro:  { icon: '🌻', label: 'Comilão', desc: '400 pontos na Chuva de Sementes' },
+  labirinteiro: { icon: '🕳️', label: 'Tatu', desc: '600 pontos no Labirinto' },
+  maratonista: { icon: '🎡', label: 'Maratonista', desc: '250 m na Rodinha Turbo' },
+  memoria_boa: { icon: '🧠', label: 'Memória de elefante', desc: '800 pontos na Memória' },
 }
 
+const GAME_TABS = [['corrida', '🏃', 'Corrida'], ['sementes', '🌻', 'Sementes'], ['labirinto', '🕳️', 'Labirinto'], ['rodinha', '🎡', 'Rodinha'], ['memoria', '🧠', 'Memória']]
 const CARE_COUNTER = { feed2: 'feed', water1: 'water', clean1: 'clean', pet5: 'pet', treat1: 'treat' }
 
 export function Sheet({ title, onClose, children, wide }) {
@@ -107,7 +113,7 @@ export function ProgressPanel({ me, pet, token, onMe, onClose, onPlay }) {
                     </div>
                     {m.claimed ? <span className="text-[11px] font-extrabold text-[#2e8b57] whitespace-nowrap">✓ +20 XP</span>
                       : ok ? <button onClick={() => claim(m.id)} disabled={busy === m.id} className="pixel-btn rounded px-2.5 py-1 bg-[#f1c40f] text-[11px] font-extrabold whitespace-nowrap">{busy === m.id ? '…' : 'Pegar +20'}</button>
-                      : (m.id.startsWith('run') ? <button onClick={onPlay} className="text-[11px] font-extrabold text-[#c0392b] whitespace-nowrap underline">jogar</button>
+                      : (['run300', 'run3', 'games2', 'sementes200'].includes(m.id) ? <button onClick={() => onPlay(m.id)} className="text-[11px] font-extrabold text-[#c0392b] whitespace-nowrap underline">jogar</button>
                         : <span className="text-[11px] font-bold text-[#8a6a52] tabular-nums">{p}/{m.target}</span>)}
                   </div>
                 </div>
@@ -280,7 +286,14 @@ export function SocialPanel({ me, token, pet, pub, onMe, onClose, onVisit, initi
   const [err, setErr] = useState(null)
   useEffect(() => { api('ranking', { token }).then(setRank).catch(e => setErr(e.message)) }, [token])
   const left = useCountdown(rank?.ends_at)
-  const TABS = [['liga', '🏆 Liga'], ['corrida', '🏃 Corrida'], ['amigos', '🤝 Amigos'], ['concurso', '📸 Concurso']]
+  const [game, setGame] = useState('corrida')
+  const [runs, setRuns] = useState(null)
+  useEffect(() => {
+    if (tab !== 'corrida') return
+    setRuns(null)
+    api('ranking', { token, game }).then(r => setRuns(r.runs)).catch(e => setErr(e.message))
+  }, [tab, game, token])
+  const TABS = [['liga', '🏆 Liga'], ['corrida', '🕹️ Recordes'], ['amigos', '🤝 Amigos'], ['concurso', '📸 Concurso']]
   return (
     <Sheet title="🏆 Ranking e amigos" onClose={onClose} wide>
       <div className="grid grid-cols-4 gap-1 sm:gap-1.5 mb-3">
@@ -301,13 +314,16 @@ export function SocialPanel({ me, token, pet, pub, onMe, onClose, onVisit, initi
           {!rank.board.length && <p className="text-[12px] text-[#8a6a52]">Ninguém pontuou nesta liga ainda — seja o primeiro!</p>}
         </div>
       ) : <p className="text-[13px] text-[#8a6a52]">Carregando…</p>)}
-      {tab === 'corrida' && (rank ? (
+      {tab === 'corrida' && (
         <div className="flex flex-col gap-2">
-          <p className="text-[12px] text-[#6b4a32]">Melhores pontuações da semana na <b>Corrida do Hamster</b> (todas as ligas). Fecha em <b>{left}</b>.</p>
-          {rank.runs.map((r, i) => <Row key={r.code || i} i={i} r={r} value={r.best_run} onOpen={onVisit} />)}
-          {!rank.runs.length && <p className="text-[12px] text-[#8a6a52]">Ninguém correu nesta semana ainda!</p>}
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            {GAME_TABS.map(([k, ic, l]) => <button key={k} onClick={() => setGame(k)} className={`shrink-0 rounded-md px-2.5 py-1.5 text-[12px] font-extrabold border-2 ${game === k ? 'border-[#3b2314] bg-[#ffd36b]' : 'border-[#e2cdb0] bg-white'}`}>{ic} {l}</button>)}
+          </div>
+          <p className="text-[12px] text-[#6b4a32]">Melhores pontuações da semana (todas as ligas).{rank ? <> Fecha em <b>{left}</b>.</> : null}</p>
+          {runs ? runs.map((r, i) => <Row key={r.code || i} i={i} r={r} value={r.best_run} onOpen={onVisit} />) : <p className="text-[13px] text-[#8a6a52]">Carregando…</p>}
+          {runs && !runs.length && <p className="text-[12px] text-[#8a6a52]">Ninguém jogou esse nesta semana ainda!</p>}
         </div>
-      ) : <p className="text-[13px] text-[#8a6a52]">Carregando…</p>)}
+      )}
       {tab === 'amigos' && <Friends me={me} token={token} onMe={onMe} onVisit={onVisit} />}
       {tab === 'concurso' && <Contest token={token} pet={pet} pub={pub} onMe={onMe} />}
     </Sheet>

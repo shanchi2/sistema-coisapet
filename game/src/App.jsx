@@ -10,7 +10,7 @@ import { now } from './clock'
 import { api, getAuth, setAuth, clearAuth } from './cloud'
 import { LoginScreen, ProfileScreen, ProfileForm, Splash } from './Auth'
 import { ProgressPanel, SocialPanel, AlbumPanel, VisitPanel, Celebrate, Sheet, titleOf } from './Panels'
-import Runner from './Runner'
+import Arcade from './Arcade'
 
 // MinhaCoisaPet — protótipo (16/10).
 // 0.2: inventário (terrário, substrato, roda, toca) + resgate de código.
@@ -359,7 +359,7 @@ function Game({ pet, setPet, onReset, account }) {
             </span>
           </div>
           <div className="flex items-center justify-between gap-3 border-t border-[#e2cdb0] pt-2">
-            <span className="text-[11px] text-[#8a6a52]">MinhaCoisaPet · versão 0.5</span>
+            <span className="text-[11px] text-[#8a6a52]">MinhaCoisaPet · versão 0.6</span>
             <button onClick={() => { if (confirm(`Recomeçar do zero? ${pet.name} vai ser substituído${account.auth ? ' (também na sua conta)' : ''}.`)) onReset() }} className="text-[#c0392b] font-bold whitespace-nowrap text-[13px]">Recomeçar</button>
           </div>
         </div>
@@ -395,7 +395,7 @@ function Game({ pet, setPet, onReset, account }) {
 
           {/* Jogo, progresso, ranking, álbum */}
           <div className="grid grid-cols-4 landscape:grid-cols-2 gap-2">
-            <NavBtn icon="🏃" label="Corrida" color="#9fd8f5" onClick={() => setPanel('corrida')} />
+            <NavBtn icon="🕹️" label="Jogos" color="#9fd8f5" onClick={() => setPanel('jogos')} />
             <NavBtn icon="🎯" label="Missões" color="#ffd36b" onClick={() => setPanel('progresso')} badge={claimable || (me && !me.quiz.answered ? '?' : 0)} />
             <NavBtn icon="🏆" label="Ranking" color="#c8f0c0" onClick={() => setPanel('social')} />
             <NavBtn icon="📒" label="Álbum" color="#ffc2cf" onClick={() => setPanel('album')} />
@@ -417,10 +417,11 @@ function Game({ pet, setPet, onReset, account }) {
           try { const r = await api('redeem', { token, code }); const g = grantItems(advance(pet), r.items); setPet(g.pet); return g }
           catch (e) { return { ok: false, msg: e.message } }
         }} />}
-      {panel === 'corrida' && <Runner pet={pet} token={token} best={me?.run_best} onClose={() => setPanel(null)}
+      {(panel === 'jogos' || panel?.startsWith?.('jogo:')) && <Arcade pet={pet} token={token} me={me} onClose={() => setPanel(null)}
+        initial={panel.startsWith('jogo:') ? panel.slice(5) : null}
         onFinish={r => { if (r.me) applyMe(r.me); else setPet(p => afterRun(advance(p), r)) }} />}
       {panel === 'progresso' && (me
-        ? <ProgressPanel me={me} pet={pet} token={token} onClose={() => setPanel(null)} onPlay={() => setPanel('corrida')}
+        ? <ProgressPanel me={me} pet={pet} token={token} onClose={() => setPanel(null)} onPlay={id => setPanel({ run300: 'jogo:corrida', run3: 'jogo:corrida', sementes200: 'jogo:sementes' }[id] || 'jogos')}
             onMe={(m, msg) => { applyMe(m); if (msg) say(msg) }} />
         : <Sheet title="🎯 Meu progresso" onClose={() => setPanel(null)}><p className="text-[13px] text-[#8a6a52]">Sem internet agora — o progresso aparece quando a conexão voltar.</p></Sheet>)}
       {panel === 'social' && (me
