@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Trash2, ShieldCheck, History, RefreshCw, FileText, ShoppingCart, Truck, ListOrdered, Eye, PackageCheck } from 'lucide-react'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { supabase } from '../../lib/supabase'
 import { todayISO } from '../../lib/dateBR'
 
 // Histórico de importações (redesenho 21/10, pedido do Raphael: "layout mais
@@ -10,6 +11,12 @@ import { todayISO } from '../../lib/dateBR'
 // pedidos de cada lote; dentro do dia, um cartão por plataforma com o
 // raio-x do lote (vão pro picklist / Full / cancelados / sem SKU) e a trilha
 // de sincronizações (API = automático, .xlsx = arquivo).
+// 21/10 (2ª parte): os NÚMEROS do cartão agora saem dos pedidos daquele dia
+// (ship_date + plataforma) com a MESMA regra da Expedição — antes vinham do
+// lote de importação, que junta pedidos de vários dias (a API abre um lote e
+// vai somando) e por isso o cartão mostrava 36 enquanto a Expedição tinha 35.
+// E mostra o andamento da separação (fechados × a separar) sem precisar
+// abrir a Expedição.
 
 const fmtTime = d => d ? new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'
 const addDays = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().split('T')[0] }
@@ -52,8 +59,49 @@ function buildSource(source, events, batchesById, orders) {
   return { source, sorted, b, stats }
 }
 
+// Pedidos do dia por plataforma, com a mesma regra da Expedição
+// (fetchShippingOrders): fora arquivados, Full e cancelados (a não ser
+// cancelado depois de separado), e só pedido com item.
+function useDayStats(dayKeys) {
+  const [stats, setStats] = useState({})
+  const key = dayKeys.join(',')
+  useEffect(() => {
+    if (!dayKeys.length) return
+    let alive = true
+    ;(async () => {
+      const rows = []
+      for (let page = 0; page < 20; page++) {
+        const { data, error } = await supabase.from('orders')
+          .select('source, ship_date, status_ml, is_full, needs_attention, items:order_items(qty, picked, sku_encontrado)')
+          .in('ship_date', dayKeys).eq('archived', false).order('id').range(page * 1000, page * 1000 + 999)
+        if (error) return
+        rows.push(...(data || []))
+        if (!data || data.length < 1000) break
+      }
+      const m = {}
+      for (const o of rows) {
+        const x = m[`${o.source}|${o.ship_date}`] ||= { all: 0, full: 0, canc: 0, exp: 0, done: 0, items: 0, itemsDone: 0, semSku: 0 }
+        x.all++
+        if (o.is_full) { x.full++; continue }
+        const items = o.items || []
+        if (isCancelled(o) && !o.needs_attention) { x.canc++; continue }
+        if (!items.length) continue
+        x.exp++
+        if (items.every(it => it.picked)) x.done++
+        if (items.some(it => it.sku_encontrado === false)) x.semSku++
+        items.forEach(it => { x.items += it.qty || 0; if (it.picked) x.itemsDone += it.qty || 0 })
+      }
+      if (alive) setStats(m)
+    })()
+    return () => { alive = false }
+  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  return stats
+}
+
 export function ImportHistoryTab({ loading, events, batchShipDates, batchesById, orders, openDays, toggleDay, onFeira, onDelete, onViewOrders, onExpedicao }) {
   const [showInfo, setShowInfo] = useState(false)
+  const dayKeys = useMemo(() => [...new Set(events.map(ev => batchShipDates[ev.batch_id] || ev.imported_at?.slice(0, 10)).filter(k => k && k !== 'sem-data'))].sort().reverse().slice(0, 60), [events, batchShipDates])
+  const dayStats = useDayStats(dayKeys)
 
   if (loading) return <div className="card flex justify-center py-12"><div className="w-7 h-7 border-4 border-rose-100 border-t-rose-400 rounded-full animate-spin" /></div>
   if (!events.length) return <div className="card"><EmptyState icon={History} title="Nenhuma importação ainda" description="Os pedidos do ML e da Shopee entram sozinhos pela API — ou importe um arquivo .xlsx." /></div>
@@ -89,7 +137,8 @@ export function ImportHistoryTab({ loading, events, batchShipDates, batchesById,
       {days.map(({ k, sources, uploads }) => {
         const open = openDays.has(k)
         const p = dayParts(k)
-        const tot = sources.reduce((t, s) => t + (s.b?.total_orders || 0), 0)
+        const ds = src => dayStats[`${src}|${k}`]
+        const tot = sources.reduce((t, s) => t + (ds(s.source)?.exp ?? s.b?.total_orders ?? 0), 0)
         const ml = sources.find(s => s.source === 'ml'), sh = sources.find(s => s.source === 'shopee')
         return (
           <section key={k} className={`rounded-3xl border bg-white transition-shadow ${open ? 'border-slate-200 shadow-sm' : 'border-slate-100'}`}>
@@ -109,7 +158,7 @@ export function ImportHistoryTab({ loading, events, batchShipDates, batchesById,
               <div className="hidden md:flex items-center gap-1.5">
                 {sources.map(s => (
                   <span key={s.source} className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${platOf(s.source).soft} ${s.source === 'ml' ? 'text-[#2D3277]' : s.source === 'shopee' ? 'text-[#C2391C]' : 'text-slate-600'}`}>
-                    {platOf(s.source).short} {s.b?.total_orders ?? '—'}
+                    {platOf(s.source).short} {ds(s.source)?.exp ?? s.b?.total_orders ?? '—'}
                   </span>
                 ))}
               </div>
@@ -126,7 +175,7 @@ export function ImportHistoryTab({ loading, events, batchShipDates, batchesById,
 
             {open && (
               <div className="grid md:grid-cols-2 gap-4 px-4 pb-4 sm:px-5 sm:pb-5">
-                {sources.map(s => <SourceCard key={s.source} s={s} onDelete={onDelete} onViewOrders={onViewOrders} onExpedicao={onExpedicao} />)}
+                {sources.map(s => <SourceCard key={s.source} s={s} day={ds(s.source)} isToday={p.isToday} onDelete={onDelete} onViewOrders={onViewOrders} onExpedicao={onExpedicao} />)}
               </div>
             )}
           </section>
@@ -136,16 +185,17 @@ export function ImportHistoryTab({ loading, events, batchShipDates, batchesById,
   )
 }
 
-function SourceCard({ s, onDelete, onViewOrders, onExpedicao }) {
+function SourceCard({ s, day, isToday, onDelete, onViewOrders, onExpedicao }) {
   const [trail, setTrail] = useState(false)
   const P = platOf(s.source)
   const { b, stats, sorted } = s
   const last = sorted[sorted.length - 1]
-  const seg = stats ? [
-    { n: stats.picklist,  c: 'bg-emerald-500', l: 'vão pro picklist' },
-    { n: stats.full,      c: 'bg-indigo-400',  l: 'Full' },
-    { n: stats.cancelado, c: 'bg-rose-400',    l: 'cancelados' },
-  ].filter(x => x.n > 0) : []
+  // Números do dia (regra da Expedição); se ainda não carregou, cai pro lote
+  const exp = day ? day.exp : stats ? stats.picklist : null
+  const done = day ? day.done : null
+  const left = exp != null && done != null ? exp - done : null
+  const pct = exp ? Math.round((done / exp) * 100) : 0
+  const allDone = exp > 0 && left === 0
 
   return (
     <div className={`rounded-2xl border-2 ${P.ring} overflow-hidden flex flex-col`}>
@@ -163,25 +213,39 @@ function SourceCard({ s, onDelete, onViewOrders, onExpedicao }) {
       </div>
 
       <div className="p-4 flex flex-col gap-4 flex-1 bg-white">
-        {/* Números grandes */}
-        <div className="grid grid-cols-3 gap-2">
-          <Num label="Pedidos" value={b?.total_orders ?? '—'} />
-          <Num label="Itens" value={b?.total_items ?? '—'} />
-          <Num label="Pro picklist" value={stats ? stats.picklist : '—'} tone="text-emerald-600" />
-        </div>
-
-        {/* Raio-x do lote */}
-        {stats && (
-          <div>
-            <div className="flex h-2.5 rounded-full overflow-hidden bg-slate-100">
-              {seg.map(x => <div key={x.l} className={x.c} style={{ width: `${(x.n / stats.total) * 100}%` }} title={`${x.n} ${x.l}`} />)}
+        {/* Andamento da separação (o mesmo que a Expedição mostra lá dentro) */}
+        {s.source !== 'manual' && exp != null && (
+          <div className={`rounded-2xl p-4 ${allDone ? 'bg-emerald-50 border border-emerald-200' : 'bg-slate-50 border border-slate-100'}`}>
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Separação {isToday ? 'de hoje' : 'do dia'}</p>
+                <p className="text-3xl font-black tabular-nums leading-tight text-slate-800" style={{ fontFamily: 'Nunito,sans-serif' }}>
+                  {done ?? '—'}<span className="text-slate-300"> / {exp}</span>
+                </p>
+                <p className={`text-xs font-semibold ${allDone ? 'text-emerald-700' : 'text-slate-500'}`}>
+                  {allDone ? '✓ todos os pedidos fechados' : left != null ? `pedidos fechados · faltam ${left}` : 'pedidos fechados'}
+                </p>
+              </div>
+              <p className={`text-4xl font-black tabular-nums ${allDone ? 'text-emerald-500' : pct >= 50 ? 'text-sky-500' : 'text-amber-500'}`} style={{ fontFamily: 'Nunito,sans-serif' }}>{pct}%</p>
             </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-slate-500">
-              {seg.map(x => <span key={x.l} className="flex items-center gap-1.5"><i className={`w-2 h-2 rounded-full ${x.c}`} /><b className="text-slate-700">{x.n}</b> {x.l}</span>)}
-              {stats.semSku > 0 && <span className="flex items-center gap-1.5 text-amber-700 font-semibold">⚠️ {stats.semSku} sem SKU</span>}
+            <div className="h-3 rounded-full bg-white border border-slate-100 overflow-hidden mt-3">
+              <div className={`h-full rounded-full transition-all duration-700 ${allDone ? 'bg-emerald-500' : 'bg-gradient-to-r from-sky-400 to-emerald-500'}`} style={{ width: `${pct}%` }} />
             </div>
+            {day && <p className="text-[11px] text-slate-400 mt-1.5">{day.itemsDone} de {day.items} itens separados</p>}
           </div>
         )}
+
+        {/* Outros números do dia */}
+        {day ? (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+            <span><b className="text-slate-700">{day.exp}</b> pra expedição</span>
+            {day.full > 0 && <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-full bg-indigo-400" /><b className="text-slate-700">{day.full}</b> Full (o ML despacha)</span>}
+            {day.canc > 0 && <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-full bg-rose-400" /><b className="text-slate-700">{day.canc}</b> cancelado{day.canc === 1 ? '' : 's'}</span>}
+            {day.semSku > 0 && <span className="text-amber-700 font-semibold">⚠️ {day.semSku} sem SKU</span>}
+          </div>
+        ) : stats ? (
+          <p className="text-[11px] text-slate-400">Lote: {b?.total_orders} pedidos · {stats.full} Full · {stats.cancelado} cancelados</p>
+        ) : null}
 
         {/* Trilha de sincronizações */}
         <div className="rounded-xl bg-slate-50 border border-slate-100">
@@ -227,15 +291,6 @@ function SourceCard({ s, onDelete, onViewOrders, onExpedicao }) {
         )}
         {!b && <p className="text-xs text-slate-400 flex items-center gap-1.5"><PackageCheck size={13} /> Lote antigo — pedidos já fora da janela carregada.</p>}
       </div>
-    </div>
-  )
-}
-
-function Num({ label, value, tone = 'text-slate-800' }) {
-  return (
-    <div className="rounded-xl bg-slate-50 px-3 py-2">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
-      <p className={`text-2xl font-black tabular-nums leading-tight ${tone}`} style={{ fontFamily: 'Nunito,sans-serif' }}>{value}</p>
     </div>
   )
 }
