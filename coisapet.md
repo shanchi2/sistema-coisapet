@@ -7100,6 +7100,23 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-21 — Histórico de importações: números iguais aos da Expedição + andamento da separação
+
+O Raphael viu 36 pedidos no cartão do ML e 35 dentro da Expedição. Causa: o
+cartão usava o total do **lote de importação** (`import_batches.total_orders`),
+e a API mantém um lote aberto que vai juntando pedidos de vários dias — o lote
+de 20/10 tinha 36 pedidos, só 29 de hoje (o resto de 20, 22, 26, 29 e 30/10),
+e outros lotes também tinham pedidos de hoje. A Expedição conta pelo
+**ship_date + plataforma** (qualquer lote), sem arquivado/Full/cancelado e só
+pedido com item — esse é o número certo (ML 21/10 = 35, conferido no banco).
+Agora o `ImportHistoryTab` busca os pedidos de cada dia com essa mesma regra
+(`useDayStats`) e o cartão mostra:
+- **Separação de hoje: fechados / total** (ex.: 29 / 35, 83%), barra de
+  progresso e "faltam N", itens separados — sem precisar abrir a Expedição;
+- linha com "pra expedição", Full (o ML despacha), cancelados, sem SKU;
+- totais do cabeçalho do dia (ML x / Shopee y) também pela mesma regra.
+"Fechado" = todos os itens do pedido marcados na Expedição (picklist da Carol).
+
 ## 2026-10-21 — Pedidos → Histórico de importações redesenhado (sem "Gerar Picklist")
 
 Pedido do Raphael: layout mais premium/organizado e esconder o "Gerar
