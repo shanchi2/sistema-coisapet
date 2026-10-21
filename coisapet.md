@@ -7116,7 +7116,15 @@ Pedido do Raphael (/reunioes, one-a-one):
   registrar" e já abre o registro. Diretor pode excluir reunião passada.
 - Filtro por colaborador (histórico de one-a-ones da pessoa) e KPIs
   "Realizadas sem registro" e "Combinados em aberto".
-- Pendente: importar o Excel de reuniões antigas (aguardando o arquivo).
+- **Importado** (21/10) o Excel "ONE A ONE - GSS Indústria": 13 reuniões com
+  registro (nov/2025, jul–ago/2026 e a "reunião de 1 mês" do Daniel em 16/10).
+  Mapeamento: pontos positivos/melhoria → campos próprios; "ações combinadas"
+  quebradas no "/" → combinados (prazo da planilha; ✓ quando status Concluído);
+  OBS → observações internas; responsável GABRIEL → criado por Gabriel.
+  Horário não existia na planilha → 10:00. Pela decisão do Raphael: LUIS de
+  11/11/2025 e ANTONIO (07/11/2025) ficaram de fora; EDUARDO → Luis Eduardo;
+  CÉSAR → Antônio César. João Vitor (linha sem data) → aguardando a data pra
+  agendar. O SQL de importação NÃO foi versionado (tem conteúdo sensível).
 
 ## 2026-10-21 — Config da TV: endereço sempre visível + código novo por TV
 
