@@ -7100,6 +7100,24 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-21 — Reuniões: registro pós-reunião (só diretoria) + reuniões antigas
+
+Pedido do Raphael (/reunioes, one-a-one):
+- **Registro da reunião** em cada card (botão "Registrar o que foi falado"):
+  como foi a conversa (ótima/boa/neutra/difícil), o que foi falado, pontos
+  positivos, pontos a desenvolver, **combinados** (texto, responsável
+  colaborador/empresa/ambos, prazo, ✓ cumprido), observações internas e data
+  da próxima conversa. Card mostra resumo, x/y combinados e próxima conversa.
+- **Só diretoria**: `meeting_records` (fase119) não tem acesso direto pela API
+  — só pelas funções `meeting_records_list`/`meeting_record_save`, que exigem
+  o token de sessão de um admin (testado: produção bloqueada pra ler e gravar).
+  O app /equipe continua vendo só título/data/pauta.
+- **Reunião antiga**: na "Nova reunião", data no passado vira "Lançar e
+  registrar" e já abre o registro. Diretor pode excluir reunião passada.
+- Filtro por colaborador (histórico de one-a-ones da pessoa) e KPIs
+  "Realizadas sem registro" e "Combinados em aberto".
+- Pendente: importar o Excel de reuniões antigas (aguardando o arquivo).
+
 ## 2026-10-21 — Config da TV: endereço sempre visível + código novo por TV
 
 O Raphael não lembrava mais o link da TV. Em "TVs conectadas" agora fica
