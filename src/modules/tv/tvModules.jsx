@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { Truck, PackageCheck, Factory, Megaphone, ArrowLeftRight, KanbanSquare, Wrench, ListChecks, Camera, Cake, Siren, CheckCircle2, Clock, AlertTriangle, Target, Star, PackageX, Undo2, Trophy, Instagram, Heart, MessageCircle, UserPlus, UserMinus } from 'lucide-react'
+import { Truck, PackageCheck, Factory, Megaphone, ArrowLeftRight, KanbanSquare, Wrench, ListChecks, Camera, Cake, Siren, CheckCircle2, Clock, AlertTriangle, Target, Star, PackageX, Undo2, Trophy, Instagram, Heart, MessageCircle, UserPlus, UserMinus, Container, ClipboardList } from 'lucide-react'
 
 // TV da Produção (07/10, fase100) — cada módulo tem uma versão GRANDE
 // (destaque / slide) e uma MINI (coluna lateral do modo consultório).
@@ -704,7 +704,83 @@ export const TV_MODULES = [
       )
     },
   },
+  // ── 21/10: Envios pro Full completo ──
+  {
+    key: 'envios_full', label: 'Envios pro Full (completo)', icon: Container,
+    desc: 'Todos os envios agendados pro Full (qualquer data), com foto, cor, SKU e quantidade de cada produto, contagem regressiva e prazo pra cancelar; mais as pré-listas em montagem. Lista longa rola sozinha.',
+    has: d => (d.envios_full?.shipments?.length || 0) + (d.envios_full?.prelists?.length || 0) > 0,
+    Big: ({ d, today, now }) => {
+      const x = d.envios_full
+      return (
+        <BigFrame icon={Container} title="Envios pro Full" tone="sky"
+          right={<span className="text-xl text-slate-400">{plural(x.shipments.length, 'envio agendado', 'envios agendados')}{x.units ? ` · ${x.units} unidades` : ''}</span>}>
+          <div className="flex flex-col gap-6">
+            {x.shipments.map(sh => <FullShipment key={sh.source + sh.id} sh={sh} today={today} now={now} />)}
+            {x.prelists.map(p => (
+              <div key={'p' + p.id} className="rounded-3xl border-2 border-dashed border-slate-600 p-5">
+                <p className="flex items-center gap-3 text-[2rem] font-black text-slate-200 mb-3"><ClipboardList className="w-9 h-9 text-slate-400" />Pré-lista em montagem · {p.name}
+                  <span className="text-xl font-bold text-slate-400 ml-auto">{p.platform === 'shopee' ? 'Shopee' : 'Mercado Livre'} · {p.units} un.</span></p>
+                <FullItems items={p.items} />
+              </div>
+            ))}
+          </div>
+        </BigFrame>
+      )
+    },
+    Mini: ({ d, today, now }) => {
+      const x = d.envios_full
+      const n = x?.shipments?.find(s => s.at)
+      const soon = n && dayOf(n.at) <= addDays(today, 1)
+      return (
+        <MiniFrame icon={Container} title="Envios pro Full" tone={soon ? 'text-rose-300' : 'text-sky-300'} alert={soon}>
+          {n ? <><MiniBig tone={soon ? 'text-white' : 'text-sky-300'}>{whenLabel(n.at, today)}</MiniBig>
+            <MiniTxt>{countdown(n.at, now)} · {n.units} un.{x.shipments.length > 1 ? ` · +${x.shipments.length - 1} envio${x.shipments.length > 2 ? 's' : ''}` : ''}</MiniTxt></>
+            : <MiniTxt className="text-slate-400">{x?.prelists?.length ? `${x.prelists.length} pré-lista em montagem` : 'Nenhum envio agendado'}</MiniTxt>}
+        </MiniFrame>
+      )
+    },
+  },
 ]
+
+// Um envio pro Full: faixa com data/contagem + grade dos produtos
+function FullShipment({ sh, today, now }) {
+  const day = sh.at ? dayOf(sh.at) : null
+  const hot = day && day <= today, warm = day && day === addDays(today, 1)
+  const kind = sh.source === 'manual' ? 'Coleta (lançada pela diretoria)' : sh.type === 'pickup' ? 'Coleta no barracão' : 'Entrega no centro do ML'
+  return (
+    <div className={`rounded-3xl border-2 overflow-hidden ${hot ? 'border-rose-600' : warm ? 'border-amber-500' : 'border-sky-700/70'}`}>
+      <div className={`px-6 py-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-1 ${hot ? 'bg-rose-600 text-white' : warm ? 'bg-amber-400 text-amber-950' : 'bg-sky-950/70 text-white'}`}>
+        <div className="min-w-0">
+          <p className="text-[2.8rem] leading-none font-black">{sh.at ? whenLabel(sh.at, today) : 'Sem data marcada'}</p>
+          <p className="text-xl font-bold mt-2 opacity-90">{kind}{sh.name ? ` · ${sh.name}` : ''}{sh.center ? ` · ${sh.center}` : ''}</p>
+        </div>
+        <div className="text-right">
+          {sh.at && <p className="text-[2.2rem] leading-none font-black tabular-nums">{countdown(sh.at, now)}</p>}
+          <p className="text-xl font-bold mt-1 opacity-90">{sh.units ? `${sh.units} unidades · ${plural(sh.items.length, 'produto', 'produtos')}` : ''}</p>
+        </div>
+      </div>
+      {sh.note && <p className="px-6 pt-4 text-2xl text-slate-200">{sh.note}</p>}
+      {sh.items.length > 0 && <div className="p-5"><FullItems items={sh.items} /></div>}
+      {sh.cancel_limit && <p className="px-6 pb-4 -mt-1 text-lg text-slate-400">Dá pra cancelar/remarcar no ML até {whenLabel(sh.cancel_limit, today).replace('Hoje', 'hoje').replace('Amanhã', 'amanhã')}</p>}
+    </div>
+  )
+}
+function FullItems({ items }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-5 gap-y-3">
+      {items.map((i, k) => (
+        <div key={k} className={`flex items-center gap-4 rounded-2xl px-4 py-3 border ${i.added ? 'bg-emerald-950/30 border-emerald-800/60' : 'bg-slate-900 border-slate-800'}`}>
+          {i.photo ? <img src={i.photo} alt="" referrerPolicy="no-referrer" className="w-[4.5rem] h-[4.5rem] rounded-xl object-cover bg-white shrink-0" /> : <div className="w-[4.5rem] h-[4.5rem] rounded-xl bg-slate-800 shrink-0" />}
+          <div className="min-w-0 flex-1">
+            <p className="text-xl font-bold text-slate-100 leading-snug">{i.title}</p>
+            <p className="text-lg text-slate-400 truncate">{[i.variation, i.sku].filter(Boolean).join(' · ')}{i.added ? ' · ✓ já no envio' : ''}</p>
+          </div>
+          <p className="text-[2.6rem] leading-none font-black tabular-nums text-white shrink-0">{i.qty}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 // Cartão de avaliação do mural de elogios
 function Review({ r, big }) {

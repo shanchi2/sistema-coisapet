@@ -6,6 +6,8 @@
 // marketplaces, motivos de devolução, concluídos do dia anterior e um
 // cartão do Instagram. Os pesados ficam em `tv_cache` (refeitos a cada
 // 15–30 min, não a cada minuto que a TV pergunta).
+// 21/10: + "Envios pro Full" — TODOS os envios agendados (sem limite de
+// dias), com foto, SKU e quantidade de cada item, e as pré-listas abertas.
 //
 // Público (deploy --no-verify-jwt): quem chama é a TV, sem login. Cada
 // aparelho manda o seu código (gerado por diretor na tela "TV da
@@ -37,7 +39,7 @@ const stripHtml = (s: string | null) => (s || '').replace(/<br\s*\/?>/gi, '\n').
 export const MODULES = [
   'alertas', 'coleta_full', 'despacho', 'producao', 'avisos', 'passagem_turno',
   'kanban', 'manutencao', 'checklist', 'midia', 'aniversariantes', 'foco_dia',
-  'elogios', 'estoque_mkt', 'pos_venda', 'concluidos', 'instagram',
+  'elogios', 'estoque_mkt', 'pos_venda', 'concluidos', 'instagram', 'envios_full',
 ]
 const TERMINAL = ['closed_ok', 'closed_with_changes', 'cancelled', 'expired']
 
@@ -224,12 +226,13 @@ serve(async (req) => {
 
     // ── Blocos de 20/10 (cada um falha sozinho, sem derrubar a TV) ──
     const safe = async (f: () => Promise<any>) => { try { return await f() } catch (e) { console.error('[tv-feed] bloco:', e); return null } }
-    const [elogios, estoque_mkt, pos_venda, concluidos, instagram] = await Promise.all([
+    const [elogios, estoque_mkt, pos_venda, concluidos, instagram, envios_full] = await Promise.all([
       safe(() => cached(sb, 'elogios', 30, () => buildElogios(sb))),
       safe(() => cached(sb, 'estoque_mkt', 15, () => buildEstoque(sb))),
       safe(() => cached(sb, 'pos_venda', 30, () => buildPosVenda(sb))),
       safe(() => buildConcluidos(sb, today)),
       safe(() => buildInstagram(sb)),
+      safe(() => buildEnviosFull(sb, now)),
     ])
 
     // ── Alertas (o que pinta a TV de vermelho/amarelo) ───────────────
@@ -261,7 +264,7 @@ serve(async (req) => {
         alertas: alerts,
         coleta_full: { list: coletas, last_sync: lastSyncRow?.synced_at || null, warn_days: warnDays },
         despacho, producao, avisos, passagem_turno: passagem, kanban, manutencao, checklist, midia, aniversariantes, foco_dia,
-        elogios, estoque_mkt, pos_venda, concluidos, instagram,
+        elogios, estoque_mkt, pos_venda, concluidos, instagram, envios_full,
       },
     })
   } catch (err) {
@@ -491,4 +494,40 @@ async function buildInstagram(sb: any) {
     post: m ? { caption: (m.caption || '').split('\n')[0].slice(0, 140), image: m.thumbnail_url || m.media_url, type: m.media_type, at: m.posted_at, likes: m.like_count, comments: m.comments_count, reach } : null,
     tagged: (tagR.data || []).filter((t: any) => t.media_url && t.media_type !== 'VIDEO').map((t: any) => ({ username: t.username, caption: (t.caption || '').split('\n')[0].slice(0, 120), image: t.media_url, type: t.media_type, at: t.posted_at, likes: t.like_count })),
   }
+}
+
+// 🚚 Envios pro Full (21/10): tudo que está agendado no ML (qualquer data
+// futura, não só os próximos dias), com os itens de cada envio, mais as
+// coletas lançadas à mão e as pré-listas ainda abertas. Só quantidades.
+async function buildEnviosFull(sb: any, now: Date) {
+  const [shipR, manualR, preR] = await Promise.all([
+    sb.from('ml_full_inbound_shipments')
+      .select('id, name, status, shipment_type, appointment_date, appointment_cancel_limit, logistic_center_id, products_count, items:ml_full_inbound_items(title, variation, declared_qty, raw)')
+      .not('status', 'in', `(${TERMINAL.join(',')})`)
+      .or(`appointment_date.is.null,appointment_date.gte.${new Date(now.getTime() - 12 * 3600e3).toISOString()}`)
+      .order('appointment_date', { ascending: true, nullsFirst: false }).limit(10),
+    sb.from('tv_alerts').select('id, title, body, event_at').eq('kind', 'coleta').eq('active', true)
+      .gte('event_at', new Date(now.getTime() - 12 * 3600e3).toISOString()).order('event_at'),
+    sb.from('full_prelists').select('id, platform, name, status, updated_at, items:full_prelist_items(title, variation, sku, thumbnail, qty, added, position)')
+      .neq('status', 'concluida').order('updated_at', { ascending: false }).limit(5),
+  ])
+  const shipments = (shipR.data || []).map((s: any) => {
+    const items = (s.items || []).map((i: any) => ({
+      title: i.title, variation: i.variation || null, qty: i.declared_qty || 0,
+      sku: i.raw?.sku || null, photo: i.raw?.pictures?.[0]?.secureUrl || null,
+    })).sort((a: any, b: any) => b.qty - a.qty)
+    return {
+      source: 'ml', id: s.id, name: s.name, status: s.status, type: s.shipment_type, at: s.appointment_date,
+      cancel_limit: s.appointment_cancel_limit, center: s.logistic_center_id,
+      units: items.reduce((t: number, i: any) => t + i.qty, 0) || s.products_count || 0, items,
+    }
+  })
+  const manual = (manualR.data || []).map((a: any) => ({ source: 'manual', id: a.id, name: a.title, note: a.body, at: a.event_at, units: 0, items: [] }))
+  const prelists = (preR.data || []).map((p: any) => {
+    const items = (p.items || []).sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0))
+      .map((i: any) => ({ title: i.title, variation: i.variation, sku: i.sku, photo: i.thumbnail, qty: i.qty || 0, added: !!i.added }))
+    return { id: p.id, platform: p.platform, name: p.name, items, units: items.reduce((t: number, i: any) => t + i.qty, 0) }
+  }).filter((p: any) => p.items.length)
+  const all = [...shipments, ...manual].sort((a: any, b: any) => String(a.at || '9').localeCompare(String(b.at || '9')))
+  return { shipments: all, prelists, units: all.reduce((t: number, s: any) => t + (s.units || 0), 0) }
 }
