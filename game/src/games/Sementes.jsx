@@ -15,7 +15,7 @@ export const meta = {
   how: 'Arraste o dedo (ou use ← →) pra mover o hamster. Pegue sementes, ração e verduras. Fuja de chocolate, uva, cebola e laranja: fazem mal pra ele!',
 }
 
-export default function Sementes({ pet, onEnd }) {
+export default function Sementes({ pet, onEnd, paused }) {
   const ref = useRef(null)
   useEffect(() => {
     const canvas = ref.current, ctx = canvas.getContext('2d')
@@ -60,6 +60,7 @@ export default function Sementes({ pet, onEnd }) {
     let raf, last = performance.now()
     function step(now) {
       const dt = Math.min(0.033, (now - last) / 1000); last = now
+      if (paused.current) { raf = requestAnimationFrame(step); return }
       g.t += dt
       if (g.keys.l) g.target = g.x - 40
       if (g.keys.r) g.target = g.x + 40
