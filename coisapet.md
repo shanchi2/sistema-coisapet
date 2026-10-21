@@ -7100,6 +7100,25 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-21 — TV da Produção: bloco "Envios pro Full" completo
+
+Pedido do Raphael: um dos maiores motivos da TV é não esquecer o Full —
+produtos, datas, quantidades. O bloco antigo "Coleta do Full" só aparecia
+nos 2 dias antes da coleta e mostrava só a próxima. O novo `envios_full`
+(liga/desliga na config, entra ligado no dia e na noite) mostra:
+- TODOS os envios agendados no ML (qualquer data), do mais próximo pro mais
+  longe: data/hora, contagem regressiva, coleta × entrega, nome do envio,
+  centro do ML, total de unidades e o prazo pra cancelar/remarcar;
+- cada produto com foto (do próprio ML), cor, SKU e quantidade (maior
+  primeiro, título inteiro pra não perder a medida — 60x40x40 etc.);
+- coletas lançadas à mão na config e pré-listas ainda abertas (itens já
+  adicionados no painel ficam verdes);
+- cor: vermelho no dia, amarelo na véspera, azul antes disso.
+Lista longa rola sozinha (AutoScroll). Dados: `ml_full_inbound_shipments`
++ itens (`raw.sku`, `raw.pictures`), `tv_alerts` coleta, `full_prelists`.
+Não cruzei com o estoque interno (`products.stock_qty` dos SKUs do Full
+está zerado — mostraria "falta produzir tudo").
+
 ## 2026-10-20 — TV da Produção: rolagem automática nos slides compridos
 
 Pedido do Raphael: slide com mais conteúdo do que cabe na tela rola sozinho,
