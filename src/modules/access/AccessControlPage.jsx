@@ -44,6 +44,7 @@ const MODULES = [
   { key: 'timesheet',    label: 'Timesheet',       section: 'Gestão',        icon: '⏱️' },
   { key: 'drive',        label: 'Drive',           section: 'Gestão',        icon: '🗄️' },
   { key: 'coisadecor',   label: 'CoisaDecor',      section: 'Gestão',        icon: '🎨' },
+  { key: 'minhacoisapet', label: 'MinhaCoisaPet — jogadores, mailing e prêmios (só Diretoria vê os dados)', section: 'Gestão', icon: '🐹' },
   { key: 'bio-links',    label: 'Bio Links',       section: 'Gestão',        icon: '🔗' },
   { key: 'cotacoes',     label: 'Cotações',        section: 'Gestão',        icon: '📝' },
   { key: 'avaliacoes',   label: 'Avaliações',      section: 'Mkt & Atendimento',        icon: '⭐' },

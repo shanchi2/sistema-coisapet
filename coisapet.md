@@ -7722,3 +7722,41 @@ anão russo, sírio panda); porquinho-da-índia/gerbil depois.
     (ex.: 🥵 35°), aviso ao abrir o jogo nos dias especiais e a **dica do
     clima** abre o quadro de dicas (e volta a cada 3 dicas).
   - Corrigido: mensagem (toast) comprida saía cortada no celular — agora quebra linha.
+
+## 2026-10-21 — MinhaCoisaPet 0.5: login obrigatório + propósito (nível, ofensiva, missões, ranking, minijogo…)
+
+Pedido do Raphael: "sem login não joga — e-mail + WhatsApp, o pet fica preso à
+conta" e, depois, tudo da conversa sobre propósito/competição.
+- **Login obrigatório**: tela de entrada (e-mail → código de 6 dígitos) e, na
+  1ª vez, cadastro com nome, WhatsApp (só guardado, máscara BR, 1 conta por
+  número), aceite dos termos e caixinha **opcional** "quero novidades pelo
+  WhatsApp" (LGPD → é o mailing). Quem já jogava sem conta leva o pet junto.
+  Ao sair, o pet sai do aparelho (é da conta).
+- **Regras no servidor** (`game-api`, fase120): XP/nível de tutor
+  (nível L = 50·L·(L−1) XP), ofensiva 🔥 (1º cuidado do dia, horário de
+  Brasília), 3 missões do dia iguais pra todos (+20 cada, +20 bônus),
+  pergunta do dia (26 perguntas reais sobre hamster; +15 certa/+5 errada),
+  14 conquistas (+25, viram figurinhas no álbum).
+- **Corrida do Hamster** (minijogo estilo dinossauro do Chrome, com o hamster
+  da pessoa): servidor assina o início e confere tempo × pontos (tentativa
+  de mandar 99999 é recusada; mesma partida não conta 2x). Cansa o pet
+  (energia/sede) e dá sementinhas. XP dos jogos: teto de 45/dia.
+- **Ranking semanal com ligas** (Bronze/Prata 150/Ouro 350/Diamante 600 —
+  pela XP da semana anterior) + ranking de recordes da Corrida.
+- **Amigos** (código de 6 letras, convite), **visita** com a cena do pet do
+  outro (carinho 1x/dia: +5 XP pra quem visita, +3 pro visitado).
+- **Concurso mensal de terrário** (inscreve o terrário, vota 1x em cada,
+  não vale votar no seu; vencedores do mês anterior aparecem).
+- **Metas com prêmio** (por mérito, sem sorteio — Lei 5.768): começam
+  DESLIGADAS. A Diretoria escreve o prêmio e liga em Sistema → Gestão →
+  **MinhaCoisaPet (jogo)**; quem cumpre ganha código PET-XXXX-XXXX.
+- **Códigos de compra reais** (cartãozinho): gerados nessa mesma página
+  (CP-XXXX-XXXX, uso único); os TESTE-* continuam funcionando.
+- Página da Diretoria: jogadores, export CSV do mailing (só quem autorizou),
+  metas/prêmios (marcar entregue), gerar códigos.
+- Testado de ponta a ponta na API real (via pg_net) com 2 contas de teste,
+  que foram apagadas pelo próprio "apagar conta". Sobrou só o código
+  `CP-ZZTE-STE1` marcado "teste do Claude (ignorar)" (o MCP não consegue
+  apagar sem confirmação) e as funções `zz_gt`/`zz_gr` esvaziadas.
+- Pendências/ideias: mais minijogos (Chuva de Sementes, Labirinto),
+  automatizar prêmio do vencedor do concurso, imprimir os cartõezinhos.

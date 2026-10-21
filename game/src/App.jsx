@@ -2,17 +2,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   NEEDS, NEED_INFO, SPECIES, HABITATS, CATALOG, CATALOG_KEYS, TIPS, newPet, weatherOn, advance, status, poopCount, isDaytime,
   feed, water, cleanOne, cleanAll, pet_, treat, wheelRun, sandBath, chillStone, migrate, habitatOf, isPlaced, togglePlace, redeem, mods,
+  daily, afterRun, grantItems, isTestCode,
 } from './sim'
 import { HAMSTER_FRAMES, paletteFor, spriteCanvas } from './art'
 import { createGame, bridge } from './scene'
 import { now } from './clock'
 import { api, getAuth, setAuth, clearAuth } from './cloud'
+import { LoginScreen, ProfileScreen, ProfileForm, Splash } from './Auth'
+import { ProgressPanel, SocialPanel, AlbumPanel, VisitPanel, Celebrate, Sheet, titleOf } from './Panels'
+import Runner from './Runner'
 
 // MinhaCoisaPet — protótipo (16/10).
 // 0.2: inventário (terrário, substrato, roda, toca) + resgate de código.
 // 0.4 (17/10): login opcional por código no e-mail → o pet fica salvo na
 // nuvem (troca de celular/PC sem perder) e o tempo passa a vir do servidor.
 // O aparelho continua guardando uma cópia (abre sem internet).
+// 0.5 (21/10): login OBRIGATÓRIO (e-mail + WhatsApp, pet preso à conta) e o
+// "propósito": nível de tutor, ofensiva, missões do dia, pergunta do dia,
+// conquistas/álbum, Corrida do Hamster (minijogo), ranking semanal com ligas,
+// metas com prêmio, amigos/visitas e concurso mensal de terrário.
 const SAVE_KEY = 'minhacoisapet_v1'
 const PUSH_EVERY = 20000 // manda o save pra nuvem no máx. a cada 20 s (e ao sair)
 
@@ -38,13 +46,23 @@ export default function App() {
     return p ? advance(p) : null
   })
   const [auth, setAuthState] = useState(getAuth)
-  const [loginOpen, setLoginOpen] = useState(false)
-  const [conflict, setConflict] = useState(null) // { local, cloud }
-  const [syncState, setSyncState] = useState(auth ? 'sync' : 'local') // local | sync | ok | offline
+  const [booting, setBooting] = useState(() => !!getAuth())
+  const [needsProfile, setNeedsProfile] = useState(false)
+  const [me, setMe] = useState(null)               // progresso vindo do servidor (XP, ofensiva, missões…)
+  const [celebrate, setCelebrate] = useState([])   // conquistas/prêmios novos pra comemorar
+  const [conflict, setConflict] = useState(null)   // { local, cloud }
+  const [syncState, setSyncState] = useState('sync') // sync | ok | offline
   const petRef = useRef(pet); petRef.current = pet
   const authRef = useRef(auth); authRef.current = auth
 
   useEffect(() => { if (pet) save(pet) }, [pet])
+
+  const applyMe = useCallback(m => {
+    if (!m) return
+    setMe(m)
+    const extra = [...(m.new_achievements || []).map(key => ({ type: 'ach', key })), ...(m.new_rewards || []).map(r => ({ type: 'reward', ...r }))]
+    if (extra.length) setCelebrate(c => [...c, ...extra])
+  }, [])
 
   // Junta o save da nuvem com o do aparelho depois de entrar / ao abrir o jogo
   const reconcile = useCallback((cloudSave, localTick) => {
@@ -61,31 +79,33 @@ export default function App() {
     setConflict({ local, cloud })                               // dois pets diferentes: a pessoa escolhe
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ao abrir: acerta o relógio pelo servidor e, se tiver conta, baixa o save
+  function dropAuth() { clearAuth(); setAuthState(null); authRef.current = null; setMe(null); setNeedsProfile(false) }
+
+  // Ao abrir: com conta, baixa o save e o progresso (e acerta o relógio pelo servidor)
   useEffect(() => {
-    if (auth) {
-      api('load', { token: auth.token })
-        .then(r => { setSyncState('ok'); reconcile(r.save, storedTick.current) })
-        .catch(e => { if (e.status === 401) { clearAuth(); setAuthState(null); setSyncState('local') } else setSyncState('offline') })
-    } else {
-      api('time').then(() => setPet(p => p && advance(p))).catch(() => {})
-    }
+    if (!auth) return
+    api('load', { token: auth.token })
+      .then(r => { setSyncState('ok'); setNeedsProfile(!!r.needs_profile); applyMe(r.me); reconcile(r.save, storedTick.current) })
+      .catch(e => { if (e.status === 401) dropAuth(); else setSyncState('offline') })
+      .finally(() => setBooting(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sobe o save pra nuvem: no máx. a cada 20 s e quando o jogo é escondido/fechado
+  // Sobe o save pra nuvem: no máx. a cada 20 s e quando o jogo é escondido/fechado.
+  // `pub` = vitrine pública (status/conforto) pro ranking, visitas e concurso.
   const pushTimer = useRef(null)
   function pushNow(keepalive = false) {
     clearTimeout(pushTimer.current); pushTimer.current = null
     const a = authRef.current, p = petRef.current
-    if (!a || !p) return
-    api('save', { token: a.token, pet: p }, { keepalive })
+    if (!a || !p) return Promise.resolve()
+    const pub = { status: status(p).key, comfort: mods(p).comfort * 100 }
+    return api('save', { token: a.token, pet: p, pub }, { keepalive })
       .then(() => setSyncState('ok'))
-      .catch(e => { if (e.status === 401) { clearAuth(); setAuthState(null); setSyncState('local') } else setSyncState('offline') })
+      .catch(e => { if (e.status === 401) dropAuth(); else setSyncState('offline') })
   }
   useEffect(() => {
-    if (!auth || !pet || conflict || pushTimer.current) return
+    if (!auth || !pet || conflict || needsProfile || pushTimer.current) return
     pushTimer.current = setTimeout(() => pushNow(), PUSH_EVERY)
-  }, [pet, auth, conflict]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pet, auth, conflict, needsProfile]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onHide = () => { if (document.visibilityState === 'hidden') pushNow(true) }
     document.addEventListener('visibilitychange', onHide)
@@ -95,20 +115,29 @@ export default function App() {
   function onLoggedIn(r) {
     const a = { token: r.token, email: r.email }
     setAuth(a); setAuthState(a); authRef.current = a
-    setLoginOpen(false); setSyncState('ok')
+    setSyncState('ok'); setNeedsProfile(!!r.needs_profile); applyMe(r.me)
     reconcile(r.save)
   }
+  // Sair: salva na nuvem e tira o pet do aparelho (ele é da conta — se outra
+  // pessoa entrar aqui, não leva o pet de quem saiu)
   async function logout() {
+    await pushNow()
     const a = authRef.current
-    pushNow()
-    clearAuth(); setAuthState(null); setSyncState('local')
+    dropAuth()
     if (a) api('logout', { token: a.token }).catch(() => {})
+    try { localStorage.removeItem(SAVE_KEY) } catch { /* sem storage */ }
+    setPet(null)
   }
   async function deleteAccount() {
     const a = authRef.current
-    if (!a || !confirm('Apagar sua conta? O pet salvo na nuvem some (a cópia deste aparelho continua aqui).')) return
-    try { await api('delete_account', { token: a.token }); clearAuth(); setAuthState(null); setSyncState('local'); alert('Conta apagada.') }
-    catch (e) { alert(e.message) }
+    if (!a || !confirm('Apagar sua conta? O pet, o nível, a ofensiva e os prêmios somem pra sempre.')) return
+    try {
+      await api('delete_account', { token: a.token })
+      dropAuth()
+      try { localStorage.removeItem(SAVE_KEY) } catch { /* sem storage */ }
+      setPet(null)
+      alert('Conta apagada.')
+    } catch (e) { alert(e.message) }
   }
   function chooseConflict(which) {
     const { local, cloud } = conflict
@@ -117,78 +146,20 @@ export default function App() {
     if (which === 'local') setTimeout(() => pushNow(), 0)
   }
 
-  const account = { auth, syncState, openLogin: () => setLoginOpen(true), logout, deleteAccount }
+  // Login obrigatório: sem conta (e sem cadastro completo) não joga
+  if (!auth) return <LoginScreen onDone={onLoggedIn} hasLocal={!!pet} />
+  if (booting) return <Splash />
+  if (needsProfile) return <ProfileScreen token={auth.token} onDone={m => { setNeedsProfile(false); applyMe(m); pushNow() }} onLogout={logout} />
+
+  const account = { auth, syncState, me, applyMe, logout, deleteAccount }
   return (
     <>
       {pet
         ? <Game pet={pet} setPet={setPet} account={account} onReset={() => { localStorage.removeItem(SAVE_KEY); setPet(null) }} />
         : <Onboarding onStart={p => setPet(p)} account={account} />}
-      {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} onDone={onLoggedIn} hasLocal={!!pet} />}
       {conflict && <ConflictModal {...conflict} onChoose={chooseConflict} />}
+      {celebrate.length > 0 && <Celebrate items={celebrate} onClose={() => setCelebrate(c => c.slice(1))} />}
     </>
-  )
-}
-
-// ─── Entrar: e-mail → código de 6 dígitos ───────────────────────────
-function LoginModal({ onClose, onDone, hasLocal }) {
-  const [step, setStep] = useState('email')
-  const [email, setEmail] = useState('')
-  const [ageOk, setAgeOk] = useState(false)
-  const [code, setCode] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState(null)
-  const [wait, setWait] = useState(0)
-  useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait(w => w - 1), 1000); return () => clearTimeout(t) }, [wait])
-
-  async function sendCode(e) {
-    e?.preventDefault()
-    setErr(null); setBusy(true)
-    try { await api('request_code', { email: email.trim(), age_ok: ageOk }); setStep('code'); setWait(60) }
-    catch (x) { setErr(x.message) } finally { setBusy(false) }
-  }
-  async function verify(e) {
-    e.preventDefault()
-    setErr(null); setBusy(true)
-    try { onDone(await api('verify_code', { email: email.trim(), code })) }
-    catch (x) { setErr(x.message) } finally { setBusy(false) }
-  }
-  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-      <div className="w-full sm:max-w-sm bg-[#fbeedd] pixel-box rounded-t-xl sm:rounded-lg p-5" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="pixel text-sm text-[#3b2314]">☁️ Entrar</h2>
-          <button onClick={onClose} className="text-2xl leading-none px-2 text-[#8a6a52]" aria-label="Fechar">×</button>
-        </div>
-        {step === 'email' ? (
-          <form onSubmit={sendCode} className="flex flex-col gap-3">
-            <p className="text-[13px] text-[#6b4a32]">Com uma conta, seu pet fica salvo e você pode jogar no celular e no computador. Sem senha: a gente manda um código pro seu e-mail.</p>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" autoComplete="email"
-              className="pixel-box rounded-md px-3 py-2.5 text-base font-bold bg-white outline-none" />
-            <label className="flex items-start gap-2 text-[12px] text-[#3b2314] cursor-pointer">
-              <input type="checkbox" checked={ageOk} onChange={e => setAgeOk(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[#2ecc71]" />
-              <span>Tenho 12 anos ou mais — <b>ou</b> um adulto responsável está me ajudando.</span>
-            </label>
-            {err && <p className="text-[12px] font-bold text-rose-600">{err}</p>}
-            <button disabled={!emailOk || !ageOk || busy} className="pixel-btn rounded-md py-3 bg-[#2ecc71] text-white pixel text-xs disabled:opacity-50">{busy ? 'Enviando…' : 'Receber código'}</button>
-            <p className="text-[10px] text-[#a88a70] leading-snug">Guardamos só o seu e-mail, pra salvar o jogo. Não mandamos propaganda. Dá pra apagar a conta quando quiser, no menu ☰.{hasLocal ? ' O pet deste aparelho vai junto pra sua conta.' : ''}</p>
-          </form>
-        ) : (
-          <form onSubmit={verify} className="flex flex-col gap-3">
-            <p className="text-[13px] text-[#6b4a32]">Mandamos um código de 6 números pra <b>{email.trim()}</b>. Olhe também a caixa de spam.</p>
-            <input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" autoFocus
-              className="pixel-box rounded-md px-3 py-2.5 text-2xl tracking-[0.4em] text-center font-bold bg-white outline-none" />
-            {err && <p className="text-[12px] font-bold text-rose-600">{err}</p>}
-            <button disabled={code.length !== 6 || busy} className="pixel-btn rounded-md py-3 bg-[#2ecc71] text-white pixel text-xs disabled:opacity-50">{busy ? 'Conferindo…' : 'Entrar'}</button>
-            <div className="flex items-center justify-between text-[12px]">
-              <button type="button" onClick={() => { setStep('email'); setCode(''); setErr(null) }} className="text-[#8a6a52] underline">trocar e-mail</button>
-              <button type="button" disabled={wait > 0 || busy} onClick={() => sendCode()} className="text-[#c0392b] font-bold disabled:text-[#a88a70]">{wait > 0 ? `reenviar em ${wait}s` : 'reenviar código'}</button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
   )
 }
 
@@ -246,9 +217,7 @@ function Onboarding({ onStart, account }) {
           Começar a cuidar
         </button>
         <p className="text-[11px] text-center text-[#8a6a52] mt-3">Ele começa numa gaiolinha de ferro simples… com o tempo você pode dar um lar melhor pra ele 😉</p>
-        {!account.auth
-          ? <button onClick={account.openLogin} className="w-full mt-4 text-[13px] font-bold text-[#c0392b] underline">Já tenho conta — entrar</button>
-          : <p className="text-[11px] text-center text-[#2e8b57] mt-4">☁️ Conectado como {account.auth.email} — o pet novo fica salvo na sua conta.</p>}
+        <p className="text-[11px] text-center text-[#2e8b57] mt-4">☁️ {account.me?.profile?.tutor_name ? `Oi, ${account.me.profile.tutor_name.split(' ')[0]}! ` : ''}Seu pet fica salvo na sua conta ({account.auth.email}).</p>
       </div>
     </div>
   )
@@ -262,6 +231,10 @@ function Game({ pet, setPet, onReset, account }) {
   const [tip, setTip] = useState(() => weather.tip)
   const [menu, setMenu] = useState(false)
   const [inv, setInv] = useState(false)
+  const [panel, setPanel] = useState(null) // progresso | social | album | corrida | perfil
+  const [visit, setVisit] = useState(null)  // código do pet visitado
+  const { me, applyMe } = account
+  const token = account.auth.token
   const st = status(pet)
   const night = !isDaytime(now())
 
@@ -295,6 +268,24 @@ function Game({ pet, setPet, onReset, account }) {
     if (msg) { setToast(msg); clearTimeout(say.t); say.t = setTimeout(() => setToast(null), 2600) }
     if (t) setTip(t)
   }, [])
+
+  // Primeiro cuidado do dia → servidor conta a ofensiva 🔥 (+XP)
+  const checkinBusy = useRef(false)
+  useEffect(() => {
+    if (!pet.cared) return
+    setPet(p => { const { cared, ...rest } = p; return rest }) // eslint-disable-line no-unused-vars
+    if (!me || me.cared_today || checkinBusy.current) return
+    checkinBusy.current = true
+    api('checkin', { token }).then(r => {
+      applyMe(r.me)
+      if (r.gained) say(`🔥 ${r.me.streak} ${r.me.streak === 1 ? 'dia' : 'dias'} de ofensiva! +${r.gained} XP`)
+    }).catch(() => {}).finally(() => { checkinBusy.current = false })
+  }, [pet.cared]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Missões prontas pra pegar (bolinha no botão)
+  const d = daily(pet)
+  const CARE = { feed2: 'feed', water1: 'water', clean1: 'clean', pet5: 'pet', treat1: 'treat' }
+  const claimable = me ? me.missions.filter(m => !m.claimed && (m.progress != null ? m.progress : (d.c[CARE[m.id]] || 0)) >= m.target).length : 0
 
   const act = useCallback(fn => {
     setPet(p => {
@@ -347,35 +338,28 @@ function Game({ pet, setPet, onReset, account }) {
           <p className="pixel text-[11px] sm:text-xs truncate">{pet.name}</p>
           <p className="text-[11px] text-[#d9bfa0] truncate">dia {days} · {HABITATS[habitatOf(pet)].label}<span className="hidden sm:inline"> · {SPECIES[pet.species].label}</span></p>
         </div>
-        <span className="pixel text-[9px] sm:text-[10px] bg-[#fbeedd] text-[#3b2314] rounded px-2 py-1.5 whitespace-nowrap" title={`Clima de hoje: ${weather.label}`}>{weather.icon} {weather.temp}°<span className="hidden sm:inline"> {weather.label}</span></span>
-        <span className="pixel text-[9px] sm:text-[10px] bg-[#fbeedd] text-[#3b2314] rounded px-2 py-1.5 whitespace-nowrap">{st.emoji}<span className="hidden min-[380px]:inline"> {st.label}</span></span>
+        {me && <button onClick={() => setPanel('progresso')} className="pixel text-[9px] sm:text-[10px] bg-[#fbeedd] text-[#3b2314] rounded px-2 py-1.5 whitespace-nowrap" title={`${titleOf(me.level)} · ${me.xp} XP · ofensiva de ${me.streak} dias`}>⭐{me.level}<span className={me.cared_today ? '' : 'opacity-40'}> 🔥{me.streak}</span></button>}
+        <span className="pixel text-[9px] sm:text-[10px] bg-[#fbeedd] text-[#3b2314] rounded px-2 py-1.5 whitespace-nowrap hidden min-[420px]:inline" title={`Clima de hoje: ${weather.label}`}>{weather.icon} {weather.temp}°<span className="hidden sm:inline"> {weather.label}</span></span>
+        <span className="pixel text-[9px] sm:text-[10px] bg-[#fbeedd] text-[#3b2314] rounded px-2 py-1.5 whitespace-nowrap">{st.emoji}<span className="hidden lg:inline"> {st.label}</span></span>
         <span className="pixel text-[9px] sm:text-[10px] bg-[#ffd36b] text-[#3b2314] rounded px-2 py-1.5 whitespace-nowrap" title="Sementinhas: você ganha cuidando do seu pet">🌻 {pet.seeds}</span>
         <button onClick={() => setInv(true)} className="pixel-btn pixel text-[9px] sm:text-[10px] bg-[#c8955a] text-white rounded px-2 py-1.5 whitespace-nowrap" title="Itens e resgate de código">🎁<span className="hidden sm:inline"> Itens</span></button>
-        <button onClick={() => setMenu(m => !m)} className="relative text-[#fbeedd] text-xl px-1" aria-label="Menu">☰
-          {!account.auth && <span className="absolute top-0.5 right-0 w-2 h-2 rounded-full bg-[#ffd36b]" title="Seu pet ainda não está salvo na nuvem" />}
-        </button>
+        <button onClick={() => setMenu(m => !m)} className="relative text-[#fbeedd] text-xl px-1" aria-label="Menu">☰</button>
       </header>
 
       {menu && (
         <div className="mx-3 sm:mx-5 mb-2 bg-[#fbeedd] pixel-box rounded-md p-3 text-sm flex flex-col gap-2.5">
-          {account.auth ? (
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <span className="min-w-0">☁️ <b className="break-all">{account.auth.email}</b><br />
-                <span className="text-[12px] text-[#6b4a32]">{{ ok: 'Salvo na nuvem', sync: 'Sincronizando…', offline: 'Sem internet — salvo neste aparelho, sobe quando voltar' }[account.syncState] || 'Salvo na nuvem'}</span>
-              </span>
-              <span className="flex gap-3 text-[13px] font-bold">
-                <button onClick={account.logout} className="text-[#3b2314]">Sair</button>
-                <button onClick={account.deleteAccount} className="text-[#c0392b]">Apagar conta</button>
-              </span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <span className="text-[13px]">Seu pet está salvo <b>só neste aparelho</b>. Entre pra não perder e jogar em qualquer lugar.</span>
-              <button onClick={account.openLogin} className="pixel-btn rounded-md px-3 py-1.5 bg-[#2ecc71] text-white text-[12px] font-extrabold whitespace-nowrap">☁️ Entrar</button>
-            </div>
-          )}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <span className="min-w-0">👤 <b>{me?.profile?.tutor_name || 'Tutor'}</b> <span className="text-[12px] text-[#6b4a32] break-all">· {account.auth.email}</span><br />
+              <span className="text-[12px] text-[#6b4a32]">{{ ok: '☁️ Salvo na nuvem', sync: '☁️ Sincronizando…', offline: '📴 Sem internet — salvo neste aparelho, sobe quando voltar' }[account.syncState] || '☁️ Salvo na nuvem'}</span>
+            </span>
+            <span className="flex gap-3 text-[13px] font-bold">
+              <button onClick={() => { setPanel('perfil'); setMenu(false) }} className="text-[#3b2314]">Meus dados</button>
+              <button onClick={account.logout} className="text-[#3b2314]">Sair</button>
+              <button onClick={account.deleteAccount} className="text-[#c0392b]">Apagar conta</button>
+            </span>
+          </div>
           <div className="flex items-center justify-between gap-3 border-t border-[#e2cdb0] pt-2">
-            <span className="text-[11px] text-[#8a6a52]">MinhaCoisaPet · versão 0.4</span>
+            <span className="text-[11px] text-[#8a6a52]">MinhaCoisaPet · versão 0.5</span>
             <button onClick={() => { if (confirm(`Recomeçar do zero? ${pet.name} vai ser substituído${account.auth ? ' (também na sua conta)' : ''}.`)) onReset() }} className="text-[#c0392b] font-bold whitespace-nowrap text-[13px]">Recomeçar</button>
           </div>
         </div>
@@ -409,6 +393,14 @@ function Game({ pet, setPet, onReset, account }) {
             <ActionBtn icon="🌻" label="Petisco" color="#ffe2a8" onClick={() => act(treat)} />
           </div>
 
+          {/* Jogo, progresso, ranking, álbum */}
+          <div className="grid grid-cols-4 landscape:grid-cols-2 gap-2">
+            <NavBtn icon="🏃" label="Corrida" color="#9fd8f5" onClick={() => setPanel('corrida')} />
+            <NavBtn icon="🎯" label="Missões" color="#ffd36b" onClick={() => setPanel('progresso')} badge={claimable || (me && !me.quiz.answered ? '?' : 0)} />
+            <NavBtn icon="🏆" label="Ranking" color="#c8f0c0" onClick={() => setPanel('social')} />
+            <NavBtn icon="📒" label="Álbum" color="#ffc2cf" onClick={() => setPanel('album')} />
+          </div>
+
           {/* Dica educativa */}
           <div className="bg-[#fff7e6] pixel-box rounded-md p-3 text-[13px] leading-snug text-[#3b2314] [@media(orientation:landscape)_and_(max-height:520px)]:hidden">
             <p className="pixel text-[9px] text-[#c0392b] mb-1.5">{tip === weather.tip ? `${weather.icon} ${weather.label} · ${weather.temp} °C` : 'Dica do tutor'}</p>
@@ -419,7 +411,30 @@ function Game({ pet, setPet, onReset, account }) {
       </main>
       {inv && <Inventory pet={pet} onClose={() => setInv(false)}
         onToggle={k => act(p => togglePlace(p, k))}
-        onRedeem={code => { const r = redeem(advance(pet), code); setPet(r.pet); return r }} />}
+        onRedeem={async code => {
+          // códigos de teste continuam locais; os reais (cartãozinho da embalagem) são do servidor
+          if (isTestCode(code)) { const r = redeem(advance(pet), code); setPet(r.pet); return r }
+          try { const r = await api('redeem', { token, code }); const g = grantItems(advance(pet), r.items); setPet(g.pet); return g }
+          catch (e) { return { ok: false, msg: e.message } }
+        }} />}
+      {panel === 'corrida' && <Runner pet={pet} token={token} best={me?.run_best} onClose={() => setPanel(null)}
+        onFinish={r => { if (r.me) applyMe(r.me); else setPet(p => afterRun(advance(p), r)) }} />}
+      {panel === 'progresso' && (me
+        ? <ProgressPanel me={me} pet={pet} token={token} onClose={() => setPanel(null)} onPlay={() => setPanel('corrida')}
+            onMe={(m, msg) => { applyMe(m); if (msg) say(msg) }} />
+        : <Sheet title="🎯 Meu progresso" onClose={() => setPanel(null)}><p className="text-[13px] text-[#8a6a52]">Sem internet agora — o progresso aparece quando a conexão voltar.</p></Sheet>)}
+      {panel === 'social' && (me
+        ? <SocialPanel me={me} token={token} pet={pet} pub={{ habitat: habitatOf(pet) }} onClose={() => setPanel(null)} onVisit={setVisit}
+            onMe={(m, msg) => { applyMe(m); if (msg) say(msg) }} />
+        : <Sheet title="🏆 Ranking" onClose={() => setPanel(null)}><p className="text-[13px] text-[#8a6a52]">Sem internet agora.</p></Sheet>)}
+      {panel === 'album' && <AlbumPanel me={me} pet={pet} onClose={() => setPanel(null)} onItems={() => { setPanel(null); setInv(true) }} />}
+      {panel === 'perfil' && me && (
+        <Sheet title="👤 Meus dados" onClose={() => setPanel(null)}>
+          <p className="text-[12px] text-[#6b4a32] mb-3">E-mail da conta: <b>{account.auth.email}</b></p>
+          <ProfileForm token={token} initial={me.profile} editing onDone={m => { applyMe(m); setPanel(null); say('Dados salvos ✓') }} onCancel={() => setPanel(null)} />
+        </Sheet>
+      )}
+      {visit && <VisitPanel code={visit} token={token} onClose={() => setVisit(null)} onMe={(m, msg) => { applyMe(m); if (msg) say(msg) }} />}
     </div>
   )
 }
@@ -429,10 +444,13 @@ function Inventory({ pet, onClose, onToggle, onRedeem }) {
   const [code, setCode] = useState('')
   const [msg, setMsg] = useState(null)
   const m = mods(pet)
-  const submit = e => {
+  const [busy, setBusy] = useState(false)
+  const submit = async e => {
     e.preventDefault()
-    if (!code.trim()) return
-    const r = onRedeem(code)
+    if (!code.trim() || busy) return
+    setBusy(true)
+    const r = await onRedeem(code)
+    setBusy(false)
     setMsg(r ? { ok: r.ok, text: r.msg } : null)
     if (r?.ok) setCode('')
   }
@@ -451,7 +469,7 @@ function Inventory({ pet, onClose, onToggle, onRedeem }) {
           <div className="flex gap-2">
             <input value={code} onChange={e => { setCode(e.target.value); setMsg(null) }} placeholder="Ex.: CP-XXXX-XXXX"
               className="flex-1 min-w-0 pixel-box rounded-md px-2.5 py-2 text-sm font-bold uppercase bg-[#fffaf2] outline-none" autoCapitalize="characters" />
-            <button className="pixel-btn rounded-md px-3 bg-[#2ecc71] text-white text-sm font-extrabold">Resgatar</button>
+            <button disabled={busy} className="pixel-btn rounded-md px-3 bg-[#2ecc71] text-white text-sm font-extrabold">{busy ? '…' : 'Resgatar'}</button>
           </div>
           {msg && <p className={`text-[12px] font-bold mt-2 ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
           <p className="text-[10px] text-[#a88a70] mt-2">Modo teste: TESTE-TERRARIO · TESTE-ASPEN · TESTE-RODA · TESTE-TOCA · TESTE-BANHEIRA · TESTE-PEDRA · TESTE-PLAQUINHA · TESTE-TUDO</p>
@@ -517,6 +535,16 @@ function ActionBtn({ icon, label, color, onClick }) {
     <button onClick={onClick} className="pixel-btn rounded-md py-2 flex flex-col items-center gap-0.5" style={{ background: color }}>
       <span className="text-xl leading-none">{icon}</span>
       <span className="text-[11px] font-extrabold">{label}</span>
+    </button>
+  )
+}
+
+function NavBtn({ icon, label, color, onClick, badge }) {
+  return (
+    <button onClick={onClick} className="relative pixel-btn rounded-md py-2 flex flex-col items-center gap-0.5" style={{ background: color }}>
+      <span className="text-xl leading-none">{icon}</span>
+      <span className="text-[11px] font-extrabold">{label}</span>
+      {!!badge && <span className="absolute -top-2 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-[#e74c3c] text-white text-[11px] font-extrabold flex items-center justify-center border-2 border-[#3b2314]">{badge}</span>}
     </button>
   )
 }

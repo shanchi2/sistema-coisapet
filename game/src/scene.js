@@ -50,6 +50,7 @@ export class CageScene extends Phaser.Scene {
 
   init(data) {
     this.species = data.species
+    this.bus = data.bus || bridge   // visita: ponte própria (tocar no pet do amigo não mexe no seu)
     this.state = data.state   // { asleep, statusKey, fome, sede, poops, night }
     this.setup = data.setup   // { habitat, substrato, roda, toca }
     const ter = this.setup.habitat === 'terrario'
@@ -106,7 +107,7 @@ export class CageScene extends Phaser.Scene {
 
     this.poops = []
     this.hamster = this.add.sprite(Math.round(W / 2), fy, 'h_idle').setOrigin(0.5, 1).setDepth(4).setInteractive({ useHandCursor: true })
-    this.hamster.on('pointerdown', () => bridge.emit('tap-pet'))
+    this.hamster.on('pointerdown', () => this.bus.emit('tap-pet'))
     this.facing = 1
     this.mode = 'idle'
     this.modeUntil = 0
@@ -119,12 +120,12 @@ export class CageScene extends Phaser.Scene {
     this.night = this.add.rectangle(0, 0, W, H, 0x101a40, 0).setOrigin(0).setDepth(50)
 
     this.applyState(this.state)
-    bridge.on('state', this.applyState, this)
-    bridge.on('anim', this.playAnim, this)
+    this.bus.on('state', this.applyState, this)
+    this.bus.on('anim', this.playAnim, this)
     // Desliga a escuta quando a cena para OU quando o jogo inteiro é destruído
     // (no "Recomeçar" o jogo é destruído — só 'shutdown' não bastava e a cena
     // morta continuava recebendo estado → "Cannot read properties of undefined")
-    const unbind = () => { this.dead = true; bridge.off('state', this.applyState, this); bridge.off('anim', this.playAnim, this) }
+    const unbind = () => { this.dead = true; this.bus.off('state', this.applyState, this); this.bus.off('anim', this.playAnim, this) }
     this.events.once('shutdown', unbind)
     this.events.once('destroy', unbind)
   }
@@ -582,7 +583,7 @@ export class CageScene extends Phaser.Scene {
         this.poops = this.poops.filter(q => q !== p)
         this.sparkle(p.x, p.y - 2)
         p.destroy()
-        bridge.emit('clean-one')
+        this.bus.emit('clean-one')
       })
       this.poops.push(p)
     }
@@ -633,7 +634,7 @@ export class CageScene extends Phaser.Scene {
       this.hamster.y = this.floorY
       this.sandPuff(this.hamster.x, this.hamster.y - 4, 8)   // se sacode
       if (!this.sleepPending) this.setMode('scared', 600)    // tremidinha = sacudida
-      bridge.emit('sand-bath')
+      this.bus.emit('sand-bath')
     } })
   }
   sandPuff(x, y, n = 3) {
@@ -660,7 +661,7 @@ export class CageScene extends Phaser.Scene {
     this.tweens.add({ targets: this.chair, alpha: 0, duration: 300, onComplete: () => this.chair.setVisible(false) })
     this.hamster.y = this.floorY
     this.setMode('idle', 800)
-    bridge.emit('chill')
+    this.bus.emit('chill')
   }
 
   goSleep(instant = false) {
@@ -748,7 +749,7 @@ export class CageScene extends Phaser.Scene {
     // Correr na roda diverte e cansa — avisa o React quanto tempo ele correu
     const secs = (this.time.now - (this.wheelStart || this.time.now)) / 1000
     this.wheelStart = null
-    if (secs >= 1) { bridge.emit('wheel-run', secs); this.sweat() }
+    if (secs >= 1) { this.bus.emit('wheel-run', secs); this.sweat() }
     this.setMode('idle', 800)
   }
 
@@ -898,7 +899,7 @@ export class CageScene extends Phaser.Scene {
   }
 }
 
-export function createGame(parent, { species, state, setup }) {
+export function createGame(parent, { species, state, setup, bus }) {
   return new Phaser.Game({
     type: Phaser.AUTO,
     parent,
@@ -911,7 +912,11 @@ export function createGame(parent, { species, state, setup }) {
     scene: [],
     banner: false,
     callbacks: {
-      postBoot: game => game.scene.add('cage', CageScene, true, { species, state, setup }),
+      postBoot: game => game.scene.add('cage', CageScene, true, { species, state, setup, bus }),
     },
   })
 }
+
+// Ponte separada (visitas/concurso): a cena do pet de outra pessoa não
+// conversa com o seu pet
+export const newBus = () => new Phaser.Events.EventEmitter()

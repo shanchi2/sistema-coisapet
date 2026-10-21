@@ -103,6 +103,7 @@ export function migrate(p) {
   if (!p.owned) p.owned = {}
   if (!p.placed) p.placed = {}
   if (!p.redeemed) p.redeemed = []
+  if (!p.daily) p.daily = { day: '', c: {} }
   return p
 }
 
@@ -267,11 +268,23 @@ export const poopCount = pet => Math.min(12, Math.max(0, Math.floor((100 - pet.n
 // Cada uma devolve { pet, msg, tip? } — `tip` é uma dica educativa.
 function earn(p, n = 1) { p.seeds += n }
 
+// Contadores do dia (missões): dia no horário de Brasília, igual ao servidor
+export const spDay = (t = clockNow()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date(t))
+export function daily(pet) {
+  const d = spDay()
+  return pet.daily?.day === d ? pet.daily : { day: d, c: {} }
+}
+function bump(p, key, n = 1) {
+  const d = daily(p)
+  p.daily = { day: d.day, c: { ...d.c, [key]: (d.c[key] || 0) + n } }
+  p.cared = true // avisa o App: houve cuidado (conta a ofensiva do dia)
+}
+
 export function feed(pet) {
   const p = structuredClone(pet)
   if (p.needs.fome > 90) return { pet: p, msg: `${p.name} está de barriga cheia!`, tip: 'Comida demais engorda. Hamster precisa de ração própria todo dia, em quantidade certinha — não precisa encher o pote toda hora.' }
   p.needs.fome = clamp(p.needs.fome + 35)
-  earn(p)
+  earn(p); bump(p, 'feed')
   return { pet: p, msg: 'Ração no potinho! 🌾', anim: 'eat' }
 }
 
@@ -279,14 +292,14 @@ export function water(pet) {
   const p = structuredClone(pet)
   if (p.needs.sede > 95) return { pet: p, msg: 'O bebedouro já está cheio.' }
   p.needs.sede = 100
-  earn(p)
+  earn(p); bump(p, 'water')
   return { pet: p, msg: 'Água fresquinha! 💧', anim: 'drink', tip: p.needs.sede < 30 ? undefined : 'Troque a água todo dia, mesmo que ainda tenha no bebedouro — água parada estraga.' }
 }
 
 export function cleanOne(pet) {
   const p = structuredClone(pet)
   p.needs.limpeza = clamp(p.needs.limpeza + POOP_STEP)
-  earn(p)
+  earn(p); bump(p, 'clean')
   return { pet: p }
 }
 
@@ -294,7 +307,7 @@ export function cleanAll(pet) {
   const p = structuredClone(pet)
   if (p.needs.limpeza > 92) return { pet: p, msg: 'Já está limpinho!' }
   p.needs.limpeza = 100
-  earn(p, 2)
+  earn(p, 2); bump(p, 'clean')
   return { pet: p, msg: 'Tudo limpinho! ✨', tip: 'Limpe a sujeira todo dia, mas troque o substrato inteiro só de vez em quando: o cheiro do ninho dá segurança pro hamster.' }
 }
 
@@ -307,7 +320,7 @@ export function pet_(pet) {
   }
   p.needs.diversao = clamp(p.needs.diversao + 10)
   p.needs.energia = clamp(p.needs.energia - 2)
-  earn(p)
+  earn(p); bump(p, 'pet')
   return { pet: p, msg: `${p.name} adorou o carinho! 💛`, anim: 'happy' }
 }
 
@@ -320,7 +333,7 @@ export function treat(pet) {
   p.treatsToday.n++
   p.needs.diversao = clamp(p.needs.diversao + 15)
   p.needs.fome = clamp(p.needs.fome + 5)
-  earn(p)
+  earn(p); bump(p, 'treat')
   return { pet: p, msg: 'Uma sementinha de girassol! 🌻', anim: 'eat' }
 }
 
@@ -348,6 +361,27 @@ export function chillStone(pet) {
   p.needs.energia = clamp(p.needs.energia + 5)
   p.needs.diversao = clamp(p.needs.diversao + 3)
   return { pet: p, msg: `${p.name} curtindo a pedrinha geladinha 😎`, tip: CATALOG.pedra.edu }
+}
+
+// ─── Minijogos (0.5) ─────────────────────────────────────────────────
+// Correr cansa de verdade: cada partida gasta energia e dá sede, mas diverte.
+// Isso amarra o minijogo ao cuidado — sem energia, ele precisa descansar.
+export const RUN_ENERGY = 6
+export function canRun(pet) {
+  if (pet.health < 40) return { ok: false, msg: `${pet.name} está doentinho. Cuide dele antes de brincar 🤒` }
+  if (pet.needs.energia < 15) return { ok: false, msg: `${pet.name} está sem energia. Deixe ele dormir um pouco 😴` }
+  if (pet.needs.fome < 15 || pet.needs.sede < 15) return { ok: false, msg: `${pet.name} está com fome ou sede — cuide disso primeiro!` }
+  return { ok: true }
+}
+export function afterRun(pet, { seeds = 0 } = {}) {
+  const p = structuredClone(pet)
+  p.asleep = false
+  p.needs.energia = clamp(p.needs.energia - RUN_ENERGY)
+  p.needs.sede = clamp(p.needs.sede - 4)
+  p.needs.diversao = clamp(p.needs.diversao + 10)
+  p.seeds += Math.max(0, Math.min(200, Math.round(seeds)))
+  bump(p, 'runs')
+  return p
 }
 
 // ─── Inventário ──────────────────────────────────────────────────────
@@ -388,6 +422,17 @@ export function redeem(pet, raw) {
   p.seeds += 10
   return { pet: p, ok: true, items: got, msg: got.length ? `Desbloqueado: ${got.map(k => CATALOG[k].label).join(', ')} 🎉` : 'Você já tinha esses itens — ganhou 10 sementinhas!' }
 }
+
+// Itens liberados por um código real (validado no servidor)
+export function grantItems(pet, items) {
+  const p = structuredClone(pet)
+  const valid = items.filter(k => CATALOG[k])
+  const got = valid.filter(k => !p.owned[k])
+  valid.forEach(k => { p.owned[k] = true })
+  p.seeds += 10
+  return { pet: p, ok: true, items: got, msg: got.length ? `Desbloqueado: ${got.map(k => CATALOG[k].label).join(', ')} 🎉` : 'Você já tinha esses itens — ganhou 10 sementinhas!' }
+}
+export function isTestCode(raw) { return !!TEST_CODES[String(raw || '').trim().toUpperCase().replace(/\s+/g, '')] }
 
 // ─── Dicas educativas (rodam no rodapé) ─────────────────────────────
 export const TIPS = [
