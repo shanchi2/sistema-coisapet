@@ -7100,6 +7100,22 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-21 — Pedidos → Histórico de importações redesenhado (sem "Gerar Picklist")
+
+Pedido do Raphael: layout mais premium/organizado e esconder o "Gerar
+Picklist" (PDF, saiu de uso — a Expedição é o fluxo; ela NÃO foi mexida).
+Novo `ImportHistoryTab.jsx` (lógica igual à antiga, só tirada do OrdersPage):
+- Dia com bloco de data (hoje em destaque), "Hoje/Ontem/dia da semana",
+  total de pedidos e sincronizações, chips ML x / Shopee y e Feira Combinada.
+- Um cartão por plataforma, lado a lado, com a faixa na cor da marca (ML
+  amarelo, Shopee laranja): última sincronização, números grandes (pedidos,
+  itens, pro picklist), barra do raio-x (picklist/Full/cancelados) + sem SKU,
+  trilha de sincronizações recolhível (Automático/Arquivo, +novos), botões
+  Expedição (principal) e Ver pedidos; lixeira na faixa.
+- "Sem risco de duplicar" virou um selo que abre a explicação.
+- O "Gerar Picklist desse lote" no aviso de arquivo repetido continua (é do
+  fluxo de importação manual) — dá pra tirar também se o Raphael quiser.
+
 ## 2026-10-21 — Reuniões: tela redesenhada (equipe + linha do tempo + painel lateral)
 
 Pedido do Raphael ("merece um carinho a mais", painel da direita no lugar do

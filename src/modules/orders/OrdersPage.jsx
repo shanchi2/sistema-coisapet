@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useOrders, fetchImportEvents, fetchBatchShipDates, fetchBatchesByIds, checkBatchBeforeDelete, deleteBatchOrders } from './hooks/useOrders'
 import { FeiraCombinadaModal } from './FeiraCombinadaModal'
+import { ImportHistoryTab } from './ImportHistoryTab'
 import { MercadoLivreConnect } from './MercadoLivreConnect'
 import { ShopeeConnect } from './ShopeeConnect'
 import { CutoffSettingsModal } from './CutoffSettingsModal'
@@ -923,219 +924,15 @@ export function OrdersPage() {
           )}
         </>
       ) : (
-        /* Histórico de importações — agrupado por dia */
-        <div className="flex flex-col gap-5">
-          {!loadingEvents && allImportEvents.length > 0 && (
-            <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3">
-              <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
-              <p className="text-xs text-emerald-800">
-                <strong>Sem risco de duplicar:</strong> o mesmo pedido nunca cria dois registros, venha ele pela API ou pelo <code className="bg-white/60 px-1 rounded">.xlsx</code> — o sistema reconhece pelo número de venda e só atualiza (nunca duplica). Abaixo, <span className="font-bold">🔄 Automático</span> = veio pela API, <span className="font-bold">📄 Arquivo</span> = importado manualmente.
-              </p>
-            </div>
-          )}
-          {loadingEvents ? (
-            <div className="card flex justify-center py-10">
-              <div className="w-7 h-7 border-4 border-rose-100 border-t-rose-400 rounded-full animate-spin" />
-            </div>
-          ) : allImportEvents.length === 0 ? (
-            <div className="card">
-              <EmptyState icon={History} title="Nenhuma importação ainda" description="Importe um arquivo do ML ou Shopee para ver o histórico." />
-            </div>
-          ) : (
-            (() => {
-              // Agrupa os eventos pelo ship_date REAL dos pedidos de cada
-              // lote (fase20-ship-date-corte-unico.sql) — o mesmo campo
-              // usado pela Expedição/Picklist, calculado uma vez na criação
-              // do pedido. Antes disso o agrupamento usava a hora do
-              // upload (ou a criação do lote), que podia divergir do dia
-              // real do pedido e fazer o evento aparecer na seção errada.
-              const dayMap = {}
-              allImportEvents.forEach(ev => {
-                const dayKey = batchShipDates[ev.batch_id] || ev.imported_at?.slice(0, 10) || 'sem-data'
-                if (!dayMap[dayKey]) dayMap[dayKey] = []
-                dayMap[dayKey].push(ev)
-              })
-              const days = Object.keys(dayMap).sort((a, b) => b.localeCompare(a))
-
-              return days.map(dayKey => {
-                const dayEvents = dayMap[dayKey]
-                // Dentro do dia, agrupa por fonte (ml/shopee/manual) — cada
-                // fonte compartilha o mesmo lote no dia
-                const bySource = {}
-                dayEvents.forEach(ev => {
-                  if (!bySource[ev.source]) bySource[ev.source] = []
-                  bySource[ev.source].push(ev)
-                })
-                const isOpen = openDays.has(dayKey)
-
-                return (
-                  <div key={dayKey} className="border-2 border-slate-100 rounded-2xl overflow-hidden">
-                    <div className="w-full flex items-center justify-between gap-3 p-4 hover:bg-slate-50 transition-colors">
-                      <button onClick={() => toggleDay(dayKey)} className="flex-1 flex items-center gap-3 text-left">
-                        <p className="text-sm font-black text-slate-500 uppercase tracking-wide">
-                          {dayGroupLabel(dayKey)}
-                        </p>
-                      </button>
-                      <div className="flex items-center gap-3">
-                        {(bySource.ml || bySource.shopee) && (
-                          <button onClick={() => setFeiraModal({
-                            targetDate: dayKey,
-                            batchIds: [bySource.ml?.[0]?.batch_id, bySource.shopee?.[0]?.batch_id].filter(Boolean),
-                            dayLabel: dayGroupLabel(dayKey),
-                          })}
-                            className="text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors">
-                            🛒 Feira Combinada
-                          </button>
-                        )}
-                        <span className="text-xs text-slate-400">
-                          {dayEvents.length} upload{dayEvents.length !== 1 ? 's' : ''} · {Object.keys(bySource).length} plataforma{Object.keys(bySource).length !== 1 ? 's' : ''}
-                        </span>
-                        <button onClick={() => toggleDay(dayKey)}>
-                          {isOpen
-                            ? <ChevronDown size={16} className="text-slate-400 shrink-0" />
-                            : <ChevronRight size={16} className="text-slate-400 shrink-0" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    {isOpen && (
-                    <div className="flex flex-col gap-4 px-4 pb-4">
-
-                    {Object.entries(bySource).map(([source, events]) => {
-                      // Ordena do mais antigo pro mais novo (linha do tempo)
-                      const sorted = [...events].sort((a, b) => new Date(a.imported_at) - new Date(b.imported_at))
-                      // Um mesmo dia pode ter eventos apontando pra lotes DIFERENTES
-                      // (ex: um lote antigo "grudou" pedidos de hoje antes da correção
-                      // do corte de dia) — em vez de assumir que o primeiro evento
-                      // cronológico é o lote certo, escolhe o que de fato tem os
-                      // pedidos hoje (maior total_orders atual).
-                      const candidateBatchIds = [...new Set(sorted.map(e => e.batch_id))]
-                      const b = candidateBatchIds
-                        .map(id => batchesById.get(id))
-                        .filter(Boolean)
-                        .sort((x, y) => (y.total_orders || 0) - (x.total_orders || 0))[0]
-                      const totalNovos = sorted.reduce((s, e) => s + (e.new_orders_count || 0), 0)
-                      const ps = platformStyle(source)
-
-                      // Raio-x real do lote (não só a contagem bruta) — calculado em
-                      // cima dos pedidos já carregados (os 200 mais recentes). Pra
-                      // lote muito antigo, fora dessa janela, stats fica null e a
-                      // tela cai de volta pro resumo simples.
-                      const batchOrders = orders.filter(o => o.batch_id === b?.id)
-                      const stats = b && batchOrders.length > 0 ? {
-                        total:      batchOrders.length,
-                        cancelado:  batchOrders.filter(isCancelledOrder).length,
-                        full:       batchOrders.filter(isFullOrder).length,
-                        semSku:     batchOrders.filter(isSemSkuOrder).length,
-                      } : null
-                      const picklistReady = stats ? stats.total - stats.cancelado - stats.full : null
-
-                      return (
-                        <div key={source} className="bg-slate-50/70 rounded-xl p-3.5 flex flex-col gap-3">
-                          {/* Cabeçalho da fonte — totais atuais + ações */}
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-base ${ps.icon}`}>
-                              {ps.emoji}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-bold text-slate-700">
-                                {source==='ml' ? 'Mercado Livre' : source==='shopee' ? 'Shopee' : 'Manual'}
-                              </p>
-                              <p className="text-xs text-slate-400">
-                                {b?.total_orders ?? '—'} pedido(s) no total · {b?.total_items ?? '—'} item(ns) · {sorted.length} upload{sorted.length !== 1 ? 's' : ''} hoje
-                              </p>
-                            </div>
-                            {b && (
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <button onClick={() => { setView('orders'); fetchOrders({ batchId: b.id }) }}
-                                  className="btn-secondary text-xs py-1.5">
-                                  Ver pedidos
-                                </button>
-                                {source !== 'manual' && (
-                                  <>
-                                    <button onClick={() => navigate(`/pick-list?batch=${b.id}`)}
-                                      className="btn-primary text-xs py-1.5">
-                                      🖨️ Gerar Picklist
-                                    </button>
-                                    <button onClick={() => window.open(`${import.meta.env.PROD ? '/sistema' : ''}/expedicao?batch=${b.id}`, '_blank')}
-                                      className="text-xs py-1.5 px-3 rounded-xl font-semibold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition-colors">
-                                      📦 Expedição
-                                    </button>
-                                  </>
-                                )}
-                                <button onClick={() => openDeleteModal(b.id, source, sorted[sorted.length - 1]?.filename)}
-                                  title="Apagar todos os pedidos deste lote"
-                                  className="text-xs py-1.5 px-2.5 rounded-xl font-semibold text-rose-500 bg-rose-50 hover:bg-rose-100 transition-colors flex items-center gap-1">
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Raio-x do lote — o que realmente vai pro picklist, não só o total */}
-                          {stats && (
-                            <div className="flex flex-wrap gap-1.5">
-                              <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 flex items-center gap-1">
-                                <CheckCircle2 size={10}/> {picklistReady} vão pro picklist
-                              </span>
-                              {stats.cancelado > 0 && (
-                                <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-red-100 text-red-700 flex items-center gap-1">
-                                  <XCircle size={10}/> {stats.cancelado} cancelado{stats.cancelado !== 1 ? 's' : ''}
-                                </span>
-                              )}
-                              {stats.full > 0 && (
-                                <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-indigo-100 text-indigo-700 flex items-center gap-1">
-                                  📫 {stats.full} Full
-                                </span>
-                              )}
-                              {stats.semSku > 0 && (
-                                <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-amber-100 text-amber-700 flex items-center gap-1">
-                                  <AlertCircle size={10}/> {stats.semSku} sem SKU
-                                </span>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Trilha de uploads — cada vez que o pedido entrou, seja pela
-                              API (automático) ou por arquivo .xlsx (manual). Distinguir
-                              os dois aqui é o que deixa visível que um não some/duplica
-                              o outro — os dois convergem no MESMO pedido (upsert por
-                              número de venda), nunca criam um segundo registro. */}
-                          <div className="flex flex-col gap-1.5 pl-1">
-                            {sorted.map((ev, idx) => {
-                              const isApi = ev.filename?.startsWith('API ')
-                              return (
-                              <div key={ev.id} className="flex items-center gap-2.5 text-xs">
-                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isApi ? 'bg-emerald-400' : 'bg-slate-300'}`} />
-                                <span className="font-mono text-slate-400 shrink-0">{fmtTimeOnly(ev.imported_at)}</span>
-                                {isApi ? (
-                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 shrink-0">🔄 Automático</span>
-                                ) : (
-                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">📄 Arquivo</span>
-                                )}
-                                <span className="text-slate-600 truncate flex-1 min-w-0">{ev.filename || 'Pedido manual'}</span>
-                                <span className="text-slate-400 shrink-0">
-                                  {ev.total_orders_file} pedido(s)
-                                  {idx > 0 && ev.new_orders_count != null && (
-                                    <span className="text-emerald-600 font-semibold"> ({ev.new_orders_count} novo{ev.new_orders_count !== 1 ? 's' : ''})</span>
-                                  )}
-                                  {' · '}{ev.total_items_file} item(ns)
-                                </span>
-                              </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )
-                    })}
-                    </div>
-                    )}
-                  </div>
-                )
-              })
-            })()
-          )}
-        </div>
+        /* Histórico de importações — agrupado por dia (ImportHistoryTab, redesenho 21/10) */
+        <ImportHistoryTab
+          loading={loadingEvents} events={allImportEvents} batchShipDates={batchShipDates}
+          batchesById={batchesById} orders={orders} openDays={openDays} toggleDay={toggleDay}
+          onFeira={setFeiraModal}
+          onDelete={openDeleteModal}
+          onViewOrders={batchId => { setView('orders'); fetchOrders({ batchId }) }}
+          onExpedicao={batchId => window.open(`${import.meta.env.PROD ? '/sistema' : ''}/expedicao?batch=${batchId}`, '_blank')}
+        />
       )}
 
       <ManualOrderModal
