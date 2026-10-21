@@ -7100,6 +7100,27 @@ halloween", "Marlon, cortar chapas de PETG") e isso aparece na TV.
 - Ideia pra depois: mostrar o foco de cada um também no /equipe (PWA), pra
   pessoa ver no celular e marcar como feito.
 
+## 2026-10-21 — Reuniões: tela redesenhada (equipe + linha do tempo + painel lateral)
+
+Pedido do Raphael ("merece um carinho a mais", painel da direita no lugar do
+modal). MeetingsPage reescrita:
+- Cabeçalho em gradiente com 4 indicadores: próximas (e quantas aguardam
+  confirmação), sem registro, combinados em aberto/cumpridos, e pessoas sem
+  conversa há +60 dias e nada agendado.
+- Coluna **Equipe** (ordenada por quem está há mais tempo sem conversar):
+  avatar com cor por pessoa, "última há X dias"/"próxima em X dias" (âmbar
+  quando passa de 60 dias), nº de combinados em aberto; clicar filtra e mostra
+  o cartão da pessoa com "Agendar com Fulano".
+- **Linha do tempo** agrupada por mês, cartão com bloco de data, status,
+  clima, resumo, pontos +/− e barrinha de combinados. Busca no texto dos
+  registros, combinados e nomes. Abre em "Realizadas".
+- **Painel deslizante** (direita, ESC fecha, acima do chat): ver o registro
+  (falado, positivos verde/a desenvolver âmbar, combinados clicáveis pra
+  marcar cumprido na hora, observações internas em cartão escuro, próxima
+  conversa) + histórico das outras reuniões com a pessoa; "Editar" troca pro
+  formulário no próprio painel. "Nova reunião" também virou painel, com
+  escolha do colaborador por avatar e títulos prontos.
+
 ## 2026-10-21 — Reuniões: registro pós-reunião (só diretoria) + reuniões antigas
 
 Pedido do Raphael (/reunioes, one-a-one):
