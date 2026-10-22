@@ -1,7 +1,7 @@
 // TV da Produção (07/10, fase100) — devolve, numa chamada só, tudo que a
 // TV do andar de cima mostra: alertas, coleta do Full, despacho do dia,
 // produção, avisos, passagem de turno, kanban, manutenção, checklist,
-// observações de mídia, aniversariantes e o foco do dia por funcionário.
+// observações de mídia, aniversariantes e os afazeres por funcionário.
 // 20/10: + mural de elogios (avaliações 5★ ML/Shopee), o que acabou nos
 // marketplaces, motivos de devolução, concluídos do dia anterior e um
 // cartão do Instagram. Os pesados ficam em `tv_cache` (refeitos a cada
@@ -102,7 +102,7 @@ serve(async (req) => {
       sb.from('system_users').select('id, name').eq('active', true).eq('role', 'atendimento'),
       sb.from('product_media_notes').select('product_id, body, created_at, created_by_name').eq('status', 'aberto').order('created_at', { ascending: false }).limit(50),
       sb.from('system_users').select('name, birthday').eq('active', true).not('birthday', 'is', null),
-      sb.from('daily_focus').select('employee_name, task, urgent, done, position, id').eq('date', today).order('position').order('id'),
+      sb.from('daily_focus').select('employee_name, task, urgent, done, position, id').eq('done', false).order('position').order('id'), // afazeres: tudo pendente, de qualquer dia (22/10)
     ])
 
     // ── Coleta do Full ────────────────────────────────────────────────

@@ -123,6 +123,19 @@ const MiniTxt = ({ children, className = '' }) => <p className={`text-lg text-sl
 // ── Módulos ──────────────────────────────────────────────────────────
 // key, label/desc (tela de config), has(data) = tem algo pra mostrar,
 // Big / Mini = componentes. `alertas` é a faixa vermelha do topo.
+// Afazeres (22/10): cópias da mesma tarefa (do antigo "trazer de ontem")
+// aparecem uma vez só
+const focoUnico = list => (list || []).map(p => {
+  const seen = new Map()
+  for (const t of p.tasks) {
+    const k = String(t.task || '').trim().toLowerCase()
+    const cur = seen.get(k)
+    if (cur) cur.urgent = cur.urgent || t.urgent
+    else seen.set(k, { ...t })
+  }
+  return { ...p, tasks: [...seen.values()] }
+})
+
 export const TV_MODULES = [
   {
     key: 'alertas', label: 'Alertas críticos (faixa no topo)', icon: Siren, stripOnly: true,
@@ -445,14 +458,14 @@ export const TV_MODULES = [
     ),
   },
   {
-    key: 'foco_dia', label: 'Foco do dia por funcionário', icon: Target,
-    desc: 'O que a diretoria marcou como prioridade pra cada funcionário hoje (aba "Foco do dia" em Serviços). Urgentes em vermelho.',
+    key: 'foco_dia', label: 'Afazeres por funcionário', icon: Target,
+    desc: 'O que cada funcionário precisa fazer (aba "Afazeres por funcionário" em Serviços). Fica até ser concluído. Urgentes em vermelho.',
     has: d => d.foco_dia?.some(p => p.tasks.some(t => !t.done)),
     Big: ({ d }) => {
-      const people = d.foco_dia.filter(p => p.tasks.some(t => !t.done))
+      const people = focoUnico(d.foco_dia).filter(p => p.tasks.some(t => !t.done))
       const cols = people.length === 1 ? 'grid-cols-1' : people.length <= 4 ? 'grid-cols-2' : 'grid-cols-3'
       return (
-        <BigFrame icon={Target} title="Foco do dia" tone="sky">
+        <BigFrame icon={Target} title="Afazeres" tone="sky">
           <div className={`grid ${cols} gap-4 content-start`}>
             {people.map((p, k) => {
               const open = p.tasks.filter(t => !t.done)
@@ -478,12 +491,12 @@ export const TV_MODULES = [
       )
     },
     Mini: ({ d }) => {
-      const people = (d.foco_dia || []).filter(p => p.tasks.some(t => !t.done))
+      const people = focoUnico(d.foco_dia).filter(p => p.tasks.some(t => !t.done))
       const urgent = people.reduce((t, p) => t + p.tasks.filter(x => x.urgent && !x.done).length, 0)
       return (
-        <MiniFrame icon={Target} title="Foco do dia" tone="text-sky-300">
+        <MiniFrame icon={Target} title="Afazeres" tone="text-sky-300">
           <MiniBig tone={urgent ? 'text-rose-300' : 'text-slate-100'}>{people.length}<span className="text-slate-500 text-[1.8rem]"> pessoa{people.length === 1 ? '' : 's'}</span></MiniBig>
-          <MiniTxt>{people.length ? people.map(p => p.name.split(' ')[0]).join(' · ') : 'Nada lançado hoje'}{urgent ? <span className="text-rose-300 font-bold"> · {urgent} urgente{urgent > 1 ? 's' : ''}</span> : ''}</MiniTxt>
+          <MiniTxt>{people.length ? people.map(p => p.name.split(' ')[0]).join(' · ') : 'Nada pendente'}{urgent ? <span className="text-rose-300 font-bold"> · {urgent} urgente{urgent > 1 ? 's' : ''}</span> : ''}</MiniTxt>
         </MiniFrame>
       )
     },
