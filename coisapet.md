@@ -7909,3 +7909,33 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
   data de saída no formulário de cima ("Editando aviso"), com "Salvar
   alteração" / "Cancelar". Faz UPDATE no mesmo `tv_alerts` (a TV pega em
   até 1 min). A lista também passou a mostrar o detalhe do aviso.
+
+## 2026-10-22 — Feira do Full (novo módulo, grupo Marketplaces)
+
+- Pedido do Raphael: pensar a separação dos envios pro Full. Decidido: sem
+  picklist (não tem cliente; são vários produtos iguais indo pra estante do
+  Full até o caminhão buscar), só a **feira** do envio inteiro. Abas
+  **Mercado Livre / Shopee** (Full da Shopee começa em algumas semanas; até
+  lá a aba Shopee usa as pré-listas da Shopee).
+- Tela `/marketplaces/feira-full` (`FeiraFullPage.jsx`), módulo próprio
+  `feira-full` (marketplace + produção ligados; Controle de Acesso).
+- Fontes: envios do ML abertos (lidos pela extensão, com foto/SKU/qtd
+  declarada) e pré-listas abertas. "Começar a feira" copia os itens.
+- Por produto: contador grande (– / + / digitar / "Separei tudo"), cor por
+  estado (faltando vermelho, sobrando azul "não mandar", certo verde) e as
+  etapas **Etiquetado** e **Na estante**. Filtros e resumo (unidades
+  separadas, contagem certa, etiquetados, na estante).
+- **Pedir o que falta pra Produção**: manda pra aba "Itens faltando" da
+  Produção (`picklist_shortage_reports`, source `full`, data = dia da
+  coleta) só o que ainda não foi pedido (`short_sent`).
+- **Conferência final**: outra pessoa reconta (guarda quem), volumes/caixas
+  e "Pronta pra coleta" — se tiver diferença/sem recontagem/sem etiqueta/
+  fora da estante, mostra a lista e exige motivo. Depois "Caminhão levou"
+  (enviada) ou "Reabrir".
+- "Atualizar do envio" puxa de novo as quantidades (o ML muda a declarada);
+  produto que saiu do envio fica "Saiu do envio". Imprimir folha com ☐.
+- Banco (fase124): `full_feiras` + `full_feira_items` (RLS no padrão das
+  pré-listas). Só quantidades, sem R$. Atualiza sozinha a cada 15 s (várias
+  pessoas na mesma feira).
+- Ideias pra depois: progresso da feira no bloco "Envios pro Full" da TV;
+  comparar contado × aceito pelo ML quando o envio fechar; /equipe.

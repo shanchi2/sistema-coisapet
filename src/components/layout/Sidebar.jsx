@@ -8,7 +8,7 @@ import {
   FileText, Bell, Receipt, LayoutGrid, Kanban, BookOpen, Wrench, CalendarCheck2, PackageMinus,
   PanelLeftClose, PanelLeftOpen, Shield, MousePointerClick, ShoppingCart, ShoppingBag, Lock, HardDrive, Gem, Star, QrCode, Layers, CalendarDays, Instagram, Link2, ClipboardCheck, Clock,
   HeartPulse, MessageCircle, MessageCircleQuestion, Tag, Rocket, Store, Warehouse, Megaphone, Newspaper, Ticket, Film, Zap,
-  Briefcase, Crown, Bookmark, Component, RotateCcw, Headset, HandCoins, Tv, ShieldAlert, LifeBuoy, Gamepad2,
+  Briefcase, Crown, Bookmark, Component, RotateCcw, Headset, HandCoins, Tv, ShieldAlert, LifeBuoy, Gamepad2, PackageCheck,
 } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import { usePermissions } from '../../contexts/PermissionsContext'
@@ -30,6 +30,7 @@ const NAV_SECTIONS = [
       { to: '/marketplaces/anuncios', moduleKey: 'marketplaces', icon: Store,           label: 'Anúncios',    roles: ['admin','marketplace'] },
       { to: '/marketplaces/saude',    moduleKey: 'marketplaces', icon: HeartPulse,  label: 'Saúde dos anúncios', roles: ['admin','marketplace'] },
       { to: '/marketplaces/full',     moduleKey: 'marketplaces', icon: Warehouse,   label: 'Estoque Full', roles: ['admin','marketplace'] },
+      { to: '/marketplaces/feira-full', moduleKey: 'feira-full', icon: PackageCheck, label: 'Feira do Full', roles: ['admin','marketplace','producao'] },
       { to: '/marketplaces/promocoes', moduleKey: 'marketplaces', icon: Tag,       label: 'Promoções e cupons', roles: ['admin','marketplace'] },
       { to: '/marketplaces/ads',       moduleKey: 'marketplaces', icon: Megaphone, label: 'Ads',         roles: ['admin','marketplace'] },
       { to: '/marketplaces/pos-venda', moduleKey: 'marketplaces-posvenda', icon: LifeBuoy,  label: 'Pós-venda',   roles: ['admin','marketplace','atendimento','producao'] },
