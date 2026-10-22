@@ -94,7 +94,7 @@ export function DoneTab() {
                     {r.kind === 'foco' ? <Target size={13} className="text-indigo-400 mt-0.5 shrink-0" /> : <Wrench size={13} className="text-amber-500 mt-0.5 shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-slate-700 leading-snug">{r.what}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{r.kind === 'foco' ? 'Foco do dia' : 'Serviço do barracão'} · concluído {fmt(r.when)}{r.kind === 'foco' && r.day !== String(r.when).slice(0, 10) ? ` (foco de ${fmt(r.day)})` : ''}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{r.kind === 'foco' ? 'Afazer' : 'Serviço do barracão'} · concluído {fmt(r.when)}{r.kind === 'foco' && r.day !== String(r.when).slice(0, 10) ? ` (lançado ${fmt(r.day)})` : ''}</p>
                     </div>
                     <button onClick={() => reopen(r)} title="Reabrir (volta pra lista de a fazer)" className="p-1 rounded text-slate-300 opacity-0 group-hover:opacity-100 hover:text-slate-600 focus:opacity-100"><RotateCcw size={13} /></button>
                   </li>

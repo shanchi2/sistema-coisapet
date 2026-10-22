@@ -7845,3 +7845,18 @@ Mahjong em pixel art (`game/src/games/Mahjong.jsx`).
   (`pet.mahjong`). Pontos: 15/par (+5 combo) + bônus de tempo (máx. 300).
 - Servidor (game-api v5): limites do Mahjong (até 1500 por mesa) e figurinha
   "Mestre do Mahjong" (800 pontos numa mesa). Ranking → Recordes → Mahjong.
+
+## 2026-10-22 — Serviços → "Afazeres por funcionário" (sem dia)
+
+Pedido do Raphael: não trabalhar mais "por dia". A aba "Foco do dia por
+funcionário" virou **"Afazeres por funcionário"**: sem navegação por data,
+mostra tudo que cada um tem PENDENTE (de qualquer dia) até ser concluído;
+concluiu → sai da lista e vai pra aba Concluídos. Cada tarefa mostra "desde
+dd/mm". Saiu o botão "trazer pendentes de ontem".
+- TV: módulo virou "Afazeres" e o `tv-feed` (v8) agora manda todo pendente,
+  não só o de hoje.
+- O antigo "trazer de ontem" tinha criado cópias (7 tarefas duplicadas em
+  22/10). A tela e a TV juntam cópias iguais (mesma pessoa + mesmo texto) numa
+  só; concluir/urgente/excluir vale pra todas as cópias. (Apagar as cópias
+  pelo MCP não passa — DELETE pede confirmação.)
+- Tabela `daily_focus` igual; a coluna `date` passa a ser só "dia em que foi lançada".

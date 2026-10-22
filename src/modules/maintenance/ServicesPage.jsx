@@ -589,7 +589,7 @@ export function ServicesPage() {
       <div className="page-header">
         <div>
           <h2 className="page-title">Serviços e Afazeres</h2>
-          <p className="page-subtitle">{tab === 'foco' ? 'O que é prioridade pra cada funcionário no dia — aparece na TV' : tab === 'concluidos' ? 'O que cada funcionário já terminou — sai das listas e fica guardado aqui' : 'Tarefas e serviços pendentes do barracão'}</p>
+          <p className="page-subtitle">{tab === 'foco' ? 'O que cada funcionário precisa fazer — fica na lista e na TV até ser concluído' : tab === 'concluidos' ? 'O que cada funcionário já terminou — sai das listas e fica guardado aqui' : 'Tarefas e serviços pendentes do barracão'}</p>
         </div>
         {tab === 'servicos' && (
           <button onClick={() => openNew('servico')} className="btn-primary">
@@ -599,7 +599,7 @@ export function ServicesPage() {
       </div>
 
       <div className="inline-flex self-start items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl">
-        {[['servicos', 'Serviços do barracão', Wrench], ['foco', 'Foco do dia por funcionário', Target], ['concluidos', 'Concluídos', CheckCircle2]].map(([k, l, Icon]) => (
+        {[['servicos', 'Serviços do barracão', Wrench], ['foco', 'Afazeres por funcionário', Target], ['concluidos', 'Concluídos', CheckCircle2]].map(([k, l, Icon]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${tab === k ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
             <Icon size={15}/> {l}
@@ -607,7 +607,7 @@ export function ServicesPage() {
         ))}
       </div>
 
-      {tab === 'foco' ? <DailyFocusTab onShowDone={() => setTab('concluidos')}/> : tab === 'concluidos' ? <DoneTab/> : <>
+      {tab === 'foco' ? <DailyFocusTab/> : tab === 'concluidos' ? <DoneTab/> : <>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
