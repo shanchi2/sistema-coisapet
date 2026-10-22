@@ -48,15 +48,26 @@ serve(async (req) => {
   let body: any = {}
   try { body = await req.json() } catch { /* vazio */ }
   const token = typeof body.token === 'string' ? body.token.trim() : ''
-  if (!token) return json({ error: 'Falta o código da TV' }, 401)
+  // Pré-visualização (22/10): o diretor logado vê os módulos na tela de
+  // configuração com o token da sessão dele (fase106) em vez do código da TV
+  const session = typeof body.session === 'string' ? body.session.trim() : ''
+  if (!token && !session) return json({ error: 'Falta o código da TV' }, 401)
 
   const sb = db()
-  const { data: screen } = await sb.from('tv_screens').select('id, label, last_seen_at, font_scale')
-    .eq('token_hash', await sha256Hex(token)).is('revoked_at', null).maybeSingle()
-  if (!screen) return json({ error: 'Código da TV inválido ou revogado' }, 401)
-  // "Visto por último" — no máx. 1 escrita por minuto
-  if (!screen.last_seen_at || Date.now() - new Date(screen.last_seen_at).getTime() > 60000) {
-    await sb.from('tv_screens').update({ last_seen_at: new Date().toISOString() }).eq('id', screen.id)
+  let screen: any
+  if (session) {
+    const { data: admin } = await sb.rpc('meeting_admin_name', { p_token: session })
+    if (!admin) return json({ error: 'Só a diretoria pode pré-visualizar a TV' }, 401)
+    screen = { id: null, label: 'Pré-visualização', font_scale: 100 }
+  } else {
+    const { data } = await sb.from('tv_screens').select('id, label, last_seen_at, font_scale')
+      .eq('token_hash', await sha256Hex(token)).is('revoked_at', null).maybeSingle()
+    screen = data
+    if (!screen) return json({ error: 'Código da TV inválido ou revogado' }, 401)
+    // "Visto por último" — no máx. 1 escrita por minuto
+    if (!screen.last_seen_at || Date.now() - new Date(screen.last_seen_at).getTime() > 60000) {
+      await sb.from('tv_screens').update({ last_seen_at: new Date().toISOString() }).eq('id', screen.id)
+    }
   }
 
   try {

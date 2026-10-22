@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Tv, ExternalLink, Save, ArrowUp, ArrowDown, Megaphone, Truck, KeyRound, Copy, Check, Trash2, Loader2, Monitor, LayoutPanelLeft, GalleryHorizontal, Plus, Sun, Moon, RefreshCw } from 'lucide-react'
+import { Tv, ExternalLink, Save, ArrowUp, ArrowDown, Megaphone, Truck, KeyRound, Copy, Check, Trash2, Loader2, Monitor, LayoutPanelLeft, GalleryHorizontal, Plus, Sun, Moon, RefreshCw, Eye } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { moduleByKey, normalizeModules } from './tvModules'
+import { TvPreviewModal } from './TvPreviewModal'
 
 // Configuração da TV da Produção (07/10, fase100) — só diretor.
 // O que aparece, em que ordem, layout, avisos, coleta manual e os
@@ -67,6 +68,7 @@ export function TvConfigPage() {
   const [screenLabel, setScreenLabel] = useState('')
   const [created, setCreated] = useState(null)
   const [copied, setCopied] = useState(null)
+  const [preview, setPreview] = useState(null) // módulo aberto na pré-visualização
 
   const loadAll = useCallback(async () => {
     const nowIso = new Date().toISOString()
@@ -271,6 +273,10 @@ export function TvConfigPage() {
                         <p className={`text-sm font-semibold ${m.enabled ? 'text-slate-800' : 'text-slate-400'}`}>{def.label}</p>
                         <p className="text-[11px] text-slate-400 leading-snug">{def.desc}</p>
                       </div>
+                      <button onClick={() => setPreview(m.key)} title="Ver como fica na TV"
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-50 shrink-0">
+                        <Eye size={13} /><span className="hidden sm:inline">Ver</span>
+                      </button>
                       <Switch on={m.enabled} onChange={v => setMod(i, { enabled: v })} />
                     </li>
                   )
@@ -396,6 +402,7 @@ export function TvConfigPage() {
           </div>
         </div>
       </div>
+      {preview && <TvPreviewModal moduleKey={preview} onClose={() => setPreview(null)} />}
     </div>
   )
 }
