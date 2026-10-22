@@ -7939,3 +7939,18 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
   pessoas na mesma feira).
 - Ideias pra depois: progresso da feira no bloco "Envios pro Full" da TV;
   comparar contado × aceito pelo ML quando o envio fechar; /equipe.
+
+## 2026-10-23 — Feira do Full no tablet (fora do sistema)
+
+- Pedido do Raphael: a feira tem que abrir **fora do sistema**, como o
+  picklist da Expedição (o Vini pega o tablet da Carol emprestado).
+- Rota nova `/feira-full` fora do `<Layout />` (sem menu/cabeçalho), com
+  `GuardedRoute` do módulo `feira-full`. Mesma tela, em modo tablet (até 3
+  colunas no tablet deitado). No sistema, botão **"Abrir no tablet"** na
+  lista e em cada feira (abre em outra aba, já na feira).
+- Quem pode abrir: o tablet fica na conta compartilhada "Produção -
+  CoisaPet" (perfil produção, que já tem o módulo). Perfil "equipe" não entra
+  no /sistema (regra antiga), por isso Vini/Carol não usam a conta própria.
+- **"Quem está usando?"** no tablet: escolhe o nome (fica só naquela aba,
+  `sessionStorage`) e é esse nome que vai em separado/reconferido/pronta por —
+  a conferência final precisa saber quem contou.
