@@ -29,13 +29,14 @@ export const ACH_INFO = {
   concurso:    { icon: '📸', label: 'Concorrente', desc: 'Inscreveu o terrário no concurso' },
   explorador:  { icon: '🕹️', label: 'Explorador', desc: 'Jogou todos os minijogos' },
   estrategista: { icon: '❌', label: 'Estrategista', desc: '900 pontos no Jogo da Velha' },
+  mestre_mahjong: { icon: '🀄', label: 'Mestre do Mahjong', desc: '800 pontos numa mesa de Mahjong' },
   sementeiro:  { icon: '🌻', label: 'Comilão', desc: '400 pontos na Chuva de Sementes' },
   labirinteiro: { icon: '🕳️', label: 'Tatu', desc: '600 pontos no Labirinto' },
   maratonista: { icon: '🎡', label: 'Maratonista', desc: '250 m na Rodinha Turbo' },
   memoria_boa: { icon: '🧠', label: 'Memória de elefante', desc: '1500 pontos na Memória' },
 }
 
-const GAME_TABS = [['corrida', '🏃', 'Corrida'], ['sementes', '🌻', 'Sementes'], ['labirinto', '🕳️', 'Labirinto'], ['rodinha', '🎡', 'Rodinha'], ['memoria', '🧠', 'Memória'], ['velha', '❌', 'Velha']]
+const GAME_TABS = [['corrida', '🏃', 'Corrida'], ['sementes', '🌻', 'Sementes'], ['labirinto', '🕳️', 'Labirinto'], ['rodinha', '🎡', 'Rodinha'], ['memoria', '🧠', 'Memória'], ['velha', '❌', 'Velha'], ['mahjong', '🀄', 'Mahjong']]
 const CARE_COUNTER = { feed2: 'feed', water1: 'water', clean1: 'clean', pet5: 'pet', treat1: 'treat' }
 
 export function Sheet({ title, onClose, children, wide }) {

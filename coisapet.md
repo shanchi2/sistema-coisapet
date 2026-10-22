@@ -7825,3 +7825,23 @@ outubro) pra ~6 pessoas. Plano grátis = 3 mil/mês, 100/dia.
   de resend.com (ex.: aviso de cota) ou tentar entrar com Google/GitHub.
 - Pendente: apagar de vez o gatilho pelo painel (tem a chave service_role na
   definição) — pelo MCP o DROP pede confirmação e não passa.
+
+## 2026-10-22 — 🀄 Mahjong CoisaPet (40 fases)
+
+Pedido do Raphael ("um mojang no nosso estilo… bastante fase"): paciência
+Mahjong em pixel art (`game/src/games/Mahjong.jsx`).
+- Regra clássica: só sai peça **livre** (nada em cima + um dos lados livre);
+  duas iguais somem. Peças presas ficam escurecidas. Dica (−20) e Embaralhar
+  (−30); sem jogadas → embaralha sozinho, sem custo.
+- **25 desenhos** (produtos, comidas, raças, pata, coração, estrela, lua, gota, folha).
+- **40 fases**: 15 desenhadas (Primeiros pares, Corredor, Pirâmide, Coração,
+  Escadinha, Patinha, Cruz, Casinha, Diamante, Anel, Flor, Letras CP, Torre,
+  Borboleta, Pirâmide grande) + 24 geradas com semente fixa (iguais pra todo
+  mundo, crescendo de ~32 a ~122 peças) + **Tartaruga clássica (144)** no fim.
+- Distribuição sempre com solução (monta tirando pares livres ao contrário);
+  testado: 40 fases × 10 sorteios, nenhuma caiu no plano B. A Torre original
+  era impossível (só 1 peça livre no começo) — refeita em degraus.
+- Estrelas por fase (tempo + ajudas) e fases destravadas ficam no save do pet
+  (`pet.mahjong`). Pontos: 15/par (+5 combo) + bônus de tempo (máx. 300).
+- Servidor (game-api v5): limites do Mahjong (até 1500 por mesa) e figurinha
+  "Mestre do Mahjong" (800 pontos numa mesa). Ranking → Recordes → Mahjong.

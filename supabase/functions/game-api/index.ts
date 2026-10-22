@@ -90,6 +90,7 @@ const ACHIEVEMENTS: Record<string, (c: any) => boolean> = {
   maratonista: c => (c.bests.rodinha || 0) >= 250,
   memoria_boa: c => (c.bests.memoria || 0) >= 1500,
   estrategista: c => (c.bests.velha || 0) >= 900,
+  mestre_mahjong: c => (c.bests.mahjong || 0) >= 800,
   sabichao_10: c => c.p.quiz_right >= 10,
   lar_doce_lar: c => c.p.pet_public?.habitat === 'terrario',
   colecionador: c => (c.p.pet_public?.owned?.length || 0) >= 8,
@@ -115,6 +116,7 @@ const GAMES: Record<string, { rate: number, base: number, max?: number, minMs?: 
   rodinha:   { rate: 15, base: 30, maxMs: 45000 },
   memoria:   { rate: 200, base: 0, max: 4000, minMs: 6000 },  // 5 níveis
   velha:     { rate: 150, base: 0, max: 1500, minMs: 5000 },  // 5 rodadas × até 300
+  mahjong:   { rate: 30, base: 300, max: 1500, minMs: 8000 },  // 1 fase: 15/par + bônus de tempo (máx. 300)
 }
 
 // ── Utilitários ─────────────────────────────────────────────────────
