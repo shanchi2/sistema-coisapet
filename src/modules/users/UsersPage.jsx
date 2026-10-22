@@ -71,6 +71,7 @@ async function gerarFichaPDF(u) {
   const empDocs  = docsR.data ?? []
   const ferias   = vrR.data ?? []
 
+  const esc  = t => String(t).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]))
   const fmtD = d => d ? new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'}) : '—'
   const fmtM = d => d ? new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'}) : '—'
   const fmtC = v => v ? Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '—'
@@ -223,7 +224,14 @@ async function gerarFichaPDF(u) {
       Contrato de Trabalho
     </div>
     <div class="grid2">
-      <div class="field"><div class="field-label">Data de contratação</div><div class="field-value">${u.hire_date?`${fmtD(u.hire_date)}${svc?' — '+svc:''}` : '<span class="muted">—</span>'}</div></div>
+      <div class="field"><div class="field-label">Data de início</div><div class="field-value">${u.hire_date?`${fmtD(u.hire_date)}${svc?' — '+svc:''}` : '<span class="muted">—</span>'}</div></div>
+      <div class="field"><div class="field-label">Data de registro</div><div class="field-value">${u.registration_date?fmtD(u.registration_date):'<span class="muted">sem registro</span>'}</div></div>
+      ${u.work_status ? `<div class="field"><div class="field-label">Situação atual</div><div class="field-value">${esc(u.work_status)}</div></div>` : ''}
+      ${u.weekly_hours ? `<div class="field"><div class="field-label">Carga horária</div><div class="field-value">${u.weekly_hours}h / semana</div></div>` : ''}
+      ${u.work_schedule ? `<div class="field"><div class="field-label">Horário</div><div class="field-value" style="white-space:pre-line">${esc(u.work_schedule)}</div></div>` : ''}
+      ${u.saturday_schedule ? `<div class="field"><div class="field-label">Sábado</div><div class="field-value">${esc(u.saturday_schedule)}</div></div>` : ''}
+      ${u.job_description ? `<div class="field" style="grid-column:1/-1"><div class="field-label">Função detalhada</div><div class="field-value" style="white-space:pre-line;font-weight:400">${esc(u.job_description)}</div></div>` : ''}
+      ${u.hr_notes ? `<div class="field" style="grid-column:1/-1"><div class="field-label">Observações de RH</div><div class="field-value" style="white-space:pre-line;font-weight:400">${esc(u.hr_notes)}</div></div>` : ''}
       <div class="field"><div class="field-label">Regime de trabalho</div><div class="field-value">${halfLabel}</div></div>
       <div class="field"><div class="field-label">Salário bruto mensal</div><div class="field-value highlight">${fmtC(u.monthly_salary)}</div></div>
       <div class="field"><div class="field-label">Dia de pagamento</div><div class="field-value">Dia ${u.payment_day||5} de cada mês</div></div>
@@ -476,6 +484,7 @@ function EmployeeCard({ user: u, open, onClose, onEdit, onReset, onForceLogout, 
         {/* Pessoal */}
         <Section icon={User} label="Dados pessoais">
           <Row label="CPF"         value={u.cpf} mono/>
+          <Row label="RG"          value={u.document_personal} mono/>
           <Row label="Nascimento"  value={u.birthday ? `${fmtDateLong(u.birthday)}${age!=null?` (${age} anos)`:''}` : null}/>
         </Section>
 
@@ -483,8 +492,12 @@ function EmployeeCard({ user: u, open, onClose, onEdit, onReset, onForceLogout, 
 
         {/* Contrato */}
         <Section icon={Briefcase} label="Contrato">
-          <Row label="Contratação"   value={u.hire_date ? `${fmtDateLong(u.hire_date)}${service?` — ${service}`:''}` : null}/>
-          <Row label="Carga horária" value={u.monthly_hours ? `${u.monthly_hours}h / mês` : null}/>
+          <Row label="Situação"      value={u.work_status}/>
+          <Row label="Início"        value={u.hire_date ? `${fmtDateLong(u.hire_date)}${service?` — ${service}`:''}` : null}/>
+          {u.registration_date && <Row label="Registro" value={fmtDateLong(u.registration_date)}/>}
+          <Row label="Horário"       value={u.work_schedule && <span className="whitespace-pre-line">{u.work_schedule}</span>}/>
+          {u.saturday_schedule && <Row label="Sábado" value={u.saturday_schedule}/>}
+          <Row label="Carga horária" value={u.weekly_hours ? `${u.weekly_hours}h / semana${u.monthly_hours ? ` (${u.monthly_hours}h / mês)` : ''}` : u.monthly_hours ? `${u.monthly_hours}h / mês` : null}/>
           <Row label="Salário bruto" value={u.monthly_salary ? fmtCurrency(u.monthly_salary) : null} highlight={!!u.monthly_salary}/>
           {hourly && <Row label="Valor / hora" value={`${fmtCurrency(hourly)}/h`}/>}
         </Section>
@@ -497,6 +510,15 @@ function EmployeeCard({ user: u, open, onClose, onEdit, onReset, onForceLogout, 
             <Row label="Telefone" value={u.emergency_phone}/>
           </Section>
         </>}
+
+        {/* Função detalhada + Observações de RH */}
+        {[['Função detalhada', u.job_description], ['Observações de RH', u.hr_notes]].filter(([, t]) => t).map(([label, text]) => (
+          <div key={label}>
+            <div className="border-t border-slate-100 mb-5"/>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">{label}</p>
+            <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 rounded-xl p-3 border border-slate-100 whitespace-pre-wrap">{text}</p>
+          </div>
+        ))}
 
         {/* Observações */}
         {u.notes && <>
