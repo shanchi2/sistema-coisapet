@@ -7860,3 +7860,31 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
   só; concluir/urgente/excluir vale pra todas as cópias. (Apagar as cópias
   pelo MCP não passa — DELETE pede confirmação.)
 - Tabela `daily_focus` igual; a coluna `date` passa a ser só "dia em que foi lançada".
+
+## 2026-10-22 — Ficha do funcionário completa (planilha de RH "EM ATIVIDADE")
+
+- Raphael mandou a planilha de RH atualizada; pediu pra atualizar todos os
+  funcionários da aba "Em atividade" (a aba "Desligados" fica pra depois) e
+  deixar a ficha bem completa, com campo de observação.
+- **fase123** (`supabase/fase123-ficha-funcionario.sql`): colunas novas em
+  `system_users` — `job_description` (função detalhada), `work_schedule`
+  (horário), `saturday_schedule`, `weekly_hours`, `registration_date` (data
+  do registro em carteira), `work_status` (situação atual) e `hr_notes`
+  (observações de RH). GRANT por coluna (regra da fase106).
+- Semântica: `hire_date` passou a ser a **data de início** (tempo de casa
+  real); a data de registro fica em `registration_date`.
+- Tela: aba Contrato do cadastro ganhou início/registro/situação/função
+  detalhada/horário/sábado/carga semanal (preenche a mensal ×5)/observações
+  de RH; a ficha (visualizar e imprimir) mostra tudo isso + RG.
+- Dados das 11 pessoas aplicados direto no banco (UPDATE via MCP, nada de
+  dado pessoal no git). Salários atualizados em 3 pessoas e os lançamentos
+  futuros pendentes do financeiro acompanharam o valor novo.
+- Pendências conferidas com o Raphael: linha dele na planilha veio com
+  RG/CPF/início copiados do Marlon e nascimento diferente do cadastro (não
+  aplicado); data de início do Daniel com erro de digitação (assumido
+  08/09/2026); Luis está como horista no sistema e prestador na planilha
+  (não mudado); RG da Ana não veio; meio período (`half_day`) de quem faz
+  20h/semana não foi mexido.
+- Obs. técnica: o MCP do Supabase dava timeout em UPDATEs com vários
+  comandos ou certos textos — um UPDATE por chamada (texto em base64 com
+  `convert_from(decode(...))` quando travava) resolveu.

@@ -54,6 +54,9 @@ const EMPTY = {
   company_cnpj:  '',
   kanban_access:     false,
   escritorio_sector: '',
+  // Ficha de RH (fase123)
+  job_description: '', work_schedule: '', saturday_schedule: '', weekly_hours: '',
+  registration_date: '', work_status: '', hr_notes: '',
 }
 
 // ─── Field — fora do componente para não recriar a cada render ───
@@ -143,6 +146,13 @@ export function UserFormModal({ open, onClose, onSave, initial, loading }) {
         company_cnpj:        initial.company_cnpj       ?? '',
         kanban_access:       initial.role === 'escritorio',
         escritorio_sector:   initial.escritorio_sector  ?? '',
+        job_description:     initial.job_description    ?? '',
+        work_schedule:       initial.work_schedule      ?? '',
+        saturday_schedule:   initial.saturday_schedule  ?? '',
+        weekly_hours:        initial.weekly_hours ? String(initial.weekly_hours) : '',
+        registration_date:   initial.registration_date  ?? '',
+        work_status:         initial.work_status        ?? '',
+        hr_notes:            initial.hr_notes           ?? '',
       })
     } else {
       setForm(EMPTY)
@@ -542,13 +552,45 @@ export function UserFormModal({ open, onClose, onSave, initial, loading }) {
       {tab === 'contrato' && (
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Data de contratação">
+            <Field label="Data de início" hint="Primeiro dia de trabalho (conta o tempo de casa)">
               <input className="input" type="date" value={form.hire_date} onChange={e => set('hire_date', e.target.value)}/>
             </Field>
-            <Field label="Carga horária mensal" hint="Padrão: 220h">
+            <Field label="Data de registro" hint="Registro em carteira — vazio se não é registrado">
+              <input className="input" type="date" value={form.registration_date} onChange={e => set('registration_date', e.target.value)}/>
+            </Field>
+          </div>
+          <Field label="Situação atual" hint="Ex: Registrado (CLT), Prestador de serviço (sem registro)">
+            <input className="input" list="work-status-opts" value={form.work_status} onChange={e => set('work_status', e.target.value)} placeholder="Registrado (CLT)"/>
+            <datalist id="work-status-opts">
+              <option value="Registrado (CLT)"/>
+              <option value="Registrada (CLT)"/>
+              <option value="Prestador de serviço (sem registro)"/>
+              <option value="Prestadora de serviço (sem registro)"/>
+              <option value="Sem registro (horista)"/>
+              <option value="Em período de teste"/>
+            </datalist>
+          </Field>
+          <Field label="Função detalhada" hint="O que a pessoa faz no dia a dia">
+            <textarea className="textarea resize-none" rows={3} value={form.job_description} onChange={e => set('job_description', e.target.value)} placeholder="Ex: Opera as máquinas, organiza a produção do dia..."/>
+          </Field>
+          <Field label="Horário de trabalho">
+            <textarea className="textarea resize-none" rows={2} value={form.work_schedule} onChange={e => set('work_schedule', e.target.value)} placeholder="Ex: 07:30 às 12:00 | 13:44 às 18:00"/>
+          </Field>
+          <div className="grid grid-cols-3 gap-4">
+            <Field label="Sábado">
+              <input className="input" value={form.saturday_schedule} onChange={e => set('saturday_schedule', e.target.value)} placeholder="Não trabalha / 08:00 às 12:00"/>
+            </Field>
+            <Field label="Carga semanal (h)">
+              <input className="input" type="number" value={form.weekly_hours}
+                onChange={e => { const v = e.target.value; set('weekly_hours', v); if (v) set('monthly_hours', String(parseInt(v) * 5)) }} placeholder="44"/>
+            </Field>
+            <Field label="Carga mensal (h)" hint="Semanal × 5">
               <input className="input" type="number" value={form.monthly_hours} onChange={e => set('monthly_hours', e.target.value)} placeholder="220"/>
             </Field>
           </div>
+          <Field label="Observações de RH" hint="Histórico, combinados, pendências (férias, documentos faltando...)">
+            <textarea className="textarea resize-none" rows={4} value={form.hr_notes} onChange={e => set('hr_notes', e.target.value)} placeholder="Ex: Tem férias em aberto; RG pendente..."/>
+          </Field>
           {/* Salário movido para o bloco de pagamento acima */}
           <Field label="Documento pessoal" hint="RG, CTPS, etc.">
             <input className="input" value={form.document_personal} onChange={e => set('document_personal', e.target.value)} placeholder="Ex: RG 12.345.678-9"/>

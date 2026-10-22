@@ -26,6 +26,19 @@ async function auditLog(action, tableName, recordId, description) {
 }
 
 
+// Campos da ficha de RH (fase123) — iguais no cadastro e na edição
+function hrFields(p) {
+  return {
+    job_description:   p.job_description?.trim()   || null,
+    work_schedule:     p.work_schedule?.trim()     || null,
+    saturday_schedule: p.saturday_schedule?.trim() || null,
+    weekly_hours:      p.weekly_hours ? parseInt(p.weekly_hours) : null,
+    registration_date: p.registration_date         || null,
+    work_status:       p.work_status?.trim()       || null,
+    hr_notes:          p.hr_notes?.trim()          || null,
+  }
+}
+
 export function useSystemUsers() {
   const [users,   setUsers]   = useState([])
   const [loading, setLoading] = useState(true)
@@ -34,7 +47,7 @@ export function useSystemUsers() {
     setLoading(true)
     const { data, error } = await supabase
       .from('system_users')
-.select('id, name, email, notification_email, email_notifications, role, job_title, phone, cpf, hire_date, birthday, monthly_salary, monthly_hours, address, emergency_name, emergency_phone, notes, must_change_password, last_login_at, created_at, document_personal, photo_url, medical_certs_notes, contract_signed, warnings_notes, half_day, contract_url, cnh, employee_type, payment_day, company_name, company_cnpj, escritorio_sector, pix_key, pix_key_type, pix_holder').eq('active', true)
+.select('id, name, email, notification_email, email_notifications, role, job_title, phone, cpf, hire_date, birthday, monthly_salary, monthly_hours, address, emergency_name, emergency_phone, notes, must_change_password, last_login_at, created_at, document_personal, photo_url, medical_certs_notes, contract_signed, warnings_notes, half_day, contract_url, cnh, employee_type, payment_day, company_name, company_cnpj, escritorio_sector, pix_key, pix_key_type, pix_holder, job_description, work_schedule, saturday_schedule, weekly_hours, registration_date, work_status, hr_notes').eq('active', true)
       .order('name')
 
     if (error) { toast.error('Erro ao carregar usuários.'); console.error(error) }
@@ -165,6 +178,7 @@ export function useSystemUsers() {
       pix_key:        payload.pix_key?.trim()    || null,
       pix_key_type:   payload.pix_key?.trim() ? (payload.pix_key_type || 'cpf') : null,
       pix_holder:     payload.pix_holder?.trim() || null,
+      ...hrFields(payload),
     }).eq('id', newId)
 
     // Salva contatos se prestador PJ
@@ -228,6 +242,7 @@ export function useSystemUsers() {
       pix_key:             payload.pix_key?.trim()    || null,
       pix_key_type:        payload.pix_key?.trim() ? (payload.pix_key_type || 'cpf') : null,
       pix_holder:          payload.pix_holder?.trim() || null,
+      ...hrFields(payload),
       // active só muda quando contract_signed é alterado explicitamente no modal de contrato
       // payload.set_active vem true/false apenas quando o toggle foi tocado
       ...(payload.set_active !== undefined ? { active: payload.set_active } : {}),
