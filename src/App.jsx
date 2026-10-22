@@ -101,6 +101,7 @@ import { MlAdsPage } from './modules/ml-insights/MlAdsPage'
 import { MlOpportunitiesPage } from './modules/ml-insights/MlOpportunitiesPage'
 import { MlFullStockPage } from './modules/ml-insights/MlFullStockPage'
 import { MlFullShipmentsPage } from './modules/ml-insights/MlFullShipmentsPage'
+import { FeiraFullPage } from './modules/marketplaces/FeiraFullPage'
 import { MlCouponsPage } from './modules/ml-insights/MlCouponsPage'
 import { MlActiveListingsPage } from './modules/ml-insights/MlActiveListingsPage'
 import { MlCreateListingPage } from './modules/ml-insights/MlCreateListingPage'
@@ -195,6 +196,7 @@ export default function App() {
                 <Route path="/marketplaces/chat" element={<GuardedRoute moduleKey="marketplaces-posvenda"><MarketplaceChatPage /></GuardedRoute>} />
                 <Route path="/marketplaces/saude" element={<GuardedRoute moduleKey="marketplaces"><MarketplaceHealthPage /></GuardedRoute>} />
                 <Route path="/marketplaces/full" element={<GuardedRoute moduleKey="marketplaces"><MarketplaceFullPage /></GuardedRoute>} />
+                <Route path="/marketplaces/feira-full" element={<GuardedRoute moduleKey="feira-full"><FeiraFullPage /></GuardedRoute>} />
                 <Route path="/marketplaces/historico" element={<GuardedRoute moduleKey="marketplaces"><MarketplaceHistoryPage /></GuardedRoute>} />
                 <Route path="/marketplaces/anuncios" element={<GuardedRoute moduleKey="marketplaces"><MarketplaceListingsPage /></GuardedRoute>} />
                 <Route path="/ml"                element={<GuardedRoute moduleKey="ml-insights"><MlAccountDashboardPage /></GuardedRoute>} />

@@ -698,7 +698,7 @@ function ShortageReportsPanel() {
                   {r.variacao && <span className="text-[11px] font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-lg">{r.variacao}</span>}
                   {r.sku && <span className="text-[11px] font-mono text-slate-400">{r.sku}</span>}
                   <span className="text-[11px] text-slate-400">
-                    {r.batch?.source === 'shopee' ? '🛍️ Shopee' : r.batch?.source === 'ml' ? '🛒 Mercado Livre' : r.batch?.source}
+                    {r.source === 'full' ? '🚚 Feira do Full' : r.batch?.source === 'shopee' ? '🛍️ Shopee' : r.batch?.source === 'ml' ? '🛒 Mercado Livre' : r.batch?.source}
                   </span>
                   {r.target_date && (
                     <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${
