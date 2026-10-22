@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Boxes, Check, CheckCircle2, ClipboardCheck, Factory, Loader2, Minus, Package, Plus,
-  Printer, RefreshCw, RotateCcw, Tag, Truck, Warehouse,
+  Printer, RefreshCw, RotateCcw, Tablet, Tag, Truck, Warehouse,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -109,21 +109,83 @@ async function startFeira(src, who) {
   return f.id
 }
 
+// Modo tablet (23/10): mesma tela, mas aberta FORA do sistema (sem menu
+// lateral nem cabeçalho), igual ao picklist da Expedição — o Vini usa no
+// tablet da Carol. Rota própria `/feira-full`, aberta em outra aba pelo
+// botão "Abrir no tablet".
+const BASE = import.meta.env.PROD ? '/sistema' : ''
+const tabletUrl = qs => `${BASE}/feira-full${qs ? `?${qs}` : ''}`
+const openTablet = qs => window.open(tabletUrl(qs), '_blank')
+
 // ═══ Página ════════════════════════════════════════════════════════════════
-export function FeiraFullPage() {
+export function FeiraFullPage({ tablet = false }) {
   const [params, setParams] = useSearchParams()
   const platform = params.get('plat') === 'shopee' ? 'shopee' : 'ml'
   const feiraId = params.get('feira')
   const go = patch => setParams(p => { Object.entries(patch).forEach(([k, v]) => v == null ? p.delete(k) : p.set(k, v)); return p })
+  const back = useCallback(() => go({ feira: null }), []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
-      <div className="max-w-[1100px] mx-auto space-y-5">
+    <div className={`min-h-screen bg-slate-50 ${tablet ? 'p-3 sm:p-5' : 'p-4 sm:p-6 lg:p-8'}`}>
+      <div className={`${tablet ? 'max-w-[1500px]' : 'max-w-[1100px]'} mx-auto space-y-5`}>
         {feiraId
-          ? <FeiraView id={Number(feiraId)} onBack={() => go({ feira: null })} />
-          : <FeiraList platform={platform} onPlatform={p => go({ plat: p === 'ml' ? null : p })} onOpen={id => go({ feira: String(id) })} />}
+          ? <FeiraView id={Number(feiraId)} tablet={tablet} onBack={back} />
+          : <FeiraList platform={platform} tablet={tablet} onPlatform={p => go({ plat: p === 'ml' ? null : p })} onOpen={id => go({ feira: String(id) })} />}
       </div>
     </div>
+  )
+}
+
+// Quem está usando o tablet (23/10): o tablet fica logado numa conta
+// compartilhada, então a pessoa escolhe o nome dela — é esse nome que fica em
+// "separado/reconferido por" (a conferência final precisa saber QUEM contou).
+const OPERATOR_KEY = 'coisapet_feira_operador'
+function readOperator() { try { return sessionStorage.getItem(OPERATOR_KEY) || '' } catch { return '' } }
+function saveOperator(v) { try { sessionStorage.setItem(OPERATOR_KEY, v) } catch { /* sem storage */ } }
+
+function OperatorPicker({ value, onChange }) {
+  const [open, setOpen] = useState(!value)
+  const [names, setNames] = useState([])
+  useEffect(() => {
+    if (!open || names.length) return
+    supabase.from('system_users').select('name').eq('active', true).order('name')
+      .then(({ data }) => setNames((data || []).map(u => u.name).filter(n => !/coisapet|atendimento|advoca/i.test(n))))
+  }, [open, names.length])
+  return (
+    <>
+      <button onClick={() => setOpen(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600">
+        👤 {value ? value.split(' ')[0] : 'Quem está usando?'} <span className="text-slate-400">· trocar</span>
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-lg space-y-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">Quem está usando o tablet?</h2>
+              <p className="text-sm text-slate-500">Seu nome fica registrado em cada contagem e na conferência.</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[55vh] overflow-y-auto">
+              {names.map(n => (
+                <button key={n} onClick={() => { onChange(n); setOpen(false) }}
+                  className={`px-3 py-3 rounded-xl border-2 text-sm font-semibold text-left ${n === value ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
+                  {n.split(' ').slice(0, 2).join(' ')}
+                </button>
+              ))}
+              {!names.length && <Loader2 className="animate-spin text-slate-400" />}
+            </div>
+            {value && <button onClick={() => setOpen(false)} className="text-sm font-semibold text-slate-500">Fechar</button>}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function TabletButton({ qs }) {
+  return (
+    <button onClick={() => openTablet(qs)} title="Abre a feira em tela cheia, fora do sistema (pro tablet do barracão)"
+      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white">
+      <Tablet size={13} />Abrir no tablet
+    </button>
   )
 }
 
@@ -145,7 +207,7 @@ function Progress({ value, total, cls = 'bg-emerald-500' }) {
 }
 
 // ── Lista: feiras em andamento + envios que ainda não começaram ─────────────
-function FeiraList({ platform, onPlatform, onOpen }) {
+function FeiraList({ platform, tablet, onPlatform, onOpen }) {
   const { user } = useAuth()
   const [sources, setSources] = useState(null)
   const [feiras, setFeiras] = useState([])
@@ -178,7 +240,7 @@ function FeiraList({ platform, onPlatform, onOpen }) {
 
   return (
     <>
-      <Header>
+      <Header right={!tablet && <TabletButton qs={platform === 'shopee' ? 'plat=shopee' : ''} />}>
         <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Feira do Full</h1>
         <p className="text-sm text-slate-500">Separação dos envios pro Full: contar, etiquetar e pôr na estante até o caminhão buscar.</p>
       </Header>
@@ -284,9 +346,10 @@ function FeiraCard({ f, onOpen }) {
 }
 
 // ── Feira aberta ───────────────────────────────────────────────────────────
-function FeiraView({ id, onBack }) {
+function FeiraView({ id, tablet, onBack }) {
   const { user } = useAuth()
-  const who = user?.name || null
+  const [operator, setOperator] = useState(readOperator)
+  const who = (tablet && operator) || user?.name || null
   const [feira, setFeira] = useState(null)
   const [items, setItems] = useState([])
   const [mode, setMode] = useState('separar')
@@ -421,6 +484,8 @@ function FeiraView({ id, onBack }) {
       <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800"><ArrowLeft size={15} />Feiras</button>
       <Header right={
         <div className="flex flex-wrap gap-2">
+          {!tablet && <TabletButton qs={`feira=${id}`} />}
+          {tablet && <OperatorPicker value={operator} onChange={v => { saveOperator(v); setOperator(v) }} />}
           <button onClick={print} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-600"><Printer size={13} />Imprimir</button>
           {!locked && <>
             <button onClick={refreshFromSource} disabled={working} title="Puxa de novo as quantidades do envio/pré-lista" className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-600 disabled:opacity-50"><RefreshCw size={13} className={working ? 'animate-spin' : ''} />Atualizar do envio</button>
@@ -485,7 +550,7 @@ function FeiraView({ id, onBack }) {
         </p>
       )}
 
-      <div className="grid md:grid-cols-2 gap-3">
+      <div className={`grid md:grid-cols-2 ${tablet ? 'xl:grid-cols-3' : ''} gap-3`}>
         {shown.map(i => <ItemCard key={i.id} it={i} mode={mode} locked={locked} who={who} onPatch={patchItem} />)}
         {shown.length === 0 && <p className="md:col-span-2 text-sm text-slate-400 text-center py-10">Nada nesse filtro.</p>}
       </div>

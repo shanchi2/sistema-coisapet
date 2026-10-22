@@ -164,6 +164,8 @@ export default function App() {
               <Route path="/expedicao" element={<ExpedicaoPage />} />
               {/* Mesmo padrão — conferência do João no tablet do galpão, sem sidebar/header. */}
               <Route path="/conferencia-materia-prima" element={<MaterialConferencePage />} />
+              {/* Feira do Full no tablet (23/10) — mesmo padrão da Expedição, sem sidebar/header */}
+              <Route path="/feira-full" element={<GuardedRoute moduleKey="feira-full"><FeiraFullPage tablet /></GuardedRoute>} />
 
               <Route element={<Layout />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
