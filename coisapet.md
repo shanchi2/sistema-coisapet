@@ -7888,3 +7888,16 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
 - Obs. técnica: o MCP do Supabase dava timeout em UPDATEs com vários
   comandos ou certos textos — um UPDATE por chamada (texto em base64 com
   `convert_from(decode(...))` quando travava) resolveu.
+
+## 2026-10-22 — TV da Produção: prévia de cada módulo
+
+- Pedido (irmão do Raphael): "opção VISUALIZAÇÃO na hora de ativar o módulo
+  a ser exibido" — ver como o módulo fica antes de olhar na TV.
+- Cada módulo da lista "O que exibir" ganhou o botão **👁 Ver**: abre a prévia
+  com os dados reais de agora, num palco 1920×1080 encolhido (mesmo tamanho
+  pra que os módulos foram desenhados), com abas "Em destaque" e "Na lateral
+  (mini)". Alertas mostram a faixa. Módulo sem dado avisa que na TV é pulado.
+- `tv-feed` (v9) aceita `{ session }` (token da sessão, fase106) além do
+  código da TV — só admin (`meeting_admin_name`), não marca "visto por
+  último" de nenhuma TV. Testado: sessão inválida → 401.
+- Arquivo novo: `src/modules/tv/TvPreviewModal.jsx`.
