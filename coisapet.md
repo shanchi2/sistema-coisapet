@@ -7805,3 +7805,23 @@ Ajustes pedidos pelo Raphael depois de testar:
 - Servidor (game-api v4): limites da Memória (até 4000) e da Velha (até
   1500); conquista "Estrategista" (900 na Velha); "Memória de elefante" agora
   é 1500.
+
+## 2026-10-22 — Notificações só no sino (sem e-mail) — cota do Resend estourada
+
+Raphael perguntou como achar a conta do Resend (um e-mail "travado"). Nos
+logs: **cota mensal do Resend esgotada** (`monthly_quota_exceeded`, 246
+recusas só em 21/10) — nenhum e-mail saía, nem o código de login do jogo.
+Causa: o gatilho `on_notification_insert` mandava 1 e-mail por notificação do
+sino, inclusive cada pedido sincronizado (ML 3,7 mil + Shopee 4,4 mil em
+outubro) pra ~6 pessoas. Plano grátis = 3 mil/mês, 100/dia.
+- Decisão do Raphael: **nenhuma notificação por e-mail** (pedidos, sincronização,
+  tarefas, compras, mensagens) — tudo só no sininho.
+- `send-notification-email` agora não envia nada (trava extra) e o gatilho foi
+  desligado (fase122). A opção "receber por e-mail" do cadastro de usuário
+  virou um aviso "Notificações só no sistema (sino)".
+- O Resend fica só pro **código de entrada do jogo**. Volta a funcionar quando
+  a cota renovar (ciclo mensal da conta) ou subindo de plano no Resend.
+- Login da conta do Resend: não está anotado em lugar nenhum — procurar e-mails
+  de resend.com (ex.: aviso de cota) ou tentar entrar com Google/GitHub.
+- Pendente: apagar de vez o gatilho pelo painel (tem a chave service_role na
+  definição) — pelo MCP o DROP pede confirmação e não passa.
