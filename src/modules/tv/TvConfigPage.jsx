@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Tv, ExternalLink, Save, ArrowUp, ArrowDown, Megaphone, Truck, KeyRound, Copy, Check, Trash2, Loader2, Monitor, LayoutPanelLeft, GalleryHorizontal, Plus, Sun, Moon, RefreshCw, Eye } from 'lucide-react'
+import { Tv, ExternalLink, Save, ArrowUp, ArrowDown, Megaphone, Truck, KeyRound, Copy, Check, Trash2, Loader2, Monitor, LayoutPanelLeft, GalleryHorizontal, Plus, Sun, Moon, RefreshCw, Eye, Pencil, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { moduleByKey, normalizeModules } from './tvModules'
@@ -64,6 +64,7 @@ export function TvConfigPage() {
   const [rhAvisos, setRhAvisos] = useState([])
   const [screens, setScreens] = useState(null)
   const [aviso, setAviso] = useState({ title: '', body: '', level: 'info', ends_at: '' })
+  const [editingAviso, setEditingAviso] = useState(null) // id do aviso sendo editado (22/10)
   const [coleta, setColeta] = useState({ at: '', title: '', body: '' })
   const [screenLabel, setScreenLabel] = useState('')
   const [created, setCreated] = useState(null)
@@ -116,15 +117,29 @@ export function TvConfigPage() {
 
   async function addAviso() {
     if (!aviso.title.trim()) { toast.error('Escreva o título do aviso.'); return }
-    const { error } = await supabase.from('tv_alerts').insert({
-      kind: 'aviso', level: aviso.level, title: aviso.title.trim(), body: aviso.body.trim() || null,
+    const fields = {
+      level: aviso.level, title: aviso.title.trim(), body: aviso.body.trim() || null,
       ends_at: aviso.ends_at ? new Date(aviso.ends_at + 'T23:59:59').toISOString() : null,
-      created_by: user?.id || null, created_by_name: user?.name || null,
-    })
+    }
+    const { error } = editingAviso
+      ? await supabase.from('tv_alerts').update(fields).eq('id', editingAviso)
+      : await supabase.from('tv_alerts').insert({ kind: 'aviso', ...fields, created_by: user?.id || null, created_by_name: user?.name || null })
     if (error) { toast.error('Erro: ' + error.message); return }
-    setAviso({ title: '', body: '', level: 'info', ends_at: '' })
-    toast.success('Aviso no ar.')
+    toast.success(editingAviso ? 'Aviso atualizado — a TV pega em até 1 minuto.' : 'Aviso no ar.')
+    cancelEditAviso()
     loadAll()
+  }
+  // Editar aviso já no ar (22/10): carrega no formulário de cima
+  function editAviso(a) {
+    setEditingAviso(a.id)
+    setAviso({
+      title: a.title || '', body: a.body || '', level: a.level || 'info',
+      ends_at: a.ends_at ? new Date(a.ends_at).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) : '',
+    })
+  }
+  function cancelEditAviso() {
+    setEditingAviso(null)
+    setAviso({ title: '', body: '', level: 'info', ends_at: '' })
   }
   async function addColeta() {
     if (!coleta.at) { toast.error('Informe data e hora da coleta.'); return }
@@ -289,6 +304,7 @@ export function TvConfigPage() {
             {/* Avisos */}
             <Panel icon={Megaphone} title="Avisos na TV" desc="Recado da diretoria pra equipe. Urgente vira faixa vermelha no topo.">
               <div className="flex flex-col gap-2">
+                {editingAviso && <p className="text-[11px] font-bold text-sky-700 uppercase tracking-wide flex items-center gap-1.5"><Pencil size={11} />Editando aviso</p>}
                 <input value={aviso.title} onChange={e => setAviso(a => ({ ...a, title: e.target.value }))} maxLength={90} placeholder="Título (ex: Coleta do Full toda terça às 14h)"
                   className="text-sm border border-slate-200 rounded-lg px-3 py-2" />
                 <textarea value={aviso.body} onChange={e => setAviso(a => ({ ...a, body: e.target.value }))} rows={2} placeholder="Detalhe (opcional)" className="text-sm border border-slate-200 rounded-lg px-3 py-2 resize-y" />
@@ -298,15 +314,27 @@ export function TvConfigPage() {
                   </select>
                   <input type="date" value={aviso.ends_at} onChange={e => setAviso(a => ({ ...a, ends_at: e.target.value }))} title="Sai do ar depois deste dia (opcional)" className="text-xs border border-slate-200 rounded-lg px-2 py-2" />
                 </div>
-                <button onClick={addAviso} className="btn-primary text-xs flex items-center justify-center gap-1.5"><Plus size={13} />Colocar na TV</button>
+                {editingAviso ? (
+                  <div className="flex gap-2">
+                    <button onClick={cancelEditAviso} className="flex-1 text-xs font-semibold rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 flex items-center justify-center gap-1.5"><X size={13} />Cancelar</button>
+                    <button onClick={addAviso} className="flex-1 btn-primary text-xs flex items-center justify-center gap-1.5"><Check size={13} />Salvar alteração</button>
+                  </div>
+                ) : (
+                  <button onClick={addAviso} className="btn-primary text-xs flex items-center justify-center gap-1.5"><Plus size={13} />Colocar na TV</button>
+                )}
               </div>
               {avisosTv.length > 0 && (
                 <ul className="flex flex-col gap-1.5 mt-3">
                   {avisosTv.map(a => (
-                    <li key={a.id} className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2">
+                    <li key={a.id} className={`flex items-start gap-2 rounded-lg px-3 py-2 ${editingAviso === a.id ? 'bg-sky-50 ring-1 ring-sky-300' : 'bg-slate-50'}`}>
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${LEVELS.find(l => l.v === a.level)?.cls}`}>{LEVELS.find(l => l.v === a.level)?.label.split(' ')[0]}</span>
-                      <div className="min-w-0 flex-1"><p className="text-xs font-semibold text-slate-700">{a.title}</p><p className="text-[11px] text-slate-400">{a.ends_at ? `até ${fmtDT(a.ends_at)}` : 'sem data pra sair'}</p></div>
-                      <button onClick={() => removeAlert(a)} title="Tirar da TV" className="text-slate-300 hover:text-rose-500"><Trash2 size={13} /></button>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-slate-700">{a.title}</p>
+                        {a.body && <p className="text-[11px] text-slate-500 line-clamp-2 whitespace-pre-line">{a.body}</p>}
+                        <p className="text-[11px] text-slate-400">{editingAviso === a.id ? 'editando…' : a.ends_at ? `até ${fmtDT(a.ends_at)}` : 'sem data pra sair'}</p>
+                      </div>
+                      <button onClick={() => editAviso(a)} title="Editar" className="text-slate-300 hover:text-sky-600"><Pencil size={13} /></button>
+                      <button onClick={() => { if (editingAviso === a.id) cancelEditAviso(); removeAlert(a) }} title="Tirar da TV" className="text-slate-300 hover:text-rose-500"><Trash2 size={13} /></button>
                     </li>
                   ))}
                 </ul>
