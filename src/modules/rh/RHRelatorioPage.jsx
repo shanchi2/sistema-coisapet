@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, User, Printer, TrendingUp, Pencil, Check, X, CalendarX, Plus, Trash2, DollarSign, FileDown, Wallet, Send } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, StickyNote, User, Printer, TrendingUp, Pencil, Check, X, CalendarX, Plus, Trash2, DollarSign, FileDown, Wallet, Send } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { fmtH, PageHeader, LoadingCard, Avatar } from './rhHelpers'
 import { RHPontoPage } from './RHPontoPage'
@@ -7,6 +7,7 @@ import { RHPontoSemanalPage } from './RHPontoSemanalPage'
 import { RHHorasFimSemanaPage } from './RHHorasFimSemanaPage'
 import { todayISO } from '../../lib/dateBR'
 import toast from 'react-hot-toast'
+import { useAuth } from '../../contexts/AuthContext'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -98,7 +99,8 @@ function calcDayHours(recs) {
 }
 
 // ── Modal de edição do dia ────────────────────────────────────
-function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
+function EditDayModal({ open, onClose, date, empId, records, note: savedNote = '', onSaved }) {
+  const { user } = useAuth()
   const PUNCHES = [
     { type: 'entrada',      label: 'Entrada',      color: 'text-emerald-600' },
     { type: 'saida_almoco', label: 'Saída Almoço', color: 'text-amber-500'   },
@@ -112,6 +114,8 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
   // manual. Digitar no campo zera a origem (aí sim vira manual).
   const [origin,  setOrigin]  = useState({})
   const [saving,  setSaving]  = useState(false)
+  // Observação do dia (23/10): motivo do horário lançado à mão / ajuste de carga
+  const [note,    setNote]    = useState('')
 
   // Troca o valor desse campo com o campo vizinho (pra cima ou pra baixo)
   // — nunca perde dado, só troca de posição. Útil quando o funcionário
@@ -139,7 +143,8 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
     })
     setTimes(init)
     setOrigin(orig)
-  }, [open, records])
+    setNote(savedNote || '')
+  }, [open, records, savedNote])
 
   async function handleSave() {
     setSaving(true)
@@ -198,6 +203,17 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
         }
       }
 
+      // Observação do dia: grava, troca ou apaga (campo vazio)
+      const n = note.trim()
+      if (n !== (savedNote || '').trim()) {
+        const { error } = n
+          ? await supabase.from('time_day_notes').upsert(
+              { employee_id: empId, date, note: n, updated_by: user?.name || null, updated_at: new Date().toISOString() },
+              { onConflict: 'employee_id,date' })
+          : await supabase.from('time_day_notes').delete().eq('employee_id', empId).eq('date', date)
+        if (error) throw error
+      }
+
       // Recalcula hours_worked na saída (se existir)
       await recalcHours()
       toast.success('Ponto ajustado com sucesso!')
@@ -228,7 +244,7 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose}/>
-      <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl flex flex-col animate-fade-in"
+      <div className="relative w-full max-w-sm max-h-[92vh] overflow-y-auto bg-white rounded-2xl shadow-xl flex flex-col animate-fade-in"
         style={{ border: '1px solid #F1F5F9' }}>
 
         {/* Header */}
@@ -286,6 +302,15 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
           ))}
         </div>
 
+        {/* Observação do dia */}
+        <div className="px-5 pb-5 -mt-1 flex flex-col gap-1.5">
+          <label className="text-xs font-bold text-slate-600 flex items-center gap-1.5"><StickyNote size={12} className="text-amber-500"/>Observação do dia</label>
+          <textarea rows={3} value={note} onChange={e => setNote(e.target.value)}
+            placeholder="Ex: esqueceu de bater a saída, horário lançado pelo RH; saiu mais cedo combinado — meta do dia ajustada…"
+            className="textarea resize-none text-sm"/>
+          <p className="text-[11px] text-slate-400">Explique o motivo de um horário lançado à mão ou do ajuste da carga horária. O dia fica destacado no relatório. Apagar o texto remove a observação.</p>
+        </div>
+
         {/* Footer */}
         <div className="flex gap-2 p-5 border-t border-slate-100">
           <button onClick={onClose} className="btn-secondary flex-1" disabled={saving}>
@@ -304,7 +329,7 @@ function EditDayModal({ open, onClose, date, empId, records, onSaved }) {
 }
 
 // ── Componente de linha de dia ────────────────────────────────
-function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, isHomeOffice, isAtestado, empId, targetMin, onEdit, onSaveTarget, onToggleHoliday }) {
+function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, isHomeOffice, isAtestado, empId, targetMin, note, onEdit, onSaveTarget, onToggleHoliday }) {
   const dayLabel = fmtDay(date)
 
   // Estado para edição inline da meta do dia
@@ -358,7 +383,8 @@ function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, isHo
   }
 
   return (
-    <tr className={`border-b border-slate-100 transition-colors group ${
+    <tr className={`border-b border-slate-100 transition-colors group ${note ? 'shadow-[inset_4px_0_0_#f59e0b]' : ''} ${
+      note       ? 'bg-amber-50/70' :
       isHoliday  ? 'bg-purple-50/60' :
       isVacation ? 'bg-emerald-50/50' :
       isAtestado ? 'bg-violet-50/50' :
@@ -381,6 +407,12 @@ function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, isHo
           {isVacation && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">🌴 FÉRIAS</span>}
           {isAtestado && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700" title="Atestado médico aprovado — conta 100% da meta do dia">🩺 ATESTADO</span>}
           {isHomeOffice && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700" title="Home office combinado — conta 100% da meta do dia">HO</span>}
+          {note && (
+            <button onClick={() => onEdit(date, records)} title={note}
+              className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 hover:bg-amber-200 flex items-center gap-1">
+              <StickyNote size={9}/>OBS
+            </button>
+          )}
           {!isHoliday && !isWeekend && (
             <button onClick={() => onToggleHoliday?.(date)}
               className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 text-[9px] text-purple-400 hover:text-purple-600 font-semibold"
@@ -396,6 +428,12 @@ function DayRow({ date, records, isWeekend, isToday, isHoliday, isVacation, isHo
             </button>
           )}
         </div>
+        {note && (
+          <button onClick={() => onEdit(date, records)} title={note}
+            className="block mt-1 max-w-[260px] truncate text-left text-[11px] text-amber-800 hover:underline">
+            📝 {note}
+          </button>
+        )}
       </td>
       {/* Entrada */}
       <td className="py-2.5 px-3 text-center">
@@ -558,6 +596,7 @@ export function RHRelatorioPage() {
   const [selEmp,    setSelEmp]    = useState('all')
   const [records,   setRecords]   = useState({})
   const [targets,   setTargets]   = useState({}) // { empId: { date: minutos } }
+  const [dayNotes,  setDayNotes]  = useState({}) // { empId: { date: observação } } (23/10)
   const [loading,   setLoading]   = useState(true)
   const [editModal, setEditModal] = useState(null) // { date, empId, records }
   const [holidays,  setHolidays]  = useState([])   // array de date strings 'YYYY-MM-DD'
@@ -599,7 +638,7 @@ export function RHRelatorioPage() {
     // começou no mês anterior e ainda cobre o início deste. O recorte
     // exato (date..date+days_off-1) é calculado no cliente, em isAtestadoDay.
     const certBufferStart = new Date(year, month, 1 - 30).toISOString().split('T')[0]
-    const [empR, recR, tgtR, holR, vacR, certR] = await Promise.all([
+    const [empR, recR, tgtR, holR, vacR, certR, noteR] = await Promise.all([
       supabase.from('system_users').select('id,name,role,job_title,active,half_day,fixed_monthly_salary,weekend_hours_separate').eq('active',true).order('name'),
       supabase.from('time_records').select('id,employee_id,punch_type,recorded_at,date,hours_worked,manually_edited')
         .gte('date', dateStart).lte('date', dateEnd).order('recorded_at',{ascending:true}),
@@ -614,6 +653,8 @@ export function RHRelatorioPage() {
         .eq('status','aprovado')
         .lte('date', dateEnd)
         .gte('date', certBufferStart),
+      supabase.from('time_day_notes').select('employee_id,date,note')
+        .gte('date', dateStart).lte('date', dateEnd),
     ])
     setEmployees(empR.data ?? [])
     setHolidays((holR.data ?? []).map(h => h.date))
@@ -636,6 +677,9 @@ export function RHRelatorioPage() {
       tgrouped[t.employee_id][t.date] = t.target_min
     }
     setTargets(tgrouped)
+    const ngrouped = {}
+    for (const n of noteR.data ?? []) (ngrouped[n.employee_id] ||= {})[n.date] = n.note
+    setDayNotes(ngrouped)
     setLoading(false)
   }
 
@@ -1767,6 +1811,7 @@ export function RHRelatorioPage() {
                             isAtestado={!isVacationDay(emp.id, date) && isAtestadoDay(emp.id, date)}
                             empId={emp.id}
                             targetMin={(isHoliday || isVacationDay(emp.id, date)) ? 0 : (targets[emp.id]?.[date] ?? (isWeekend ? 0 : dailyTarget(emp)))}
+                            note={dayNotes[emp.id]?.[date]}
                             onEdit={(d, recs) => handleEdit(d, recs, emp.id)}
                             onSaveTarget={(d, min) => handleSaveTarget(emp.id, d, min)}
                             onToggleHoliday={() => toggleHoliday(date)}
@@ -1858,6 +1903,7 @@ export function RHRelatorioPage() {
                           isAtestado={!isVacationDay(emp.id, date) && isAtestadoDay(emp.id, date)}
                           empId={emp.id}
                           targetMin={(isHoliday || isVacationDay(emp.id, date)) ? 0 : (targets[emp.id]?.[date] ?? (isWeekend ? 0 : dailyTarget(emp)))}
+                          note={dayNotes[emp.id]?.[date]}
                           onEdit={(d, recs) => handleEdit(d, recs, emp.id)}
                           onSaveTarget={(d, min) => handleSaveTarget(emp.id, d, min)}
                           onToggleHoliday={() => toggleHoliday(date)}
@@ -1921,6 +1967,7 @@ export function RHRelatorioPage() {
           date={editModal.date}
           empId={editModal.empId}
           records={editModal.records}
+          note={dayNotes[editModal.empId]?.[editModal.date] || ''}
           onSaved={loadAll}
         />
       )}

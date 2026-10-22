@@ -7954,3 +7954,16 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
 - **"Quem está usando?"** no tablet: escolhe o nome (fica só naquela aba,
   `sessionStorage`) e é esse nome que vai em separado/reconferido/pronta por —
   a conferência final precisa saber quem contou.
+
+## 2026-10-23 — Observação do dia no ajuste de ponto (Relatório de RH)
+
+- Pedido (irmão do Raphael): no modal "Ajustar Ponto", um campo de OBS do dia
+  pra explicar horário lançado à mão ou ajuste da carga horária; dias com
+  observação destacados na linha do relatório (`/rh/relatorio`).
+- fase125: tabela `time_day_notes` (employee_id + date únicos, note,
+  updated_by) — mesmo padrão de acesso de `work_day_targets`.
+- Modal ganhou "Observação do dia" (salva junto com o ponto; apagar o texto
+  remove). Linha do dia: fundo âmbar + faixa laranja à esquerda, selo **OBS**
+  e o texto abaixo da data (clicar abre o modal).
+- Não entra no espelho impresso/enviado pra ficha do funcionário (decidir
+  com o Raphael se deve entrar).
