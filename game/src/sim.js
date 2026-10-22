@@ -373,8 +373,17 @@ export function canRun(pet) {
   if (pet.needs.fome < 15 || pet.needs.sede < 15) return { ok: false, msg: `${pet.name} está com fome ou sede — cuide disso primeiro!` }
   return { ok: true }
 }
-export function afterRun(pet, { seeds = 0 } = {}) {
+export function afterRun(pet, { seeds = 0, progress } = {}) {
   const p = structuredClone(pet)
+  // progresso de jogos com fases (Mahjong): melhor estrela por fase + próxima liberada
+  const mj = progress?.mahjong
+  if (mj && Number.isInteger(mj.level)) {
+    const cur = p.mahjong || { unlocked: 1, stars: {} }
+    p.mahjong = {
+      unlocked: Math.max(cur.unlocked || 1, mj.level + 2),
+      stars: { ...cur.stars, [mj.level]: Math.max(cur.stars?.[mj.level] || 0, Math.min(3, mj.stars || 1)) },
+    }
+  }
   p.asleep = false
   p.needs.energia = clamp(p.needs.energia - RUN_ENERGY)
   p.needs.sede = clamp(p.needs.sede - 4)

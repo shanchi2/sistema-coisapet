@@ -8,6 +8,7 @@ import Labirinto, { meta as mLabirinto } from './games/Labirinto'
 import Rodinha, { meta as mRodinha } from './games/Rodinha'
 import Memoria, { meta as mMemoria } from './games/Memoria'
 import Velha, { meta as mVelha } from './games/Velha'
+import Mahjong, { meta as mMahjong } from './games/Mahjong'
 
 // ─── Fliperama (0.6, 22/10 — pedido do Raphael: jogo em TELA CHEIA, não modal)
 // Ocupa a tela toda (e pede tela cheia ao navegador quando dá). Tela inicial
@@ -15,7 +16,7 @@ import Velha, { meta as mVelha } from './games/Velha'
 // O servidor assina o início e confere tempo × pontos de cada jogo.
 export const GAMES = [
   { ...mCorrida, C: Corrida }, { ...mSementes, C: Sementes }, { ...mLabirinto, C: Labirinto },
-  { ...mRodinha, C: Rodinha }, { ...mMemoria, C: Memoria }, { ...mVelha, C: Velha },
+  { ...mRodinha, C: Rodinha }, { ...mMemoria, C: Memoria }, { ...mVelha, C: Velha }, { ...mMahjong, C: Mahjong },
 ]
 const sprite = (sp, f = 'idle') => spriteCanvas(HAMSTER_FRAMES[f], paletteFor(sp)).toDataURL()
 
@@ -118,12 +119,12 @@ function Play({ game, pet, token, me, onBack, onFinish, backRef }) {
     run.current = { ticket: api('run_start', { token, game: game.key }).then(r => r.run_id).catch(() => null), startedAt: performance.now() }
     setResult(null); setRound(r => r + 1); setPhase('play')
   }
-  async function end({ score, seeds }) {
+  async function end({ score, seeds, progress, note }) {
     if (!run.current) return // partida abandonada
     const ms = Math.round(performance.now() - run.current.startedAt)
-    const res = { score, seeds, sending: true }
+    const res = { score, seeds, note, sending: true }
     setResult(res); setPhase('over')
-    onFinish({ seeds })
+    onFinish({ seeds, progress })
     const runId = await run.current.ticket
     if (!runId) { setResult({ ...res, sending: false, error: 'Sem internet: essa partida não entrou no ranking.' }); return }
     try {
@@ -171,6 +172,7 @@ function Play({ game, pet, token, me, onBack, onFinish, backRef }) {
             <img src={sprite(pet.species, result.record ? 'eat' : 'sad')} alt="" className="w-24 h-[72px]" style={{ imageRendering: 'pixelated' }} />
             <p className="pixel text-sm text-[#ffd36b]">{result.record ? '🏆 Novo recorde!' : 'Fim de jogo!'}</p>
             <p className="text-[22px] font-extrabold">{result.score} pontos</p>
+            {result.note && <p className="text-[13px] font-bold text-[#ffd36b]">{result.note}</p>}
             <p className="text-[13px] font-bold">+{result.seeds} 🌻 sementinhas</p>
             <p className="text-[13px] font-bold min-h-[20px] text-[#c8f0c0]">{result.sending ? 'Enviando…' : result.error ? <span className="text-[#ffb3b3]">{result.error}</span> : result.gained ? `+${result.gained} XP` : 'Limite de XP dos jogos de hoje atingido — o recorde vale igual!'}</p>
             <div className="flex gap-2 mt-2">
