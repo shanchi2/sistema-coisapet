@@ -7901,3 +7901,11 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
   código da TV — só admin (`meeting_admin_name`), não marca "visto por
   último" de nenhuma TV. Testado: sessão inválida → 401.
 - Arquivo novo: `src/modules/tv/TvPreviewModal.jsx`.
+
+## 2026-10-22 — TV da Produção: editar "Avisos na TV"
+
+- Pedido: poder editar os avisos já no ar ("isso é importante").
+- Cada aviso da lista ganhou o lápis ✏️: carrega título, detalhe, nível e
+  data de saída no formulário de cima ("Editando aviso"), com "Salvar
+  alteração" / "Cancelar". Faz UPDATE no mesmo `tv_alerts` (a TV pega em
+  até 1 min). A lista também passou a mostrar o detalhe do aviso.
