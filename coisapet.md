@@ -8050,3 +8050,11 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
 - API dos marketplaces só tem venda completa a partir de ~17/08/2026 → 2026
   vai precisar da declaração do contador também (API = vendas brutas, não
   faturamento fiscal). Aguardando os PDFs de 2025.
+
+## 2026-10-23 — Faturamento histórico: correção dos meses da API (fase129)
+- Raphael comparou set/26 da Shopee com o painel da Shopee e o valor não batia.
+- Causa: a Shopee vinha da `marketplace_finance`, que só tem repasses já liberados (começava em 08/09 e faltavam ~200 pedidos).
+- Agora a Shopee vem dos pedidos (`orders` + `order_items`: qtd × preço, sem cancelados) e o ML dos pagamentos **aprovados** (antes entravam também rejeitados e devolvidos).
+- Ignora dados antes de jul/2026 (uma importação antiga de planilha de teste caía em jul/2025).
+- Mês em que o registro começou depois do dia 2 aparece como parcial (`partial` / `from_day`).
+- Diferença que sobra contra o painel da Shopee ("Produto Pago"): o painel conta pedidos pagos e cancelados depois; o sistema tira os cancelados. Para comparar igual, usar "Pedido Confirmado" no painel.

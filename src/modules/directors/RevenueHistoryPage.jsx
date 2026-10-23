@@ -70,13 +70,11 @@ export function RevenueHistoryPage() {
       s[r.platform] = Number(r.amount)
       if (r.note) s.notes.push(`${CNPJ[r.platform]?.label}: ${r.note}`)
     }
-    // 1º mês da API de cada plataforma começou no meio do mês (dados só a partir de ~17/08/2026)
-    const firstApi = {}
-    for (const a of data.api || []) if (!firstApi[a.platform] || a.month < firstApi[a.platform]) firstApi[a.platform] = a.month
+    // Mês em que o sistema começou a registrar no meio do mês → valor parcial (o servidor marca `partial`)
     for (const a of data.api || []) {
       const s = slot(a.month.slice(0, 7))
       s.api[a.platform] = Number(a.gross)
-      if (a.month === firstApi[a.platform]) s.notes.push(`${CNPJ[a.platform]?.label}: API só tem parte deste mês (começou a registrar no meio do mês)`)
+      if (a.partial) s.notes.push(`${CNPJ[a.platform]?.label}: API só tem este mês a partir do dia ${a.from_day} (começou a registrar no meio do mês)`)
     }
     return Object.values(map).sort((a, b) => a.ym.localeCompare(b.ym)).map(m => {
       const shopeeApi = m.shopee == null && withApi ? m.api.shopee ?? null : null
@@ -184,7 +182,7 @@ export function RevenueHistoryPage() {
         <Kpi label="Total declarado no histórico" value={brl(grand)} detail={`${declOnly.length} meses com declaração`} />
       </div>
 
-      <Box title="Mês a mês" icon={CalendarRange} note={withApi ? 'Barras claras = vendas brutas puxadas da API do ML/Shopee (meses sem declaração do contador). Não é faturamento fiscal: serve de referência até chegar a declaração.' : 'Só declarações do contador.'}>
+      <Box title="Mês a mês" icon={CalendarRange} note={withApi ? 'Barras claras = vendas puxadas da API (Shopee: valor dos produtos dos pedidos não cancelados; ML: pagamentos aprovados, sem cancelados/devolvidos) (meses sem declaração do contador). Não é faturamento fiscal: serve de referência até chegar a declaração.' : 'Só declarações do contador.'}>
         <div className="h-72">
           <ResponsiveContainer>
             <BarChart data={chartMonths} margin={{ left: 8, right: 8 }}>
