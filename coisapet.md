@@ -7990,3 +7990,36 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
   códigos válidos mais recentes (errar gasta 1 tentativa de cada). Testado
   pelo pg_net: código da Diretoria com outro "por cima" → entrou; conta de
   teste apagada.
+
+## 2026-10-23 — Instagram: abas Stories e Insights (bem mais métricas)
+
+- Pedido do Raphael: deixar o módulo do Instagram mais completo — stories e
+  "mais insights de tudo". Antes, conferido na API: marcações (`/tags`) da
+  @ahamsteraurora não existiam pra Meta (o post foi collab; collab/@ na
+  legenda/stories de terceiros não vêm nessa conexão) — Raphael vai pedir às
+  parceiras pra marcarem a @coisapet NA FOTO.
+- **fase127**: tabela `ig_stories` (só leitura pro front) + colunas
+  `ig_account.insights_28d`, `ig_account.stories_sync_at`,
+  `ig_account_daily.metrics/metrics_at`.
+- **instagram-api (v5)**:
+  - `syncStories`: a Meta só lista stories NO AR e as métricas somem em 24h →
+    o cron passa a cada ~15 min (fora do sync completo de hora em hora) e
+    guarda alcance, visualizações, respostas, compartilhamentos, interações,
+    visitas ao perfil, seguidores e navegação (avançou/voltou/saiu/pulou). A
+    imagem (ou capa do vídeo) é copiada pra `instagram-media/stories/<id>.jpg`.
+  - `accountInsights`: 28 dias por tipo de conteúdo (Reels/foto/carrossel/
+    stories) pra alcance, visualizações e interações; seguidores × não
+    seguidores; totais dos 28 dias ANTERIORES pra comparar.
+  - `syncDailyMetrics`: visualizações, contas engajadas, interações, curtidas,
+    comentários, compartilhamentos, salvos e cliques POR DIA (mesmo esquema
+    do syncFollows).
+  - Público: + país dos seguidores e público ALCANÇADO e ENGAJADO no mês
+    (idade, gênero, cidade).
+- **Telas**: aba **Insights** (`IgInsights.jsx`: comparação 28d × 28d
+  anteriores com ▲▼, de onde vem o resultado, quem está alcançando, dia a dia
+  com seletor de métrica + melhor dia/dia da semana, público em 3 visões) e
+  aba **Stories** (`IgStories.jsx`: período, ordenar, cards, taxa de saída,
+  melhor horário, detalhe com navegação).
+- Dado real no 1º sync (23/10): alcance 28d 5.132 vs 9.022 antes (−43%);
+  69% do alcance é de não seguidores; carrossel é o que mais alcança.
+- Histórico de stories começa em 23/10 (a Meta não devolve os antigos).
