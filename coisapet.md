@@ -8075,3 +8075,6 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
 - Validação: set/26 bateu com o sistema (ML idêntico; Shopee com diferença de 0,007%).
 - Calibração contra o contador (out–dez/2025): o valor da API costuma ficar alguns % ABAIXO do faturamento fiscal (out/25 do ML bem abaixo).
   - Usar como estimativa; a declaração do contador continua sendo a referência.
+
+## 2026-10-23 — Faturamento histórico: total no hover das barras
+- Pedido do Raphael: ao passar o mouse nas barras empilhadas ("Mês a mês" e "Por ano"), mostrar o valor de cada plataforma e o total do mês/ano (`StackTooltip`).
