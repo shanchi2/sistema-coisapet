@@ -98,7 +98,7 @@ export function RevenueHistoryPage() {
     for (const a of data.api || []) {
       const s = slot(a.month.slice(0, 7))
       s.api[a.platform] = Number(a.gross)
-      if (a.partial) s.notes.push(`${CNPJ[a.platform]?.label}: API só tem este mês a partir do dia ${a.from_day} (começou a registrar no meio do mês)`)
+      if (a.partial) { s.partial = true; s.notes.push(`${CNPJ[a.platform]?.label}: API só tem este mês a partir do dia ${a.from_day} (começou a registrar no meio do mês)`) }
     }
     return Object.values(map).sort((a, b) => a.ym.localeCompare(b.ym)).map(m => {
       const shopeeApi = m.shopee == null && withApi ? m.api.shopee ?? null : null
@@ -159,7 +159,12 @@ export function RevenueHistoryPage() {
   const growth12 = prev12.length === 12 ? (total12 - prev12.reduce((a, b) => a + b, 0)) / prev12.reduce((a, b) => a + b, 0) : null
   // KPIs só com declaração do contador (API é referência, não faturamento fiscal)
   const declOnly = months.filter(m => !m.fromApi)
-  const best = declOnly.length ? declOnly.reduce((a, b) => (b.total > a.total ? b : a)) : null
+  const maxBy = list => list.length ? list.reduce((a, b) => (b.total > a.total ? b : a)) : null
+  const bestDecl = maxBy(declOnly)
+  // Melhor mês: entre TODOS os meses fechados (contador + API), sem mês parcial
+  // da API nem o mês corrente (ainda em andamento)
+  const curYm = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7)
+  const best = maxBy(months.filter(m => !(m.fromApi && m.partial) && m.ym < curYm))
   const grand = declOnly.reduce((s, m) => s + m.total, 0)
 
   async function saveEdit() {
@@ -202,7 +207,9 @@ export function RevenueHistoryPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi label="Últimos 12 meses declarados" value={brl(total12)} detail={last12.length ? `${last12[0].label} a ${last12[last12.length - 1].label}` : null} />
         <Kpi label="Crescimento (12 meses × 12 anteriores)" value={pct(growth12)} tone={growth12 == null ? 'text-slate-400' : growth12 >= 0 ? 'text-emerald-600' : 'text-rose-500'} detail={growth12 == null ? 'precisa de 24 meses seguidos' : 'mesmos meses do ano anterior'} />
-        <Kpi label="Melhor mês da história" value={best ? brl(best.total) : '—'} detail={best ? `${best.label}${best.fromApi ? ' (API)' : ''}` : null} />
+        <Kpi label="Melhor mês da história" value={best ? brl(best.total) : '—'} detail={best ? (best.fromApi
+          ? `${best.label} (API, estimativa)${bestDecl ? ` · maior declarado: ${bestDecl.label}, ${brl(bestDecl.total)}` : ''}`
+          : best.label) : null} />
         <Kpi label="Total declarado no histórico" value={brl(grand)} detail={`${declOnly.length} meses com declaração`} />
       </div>
 

@@ -8078,3 +8078,8 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
 
 ## 2026-10-23 — Faturamento histórico: total no hover das barras
 - Pedido do Raphael: ao passar o mouse nas barras empilhadas ("Mês a mês" e "Por ano"), mostrar o valor de cada plataforma e o total do mês/ano (`StackTooltip`).
+
+## 2026-10-23 — Faturamento histórico: "Melhor mês da história" corrigido
+- O card só olhava meses declarados pelo contador (dez/2025), mas jul e ago/2026 (API) foram maiores.
+- Agora considera todos os meses fechados (contador + API), sem meses parciais da API e sem o mês corrente.
+- Se o melhor mês vier da API, aparece "(API, estimativa)" e, ao lado, o maior mês declarado.
