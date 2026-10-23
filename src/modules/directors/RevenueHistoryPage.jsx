@@ -48,6 +48,30 @@ function Box({ title, icon: Icon, right, children, note }) {
 const Delta = ({ v }) => v == null || !isFinite(v) ? <span className="text-slate-300">—</span>
   : <span className={`inline-flex items-center gap-0.5 font-semibold ${v >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{v >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}{pct(v)}</span>
 
+// Tooltip das barras empilhadas: cada parte + o total do mês/ano
+function StackTooltip({ active, payload, label }) {
+  const items = (payload || []).filter(p => p.value != null && p.value !== 0)
+  if (!active || !items.length) return null
+  const total = items.reduce((a, p) => a + Number(p.value), 0)
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl shadow-lg px-3 py-2 text-xs">
+      <p className="font-bold text-slate-700 mb-1">{label}</p>
+      {items.map(p => (
+        <p key={p.dataKey} className="flex items-center justify-between gap-4">
+          <span className="flex items-center gap-1.5 text-slate-600"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: p.color }} />{p.name}</span>
+          <span className="font-semibold text-slate-700">{brl(Number(p.value))}</span>
+        </p>
+      ))}
+      {items.length > 1 && (
+        <p className="flex items-center justify-between gap-4 border-t border-slate-100 mt-1 pt-1">
+          <span className="font-bold text-slate-700">Total</span>
+          <span className="font-black text-slate-800">{brl(total)}</span>
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function RevenueHistoryPage() {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
@@ -189,7 +213,7 @@ export function RevenueHistoryPage() {
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
               <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={45} />
               <YAxis tickFormatter={v => `${Math.round(v / 1000)}k`} tick={{ fontSize: 11 }} width={40} />
-              <Tooltip formatter={v => brl(v)} />
+              <Tooltip content={<StackTooltip />} cursor={{ fill: '#f1f5f9' }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="Shopee" stackId="a" fill={CNPJ.shopee.color} />
               <Bar dataKey="Mercado Livre" stackId="a" fill={CNPJ.ml.color} />
@@ -208,7 +232,7 @@ export function RevenueHistoryPage() {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="ano" tick={{ fontSize: 11 }} />
                 <YAxis tickFormatter={v => `${Math.round(v / 1000)}k`} tick={{ fontSize: 11 }} width={40} />
-                <Tooltip formatter={v => brl(v)} />
+                <Tooltip content={<StackTooltip />} cursor={{ fill: '#f1f5f9' }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="Shopee" stackId="a" fill={CNPJ.shopee.color} />
                 <Bar dataKey="Mercado Livre" stackId="a" fill={CNPJ.ml.color} />
