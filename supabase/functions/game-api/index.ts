@@ -367,16 +367,22 @@ serve(async (req) => {
         }
         if (!RESEND_KEY) return json({ error: 'Envio de e-mail não configurado' }, 500)
         const code = randomCode()
-        await sb.from('game_login_codes').insert({
+        const { data: codeRow } = await sb.from('game_login_codes').insert({
           email, code_hash: await sha256Hex(`${email}:${code}`), ip,
           expires_at: new Date(now() + CODE_TTL_MIN * 60e3).toISOString(),
-        })
+        }).select('id').single()
         const r = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ from: FROM, to: [email], subject: `${code} é o seu código do MinhaCoisaPet`, html: emailHtml(code), text: `Seu código do MinhaCoisaPet: ${code} (vale ${CODE_TTL_MIN} minutos).` }),
         })
-        if (!r.ok) { console.error('[game-api] resend', r.status, await r.text()); return json({ error: 'Não consegui mandar o e-mail agora' }, 502) }
+        if (!r.ok) {
+          console.error('[game-api] resend', r.status, await r.text())
+          // E-mail não saiu: invalida o código (ninguém vai recebê-lo) — senão
+          // ele fica "por cima" de um código gerado pela Diretoria (23/10)
+          if (codeRow?.id) await sb.from('game_login_codes').update({ used_at: new Date().toISOString() }).eq('id', codeRow.id)
+          return json({ error: 'Não consegui mandar o e-mail agora. Se a CoisaPet te passou um código, toque em "Já tenho um código".' }, 502)
+        }
         await sb.from('game_players').update({ age_ok: true }).eq('email', email)
         return json({ ok: true })
       }
@@ -385,14 +391,21 @@ serve(async (req) => {
         const email = normEmail(body.email)
         const code = String(body.code || '').replace(/\D/g, '')
         if (!validEmail(email) || code.length !== 6) return json({ error: 'Código inválido' }, 400)
-        const { data: row } = await sb.from('game_login_codes').select('id, code_hash, attempts, expires_at')
+        // Confere com TODOS os códigos ainda válidos do e-mail (23/10): pode
+        // haver um pedido por e-mail e outro gerado pela Diretoria ao mesmo
+        // tempo — antes só o mais recente valia e o outro dava "Código errado".
+        // Confere no máx. os 2 mais recentes; errar gasta 1 tentativa de cada.
+        const { data: rows } = await sb.from('game_login_codes').select('id, code_hash, attempts, expires_at')
           .eq('email', email).is('used_at', null).gte('expires_at', new Date().toISOString())
-          .order('created_at', { ascending: false }).limit(1).maybeSingle()
-        if (!row) return json({ error: 'Código expirado — peça outro' }, 400)
-        if (row.attempts >= MAX_ATTEMPTS) return json({ error: 'Muitas tentativas — peça outro código' }, 429)
-        if (row.code_hash !== await sha256Hex(`${email}:${code}`)) {
-          await sb.from('game_login_codes').update({ attempts: row.attempts + 1 }).eq('id', row.id)
-          return json({ error: 'Código errado', left: MAX_ATTEMPTS - row.attempts - 1 }, 400)
+          .order('created_at', { ascending: false }).limit(2)
+        const open = (rows || []).filter((r: any) => r.attempts < MAX_ATTEMPTS)
+        if (!rows?.length) return json({ error: 'Código expirado — peça outro' }, 400)
+        if (!open.length) return json({ error: 'Muitas tentativas — peça outro código' }, 429)
+        const hash = await sha256Hex(`${email}:${code}`)
+        const row = open.find((r: any) => r.code_hash === hash)
+        if (!row) {
+          await Promise.all(open.map((r: any) => sb.from('game_login_codes').update({ attempts: r.attempts + 1 }).eq('id', r.id)))
+          return json({ error: 'Código errado', left: Math.max(0, MAX_ATTEMPTS - Math.min(...open.map((r: any) => r.attempts)) - 1) }, 400)
         }
         await sb.from('game_login_codes').update({ used_at: new Date().toISOString() }).eq('id', row.id)
         let { data: player } = await sb.from('game_players').select('id').eq('email', email).maybeSingle()
