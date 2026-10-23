@@ -179,6 +179,9 @@ async function runSync(sb: any, token: string) {
   // sempre rebuscados; dias fechados só se ainda não foram buscados depois
   // de fechar.
   await syncFollows(sb, token, igId, now)
+  // 23/10: métricas por dia, quebras de alcance (tipo / seguidor) e período anterior
+  try { await syncDailyMetrics(sb, token, igId, now) } catch (e) { console.warn('[instagram-api] daily', (e as Error).message) }
+  try { acc.insights_28d = await accountInsights(token, igId, now) } catch (e) { console.warn('[instagram-api] insights28', (e as Error).message) }
 
   // Horário em que os seguidores estão online (média por hora)
   const of = await tryIg(token, `${igId}/insights`, { metric: 'online_followers', period: 'lifetime' })
@@ -194,10 +197,19 @@ async function runSync(sb: any, token: string) {
   const { data: prev } = await sb.from('ig_account').select('demographics').eq('id', 1).maybeSingle()
   if (!prev?.demographics?.at || Date.now() - new Date(prev.demographics.at).getTime() > 20 * 3600e3) {
     const demo: Record<string, unknown> = { at: now.toISOString() }
-    for (const bd of ['age,gender', 'city']) {
+    for (const bd of ['age,gender', 'city', 'country']) {
       const d = await tryIg(token, `${igId}/insights`, { metric: 'follower_demographics', period: 'lifetime', metric_type: 'total_value', timeframe: 'this_month', breakdown: bd })
       const rows = d?.data?.[0]?.total_value?.breakdowns?.[0]?.results || []
-      demo[bd === 'city' ? 'city' : 'age_gender'] = rows.map((r: any) => ({ k: r.dimension_values, v: r.value }))
+      demo[bd === 'age,gender' ? 'age_gender' : bd] = rows.map((r: any) => ({ k: r.dimension_values, v: r.value }))
+    }
+    // 23/10: quem foi ALCANÇADO e quem ENGAJOU no mês (não só quem segue)
+    for (const bd of ['age', 'gender', 'city']) {
+      const d = await tryIg(token, `${igId}/insights`, { metric: 'engaged_audience_demographics,reached_audience_demographics', period: 'lifetime', metric_type: 'total_value', timeframe: 'this_month', breakdown: bd })
+      for (const m of d?.data || []) {
+        const key = String(m.name).startsWith('engaged') ? 'engaged' : 'reached'
+        const bucket = (demo[key] ||= {}) as Record<string, unknown>
+        bucket[bd] = (m.total_value?.breakdowns?.[0]?.results || []).map((r: any) => ({ k: r.dimension_values, v: r.value }))
+      }
     }
     acc.demographics = demo
   }
@@ -270,7 +282,112 @@ async function runSync(sb: any, token: string) {
     like_count: t.like_count ?? null, comments_count: t.comments_count ?? null, updated_at: now.toISOString(),
   }))
   if (tagRows.length) await sb.from('ig_tagged_media').upsert(tagRows)
-  return { username: me.username, media: media.length, comments_posts: withComments.length, tagged: tagRows.length }
+  let stories = 0
+  try { stories = await syncStories(sb, token, igId) } catch (e) { console.warn('[instagram-api] stories', (e as Error).message) }
+  return { username: me.username, media: media.length, comments_posts: withComments.length, tagged: tagRows.length, stories }
+}
+
+// ── Stories (23/10) ───────────────────────────────────────────────────
+// A Meta só lista os stories NO AR (24h) e as métricas somem quando o story
+// expira — por isso o cron passa aqui a cada ~15 min e guarda tudo. A imagem
+// (ou a capa, se for vídeo) é copiada pro bucket: o link da Meta expira.
+const STORY_METRICS = [
+  'reach,views,replies,shares,total_interactions,follows,profile_visits',
+  'reach,views,replies,shares,total_interactions',
+  'reach,replies',
+]
+const isoTs = (t: string) => new Date(String(t).replace(/([+-]\d\d)(\d\d)$/, '$1:$2'))
+async function copyStoryMedia(sb: any, s: any) {
+  const src = s.media_type === 'VIDEO' ? s.thumbnail_url : s.media_url
+  if (!src) return null
+  try {
+    const r = await fetch(src)
+    if (!r.ok) return null
+    const path = `stories/${metaId(s.id)}.jpg`
+    const { error } = await sb.storage.from('instagram-media').upload(path, new Uint8Array(await r.arrayBuffer()), { contentType: r.headers.get('content-type') || 'image/jpeg', upsert: true })
+    return error ? null : path
+  } catch { return null }
+}
+async function syncStories(sb: any, token: string, igId: string) {
+  const r = await tryIg(token, `${igId}/stories`, { fields: 'id,media_type,media_url,thumbnail_url,permalink,timestamp', limit: 50 })
+  const list: any[] = r?.data || []
+  const now = new Date().toISOString()
+  if (list.length) {
+    const { data: known } = await sb.from('ig_stories').select('id, media_path').in('id', list.map(s => metaId(s.id)))
+    const pathOf: Record<string, string | null> = Object.fromEntries((known || []).map((k: any) => [k.id, k.media_path]))
+    const withIns: any[] = [], without: any[] = []
+    await Promise.all(list.map(async s => {
+      let insights: Record<string, number> | null = null
+      for (const metric of STORY_METRICS) {
+        const x = await tryIg(token, `${s.id}/insights`, { metric })
+        if (x?.data) { insights = Object.fromEntries(x.data.map((m: any) => [m.name, m.values?.[0]?.value ?? m.total_value?.value ?? 0])); break }
+      }
+      const nav = await tryIg(token, `${s.id}/insights`, { metric: 'navigation', breakdown: 'story_navigation_action_type' })
+      const res = nav?.data?.[0]?.total_value?.breakdowns?.[0]?.results
+      const navigation = res ? Object.fromEntries(res.map((x: any) => [x.dimension_values?.[0], x.value])) : null
+      const posted = isoTs(s.timestamp)
+      const row: any = {
+        id: s.id, media_type: s.media_type, permalink: s.permalink || null,
+        posted_at: posted.toISOString(), expires_at: new Date(posted.getTime() + 86400e3).toISOString(),
+        media_url: (s.media_type === 'VIDEO' ? s.thumbnail_url : s.media_url) || null,
+        media_path: pathOf[s.id] || await copyStoryMedia(sb, s), updated_at: now,
+      }
+      if (navigation) row.navigation = navigation
+      if (insights) withIns.push({ ...row, insights, insights_at: now }); else without.push(row)
+    }))
+    // sem métrica nova não apaga a antiga
+    if (withIns.length) await sb.from('ig_stories').upsert(withIns)
+    if (without.length) await sb.from('ig_stories').upsert(without)
+  }
+  await sb.from('ig_account').update({ stories_sync_at: now }).eq('id', 1)
+  return list.length
+}
+
+// ── Insights da conta (23/10) ─────────────────────────────────────────
+// Últimos 28 dias quebrados por tipo de conteúdo (Reels, post, carrossel,
+// story) e por seguidor × não seguidor, mais os totais dos 28 dias ANTERIORES
+// pra comparação.
+const TOTAL_METRICS = 'reach,views,accounts_engaged,total_interactions,likes,comments,shares,saves,profile_links_taps,follows_and_unfollows'
+async function accountInsights(token: string, igId: string, now: Date) {
+  const until = Math.floor(now.getTime() / 1000), s28 = until - 28 * 86400, s56 = until - 56 * 86400
+  const breakdownOf = (m: any) => Object.fromEntries((m?.total_value?.breakdowns?.[0]?.results || []).map((r: any) => [String(r.dimension_values?.[0] || ''), r.value]))
+  const out: Record<string, any> = { at: now.toISOString(), by_type: {}, by_follow: {}, prev: {} }
+  const typed = await tryIg(token, `${igId}/insights`, { metric: 'reach,views,total_interactions', period: 'day', metric_type: 'total_value', breakdown: 'media_product_type', since: s28, until })
+  for (const m of typed?.data || []) out.by_type[m.name] = breakdownOf(m)
+  const fol = await tryIg(token, `${igId}/insights`, { metric: 'reach,views', period: 'day', metric_type: 'total_value', breakdown: 'follow_type', since: s28, until })
+    || await tryIg(token, `${igId}/insights`, { metric: 'reach', period: 'day', metric_type: 'total_value', breakdown: 'follow_type', since: s28, until })
+  for (const m of fol?.data || []) out.by_follow[m.name] = breakdownOf(m)
+  const prev = await tryIg(token, `${igId}/insights`, { metric: TOTAL_METRICS, period: 'day', metric_type: 'total_value', since: s56, until: s28 })
+  for (const m of prev?.data || []) {
+    out.prev[m.name] = m.total_value?.value ?? 0
+    if (m.name === 'follows_and_unfollows') for (const [k, v] of Object.entries(breakdownOf(m))) out.prev[k.toLowerCase()] = v
+  }
+  return out
+}
+
+// Métricas por dia (dia de Brasília), um pedido por dia — mesmo esquema do
+// syncFollows: hoje e ontem sempre; dias fechados só até buscar depois de fechar.
+const DAY_METRICS = 'views,accounts_engaged,total_interactions,likes,comments,shares,saves,profile_links_taps'
+async function syncDailyMetrics(sb: any, token: string, igId: string, now: Date) {
+  const nowSec = Math.floor(now.getTime() / 1000)
+  const days: string[] = []
+  for (let i = 0; i < 30; i++) days.push(spDate(new Date(now.getTime() - i * 86400e3)))
+  const { data: have } = await sb.from('ig_account_daily').select('day, metrics_at').in('day', days)
+  const at: Record<string, number> = {}
+  for (const h of have || []) if (h.metrics_at) at[h.day] = new Date(h.metrics_at).getTime() / 1000
+  const need = days.filter((d, i) => i < 2 || !at[d] || at[d] < spMidnight(d) + 86400 + 2 * 3600)
+  const rows: any[] = []
+  for (let i = 0; i < need.length; i += 6) {
+    await Promise.all(need.slice(i, i + 6).map(async d => {
+      const since = spMidnight(d), until = Math.min(since + 86400, nowSec)
+      if (until - since < 120) return
+      const r = await tryIg(token, `${igId}/insights`, { metric: DAY_METRICS, period: 'day', metric_type: 'total_value', since, until })
+      if (!r?.data) return
+      rows.push({ day: d, metrics: Object.fromEntries(r.data.map((m: any) => [m.name, m.total_value?.value ?? 0])), metrics_at: now.toISOString() })
+    }))
+  }
+  if (rows.length) await sb.from('ig_account_daily').upsert(rows)
+  return rows.length
 }
 
 async function syncFollows(sb: any, token: string, igId: string, now: Date) {
@@ -447,10 +564,13 @@ serve(async (req) => {
         for (const p of due || []) res.push(await advancePost(sb, token, igId, p, 25_000))
         out.published = res
       }
-      const { data: acc } = await sb.from('ig_account').select('last_sync_at').eq('id', 1).maybeSingle()
+      const { data: acc } = await sb.from('ig_account').select('last_sync_at, stories_sync_at').eq('id', 1).maybeSingle()
       if (!igId || !acc?.last_sync_at || Date.now() - new Date(acc.last_sync_at).getTime() > SYNC_EVERY_MIN * 60e3) {
         try { out.sync = await runSync(sb, token) }
         catch (e) { await sb.from('ig_account').upsert({ id: 1, last_sync_error: (e as Error).message, last_sync_at: new Date().toISOString() }); out.sync_error = (e as Error).message }
+      } else if (igId && (!acc?.stories_sync_at || Date.now() - new Date(acc.stories_sync_at).getTime() > 14 * 60e3)) {
+        // stories: métricas só existem enquanto o story está no ar
+        try { out.stories = await syncStories(sb, token, igId) } catch (e) { out.stories_error = (e as Error).message }
       }
       return json({ ok: true, ...out })
     }

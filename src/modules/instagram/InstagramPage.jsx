@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Instagram, RefreshCw, Loader2, LayoutDashboard, CalendarDays, MessageCircle, Send, Settings, Plus, AlertTriangle, UserPlus, Handshake } from 'lucide-react'
+import { Instagram, RefreshCw, Loader2, LayoutDashboard, CalendarDays, MessageCircle, Send, Settings, Plus, AlertTriangle, UserPlus, Handshake, Radio, BarChart3 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -13,6 +13,8 @@ import { IgConnect } from './IgConnect'
 import { IgFollowers } from './IgFollowers'
 import { IgPartners } from './IgPartners'
 import { IgComposer } from './IgComposer'
+import { IgStories } from './IgStories'
+import { IgInsights } from './IgInsights'
 
 // Instagram dentro do sistema (19/10, pedido do Raphael): painel de métricas,
 // calendário com agendamento (o cron publica sozinho), comentários e directs.
@@ -20,6 +22,8 @@ import { IgComposer } from './IgComposer'
 
 const TABS = [
   { key: 'painel',      label: 'Painel',      icon: LayoutDashboard },
+  { key: 'insights',    label: 'Insights',    icon: BarChart3 },
+  { key: 'stories',     label: 'Stories',     icon: Radio },
   { key: 'seguidores',  label: 'Seguidores',  icon: UserPlus },
   { key: 'parcerias',   label: 'Parcerias',   icon: Handshake },
   { key: 'calendario',  label: 'Calendário',  icon: CalendarDays },
@@ -134,6 +138,10 @@ export function InstagramPage() {
         </div>
       ) : tab === 'painel' ? (
         <IgDashboard account={account} daily={daily} media={media} posts={posts} onOpenPost={p => setComposer({ post: p })} />
+      ) : tab === 'insights' ? (
+        <IgInsights account={account} daily={daily} />
+      ) : tab === 'stories' ? (
+        <IgStories />
       ) : tab === 'seguidores' ? (
         <IgFollowers account={account} media={media} />
       ) : tab === 'parcerias' ? (

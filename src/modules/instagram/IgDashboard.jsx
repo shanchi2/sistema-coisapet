@@ -184,7 +184,7 @@ export function IgDashboard({ account, daily, media, posts, onOpenPost }) {
                 {ages.map(([a, v]) => <span key={a} className="text-[11px] bg-violet-50 text-violet-700 rounded-full px-2 py-0.5">{a}: {fmtPct(v / demoTotal)}</span>)}
               </div>
               {cities.map(c => (
-                <div key={c.k?.[0]} className="flex justify-between text-xs py-0.5"><span className="text-slate-600 truncate">{c.k?.[0]}</span><span className="text-slate-400">{fmtInt(c.v)}</span></div>
+                <div key={c.k?.[0]} className="flex justify-between text-xs py-0.5"><span className="text-slate-600 truncate">{String(c.k?.[0] || '').replace(/ \(state\)/g, '').replace('Federal District', 'DF')}</span><span className="text-slate-400">{fmtInt(c.v)}</span></div>
               ))}
             </>
           ) : <p className="text-xs text-slate-400">A Meta só mostra o público de contas com 100+ seguidores.</p>}
