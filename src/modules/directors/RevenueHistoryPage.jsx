@@ -182,7 +182,7 @@ export function RevenueHistoryPage() {
         <Kpi label="Total declarado no histórico" value={brl(grand)} detail={`${declOnly.length} meses com declaração`} />
       </div>
 
-      <Box title="Mês a mês" icon={CalendarRange} note={withApi ? 'Barras claras = vendas puxadas da API (Shopee: valor dos produtos dos pedidos não cancelados; ML: pagamentos aprovados, sem cancelados/devolvidos) (meses sem declaração do contador). Não é faturamento fiscal: serve de referência até chegar a declaração.' : 'Só declarações do contador.'}>
+      <Box title="Mês a mês" icon={CalendarRange} note={withApi ? 'Barras claras = meses sem declaração do contador, calculados direto nas plataformas (Shopee: valor dos produtos dos pedidos não cancelados; ML: pagamentos aprovados). São vendas, não faturamento fiscal: servem de referência até chegar a declaração.' : 'Só declarações do contador.'}>
         <div className="h-72">
           <ResponsiveContainer>
             <BarChart data={chartMonths} margin={{ left: 8, right: 8 }}>

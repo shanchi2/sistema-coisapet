@@ -8063,3 +8063,15 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
 - Importadas as declarações do contador de 2025 (jan–dez, os dois CNPJs): 24 meses em `revenue_monthly`, source 'contador'. Os totais conferem com os PDFs.
 - Falta dez/2024: as declarações anteriores iam até nov/2024 e as novas começam em jan/2025. Pedir ao contador.
 - PDFs ficaram fora do git (dados financeiros).
+
+## 2026-10-23 — Faturamento histórico: meses de 2026 calculados direto nas plataformas (fase130)
+- Raphael pediu os meses de 2026 anteriores a ago (o sistema só registrava tudo a partir de ~ago/2026).
+- Nova ação `monthly` na edge `marketplace-finance`: soma um mês inteiro direto na plataforma, com o mesmo critério da fase129.
+  - ML: Mercado Pago `payments/search` em janelas de 3 dias, só `regular_payment` de pedidos ML aprovados.
+  - Shopee: `get_order_list` em janelas de 15 dias + `get_order_detail` (itens × preço, sem CANCELLED/UNPAID).
+- A ação grava em `revenue_api_monthly` (RLS fechada) e não devolve valores na resposta.
+- `revenue_overview` usa `revenue_api_monthly` quando o mês existe; senão, o cálculo ao vivo.
+- Cron `revenue-api-monthly` (todo dia 2) calcula o mês anterior.
+- Validação: set/26 bateu com o sistema (ML idêntico; Shopee com diferença de 0,007%).
+- Calibração contra o contador (out–dez/2025): o valor da API costuma ficar alguns % ABAIXO do faturamento fiscal (out/25 do ML bem abaixo).
+  - Usar como estimativa; a declaração do contador continua sendo a referência.

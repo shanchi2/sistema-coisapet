@@ -7,7 +7,9 @@
 //   - Shopee: payment.get_escrow_detail_batch (líquido de cada pedido)
 //     + payment.get_escrow_list (quando foi liberado).
 // Ações: `sync` (cron de hora em hora + botão "Atualizar" na tela),
-// `probe` (diagnóstico: devolve 1 exemplo cru de cada plataforma).
+// `probe` (diagnóstico: devolve 1 exemplo cru de cada plataforma),
+// `monthly` (fase130: soma um mês inteiro direto na plataforma e grava em
+// `revenue_api_monthly` — usado no Faturamento histórico p/ meses antigos).
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { adminClient, getValidIntegration as getMl } from '../_shared/mercadolivre.ts'
 import { getValidIntegration as getShopee, shopeeFetch, shopeeWrite } from '../_shared/shopee.ts'
@@ -134,6 +136,79 @@ async function syncShopee(db: any, days: number) {
   return { orders: rows.length, released: Object.keys(released).length }
 }
 
+
+// ── Total de um mês direto na plataforma (fase130) ───────────────────
+// Mesmo critério do Faturamento histórico (fase129):
+//   ML: pagamentos aprovados do Mercado Pago (transaction_amount)
+//   Shopee: qtd × preço dos itens dos pedidos não cancelados (criados no mês)
+function monthRange(ym: string) {
+  const [y, m] = ym.split('-').map(Number)
+  const start = Date.UTC(y, m - 1, 1, 3) // 00:00 em São Paulo (UTC-3)
+  const end = Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1, 3)
+  return { start, end }
+}
+
+async function monthlyMl(db: any, ym: string) {
+  const integ = await getMl(db)
+  const { start, end } = monthRange(ym)
+  const seen = new Set<string>()
+  let gross = 0, orders = 0, otherGross = 0, other = 0
+  // janelas de 3 dias pra não esbarrar no limite de paginação da busca
+  for (let t = start; t < end; t += 3 * 86400000) {
+    const from = new Date(t).toISOString(), to = new Date(Math.min(t + 3 * 86400000, end) - 1).toISOString()
+    for (let offset = 0; ; offset += 100) {
+      const d = await mpFetch(`/v1/payments/search?sort=date_created&criteria=asc&range=date_created&begin_date=${from}&end_date=${to}&limit=100&offset=${offset}`, integ.access_token)
+      for (const p of d.results || []) {
+        if (seen.has(String(p.id))) continue
+        seen.add(String(p.id))
+        if (p.operation_type !== 'regular_payment' || p.order?.type !== 'mercadolibre') continue // mesmo filtro do syncMl
+        if (p.status === 'approved') { gross += Number(p.transaction_amount) || 0; orders++ }
+        else { otherGross += Number(p.transaction_amount) || 0; other++ }
+      }
+      if (!d.results?.length || offset + 100 >= (d.paging?.total ?? 0)) break
+    }
+  }
+  return { gross, orders, excluded_gross: otherGross, excluded: other }
+}
+
+async function monthlyShopee(db: any, ym: string) {
+  const integ = await getShopee(db)
+  const { start, end } = monthRange(ym)
+  const sns: string[] = []
+  for (let t = start / 1000; t < end / 1000; t += 15 * 86400) {
+    const to = Math.min(t + 15 * 86400, end / 1000) - 1
+    let cursor = ''
+    for (let guard = 0; guard < 100; guard++) {
+      const r = await shopeeFetch('/api/v2/order/get_order_list', integ, {
+        time_range_field: 'create_time', time_from: String(t), time_to: String(to), page_size: '100', cursor,
+      })
+      if (r.error) throw new Error(`Shopee get_order_list: ${r.error} ${r.message || ''}`)
+      for (const o of r.response?.order_list || []) sns.push(o.order_sn)
+      if (!r.response?.more) break
+      cursor = r.response.next_cursor
+    }
+  }
+  const unique = [...new Set(sns)]
+  let gross = 0, orders = 0, cancGross = 0, canc = 0, missing = 0
+  const byStatus: Record<string, number> = {}
+  for (const part of chunk(unique, 50)) {
+    const d = await shopeeFetch('/api/v2/order/get_order_detail', integ, {
+      order_sn_list: part.join(','), response_optional_fields: 'item_list,order_status,total_amount',
+    })
+    if (d.error) throw new Error(`Shopee get_order_detail: ${d.error} ${d.message || ''}`)
+    const list = d.response?.order_list || []
+    missing += part.length - list.length
+    for (const o of list) {
+      const v = (o.item_list || []).reduce((a: number, it: any) =>
+        a + (Number(it.model_discounted_price ?? it.model_original_price) || 0) * (Number(it.model_quantity_purchased) || 0), 0)
+      byStatus[o.order_status] = (byStatus[o.order_status] || 0) + 1
+      if (o.order_status === 'CANCELLED' || o.order_status === 'UNPAID') { cancGross += v; canc++ }
+      else { gross += v; orders++ }
+    }
+  }
+  return { gross, orders, excluded_gross: cancGross, excluded: canc, missing, by_status: byStatus }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   let body: any = {}
@@ -173,6 +248,21 @@ serve(async (req) => {
       }
     }
     return json({ ok: true, ...result })
+  }
+  if (action === 'monthly') {
+    // Grava só na tabela da Diretoria (RLS fechada) e NÃO devolve valores na
+    // resposta — quem chamar de fora não consegue ler faturamento por aqui.
+    const ym = String(body.month || '')
+    if (!/^\d{4}-\d{2}$/.test(ym)) return json({ error: 'month = AAAA-MM' }, 400)
+    const fn = body.platform === 'ml' ? monthlyMl : body.platform === 'shopee' ? monthlyShopee : null
+    if (!fn) return json({ error: 'platform = ml | shopee' }, 400)
+    try {
+      const r = await fn(db, ym)
+      const row = { platform: body.platform, month: `${ym}-01`, gross: Math.round(r.gross * 100) / 100, orders: r.orders, detail: r, computed_at: new Date().toISOString() }
+      const { error } = await db.from('revenue_api_monthly').upsert(row, { onConflict: 'platform,month' })
+      if (error) throw error
+      return json({ ok: true, platform: row.platform, month: row.month, orders: row.orders })
+    } catch (e) { return json({ error: String(e) }, 500) }
   }
   return json({ error: 'ação desconhecida' }, 400)
 })
