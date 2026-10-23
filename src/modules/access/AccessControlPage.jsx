@@ -56,6 +56,7 @@ const MODULES = [
   { key: 'financeiro-dir', label: 'Financeiro Diretoria', section: 'Admin', icon: '🏦', adminOnly: true },
   { key: 'tv-producao',  label: 'TV da Produção',  section: 'Admin',         icon: '📺', adminOnly: true },
   { key: 'comparativo-marketplaces', label: 'ML × Shopee (comparativo)', section: 'Admin', icon: '📊', adminOnly: true },
+  { key: 'faturamento-historico', label: 'Faturamento histórico (por CNPJ)', section: 'Admin', icon: '📈', adminOnly: true },
   { key: 'directors',    label: 'Fin./Compras Diretoria', section: 'Admin', icon: '👔', adminOnly: true },
   { key: 'cofre',        label: 'Cofre de Senhas', section: 'Admin',         icon: '🔐', adminOnly: true },
   { key: 'grupos-chat',  label: 'Grupos de Chat',  section: 'Admin',         icon: '💬', adminOnly: true },
