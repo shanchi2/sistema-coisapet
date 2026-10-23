@@ -8023,3 +8023,30 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
 - Dado real no 1º sync (23/10): alcance 28d 5.132 vs 9.022 antes (−43%);
   69% do alcance é de não seguidores; carrossel é o que mais alcança.
 - Histórico de stories começa em 23/10 (a Meta não devolve os antigos).
+
+## 2026-10-23 — Faturamento histórico por CNPJ (Diretoria)
+
+- Pedido do Raphael: guardar as declarações/relatórios de faturamento do
+  contador (PDFs) pra estudo de crescimento, meses que mais vendem etc.
+  CLARA ALVES ALVARENGA (45.945.141/0001-15) = **Shopee**; GABRIEL SANCHES
+  SPAGNUOLO LTDA (48.110.567/0001-47) = **Mercado Livre**.
+- **fase128**: `revenue_monthly` (cnpj, mês, valor, doc de origem, obs) — sem
+  policy + revoke; só pelas funções `revenue_overview(p_token)` (tudo + vendas
+  brutas por mês da `marketplace_finance`) e `revenue_upsert(...)`, ambas
+  conferindo admin (`meeting_admin_name`). Módulo `faturamento-historico`.
+- Importados 4 PDFs: dez/2022–nov/2023 e dez/2023–nov/2024 dos 2 CNPJs
+  (ML começa em ago/2023). Totais conferidos com os PDFs. Os PDFs ficaram
+  fora do git (dado financeiro).
+- Pontos marcados pra conferir com o contador: (1) Gabriel nov/2023 — coluna
+  "Saídas" ≠ "Total" no relatório (Total = valor da Clara do mesmo mês);
+  usado o de Saídas; (2) Clara dez/22–mai/23 com o mesmo valor redondo.
+- Tela `/diretoria/faturamento` (`RevenueHistoryPage.jsx`, recharts): KPIs
+  (12 meses, crescimento 12×12, melhor mês, total declarado), mês a mês
+  empilhado Shopee/ML (+ vendas da API em cor clara nos meses sem
+  declaração), por ano com crescimento comparando os mesmos meses,
+  sazonalidade (uma linha por ano) + meses mais fortes/fracos, top 3 meses
+  de cada ano, tabela de todos os meses (vs mês anterior / mesmo mês ano
+  passado), lançar/corrigir mês, CSV.
+- API dos marketplaces só tem venda completa a partir de ~17/08/2026 → 2026
+  vai precisar da declaração do contador também (API = vendas brutas, não
+  faturamento fiscal). Aguardando os PDFs de 2025.

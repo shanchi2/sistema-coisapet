@@ -61,6 +61,7 @@ import { RHHorasPage, RHFeriasPage, RHAtestadosPage, RHAvisosPage, RHHoleritesPa
 import { VariationsPage } from './modules/products/VariationsPage'
 import { ProductionEntriesPage } from './modules/production/ProductionEntriesPage'
 import { MarketplaceComparePage } from './modules/directors/MarketplaceComparePage'
+import { RevenueHistoryPage } from './modules/directors/RevenueHistoryPage'
 import { BioLinksPage } from './modules/links/BioLinksPage'
 import { BlogBannersPage } from './modules/blog/BlogBannersPage'
 import { HonorariosPage } from './modules/financial/honorarios/HonorariosPage'
@@ -243,6 +244,7 @@ export default function App() {
                 {/* Gestão */}
                 <Route path="/financeiro"           element={<GuardedRoute moduleKey="financeiro"><FinancialPage /></GuardedRoute>} />
                 <Route path="/diretoria/ml-x-shopee" element={<GuardedRoute moduleKey="comparativo-marketplaces"><MarketplaceComparePage /></GuardedRoute>} />
+                <Route path="/diretoria/faturamento" element={<GuardedRoute moduleKey="faturamento-historico"><RevenueHistoryPage /></GuardedRoute>} />
                 <Route path="/financeiro-diretoria" element={<GuardedRoute moduleKey="financeiro-dir"><FinanceiroDiretoriaPage /></GuardedRoute>} />
                 <Route path="/drive"                element={<GuardedRoute moduleKey="drive"><DrivePage /></GuardedRoute>} />
                 <Route path="/coisadecor"           element={<GuardedRoute moduleKey="coisadecor"><CoisaDecorPage /></GuardedRoute>} />

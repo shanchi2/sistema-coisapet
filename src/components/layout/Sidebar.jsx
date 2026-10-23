@@ -158,6 +158,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/kanban',     moduleKey: 'kanban',     icon: Kanban,          label: 'Kanban',     roles: ['admin','administrativo'] },
       { to: '/diretoria/ml-x-shopee', moduleKey: 'comparativo-marketplaces', icon: BarChart2, label: 'ML × Shopee', roles: ['admin'] },
+      { to: '/diretoria/faturamento', moduleKey: 'faturamento-historico', icon: TrendingUp, label: 'Faturamento histórico', roles: ['admin'] },
       { to: '/financeiro-diretoria', moduleKey: 'financeiro-dir', icon: DollarSign, label: 'Fin. Diretoria',     roles: ['admin'] },
       { to: '/honorarios',           moduleKey: 'honorarios',      icon: HandCoins,  label: 'Pagamento de Honorários', roles: ['admin'] },
       { to: '/tv-producao',          moduleKey: 'tv-producao',     icon: Tv,         label: 'TV da Produção',          roles: ['admin'] },
