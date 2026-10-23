@@ -7967,3 +7967,18 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
   e o texto abaixo da data (clicar abre o modal).
 - Não entra no espelho impresso/enviado pra ficha do funcionário (decidir
   com o Raphael se deve entrar).
+
+## 2026-10-23 — MinhaCoisaPet: código de acesso gerado pela Diretoria
+
+- Pedido do Raphael: liberar o login do jogo pra testar em outro aparelho
+  enquanto o Resend (e-mail do código) está sem cota.
+- Não abrimos o login sem código (qualquer um entraria na conta de qualquer
+  um). Em vez disso, **fase126** `game_admin_login_code(p_token, p_email)`:
+  só admin (`meeting_admin_name`), gera código de 6 números com
+  `gen_random_bytes` e grava só o hash na mesma `game_login_codes` (15 min,
+  5 tentativas) — o `verify_code` do game-api não mudou. Hash conferido igual
+  ao do JS; token inválido é barrado.
+- Sistema → MinhaCoisaPet: quadro "Código de acesso sem e-mail" (e-mail →
+  código grandão + copiar).
+- Jogo (login): botão "Já tenho um código" vai direto pra digitar o código.
+- Quando o Resend voltar, dá pra deixar assim mesmo (serve de plano B).

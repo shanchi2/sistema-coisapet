@@ -73,11 +73,14 @@ export function LoginScreen({ onDone, hasLocal }) {
           </label>
           {err && <p className="text-[12px] font-bold text-rose-600">{err}</p>}
           <button disabled={!emailOk || !ageOk || busy} className={btn}>{busy ? 'Enviando…' : 'Receber código'}</button>
+          {/* 23/10: e-mail do código fora do ar (cota do Resend) — a Diretoria gera o código no sistema */}
+          <button type="button" disabled={!emailOk || !ageOk || busy} onClick={() => { setErr(null); setStep('code'); setWait(0) }}
+            className="text-[12px] text-[#8a6a52] underline disabled:opacity-40">Já tenho um código</button>
           {hasLocal && <p className="text-[11px] text-[#2e8b57] font-bold text-center">🐹 O pet que já está neste aparelho vai junto pra sua conta.</p>}
         </form>
       ) : (
         <form onSubmit={verify} className="flex flex-col gap-3">
-          <p className="text-[13px] text-[#6b4a32]">Mandamos um código de 6 números pra <b>{email.trim()}</b>. Olhe também a caixa de spam.</p>
+          <p className="text-[13px] text-[#6b4a32]">Digite o código de 6 números de <b>{email.trim()}</b>. Se pediu por e-mail, olhe também a caixa de spam.</p>
           <input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" autoFocus
             className="pixel-box rounded-md px-3 py-2.5 text-2xl tracking-[0.4em] text-center font-bold bg-white outline-none" />
           {err && <p className="text-[12px] font-bold text-rose-600">{err}</p>}

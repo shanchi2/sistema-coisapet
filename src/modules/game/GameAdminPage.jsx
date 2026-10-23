@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Gamepad2, Users, Gift, Ticket, Download, Search, Copy, Check, MessageCircle, RefreshCw } from 'lucide-react'
+import { Gamepad2, Users, Gift, Ticket, Download, Search, Copy, Check, MessageCircle, RefreshCw, KeyRound } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
 import { sessionToken } from '../../lib/sessionToken'
@@ -77,6 +77,8 @@ export function GameAdminPage() {
 
       {err && <div className="mt-4 p-4 rounded-xl bg-rose-50 text-rose-700 text-sm">{err}</div>}
 
+      <LoginCodeCard />
+
       <div className="flex gap-2 mt-5 mb-4 flex-wrap">
         {TABS.map(([k, l, Icon]) => (
           <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 border ${tab === k ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}><Icon className="w-4 h-4" />{l}</button>
@@ -86,6 +88,56 @@ export function GameAdminPage() {
       {data && tab === 'jogadores' && <Players players={players} />}
       {data && tab === 'premios' && <Rewards data={data} reload={load} />}
       {data && tab === 'codigos' && <Codes codes={data.codes} reload={load} />}
+    </div>
+  )
+}
+
+// Código de acesso sem e-mail (23/10): o Resend estourou a cota do mês e o
+// código de login não chega. A Diretoria gera aqui o código de 6 números pro
+// e-mail da pessoa (vale 15 min, 5 tentativas — o mesmo do e-mail) e, no
+// jogo, ela toca em "Já tenho um código". Só admin (fase126).
+function LoginCodeCard() {
+  const [email, setEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [made, setMade] = useState(null)
+  const [copied, setCopied] = useState(false)
+  async function gen(e) {
+    e.preventDefault()
+    setBusy(true)
+    const { data, error } = await supabase.rpc('game_admin_login_code', { p_token: sessionToken(), p_email: email })
+    setBusy(false)
+    if (error) { toast.error(error.message); return }
+    setMade({ email: email.trim().toLowerCase(), code: data, until: Date.now() + 15 * 60e3 })
+  }
+  return (
+    <div className="mt-4 bg-white rounded-2xl border border-amber-200 shadow-sm p-4 flex flex-col sm:flex-row gap-4 sm:items-center">
+      <div className="flex items-start gap-3 sm:w-80 shrink-0">
+        <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center shrink-0"><KeyRound className="w-4 h-4 text-amber-600" /></div>
+        <div>
+          <p className="text-sm font-bold text-gray-800">Código de acesso sem e-mail</p>
+          <p className="text-xs text-gray-500">Enquanto o e-mail do código está fora do ar: gere aqui e, no jogo, toque em <b>"Já tenho um código"</b>. Vale 15 minutos.</p>
+        </div>
+      </div>
+      {made ? (
+        <div className="flex-1 flex flex-wrap items-center gap-3">
+          <div>
+            <p className="text-[11px] text-gray-500">Código pra <b>{made.email}</b></p>
+            <p className="text-3xl font-black tracking-[0.3em] tabular-nums text-gray-900">{made.code}</p>
+          </div>
+          <button onClick={() => { navigator.clipboard?.writeText(made.code); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+            className="px-3 py-2 rounded-lg border border-gray-200 text-sm font-semibold flex items-center gap-1.5 hover:bg-gray-50">
+            {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}Copiar
+          </button>
+          <button onClick={() => { setMade(null); setEmail('') }} className="text-sm font-semibold text-gray-500 hover:text-gray-800">Gerar outro</button>
+        </div>
+      ) : (
+        <form onSubmit={gen} className="flex-1 flex flex-wrap gap-2">
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="e-mail da pessoa no jogo"
+            className="flex-1 min-w-[200px] border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+          <button disabled={busy || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())}
+            className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold disabled:opacity-40">{busy ? 'Gerando…' : 'Gerar código'}</button>
+        </form>
+      )}
     </div>
   )
 }
