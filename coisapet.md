@@ -8058,3 +8058,8 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
 - Ignora dados antes de jul/2026 (uma importação antiga de planilha de teste caía em jul/2025).
 - Mês em que o registro começou depois do dia 2 aparece como parcial (`partial` / `from_day`).
 - Diferença que sobra contra o painel da Shopee ("Produto Pago"): o painel conta pedidos pagos e cancelados depois; o sistema tira os cancelados. Para comparar igual, usar "Pedido Confirmado" no painel.
+
+## 2026-10-23 — Faturamento histórico: declarações de 2025
+- Importadas as declarações do contador de 2025 (jan–dez, os dois CNPJs): 24 meses em `revenue_monthly`, source 'contador'. Os totais conferem com os PDFs.
+- Falta dez/2024: as declarações anteriores iam até nov/2024 e as novas começam em jan/2025. Pedir ao contador.
+- PDFs ficaram fora do git (dados financeiros).
