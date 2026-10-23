@@ -7982,3 +7982,11 @@ dd/mm". Saiu o botão "trazer pendentes de ontem".
   código grandão + copiar).
 - Jogo (login): botão "Já tenho um código" vai direto pra digitar o código.
 - Quando o Resend voltar, dá pra deixar assim mesmo (serve de plano B).
+- **Correção (23/10, madrugada):** teste com teste@teste.com deu "Código
+  errado". Causa: depois de gerar o código pela Diretoria, foi tocado
+  "Receber código" 2x — o e-mail falhava (Resend) mas criava código novo, e o
+  `verify_code` só conferia o MAIS RECENTE. Corrigido no game-api (v6):
+  código cujo e-mail falhou é invalidado na hora, e a conferência olha os 2
+  códigos válidos mais recentes (errar gasta 1 tentativa de cada). Testado
+  pelo pg_net: código da Diretoria com outro "por cima" → entrou; conta de
+  teste apagada.
